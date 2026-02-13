@@ -37,10 +37,16 @@ app.get('/auth/install', (req, res) => {
 
 // OAuth callback
 app.get('/auth/callback', async (req, res) => {
-    const { code, state, shop } = req.query;
+    const { code, shop } = req.query;
 
-    if (!code || !state || state !== storage.oauthState) {
-        return res.status(400).send('Invalid OAuth callback');
+    // Validate that we have the required parameters
+    if (!code || !shop) {
+        return res.status(400).send('Invalid OAuth callback - missing code or shop parameter');
+    }
+
+    // Verify shop matches our configured store
+    if (shop !== process.env.SHOPIFY_STORE) {
+        return res.status(400).send('Invalid OAuth callback - shop mismatch');
     }
 
     try {
