@@ -229,18 +229,32 @@ app.post('/api/lookup-order', async (req, res) => {
             });
         }
 
-        // Find order matching email (case insensitive)
-        const order = data.orders.find(o =>
-            o.customer && o.customer.email &&
-            o.customer.email.toLowerCase() === email.toLowerCase()
-        );
+        // Find order matching email OR phone
+        const normalizedInput = email ? email.toLowerCase().trim() : '';
+        const inputDigits = normalizedInput.replace(/\D/g, '');
+
+        const order = data.orders.find(o => {
+            const customerEmail = o.customer?.email?.toLowerCase() || '';
+            const customerPhone = o.customer?.phone?.replace(/\D/g, '') || '';
+            const shippingPhone = o.shipping_address?.phone?.replace(/\D/g, '') || '';
+
+            // Check Email
+            if (customerEmail && customerEmail === normalizedInput) return true;
+
+            // Check Phone (loose match for last 10 digits)
+            if (inputDigits.length >= 10) {
+                if (customerPhone.endsWith(inputDigits.slice(-10))) return true;
+                if (shippingPhone.endsWith(inputDigits.slice(-10))) return true;
+            }
+            return false;
+        });
 
         if (!order) {
-            console.log('Order found but email does not match');
+            console.log('Order found but email/phone does not match');
             return res.status(404).json({
                 error: 'Order not found',
                 isEligible: false,
-                eligibilityMessage: 'Order not found with this email. Please check your email address.'
+                eligibilityMessage: 'Order not found with this email/phone. Please check your details.'
             });
         }
 
@@ -453,14 +467,28 @@ app.post('/api/track-order', async (req, res) => {
             return res.status(404).json({ error: 'Order not found' });
         }
 
-        // Find matching order by email
-        const order = shopifyData.orders.find(o =>
-            o.customer && o.customer.email &&
-            o.customer.email.toLowerCase() === email.toLowerCase()
-        );
+        // Find matching order by email OR phone
+        const normalizedInput = email ? email.toLowerCase().trim() : '';
+        const inputDigits = normalizedInput.replace(/\D/g, '');
+
+        const order = shopifyData.orders.find(o => {
+            const customerEmail = o.customer?.email?.toLowerCase() || '';
+            const customerPhone = o.customer?.phone?.replace(/\D/g, '') || '';
+            const shippingPhone = o.shipping_address?.phone?.replace(/\D/g, '') || '';
+
+            // Check Email
+            if (customerEmail && customerEmail === normalizedInput) return true;
+
+            // Check Phone (loose match for last 10 digits)
+            if (inputDigits.length >= 10) {
+                if (customerPhone.endsWith(inputDigits.slice(-10))) return true;
+                if (shippingPhone.endsWith(inputDigits.slice(-10))) return true;
+            }
+            return false;
+        });
 
         if (!order) {
-            return res.status(404).json({ error: 'Order not found with this email' });
+            return res.status(404).json({ error: 'Order not found with this email/phone' });
         }
 
         // Check if order has fulfillments
