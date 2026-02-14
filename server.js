@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 require('dotenv').config();
+const multer = require('multer');
+const upload = multer();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -344,9 +346,9 @@ app.post('/api/get-variants', async (req, res) => {
 });
 
 // Submit exchange request
-app.post('/api/submit-exchange', async (req, res) => {
+app.post('/api/submit-exchange', upload.any(), async (req, res) => {
     try {
-        const requestId = 'REQ-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+        const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
 
         await createRequest({
             requestId,
@@ -366,9 +368,9 @@ app.post('/api/submit-exchange', async (req, res) => {
 });
 
 // Submit return request
-app.post('/api/submit-return', async (req, res) => {
+app.post('/api/submit-return', upload.any(), async (req, res) => {
     try {
-        const requestId = 'REQ-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+        const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
 
         await createRequest({
             requestId,
