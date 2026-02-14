@@ -130,6 +130,58 @@ app.post('/api/get-order', async (req, res) => {
     }
 });
 
+// Lookup order (alias for get-order, used by frontend templates)
+app.post('/api/lookup-order', async (req, res) => {
+    try {
+        const { orderNumber, email } = req.body;
+
+        const data = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&email=${encodeURIComponent(email)}&limit=1`);
+
+        if (!data.orders || data.orders.length === 0) {
+            return res.status(404).json({
+                error: 'Order not found',
+                isEligible: false,
+                eligibilityMessage: 'Order not found. Please check your order number and email.'
+            });
+        }
+
+        const order = data.orders[0];
+
+        // Check eligibility (orders must be fulfilled and within 30 days)
+        const orderDate = new Date(order.created_at);
+        const daysSinceOrder = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
+        const isFulfilled = order.fulfillment_status === 'fulfilled';
+        const isWithin30Days = daysSinceOrder <= 30;
+
+        res.json({
+            isEligible: isFulfilled && isWithin30Days,
+            eligibilityMessage: !isFulfilled ? 'Order must be fulfilled before exchange/return' :
+                !isWithin30Days ? 'Order is older than 30 days and not eligible' :
+                    'Order is eligible for exchange/return',
+            order: {
+                orderNumber: order.name,
+                customerName: `${order.customer.first_name} ${order.customer.last_name}`,
+                email: order.customer.email,
+                phone: order.customer.phone || order.shipping_address?.phone || '',
+                orderDate: order.created_at,
+                totalAmount: order.total_price,
+                items: order.line_items.map(item => ({
+                    id: item.id,
+                    productId: item.product_id,
+                    variantId: item.variant_id,
+                    name: item.name,
+                    variant: item.variant_title,
+                    quantity: item.quantity,
+                    price: item.price,
+                    image: item.properties?.image || `https://cdn.shopify.com/s/files/1/0${item.product_id}/products/placeholder.jpg`
+                }))
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get product variants
 app.post('/api/get-variants', async (req, res) => {
     try {
