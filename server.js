@@ -1,12 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-const multer = require('multer');
-const path = require('path');
+const crypto = require('crypto');
 require('dotenv').config();
-
-const db = require('./database');
-const shopifyAPI = require('./shopify-api');
-const shiprocketAPI = require('./shiprocket-api');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,325 +9,307 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname));
+app.use(express.static('public'));
 
-// File upload configuration
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/');
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + '-' + file.originalname);
+// In-memory storage (replace with database in production)
+const storage = {
+    accessToken: null,
+    requests: new Map(),
+    adminTokens: new Set()
+};
+
+// ==================== OAUTH ROUTES ====================
+
+// Start OAuth installation
+app.get('/auth/install', (req, res) => {
+    const shop = process.env.SHOPIFY_STORE;
+    const clientId = process.env.SHOPIFY_CLIENT_ID;
+    const redirectUri = process.env.SHOPIFY_REDIRECT_URI;
+    const scopes = 'read_orders,write_orders,read_products,read_customers';
+
+    const state = crypto.randomBytes(16).toString('hex');
+    storage.oauthState = state;
+
+    const authUrl = `https://${shop}/admin/oauth/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${redirectUri}&state=${state}`;
+
+    res.redirect(authUrl);
+});
+
+// OAuth callback
+app.get('/auth/callback', async (req, res) => {
+    const { code, shop } = req.query;
+
+    // Validate that we have the required parameters
+    if (!code || !shop) {
+        return res.status(400).send('Invalid OAuth callback - missing code or shop parameter');
+    }
+
+    // Verify shop matches our configured store
+    if (shop !== process.env.SHOPIFY_STORE) {
+        return res.status(400).send('Invalid OAuth callback - shop mismatch');
+    }
+
+    try {
+        // Exchange code for access token
+        const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                client_id: process.env.SHOPIFY_CLIENT_ID,
+                client_secret: process.env.SHOPIFY_CLIENT_SECRET,
+                code
+            })
+        });
+
+        const data = await tokenResponse.json();
+        storage.accessToken = data.access_token;
+
+        res.send(`
+      <h1>✅ Authorization Successful!</h1>
+      <h2>Your Access Token:</h2>
+      <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-wrap: break-word;">${data.access_token}</pre>
+      <p><strong>IMPORTANT:</strong> Copy this token and add it to your Render environment variables as <code>SHOPIFY_ACCESS_TOKEN</code></p>
+      <p>After adding the token, your service will be fully operational!</p>
+    `);
+    } catch (error) {
+        res.status(500).send(`OAuth error: ${error.message}`);
     }
 });
-const upload = multer({ storage });
 
-// Initialize database
-db.initializeDatabase();
+// ==================== SHOPIFY API HELPER ====================
 
-// ==================== ROUTES ====================
-const trackOrderRoute = require('./track-order-route');
-app.use('/api', trackOrderRoute);
+async function shopifyAPI(endpoint, options = {}) {
+    const token = process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken;
+    const shop = process.env.SHOPIFY_STORE;
 
-// ==================== PUBLIC ENDPOINTS ====================
+    if (!token) {
+        throw new Error('Not authorized. Please complete OAuth flow first.');
+    }
 
-// Lookup order
+    const response = await fetch(`https://${shop}/admin/api/2024-01/${endpoint}`, {
+        ...options,
+        headers: {
+            'X-Shopify-Access-Token': token,
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`Shopify API error: ${response.status}`);
+    }
+
+    return response.json();
+}
+
+// ==================== CONFIG ENDPOINT ====================
+
+// Get frontend configuration (Razorpay key, etc.)
+app.get('/api/config', (req, res) => {
+    res.json({
+        razorpayKey: process.env.RAZORPAY_KEY_ID || null
+    });
+});
+
+// ==================== PUBLIC API ENDPOINTS ====================
+
+// Get order details
+app.post('/api/get-order', async (req, res) => {
+    try {
+        const { orderNumber, email } = req.body;
+
+        const data = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&email=${encodeURIComponent(email)}&limit=1`);
+
+        if (!data.orders || data.orders.length === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        res.json(data.orders[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Lookup order (improved with better error handling)
 app.post('/api/lookup-order', async (req, res) => {
     try {
         const { orderNumber, email } = req.body;
 
-        if (!orderNumber || !email) {
-            return res.status(400).json({ error: 'Order number and email are required' });
+        console.log('Looking up order:', orderNumber, 'for email:', email);
+
+        // Try to fetch order from Shopify
+        let data;
+        try {
+            data = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&limit=10`);
+        } catch (apiError) {
+            console.error('Shopify API Error:', apiError.message);
+            return res.status(500).json({
+                error: 'Failed to connect to Shopify API',
+                details: apiError.message
+            });
         }
 
-        const order = await shopifyAPI.lookupOrder(orderNumber, email);
+        if (!data.orders || data.orders.length === 0) {
+            console.log('No orders found for:', orderNumber);
+            return res.status(404).json({
+                error: 'Order not found',
+                isEligible: false,
+                eligibilityMessage: 'Order not found. Please check your order number.'
+            });
+        }
+
+        // Find order matching email (case insensitive)
+        const order = data.orders.find(o =>
+            o.customer && o.customer.email &&
+            o.customer.email.toLowerCase() === email.toLowerCase()
+        );
 
         if (!order) {
-            return res.status(404).json({ error: 'Order not found or email does not match' });
+            console.log('Order found but email does not match');
+            return res.status(404).json({
+                error: 'Order not found',
+                isEligible: false,
+                eligibilityMessage: 'Order not found with this email. Please check your email address.'
+            });
         }
 
-        // Check if order is eligible for return/exchange (2 days after delivery)
-        let deliveryDate = null;
-        let isEligible = true;
-        let eligibilityMessage = null;
+        console.log('Order found:', order.name);
 
-        // Get delivery date from fulfillments
-        if (order.fulfillments && order.fulfillments.length > 0) {
-            const fulfillment = order.fulfillments[0];
+        // Check eligibility
+        const orderDate = new Date(order.created_at);
+        const daysSinceOrder = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
+        const isFulfilled = order.fulfillment_status === 'fulfilled';
+        const isWithin30Days = daysSinceOrder <= 30;
 
-            // Check if delivered
-            if (fulfillment.status === 'success' && fulfillment.updated_at) {
-                deliveryDate = new Date(fulfillment.updated_at);
-                const now = new Date();
-                const daysSinceDelivery = Math.floor((now - deliveryDate) / (1000 * 60 * 60 * 24));
+        const eligibilityMessage = !isFulfilled
+            ? 'Order must be fulfilled before exchange/return'
+            : !isWithin30Days
+                ? 'Order is older than 30 days and not eligible'
+                : 'Order is eligible for exchange/return';
 
-                if (daysSinceDelivery > 2) {
-                    isEligible = false;
-                    eligibilityMessage = `Returns and exchanges are only allowed within 2 days of delivery. Your order was delivered ${daysSinceDelivery} days ago.`;
-                }
-            } else {
-                // Order not yet delivered
-                isEligible = false;
-                eligibilityMessage = 'Returns and exchanges are only allowed after you receive your order.';
-            }
-        } else {
-            // No fulfillment data
-            isEligible = false;
-            eligibilityMessage = 'This order has not been shipped yet. Returns and exchanges are only allowed after delivery.';
-        }
+        console.log('Eligibility:', { isFulfilled, isWithin30Days, daysSinceOrder });
 
         res.json({
-            order,
-            isEligible,
+            isEligible: isFulfilled && isWithin30Days,
             eligibilityMessage,
-            deliveryDate: deliveryDate ? deliveryDate.toISOString() : null
+            order: {
+                orderNumber: order.name,
+                customerName: order.customer
+                    ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+                    : 'Customer',
+                email: order.customer?.email || email,
+                phone: order.customer?.phone || order.shipping_address?.phone || '',
+                orderDate: order.created_at,
+                totalAmount: order.total_price,
+                items: order.line_items.map(item => ({
+                    id: item.id,
+                    productId: item.product_id,
+                    variantId: item.variant_id,
+                    name: item.name,
+                    variant: item.variant_title || 'Default',
+                    quantity: item.quantity,
+                    price: item.price,
+                    image: item.properties?.image ||
+                        (item.product_id ? `https://cdn.shopify.com/shopifycloud/placeholder.jpg` : '')
+                }))
+            }
         });
     } catch (error) {
-        console.error('Order lookup error:', error);
-        res.status(500).json({ error: 'Failed to lookup order' });
+        console.error('Lookup order error:', error);
+        res.status(500).json({
+            error: 'Internal server error',
+            details: error.message
+        });
+    }
+});
+
+// Get product variants
+app.post('/api/get-variants', async (req, res) => {
+    try {
+        const { productId } = req.body;
+
+        const data = await shopifyAPI(`products/${productId}.json`);
+        res.json(data.product.variants);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Submit exchange request
+app.post('/api/submit-exchange', async (req, res) => {
+    try {
+        const requestId = 'REQ-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+
+        storage.requests.set(requestId, {
+            ...req.body,
+            type: 'exchange',
+            status: 'pending',
+            createdAt: new Date().toISOString()
+        });
+
+        res.json({
+            success: true,
+            requestId,
+            message: 'Exchange request submitted successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
 // Submit return request
-app.post('/api/submit-return', upload.array('images', 5), async (req, res) => {
+app.post('/api/submit-return', async (req, res) => {
     try {
-        console.log('Received return submission:', req.body);
-        console.log('Files:', req.files);
+        const requestId = 'REQ-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
 
-        const { orderNumber, email, items, reason, comments, paymentId, paymentAmount } = req.body;
-
-        // Validate required fields
-        if (!orderNumber || !email || !items || !reason) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
-
-        // Verify Payment (if applicable)
-        if (paymentId) {
-            try {
-                // Mock payment bypass for testing
-                if (paymentId.startsWith('pay_mock_')) {
-                    console.log('Mock payment accepted:', paymentId);
-                } else {
-                    // Fetch payment details from Razorpay to verify
-                    const payment = await razorpay.payments.fetch(paymentId);
-
-                    if (payment.status !== 'captured' && payment.status !== 'authorized') {
-                        return res.status(400).json({ error: 'Payment not successful' });
-                    }
-                    console.log(`Payment Verified: ${paymentId}, Status: ${payment.status}`);
-                }
-            } catch (paymentError) {
-                console.error('Payment verification failed:', paymentError);
-                if (paymentId.startsWith('pay_')) {
-                    return res.status(400).json({ error: 'Invalid payment ID' });
-                }
-            }
-        }
-        // NOTE: In production, you might want to ENFORCE payment here if it's mandatory.
-
-        // Lookup order to get customer details
-        const order = await shopifyAPI.lookupOrder(orderNumber, email);
-        if (!order) {
-            return res.status(404).json({ error: 'Order not found' });
-        }
-
-        // Parse items
-        const parsedItems = JSON.parse(items);
-
-        // Calculate refund amount (mock logic)
-        // Store credit is issued for full amount minus shipping/restocking if applicable
-        // Here we just record the items. The specific coupon amount decision is manual by admin.
-
-        // Create notification/request in database
-        const requestId = db.createRequest({
+        storage.requests.set(requestId, {
+            ...req.body,
             type: 'return',
-            orderNumber: order.orderNumber,
-            customerName: order.customerName,
-            customerEmail: order.email,
-            customerPhone: order.phone,
-            shippingAddress: order.shippingAddress,
-            items: parsedItems,
-            reason,
-            comments,
-            images: req.files ? req.files.map(f => f.filename) : null,
-            payment: paymentId ? {
-                id: paymentId,
-                amount: paymentAmount,
-                status: 'verified'
-            } : null
+            status: 'pending',
+            createdAt: new Date().toISOString()
         });
-
-        // Schedule Shiprocket pickup immediately
-        try {
-            const pickupResult = await shiprocketAPI.createReversePickup({
-                type: 'return',
-                orderNumber: order.orderNumber,
-                customerName: order.customerName,
-                customerEmail: order.email,
-                customerPhone: order.phone,
-                shippingAddress: order.shippingAddress,
-                items: parsedItems,
-                reason
-            });
-
-            // Update request with pickup details
-            db.updateRequestStatus(requestId, 'scheduled', {
-                awbNumber: pickupResult.awbNumber,
-                pickupDate: new Date().toISOString()
-            });
-
-            console.log(`Return request ${requestId} created with Shiprocket pickup`);
-        } catch (pickupError) {
-            console.error('Shiprocket pickup scheduling failed:', pickupError);
-            // Request is still created, but pickup failed
-        }
 
         res.json({
             success: true,
             requestId,
-            message: 'Return request submitted successfully. Pickup will be scheduled shortly.'
+            message: 'Return request submitted successfully'
         });
     } catch (error) {
-        console.error('Submit return error:', error);
-        res.status(500).json({ error: 'Failed to submit return request' });
-    }
-});
-
-const Razorpay = require('razorpay');
-
-// Initialize Razorpay
-const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder',
-    key_secret: process.env.RAZORPAY_KEY_SECRET || 'placeholder_secret'
-});
-
-// Submit exchange request
-app.post('/api/submit-exchange', upload.array('images', 5), async (req, res) => {
-    try {
-        const { orderNumber, email, items, reason, comments, newAddress, newCity, newPincode, paymentId, paymentAmount } = req.body;
-
-        // Validate required fields
-        if (!orderNumber || !email || !items || !reason) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
-
-        // Verify Payment (if applicable)
-        if (paymentId) {
-            try {
-                // Fetch payment details from Razorpay to verify
-                const payment = await razorpay.payments.fetch(paymentId);
-
-                if (payment.status !== 'captured' && payment.status !== 'authorized') {
-                    return res.status(400).json({ error: 'Payment not successful' });
-                }
-
-                // Verify amount matches
-                // Note: Razorpay amount is in paise
-                const expectedAmount = parseFloat(paymentAmount) * 100;
-                if (payment.amount < expectedAmount) {
-                    console.warn(`Payment amount mismatch: Expected ${expectedAmount}, Got ${payment.amount}`);
-                    // We allow it for now but log warning, or you could reject
-                }
-
-                console.log(`Payment Verified: ${paymentId}, Status: ${payment.status}`);
-            } catch (paymentError) {
-                console.error('Payment verification failed:', paymentError);
-
-                // Allow mock payments for testing
-                if (paymentId.startsWith('pay_mock_')) {
-                    console.log('Mock payment accepted for testing:', paymentId);
-                    // Continue execution
-                } else if (paymentId.startsWith('pay_')) { // Real Razorpay ID format but failed verification
-                    return res.status(400).json({ error: 'Invalid payment ID' });
-                }
-            }
-        }
-
-        // Lookup order to get customer details
-        const order = await shopifyAPI.lookupOrder(orderNumber, email);
-        if (!order) {
-            return res.status(404).json({ error: 'Order not found' });
-        }
-
-        // Parse items
-        const parsedItems = JSON.parse(items);
-
-        // Create request in database
-        const requestId = db.createRequest({
-            type: 'exchange',
-            orderNumber: order.orderNumber,
-            customerName: order.customerName,
-            customerEmail: order.email,
-            customerPhone: order.phone,
-            shippingAddress: order.shippingAddress,
-            items: parsedItems,
-            reason,
-            comments,
-            images: req.files ? req.files.map(f => f.filename) : null,
-            newAddress: newAddress ? `${newAddress}, ${newCity}, ${newPincode}` : null,
-            payment: paymentId ? {
-                id: paymentId,
-                amount: paymentAmount,
-                status: 'verified' // We verified it above
-            } : null
-        });
-
-        // Schedule Shiprocket pickup immediately
-        try {
-            const pickupResult = await shiprocketAPI.createReversePickup({
-                type: 'exchange',
-                orderNumber: order.orderNumber,
-                customerName: order.customerName,
-                customerEmail: order.email,
-                customerPhone: order.phone,
-                shippingAddress: order.shippingAddress,
-                items: parsedItems,
-                reason
-            });
-
-            // Update request with pickup details
-            db.updateRequestStatus(requestId, 'scheduled', {
-                awbNumber: pickupResult.awbNumber,
-                pickupDate: new Date().toISOString()
-            });
-
-            console.log(`Exchange request ${requestId} created with Shiprocket pickup`);
-        } catch (pickupError) {
-            console.error('Shiprocket pickup scheduling failed:', pickupError);
-            // Request is still created, but pickup failed
-        }
-
-        res.json({
-            success: true,
-            requestId,
-            message: 'Exchange request submitted successfully. Pickup will be scheduled shortly.'
-        });
-    } catch (error) {
-        console.error('Submit exchange error:', error);
-        res.status(500).json({ error: 'Failed to submit exchange request' });
+        res.status(500).json({ error: error.message });
     }
 });
 
 // Track request
 app.get('/api/track-request/:requestId', (req, res) => {
+    const request = storage.requests.get(req.params.requestId);
+
+    if (!request) {
+        return res.status(404).json({ error: 'Request not found' });
+    }
+
+    res.json(request);
+});
+
+// Track order (Shiprocket integration)
+app.post('/api/track-order', async (req, res) => {
     try {
-        const { requestId } = req.params;
-        const request = db.getRequestById(requestId);
+        const { orderNumber } = req.body;
 
-        if (!request) {
-            return res.status(404).json({ error: 'Request not found' });
-        }
-
-        res.json(request);
+        // Mock tracking data - replace with actual Shiprocket API
+        res.json({
+            orderNumber,
+            status: 'in_transit',
+            trackingNumber: 'SHIP' + Date.now(),
+            estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+        });
     } catch (error) {
-        console.error('Track request error:', error);
-        res.status(500).json({ error: 'Failed to track request' });
+        res.status(500).json({ error: error.message });
     }
 });
 
 // ==================== ADMIN ENDPOINTS ====================
 
-// Simple authentication middleware
+// Admin authentication middleware
 function authenticateAdmin(req, res, next) {
     const authHeader = req.headers.authorization;
 
@@ -342,56 +319,22 @@ function authenticateAdmin(req, res, next) {
 
     const token = authHeader.substring(7);
 
-    // Simple token validation (in production, use proper JWT)
-    if (token !== process.env.ADMIN_PASSWORD) {
+    if (token !== process.env.ADMIN_PASSWORD && !storage.adminTokens.has(token)) {
         return res.status(401).json({ error: 'Invalid token' });
     }
 
     next();
 }
 
-// Sync status manually (Admin)
-app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
-    try {
-        const requests = db.getAllRequests();
-        let updatedCount = 0;
-
-        // In a real app, this would query Shiprocket API for each AWB
-        // For our local setup with mock data, we will simulate progression:
-        // scheduled -> picked_up -> in_transit -> delivered
-
-        for (const req of requests) {
-            let newStatus = null;
-
-            // Logic to advance status for demo purposes
-            if (req.status === 'scheduled') newStatus = 'picked_up';
-            else if (req.status === 'picked_up') newStatus = 'in_transit';
-            else if (req.status === 'in_transit') newStatus = 'delivered';
-
-            // Only update if not already final state (approved/rejected/delivered)
-            if (newStatus && ['scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
-                // Update DB
-                db.updateRequestStatus(req.requestId, newStatus);
-                updatedCount++;
-            }
-        }
-
-        res.json({ success: true, updated: updatedCount });
-    } catch (error) {
-        console.error('Sync status error:', error);
-        res.status(500).json({ error: 'Failed to sync status' });
-    }
-});
-
 // Admin login
 app.post('/api/admin/login', (req, res) => {
     const { password } = req.body;
 
     if (password === process.env.ADMIN_PASSWORD) {
-        res.json({
-            success: true,
-            token: password // In production, generate proper JWT
-        });
+        const token = crypto.randomBytes(32).toString('hex');
+        storage.adminTokens.add(token);
+
+        res.json({ success: true, token });
     } else {
         res.status(401).json({ error: 'Invalid password' });
     }
@@ -399,109 +342,87 @@ app.post('/api/admin/login', (req, res) => {
 
 // Get all requests (admin)
 app.get('/api/admin/requests', authenticateAdmin, (req, res) => {
-    try {
-        const { status, type } = req.query;
-        const filters = {};
+    const { status, type } = req.query;
 
-        if (status) filters.status = status;
-        if (type) filters.type = type;
+    let requests = Array.from(storage.requests.values());
 
-        const requests = db.getAllRequests(filters);
-        const stats = db.getStats();
-
-        res.json({ requests, stats });
-    } catch (error) {
-        console.error('Get requests error:', error);
-        res.status(500).json({ error: 'Failed to get requests' });
+    if (status) {
+        requests = requests.filter(r => r.status === status);
     }
+
+    if (type) {
+        requests = requests.filter(r => r.type === type);
+    }
+
+    const stats = {
+        total: storage.requests.size,
+        pending: requests.filter(r => r.status === 'pending').length,
+        approved: requests.filter(r => r.status === 'approved').length,
+        rejected: requests.filter(r => r.status === 'rejected').length
+    };
+
+    res.json({ requests, stats });
 });
 
-// Approve return
-app.post('/api/admin/approve-return', authenticateAdmin, (req, res) => {
-    try {
-        const { requestId, notes } = req.body;
+// Approve request (admin)
+app.post('/api/admin/approve', authenticateAdmin, (req, res) => {
+    const { requestId, notes } = req.body;
 
-        // Generate store credit coupon code
-        const couponCode = 'OFFCOMFRT-' + Date.now().toString().slice(-8);
-
-        db.updateRequestStatus(requestId, 'approved', {
-            adminNotes: notes || `Return approved. Store credit coupon: ${couponCode}`,
-            couponCode: couponCode
-        });
-
-        // TODO: Create coupon in Shopify with the generated code
-        // TODO: Send email to customer with coupon code
-        console.log(`Return ${requestId} approved. Coupon code: ${couponCode}`);
-
-        res.json({
-            success: true,
-            message: 'Return approved',
-            couponCode: couponCode
-        });
-    } catch (error) {
-        console.error('Approve return error:', error);
-        res.status(500).json({ error: 'Failed to approve return' });
+    const request = storage.requests.get(requestId);
+    if (!request) {
+        return res.status(404).json({ error: 'Request not found' });
     }
+
+    request.status = 'approved';
+    request.adminNotes = notes;
+    request.approvedAt = new Date().toISOString();
+
+    storage.requests.set(requestId, request);
+
+    res.json({ success: true, message: 'Request approved' });
 });
 
-// Reject return
-app.post('/api/admin/reject-return', authenticateAdmin, (req, res) => {
-    try {
-        const { requestId, notes } = req.body;
+// Reject request (admin)
+app.post('/api/admin/reject', authenticateAdmin, (req, res) => {
+    const { requestId, notes } = req.body;
 
-        db.updateRequestStatus(requestId, 'rejected', {
-            adminNotes: notes || 'Return rejected.'
-        });
-
-        console.log(`Return ${requestId} rejected.`);
-
-        res.json({ success: true, message: 'Return rejected' });
-    } catch (error) {
-        console.error('Reject return error:', error);
-        res.status(500).json({ error: 'Failed to reject return' });
+    const request = storage.requests.get(requestId);
+    if (!request) {
+        return res.status(404).json({ error: 'Request not found' });
     }
+
+    request.status = 'rejected';
+    request.adminNotes = notes;
+    request.rejectedAt = new Date().toISOString();
+
+    storage.requests.set(requestId, request);
+
+    res.json({ success: true, message: 'Request rejected' });
 });
 
-// Approve exchange
-app.post('/api/admin/approve-exchange', authenticateAdmin, (req, res) => {
-    try {
-        const { requestId, notes } = req.body;
+// ==================== HEALTH CHECK ====================
 
-        db.updateRequestStatus(requestId, 'approved', {
-            adminNotes: notes || 'Exchange approved. Replacement will be shipped.'
-        });
-
-        // TODO: Create forward shipment for replacement item
-        console.log(`Exchange ${requestId} approved. Ship replacement item manually.`);
-
-        res.json({ success: true, message: 'Exchange approved' });
-    } catch (error) {
-        console.error('Approve exchange error:', error);
-        res.status(500).json({ error: 'Failed to approve exchange' });
-    }
-});
-
-// Reject exchange
-app.post('/api/admin/reject-exchange', authenticateAdmin, (req, res) => {
-    try {
-        const { requestId, notes } = req.body;
-
-        db.updateRequestStatus(requestId, 'rejected', {
-            adminNotes: notes || 'Exchange rejected.'
-        });
-
-        console.log(`Exchange ${requestId} rejected.`);
-
-        res.json({ success: true, message: 'Exchange rejected' });
-    } catch (error) {
-        console.error('Reject exchange error:', error);
-        res.status(500).json({ error: 'Failed to reject exchange' });
-    }
+app.get('/', (req, res) => {
+    res.json({
+        service: 'Offcomfrt Returns & Exchanges',
+        status: 'running',
+        authorized: !!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken),
+        endpoints: {
+            oauth: '/auth/install',
+            public: ['/api/get-order', '/api/submit-exchange', '/api/submit-return', '/api/track-request/:id', '/api/track-order'],
+            admin: ['/api/admin/login', '/api/admin/requests', '/api/admin/approve', '/api/admin/reject']
+        }
+    });
 });
 
 // ==================== START SERVER ====================
 
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log('Return & Exchange system ready!');
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📦 Store: ${process.env.SHOPIFY_STORE}`);
+    console.log(`🔐 Authorized: ${!!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken)}`);
+
+    if (!process.env.SHOPIFY_ACCESS_TOKEN && !storage.accessToken) {
+        console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
+    }
 });
