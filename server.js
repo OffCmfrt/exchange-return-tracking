@@ -258,6 +258,42 @@ app.post('/api/lookup-order', async (req, res) => {
 
         console.log('Eligibility:', { isFulfilled, isWithin30Days, daysSinceOrder });
 
+        // Fetch product images
+        const productIds = [...new Set(order.line_items.map(item => item.product_id).filter(id => id))];
+        const productImages = {};
+
+        if (productIds.length > 0) {
+            try {
+                const productsData = await shopifyAPI(`products.json?ids=${productIds.join(',')}&fields=id,image,images`);
+                if (productsData.products) {
+                    productsData.products.forEach(p => {
+                        if (p.image) {
+                            productImages[p.id] = p.image.src;
+                        } else if (p.images && p.images.length > 0) {
+                            productImages[p.id] = p.images[0].src;
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch product images:', err);
+                // Continue without images
+            }
+        }
+
+        // Format shipping address
+        let shippingAddress = 'No shipping address';
+        if (order.shipping_address) {
+            const addr = order.shipping_address;
+            shippingAddress = [
+                addr.address1,
+                addr.address2,
+                addr.city,
+                addr.province,
+                addr.zip,
+                addr.country
+            ].filter(part => part).join(', ');
+        }
+
         res.json({
             isEligible: isFulfilled && isWithin30Days,
             eligibilityMessage,
@@ -270,6 +306,7 @@ app.post('/api/lookup-order', async (req, res) => {
                 phone: order.customer?.phone || order.shipping_address?.phone || '',
                 orderDate: order.created_at,
                 totalAmount: order.total_price,
+                shippingAddress,
                 items: order.line_items.map(item => ({
                     id: item.id,
                     productId: item.product_id,
@@ -278,8 +315,9 @@ app.post('/api/lookup-order', async (req, res) => {
                     variant: item.variant_title || 'Default',
                     quantity: item.quantity,
                     price: item.price,
-                    image: item.properties?.image ||
-                        (item.product_id ? `https://cdn.shopify.com/shopifycloud/placeholder.jpg` : '')
+                    image: productImages[item.product_id] ||
+                        (item.properties && item.properties.image) ||
+                        `https://cdn.shopify.com/shopifycloud/placeholder.jpg`
                 }))
             }
         });
