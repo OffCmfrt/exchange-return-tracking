@@ -102,6 +102,15 @@ async function shopifyAPI(endpoint, options = {}) {
     return response.json();
 }
 
+// ==================== CONFIG ENDPOINT ====================
+
+// Get frontend configuration (Razorpay key, etc.)
+app.get('/api/config', (req, res) => {
+    res.json({
+        razorpayKey: process.env.RAZORPAY_KEY_ID || null
+    });
+});
+
 // ==================== PUBLIC API ENDPOINTS ====================
 
 // Get order details
