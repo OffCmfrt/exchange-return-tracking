@@ -350,9 +350,21 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
     try {
         const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
 
+        // Parse items if string
+        let items = req.body.items;
+        if (typeof items === 'string') {
+            try {
+                items = JSON.parse(items);
+            } catch (e) {
+                console.error('Failed to parse items:', e);
+                items = [];
+            }
+        }
+
         await createRequest({
             requestId,
             ...req.body,
+            items,
             type: 'exchange'
         });
 
@@ -372,9 +384,21 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
     try {
         const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
 
+        // Parse items if string
+        let items = req.body.items;
+        if (typeof items === 'string') {
+            try {
+                items = JSON.parse(items);
+            } catch (e) {
+                console.error('Failed to parse items:', e);
+                items = [];
+            }
+        }
+
         await createRequest({
             requestId,
             ...req.body,
+            items,
             type: 'return'
         });
 
