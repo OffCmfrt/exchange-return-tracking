@@ -6,17 +6,27 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Supabase Database
+const {
+    createRequest,
+    getRequestById,
+    getAllRequests,
+    getRequestStats,
+    updateRequestStatus
+} = require('./config/db-helpers');
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// In-memory storage (replace with database in production)
+// In-memory storage for OAuth tokens only (admin tokens can stay in memory)
 const storage = {
     accessToken: null,
-    requests: new Map(),
     adminTokens: new Set()
 };
+
+
 
 // ==================== OAUTH ROUTES ====================
 
@@ -96,7 +106,65 @@ async function shopifyAPI(endpoint, options = {}) {
     });
 
     if (!response.ok) {
-        throw new Error(`Shopify API error: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Shopify API error: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+}
+
+// ==================== SHIPROCKET API HELPER ====================
+
+let shiprocketToken = null;
+let shiprocketTokenExpiry = null;
+
+async function getShiprocketToken() {
+    // Return cached token if still valid
+    if (shiprocketToken && shiprocketTokenExpiry && Date.now() < shiprocketTokenExpiry) {
+        return shiprocketToken;
+    }
+
+    // Get new token
+    try {
+        const response = await fetch('https://apiv2.shiprocket.in/v1/external/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: process.env.SHIPROCKET_EMAIL,
+                password: process.env.SHIPROCKET_PASSWORD
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Shiprocket auth failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        shiprocketToken = data.token;
+        shiprocketTokenExpiry = Date.now() + (10 * 24 * 60 * 60 * 1000); // 10 days
+
+        return shiprocketToken;
+    } catch (error) {
+        console.error('Shiprocket authentication error:', error);
+        throw error;
+    }
+}
+
+async function shiprocketAPI(endpoint, options = {}) {
+    const token = await getShiprocketToken();
+
+    const response = await fetch(`https://apiv2.shiprocket.in/v1/external${endpoint}`, {
+        ...options,
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
     }
 
     return response.json();
@@ -126,6 +194,7 @@ app.post('/api/get-order', async (req, res) => {
 
         res.json(data.orders[0]);
     } catch (error) {
+        console.error('Get order error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -231,6 +300,7 @@ app.post('/api/get-variants', async (req, res) => {
         const data = await shopifyAPI(`products/${productId}.json`);
         res.json(data.product.variants);
     } catch (error) {
+        console.error('Get variants error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -240,11 +310,10 @@ app.post('/api/submit-exchange', async (req, res) => {
     try {
         const requestId = 'REQ-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
 
-        storage.requests.set(requestId, {
+        await createRequest({
+            requestId,
             ...req.body,
-            type: 'exchange',
-            status: 'pending',
-            createdAt: new Date().toISOString()
+            type: 'exchange'
         });
 
         res.json({
@@ -253,6 +322,7 @@ app.post('/api/submit-exchange', async (req, res) => {
             message: 'Exchange request submitted successfully'
         });
     } catch (error) {
+        console.error('Submit exchange error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -262,11 +332,10 @@ app.post('/api/submit-return', async (req, res) => {
     try {
         const requestId = 'REQ-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
 
-        storage.requests.set(requestId, {
+        await createRequest({
+            requestId,
             ...req.body,
-            type: 'return',
-            status: 'pending',
-            createdAt: new Date().toISOString()
+            type: 'return'
         });
 
         res.json({
@@ -275,35 +344,164 @@ app.post('/api/submit-return', async (req, res) => {
             message: 'Return request submitted successfully'
         });
     } catch (error) {
+        console.error('Submit return error:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 // Track request
-app.get('/api/track-request/:requestId', (req, res) => {
-    const request = storage.requests.get(req.params.requestId);
+app.get('/api/track-request/:requestId', async (req, res) => {
+    try {
+        const request = await getRequestById(req.params.requestId);
 
-    if (!request) {
-        return res.status(404).json({ error: 'Request not found' });
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        res.json(request);
+    } catch (error) {
+        console.error('Track request error:', error);
+        res.status(500).json({ error: 'Failed to track request' });
     }
-
-    res.json(request);
 });
 
-// Track order (Shiprocket integration)
+// Track order (IMPROVED with Shiprocket integration)
 app.post('/api/track-order', async (req, res) => {
     try {
-        const { orderNumber } = req.body;
+        const { orderNumber, email } = req.body;
 
-        // Mock tracking data - replace with actual Shiprocket API
-        res.json({
-            orderNumber,
-            status: 'in_transit',
-            trackingNumber: 'SHIP' + Date.now(),
-            estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
-        });
+        if (!orderNumber || !email) {
+            return res.status(400).json({ error: 'Order number and email are required' });
+        }
+
+        console.log('Tracking order:', orderNumber, 'for email:', email);
+
+        // Get order from Shopify
+        let shopifyData;
+        try {
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&limit=10`);
+        } catch (apiError) {
+            console.error('Shopify API Error:', apiError.message);
+            return res.status(500).json({ error: 'Failed to fetch order from Shopify' });
+        }
+
+        if (!shopifyData.orders || shopifyData.orders.length === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Find matching order by email
+        const order = shopifyData.orders.find(o =>
+            o.customer && o.customer.email &&
+            o.customer.email.toLowerCase() === email.toLowerCase()
+        );
+
+        if (!order) {
+            return res.status(404).json({ error: 'Order not found with this email' });
+        }
+
+        // Check if order has fulfillments
+        const fulfillments = order.fulfillments || [];
+
+        if (fulfillments.length === 0) {
+            return res.json({
+                status: 'pending_shipment',
+                message: 'Your order is being processed and will be shipped soon.',
+                orderNumber: order.name,
+                customerName: order.customer
+                    ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+                    : 'Customer',
+                orderDate: order.created_at,
+                totalAmount: order.total_price
+            });
+        }
+
+        // Get tracking info from first fulfillment
+        const fulfillment = fulfillments[0];
+        const trackingNumber = fulfillment.tracking_number;
+        const trackingUrl = fulfillment.tracking_url;
+
+        // Prepare basic response
+        const response = {
+            orderNumber: order.name,
+            customerName: order.customer
+                ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+                : 'Customer',
+            orderDate: order.created_at,
+            totalAmount: order.total_price,
+            currentStatus: fulfillment.shipment_status || 'Shipped',
+            awbNumber: trackingNumber || 'N/A',
+            courierName: fulfillment.tracking_company || 'N/A',
+            trackingUrl: trackingUrl || null,
+            estimatedDelivery: null,
+            items: order.line_items.map(item => ({
+                name: item.name,
+                variant: item.variant_title || 'Default',
+                quantity: item.quantity,
+                price: item.price,
+                image: item.properties?.image || 'https://via.placeholder.com/200'
+            })),
+            activities: [],
+            shipment: null
+        };
+
+        // Try to get detailed tracking from Shiprocket if AWB exists
+        if (trackingNumber && process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD) {
+            try {
+                const trackingData = await shiprocketAPI(`/courier/track/awb/${trackingNumber}`);
+
+                if (trackingData && trackingData.tracking_data) {
+                    const tracking = trackingData.tracking_data;
+
+                    // Update response with Shiprocket data
+                    response.currentStatus = tracking.current_status || response.currentStatus;
+                    response.courierName = tracking.courier_name || response.courierName;
+                    response.estimatedDelivery = tracking.edd || null;
+
+                    // Add shipment details
+                    response.shipment = {
+                        origin: tracking.origin || null,
+                        destination: tracking.destination || null,
+                        weight: tracking.weight || null,
+                        packages: tracking.packages || null,
+                        deliveredDate: tracking.delivered_date || null,
+                        deliveredTo: tracking.delivered_to || null
+                    };
+
+                    // Add tracking activities
+                    if (tracking.shipment_track && Array.isArray(tracking.shipment_track)) {
+                        response.activities = tracking.shipment_track.map(activity => ({
+                            status: activity['sr-status-label'] || activity.status,
+                            activity: activity.activity || activity['sr-status-label'],
+                            date: activity.date,
+                            location: activity.location || null
+                        }));
+                    }
+
+                    // Check if delivered
+                    response.isDelivered = tracking.current_status?.toLowerCase().includes('delivered') || false;
+
+                    // Add message for old/delivered orders
+                    const orderDate = new Date(order.created_at);
+                    const daysSinceOrder = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
+                    response.isOldOrder = daysSinceOrder > 30;
+
+                    if (response.isDelivered) {
+                        response.message = '✅ Your order has been delivered successfully!';
+                    } else if (response.isOldOrder) {
+                        response.message = 'This order is older than 30 days. Some tracking details may no longer be available.';
+                    }
+                }
+            } catch (shiprocketError) {
+                console.error('Shiprocket tracking error:', shiprocketError.message);
+                // Continue with basic Shopify data if Shiprocket fails
+            }
+        }
+
+        res.json(response);
+
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Track order error:', error);
+        res.status(500).json({ error: 'Failed to track order. Please try again.' });
     }
 });
 
@@ -341,63 +539,60 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 // Get all requests (admin)
-app.get('/api/admin/requests', authenticateAdmin, (req, res) => {
-    const { status, type } = req.query;
+app.get('/api/admin/requests', authenticateAdmin, async (req, res) => {
+    try {
+        const { status, type } = req.query;
 
-    let requests = Array.from(storage.requests.values());
+        const requests = await getAllRequests({ status, type });
+        const stats = await getRequestStats();
 
-    if (status) {
-        requests = requests.filter(r => r.status === status);
+        res.json({ requests, stats });
+    } catch (error) {
+        console.error('Get requests error:', error);
+        res.status(500).json({ error: 'Failed to fetch requests' });
     }
-
-    if (type) {
-        requests = requests.filter(r => r.type === type);
-    }
-
-    const stats = {
-        total: storage.requests.size,
-        pending: requests.filter(r => r.status === 'pending').length,
-        approved: requests.filter(r => r.status === 'approved').length,
-        rejected: requests.filter(r => r.status === 'rejected').length
-    };
-
-    res.json({ requests, stats });
 });
 
 // Approve request (admin)
-app.post('/api/admin/approve', authenticateAdmin, (req, res) => {
-    const { requestId, notes } = req.body;
+app.post('/api/admin/approve', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, notes } = req.body;
 
-    const request = storage.requests.get(requestId);
-    if (!request) {
-        return res.status(404).json({ error: 'Request not found' });
+        const request = await updateRequestStatus(requestId, {
+            status: 'approved',
+            adminNotes: notes
+        });
+
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        res.json({ success: true, message: 'Request approved' });
+    } catch (error) {
+        console.error('Approve request error:', error);
+        res.status(500).json({ error: 'Failed to approve request' });
     }
-
-    request.status = 'approved';
-    request.adminNotes = notes;
-    request.approvedAt = new Date().toISOString();
-
-    storage.requests.set(requestId, request);
-
-    res.json({ success: true, message: 'Request approved' });
 });
 
 // Reject request (admin)
-app.post('/api/admin/reject', authenticateAdmin, (req, res) => {
-    const { requestId, notes } = req.body;
+app.post('/api/admin/reject', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, notes } = req.body;
 
-    const request = storage.requests.get(requestId);
-    if (!request) {
-        return res.status(404).json({ error: 'Request not found' });
+        const request = await updateRequestStatus(requestId, {
+            status: 'rejected',
+            adminNotes: notes
+        });
+
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        res.json({ success: true, message: 'Request rejected' });
+    } catch (error) {
+        console.error('Reject request error:', error);
+        res.status(500).json({ error: 'Failed to reject request' });
     }
-
-    request.status = 'rejected';
-    request.adminNotes = notes;
-    request.rejectedAt = new Date().toISOString();
-
-    storage.requests.set(requestId, request);
-
-    res.json({ success: true, message: 'Request rejected' });
 });
 
 // ==================== HEALTH CHECK ====================
@@ -407,12 +602,26 @@ app.get('/', (req, res) => {
         service: 'Offcomfrt Returns & Exchanges',
         status: 'running',
         authorized: !!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken),
+        shiprocketConfigured: !!(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD),
         endpoints: {
             oauth: '/auth/install',
-            public: ['/api/get-order', '/api/submit-exchange', '/api/submit-return', '/api/track-request/:id', '/api/track-order'],
+            public: ['/api/get-order', '/api/lookup-order', '/api/submit-exchange', '/api/submit-return', '/api/track-request/:id', '/api/track-order'],
             admin: ['/api/admin/login', '/api/admin/requests', '/api/admin/approve', '/api/admin/reject']
         }
     });
+});
+
+// ==================== ERROR HANDLING ====================
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: 'Internal server error', details: err.message });
 });
 
 // ==================== START SERVER ====================
@@ -420,7 +629,8 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📦 Store: ${process.env.SHOPIFY_STORE}`);
-    console.log(`🔐 Authorized: ${!!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken)}`);
+    console.log(`🔐 Shopify Authorized: ${!!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken)}`);
+    console.log(`📮 Shiprocket Configured: ${!!(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD)}`);
 
     if (!process.env.SHOPIFY_ACCESS_TOKEN && !storage.accessToken) {
         console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
