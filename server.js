@@ -460,6 +460,27 @@ app.post('/api/track-order', async (req, res) => {
         const trackingNumber = fulfillment.tracking_number;
         const trackingUrl = fulfillment.tracking_url;
 
+        // Fetch product images
+        const productIds = [...new Set(order.line_items.map(item => item.product_id).filter(id => id))];
+        const productImages = {};
+
+        if (productIds.length > 0) {
+            try {
+                const productsData = await shopifyAPI(`products.json?ids=${productIds.join(',')}&fields=id,image,images`);
+                if (productsData.products) {
+                    productsData.products.forEach(p => {
+                        if (p.image) {
+                            productImages[p.id] = p.image.src;
+                        } else if (p.images && p.images.length > 0) {
+                            productImages[p.id] = p.images[0].src;
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch product images for tracking:', err);
+            }
+        }
+
         // Prepare basic response
         const response = {
             orderNumber: order.name,
@@ -478,7 +499,7 @@ app.post('/api/track-order', async (req, res) => {
                 variant: item.variant_title || 'Default',
                 quantity: item.quantity,
                 price: item.price,
-                image: item.properties?.image || 'https://via.placeholder.com/200'
+                image: productImages[item.product_id] || item.properties?.image || 'https://via.placeholder.com/200'
             })),
             activities: [],
             shipment: null
