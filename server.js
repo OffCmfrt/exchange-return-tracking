@@ -624,15 +624,15 @@ app.post('/api/lookup-order', async (req, res) => {
         const orderDate = new Date(order.created_at);
         const daysSinceOrder = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
         const isFulfilled = order.fulfillment_status === 'fulfilled';
-        const isWithin30Days = daysSinceOrder <= 30;
+        const isWithin60Days = daysSinceOrder <= 60;
 
         const eligibilityMessage = !isFulfilled
             ? 'Order must be fulfilled before exchange/return'
-            : !isWithin30Days
-                ? 'Order is older than 30 days and not eligible'
+            : !isWithin60Days
+                ? 'Order is older than 60 days and not eligible'
                 : 'Order is eligible for exchange/return';
 
-        console.log('Eligibility:', { isFulfilled, isWithin30Days, daysSinceOrder });
+        console.log('Eligibility:', { isFulfilled, isWithin60Days, daysSinceOrder });
 
         // Fetch product images
         const productIds = [...new Set(order.line_items.map(item => item.product_id).filter(id => id))];
@@ -671,7 +671,7 @@ app.post('/api/lookup-order', async (req, res) => {
         }
 
         res.json({
-            isEligible: isFulfilled && isWithin30Days,
+            isEligible: isFulfilled && isWithin60Days,
             eligibilityMessage,
             order: {
                 orderNumber: order.name,
@@ -745,7 +745,21 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         let shopifyOrder = null;
         let originalAddressFormatted = '';
         try {
-            const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&limit=1`);
+            // 1. Try exact match
+            let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&status=any&limit=1`);
+
+            // 2. Fuzzy retry
+            if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                let retryOrderNumber = req.body.orderNumber;
+                if (retryOrderNumber.startsWith('#')) {
+                    retryOrderNumber = retryOrderNumber.substring(1);
+                } else {
+                    retryOrderNumber = '#' + retryOrderNumber;
+                }
+                console.log(`[${requestId}] Retrying order fetch with: ${retryOrderNumber}`);
+                shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=1`);
+            }
+
             shopifyOrder = shopifyData.orders && shopifyData.orders[0];
 
             if (shopifyOrder && shopifyOrder.shipping_address) {
@@ -851,7 +865,21 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         let shopifyOrder = null;
         let originalAddressFormatted = '';
         try {
-            const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&limit=1`);
+            // 1. Try exact match
+            let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&status=any&limit=1`);
+
+            // 2. Fuzzy retry
+            if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                let retryOrderNumber = req.body.orderNumber;
+                if (retryOrderNumber.startsWith('#')) {
+                    retryOrderNumber = retryOrderNumber.substring(1);
+                } else {
+                    retryOrderNumber = '#' + retryOrderNumber;
+                }
+                console.log(`[${requestId}] Retrying order fetch with: ${retryOrderNumber}`);
+                shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=1`);
+            }
+
             shopifyOrder = shopifyData.orders && shopifyData.orders[0];
 
             if (shopifyOrder && shopifyOrder.shipping_address) {
@@ -1121,12 +1149,12 @@ app.post('/api/track-order', async (req, res) => {
                     // Add message for old/delivered orders
                     const orderDate = new Date(order.created_at);
                     const daysSinceOrder = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
-                    response.isOldOrder = daysSinceOrder > 30;
+                    response.isOldOrder = daysSinceOrder > 60;
 
                     if (response.isDelivered) {
                         response.message = '✅ Your order has been delivered successfully!';
                     } else if (response.isOldOrder) {
-                        response.message = 'This order is older than 30 days. Some tracking details may no longer be available.';
+                        response.message = 'This order is older than 60 days. Some tracking details may no longer be available.';
                     }
                 }
             } catch (shiprocketError) {
