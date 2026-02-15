@@ -69,9 +69,22 @@ async function getAllRequests(filters = {}) {
         query = query.eq('type', filters.type);
     }
 
+    if (filters.date) {
+        // Filter by specific date (ignoring time)
+        // usage: created_at >= start_of_day AND created_at <= end_of_day
+        const startDate = new Date(filters.date);
+        startDate.setHours(0, 0, 0, 0);
+
+        const endDate = new Date(filters.date);
+        endDate.setHours(23, 59, 59, 999);
+
+        query = query.gte('created_at', startDate.toISOString())
+            .lte('created_at', endDate.toISOString());
+    }
+
     query = query.order('created_at', { ascending: false });
 
-    const { data, error } = await supabase.from('requests').select('*', query);
+    const { data, error } = await query;
 
     if (error) throw error;
 
