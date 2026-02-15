@@ -229,6 +229,8 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             order_id: requestData.requestId,
             order_date: orderDate,
             channel_id: '', // Optional
+
+            // Pickup Details (Customer Address)
             pickup_customer_name: address.first_name,
             pickup_last_name: address.last_name || '',
             pickup_address: address.address1,
@@ -239,6 +241,19 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             pickup_pincode: address.zip,
             pickup_email: shopifyOrder.email || 'noreply@example.com',
             pickup_phone: address.phone || shopifyOrder.phone || '9999999999',
+
+            // Shipping Details (Warehouse - Destination)
+            shipping_customer_name: 'BURB MANUFACTURES PVT LTD',
+            shipping_last_name: '',
+            shipping_address: 'VILLAGE - BAIRAWAS, NEAR GOVT. SCHOOL',
+            shipping_address_2: '',
+            shipping_city: 'MAHENDERGARH',
+            shipping_state: 'Haryana',
+            shipping_country: 'IN',
+            shipping_pincode: '123028',
+            shipping_email: 'returns@offcomfort.com',
+            shipping_phone: '9138514222',
+
             order_items: returnItems,
             payment_method: 'Prepaid',
             total_discount: 0,
