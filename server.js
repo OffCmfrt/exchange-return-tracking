@@ -707,19 +707,22 @@ app.post('/api/get-variants', async (req, res) => {
 
 // Submit exchange request
 app.post('/api/submit-exchange', upload.any(), async (req, res) => {
-    try {
-        const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    console.log(`[${requestId}] 📥 Received exchange submission`);
 
+    try {
         // Parse items if string
         let items = req.body.items;
         if (typeof items === 'string') {
             try {
                 items = JSON.parse(items);
             } catch (e) {
-                console.error('Failed to parse items:', e);
+                console.error(`[${requestId}] Failed to parse items:`, e);
                 items = [];
             }
         }
+
+        console.log(`[${requestId}] Order: ${req.body.orderNumber}, Items: ${items.length}, PaymentId: ${req.body.paymentId || 'None'}`);
 
         // Get Cloudinary Image URLs
         const imageUrls = req.files ? req.files.map(file => file.path) : [];
@@ -738,24 +741,27 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 ].filter(Boolean).join(', ');
             }
         } catch (err) {
-            console.error('Failed to fetch Shopify order for submission:', err);
+            console.error(`[${requestId}] Failed to fetch Shopify order for submission:`, err);
         }
 
         const customerName = req.body.customerName || (shopifyOrder?.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer');
         const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
         const email = req.body.email || shopifyOrder?.email;
 
-        // Verify Payment logic...
+        // Verify Payment logic
         if (req.body.paymentId) {
             if (!razorpay) {
+                console.error(`[${requestId}] Payment config missing`);
                 return res.status(500).json({ error: 'Payment configuration missing on server' });
             }
             try {
                 const payment = await razorpay.payments.fetch(req.body.paymentId);
+                console.log(`[${requestId}] Payment Status: ${payment.status}`);
                 if (payment.status !== 'captured' && payment.status !== 'authorized') {
                     return res.status(400).json({ error: 'Payment not successful' });
                 }
             } catch (payError) {
+                console.error(`[${requestId}] Payment Verification Failed:`, payError);
                 return res.status(400).json({ error: 'Invalid Payment ID' });
             }
         }
@@ -768,17 +774,20 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         if (process.env.SHIPROCKET_EMAIL && shopifyOrder) {
             try {
+                console.log(`[${requestId}] Creating Shiprocket Return...`);
                 const shiprocketData = await createShiprocketReturnOrder({ ...req.body, requestId, items }, shopifyOrder);
                 if (shiprocketData && shiprocketData.shipment_id) {
                     shipmentId = shiprocketData.shipment_id;
                     awbNumber = shiprocketData.awb_code;
                     pickupDate = shiprocketData.pickup_scheduled_date;
+                    console.log(`[${requestId}] Shiprocket Return Created: ${shipmentId}`);
                 }
             } catch (srError) {
-                console.error('Shiprocket return creation failed:', srError);
+                console.error(`[${requestId}] Shiprocket return creation failed:`, srError);
             }
         }
 
+        console.log(`[${requestId}] Saving Request to Database...`);
         await createRequest({
             requestId,
             ...req.body,
@@ -794,13 +803,14 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             pickupDate
         });
 
+        console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
         res.json({
             success: true,
             requestId,
             message: 'Exchange request submitted successfully'
         });
     } catch (error) {
-        console.error('Submit exchange error:', error);
+        console.error(`[${requestId}] ❌ Submit exchange error:`, error);
         res.status(500).json({ error: error.message });
     }
 });
