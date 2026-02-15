@@ -1164,11 +1164,11 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
 
         // Trigger Forward Shipment & Create Store Order for Exchange
         if (requestDetails && requestDetails.type === 'exchange' && requestDetails.status !== 'approved') {
-            // 1. Create Shopify Order
-            const newOrder = await createShopifyExchangeOrder(requestDetails);
-            if (newOrder) {
-                adminNotes += `\nExchange Order Created: #${newOrder.order_number}`;
-            }
+            // 1. Create Shopify Order - SKIPPED AS PER USER REQUEST
+            // const newOrder = await createShopifyExchangeOrder(requestDetails);
+            // if (newOrder) {
+            //     adminNotes += `\nExchange Order Created: #${newOrder.order_number}`;
+            // }
 
             // 2. Create Shiprocket Forward Shipment (if configured)
             if (process.env.SHIPROCKET_EMAIL) {
