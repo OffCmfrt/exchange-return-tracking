@@ -210,7 +210,8 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
         const address = shopifyOrder.shipping_address || shopifyOrder.customer.default_address;
 
         if (!address) {
-            throw new Error('No address found for return pickup');
+            console.error('Shiprocket Error: No address found for return pickup');
+            return null;
         }
 
         const orderDate = new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0];
@@ -248,7 +249,7 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             weight: 0.5
         };
 
-        console.log('Creating Shiprocket return order:', payload.order_id);
+        console.log('🚀 Creating Shiprocket Return. Payload:', JSON.stringify(payload, null, 2));
 
         const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/return', {
             method: 'POST',
@@ -260,15 +261,16 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
         });
 
         const data = await response.json();
+        console.log('📦 Shiprocket Response:', JSON.stringify(data, null, 2));
 
         if (data.status_code === 422 || (data.errors && Object.keys(data.errors).length > 0)) {
-            console.error('Shiprocket validation error:', JSON.stringify(data));
+            console.error('❌ Shiprocket Validation Error:', JSON.stringify(data));
             return null;
         }
 
         return data;
     } catch (error) {
-        console.error('Failed to create Shiprocket return:', error);
+        console.error('❌ Failed to create Shiprocket return:', error);
         return null;
     }
 }
