@@ -307,29 +307,69 @@ async function createShiprocketForwardOrder(requestData) {
     try {
         const token = await getShiprocketToken();
 
-        // Address Handling
+        // 1. Fetch Shopify Order if we need ANY missing data (Address or Customer)
+        let shopifyOrder = null;
+        const needsAddress = !requestData.newAddress;
+        const needsCustomer = !requestData.customerName || requestData.customerName === 'Customer' || !requestData.customerPhone || requestData.customerPhone === 'null';
+
+        if (needsAddress || needsCustomer) {
+            try {
+                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestData.orderNumber)}&limit=1`);
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+            } catch (e) {
+                console.error('Failed to fetch original order for forward creation:', e);
+            }
+        }
+
+        // 2. Determine Address
         let billingAddress = requestData.newAddress;
         let billingCity = requestData.newCity;
         let billingPincode = requestData.newPincode;
 
-        // If no new address, fetch original order to get address parts
         if (!billingAddress) {
-            try {
-                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestData.orderNumber)}&limit=1`);
-                const order = shopifyData.orders && shopifyData.orders[0];
-                if (order && order.shipping_address) {
-                    billingAddress = order.shipping_address.address1;
-                    billingCity = order.shipping_address.city;
-                    billingPincode = order.shipping_address.zip;
-                }
-            } catch (e) {
-                console.error('Failed to fetch original address for forward order:', e);
+            if (shopifyOrder && shopifyOrder.shipping_address) {
+                billingAddress = shopifyOrder.shipping_address.address1;
+                billingCity = shopifyOrder.shipping_address.city;
+                billingPincode = shopifyOrder.shipping_address.zip;
+            } else {
+                billingAddress = requestData.shippingAddress || 'Address not available';
             }
         }
 
-        if (!billingAddress) {
-            // Fallback to stored shipping_address string if possible, or fail gracefully
-            billingAddress = requestData.shippingAddress || 'Address not available';
+        // 3. Determine Customer Details
+        let customerName = requestData.customerName;
+        if (!customerName || customerName === 'Customer' || customerName === 'null') {
+            if (shopifyOrder) {
+                customerName = `${shopifyOrder.customer?.first_name || ''} ${shopifyOrder.customer?.last_name || ''}`.trim();
+                if (!customerName) customerName = shopifyOrder.shipping_address?.name || 'Customer';
+            } else {
+                customerName = 'Customer';
+            }
+        }
+
+        let customerPhone = requestData.customerPhone;
+        // Check for null string or placeholder
+        if (!customerPhone || customerPhone === 'null' || customerPhone === '9999999999') {
+            if (shopifyOrder) {
+                customerPhone = shopifyOrder.shipping_address?.phone || shopifyOrder.customer?.phone || '';
+            }
+        }
+
+        // Sanitize Phone (Shiprocket requires 10 digits for India)
+        // Remove all non-digits
+        customerPhone = (customerPhone || '').replace(/\D/g, '');
+        // If it starts with 91 and is 12 digits, remove 91
+        if (customerPhone.length === 12 && customerPhone.startsWith('91')) {
+            customerPhone = customerPhone.substring(2);
+        }
+        // If still > 10 digits, take last 10 (risky but often correct for mobile)
+        if (customerPhone.length > 10) {
+            customerPhone = customerPhone.slice(-10);
+        }
+        // If invalid/empty, fallback to dummy but log warning
+        if (customerPhone.length < 10) {
+            console.warn(`⚠️ Invalid phone number for ${requestData.requestId}: ${customerPhone}. Using fallback.`);
+            customerPhone = '9999999999';
         }
 
         // Forward Order Items (Replacement Items)
@@ -347,7 +387,7 @@ async function createShiprocketForwardOrder(requestData) {
             order_id: requestData.requestId + '-FWD',
             order_date: new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0],
             pickup_location: 'warehouse 1', // As provided by user
-            billing_customer_name: requestData.customerName || 'Customer',
+            billing_customer_name: customerName,
             billing_last_name: '',
             billing_address: billingAddress,
             billing_city: billingCity || '',
@@ -355,7 +395,7 @@ async function createShiprocketForwardOrder(requestData) {
             billing_state: '', // Auto-detected usually or separate field
             billing_country: 'India',
             billing_email: requestData.email,
-            billing_phone: requestData.customerPhone || '9999999999',
+            billing_phone: customerPhone,
             shipping_is_billing: true,
             order_items: orderItems,
             payment_method: 'Prepaid',
