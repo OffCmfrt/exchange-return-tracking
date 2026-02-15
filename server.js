@@ -1179,9 +1179,9 @@ app.post('/api/admin/login', (req, res) => {
 // Get all requests (admin)
 app.get('/api/admin/requests', authenticateAdmin, async (req, res) => {
     try {
-        const { status, type } = req.query;
+        const { status, type, date } = req.query;
 
-        const requests = await getAllRequests({ status, type });
+        const requests = await getAllRequests({ status, type, date });
         const stats = await getRequestStats();
 
         res.json({ requests, stats });
