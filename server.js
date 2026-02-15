@@ -438,6 +438,7 @@ async function createShopifyExchangeOrder(requestData) {
             }
         }
 
+
         if (lineItems.length === 0) {
             console.error('No valid replacement items identified for Shopify Order creation.');
             return null;
