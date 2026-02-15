@@ -25,7 +25,10 @@ async function createRequest(requestData) {
             new_city: requestData.newCity,
             new_pincode: requestData.newPincode,
             payment_id: requestData.paymentId,
-            payment_amount: requestData.paymentAmount
+            payment_amount: requestData.paymentAmount,
+            awb_number: requestData.awbNumber,
+            shipment_id: requestData.shipmentId,
+            pickup_date: requestData.pickupDate
         }])
         .select()
         .single();
