@@ -5,6 +5,7 @@ require('dotenv').config();
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const Razorpay = require('razorpay');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -60,6 +61,18 @@ try {
 }
 
 const upload = multer({ storage: uploadStorage });
+
+// ==================== RAZORPAY CONFIG ====================
+let razorpay;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    razorpay = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
+    console.log('✅ Razorpay initialized');
+} else {
+    console.warn('⚠️ Razorpay credentials missing - Payments may fail or be unverified');
+}
 
 // ==================== OAUTH ROUTES ====================
 
@@ -497,6 +510,24 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         const imageUrls = req.files ? req.files.map(file => file.path) : [];
 
         // Create Shiprocket Return Order (if enabled)
+        // Verify Payment if paymentId is present
+        if (req.body.paymentId) {
+            if (!razorpay) {
+                return res.status(500).json({ error: 'Payment configuration missing on server' });
+            }
+            try {
+                const payment = await razorpay.payments.fetch(req.body.paymentId);
+                if (payment.status !== 'captured' && payment.status !== 'authorized') {
+                    return res.status(400).json({ error: 'Payment not successful' });
+                }
+                console.log('✅ Payment verified:', req.body.paymentId);
+            } catch (payError) {
+                console.error('Payment verification failed:', payError);
+                return res.status(400).json({ error: 'Invalid Payment ID' });
+            }
+        }
+
+        // Create Shiprocket Return Order (if enabled)
         if (process.env.SHIPROCKET_EMAIL) {
             try {
                 // Fetch full order to get address
@@ -551,6 +582,23 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         // Get Cloudinary Image URLs
         const imageUrls = req.files ? req.files.map(file => file.path) : [];
+
+        // Verify Payment (if return has fee)
+        if (req.body.paymentId) {
+            if (!razorpay) {
+                return res.status(500).json({ error: 'Payment configuration missing on server' });
+            }
+            try {
+                const payment = await razorpay.payments.fetch(req.body.paymentId);
+                if (payment.status !== 'captured' && payment.status !== 'authorized') {
+                    return res.status(400).json({ error: 'Payment not successful' });
+                }
+                console.log('✅ Payment verified:', req.body.paymentId);
+            } catch (payError) {
+                console.error('Payment verification failed:', payError);
+                return res.status(400).json({ error: 'Invalid Payment ID' });
+            }
+        }
 
         // Create Shiprocket Return Order (if enabled)
         if (process.env.SHIPROCKET_EMAIL) {
