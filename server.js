@@ -1146,3 +1146,144 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
         });
 
         if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        res.json({ success: true, message: 'Request approved' });
+    } catch (error) {
+        console.error('Approve request error:', error);
+        res.status(500).json({ error: 'Failed to approve request' });
+    }
+});
+
+// Sync Status Endpoint
+app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
+    try {
+        // TEST MODE: Use "TEST_MODE" query param or just force it for now as requested
+        const TEST_MODE = true; // Set to false later
+
+        const requests = await getAllRequests({ status: 'scheduled' }); // Or get ALL pending/approved?
+        // Let's get relevant statuses where shipment is active
+        // But getAllRequests filters by single status?
+        // We'll iterate common tracking statuses: scheduled, picked_up, in_transit
+        // Or just fetch ALL and filter in JS (inefficient but works for small scale)
+        const allRequests = await getAllRequests({});
+
+        let activeRequests = allRequests.filter(r =>
+            ['scheduled', 'picked_up', 'in_transit'].includes(r.status) && (r.awbNumber || TEST_MODE)
+        );
+
+        // If TEST MODE, include ALL pending/scheduled requests even without AWB
+        if (TEST_MODE) {
+            activeRequests = allRequests.filter(r => ['scheduled', 'pending'].includes(r.status));
+        }
+
+        let updatedCount = 0;
+
+        for (const req of activeRequests) {
+            try {
+                if (TEST_MODE) {
+                    console.log(`🧪 TEST_MODE: Forcing ${req.requestId} to DELIVERED`);
+                    // If status is scheduled/pending, force to delivered (simulate successful return)
+                    if (req.status !== 'delivered') {
+                        await updateRequestStatus(req.requestId, { status: 'delivered' });
+                        updatedCount++;
+                    }
+                    continue; // Skip real API
+                }
+
+                // Call Shiprocket Tracking API
+                const trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
+                if (trackingData && trackingData.tracking_data && trackingData.tracking_data.shipment_track) {
+                    const currentStatus = trackingData.tracking_data.current_status; // e.g., "DELIVERED"
+
+                    let newStatus = req.status;
+                    // Map Shiprocket status to our status
+                    const statusUpper = currentStatus.toUpperCase();
+                    if (statusUpper.includes('DELIVERED')) newStatus = 'delivered';
+                    else if (statusUpper.includes('PICKED UP') || statusUpper.includes('OUT FOR PICKUP')) newStatus = 'picked_up';
+                    else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED')) newStatus = 'in_transit';
+
+                    if (newStatus !== req.status) {
+                        await updateRequestStatus(req.requestId, { status: newStatus });
+                        updatedCount++;
+                    }
+                }
+            } catch (err) {
+                console.error(`Failed to sync ${req.requestId}:`, err.message);
+                if (TEST_MODE) { // Try forcing anyway if error (e.g. no AWB)
+                    await updateRequestStatus(req.requestId, { status: 'delivered' });
+                    updatedCount++;
+                }
+            }
+        }
+
+        res.json({ success: true, updated: updatedCount, message: TEST_MODE ? 'Test Mode Enabled: All pending requests marked Delivered' : 'Sync complete' });
+    } catch (error) {
+        console.error('Sync error:', error);
+        res.status(500).json({ error: 'Failed to sync status' });
+    }
+});
+
+// Reject request (admin) - supports legacy endpoints
+app.post(['/api/admin/reject', '/api/admin/reject-return', '/api/admin/reject-exchange'], authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, notes } = req.body;
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'rejected',
+            adminNotes: notes
+        });
+
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        res.json({ success: true, message: 'Request rejected' });
+    } catch (error) {
+        console.error('Reject request error:', error);
+        res.status(500).json({ error: 'Failed to reject request' });
+    }
+});
+
+// ==================== HEALTH CHECK ====================
+
+app.get('/', (req, res) => {
+    res.json({
+        service: 'Offcomfrt Returns & Exchanges',
+        status: 'running',
+        authorized: !!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken),
+        shiprocketConfigured: !!(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD),
+        endpoints: {
+            oauth: '/auth/install',
+            public: ['/api/get-order', '/api/lookup-order', '/api/submit-exchange', '/api/submit-return', '/api/track-request/:id', '/api/track-order'],
+            admin: ['/api/admin/login', '/api/admin/requests', '/api/admin/approve', '/api/admin/reject']
+        }
+    });
+});
+
+// ==================== ERROR HANDLING ====================
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: 'Internal server error', details: err.message });
+});
+
+// ==================== START SERVER ====================
+
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📦 Store: ${process.env.SHOPIFY_STORE}`);
+    console.log(`🔐 Shopify Authorized: ${!!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken)}`);
+    console.log(`📮 Shiprocket Configured: ${!!(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD)}`);
+
+    if (!process.env.SHOPIFY_ACCESS_TOKEN && !storage.accessToken) {
+        console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
+    }
+});
