@@ -717,13 +717,33 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
     }
 });
 
-// Track request
+// Track request (Return/Exchange)
 app.get('/api/track-request/:requestId', async (req, res) => {
     try {
         const request = await getRequestById(req.params.requestId);
 
         if (!request) {
             return res.status(404).json({ error: 'Request not found' });
+        }
+
+        // Try to fetch Shiprocket Data if AWB exists
+        if (request.awbNumber && process.env.SHIPROCKET_EMAIL) {
+            try {
+                const trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`);
+                if (trackingData && trackingData.tracking_data) {
+                    const tracking = trackingData.tracking_data;
+                    // Add shipment details to request object
+                    request.shipment = {
+                        origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
+                        destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
+                        status: tracking.current_status,
+                        edd: tracking.edd || null,
+                        activities: tracking.shipment_track || []
+                    };
+                }
+            } catch (err) {
+                console.error('Failed to fetch Shiprocket tracking for request:', err.message);
+            }
         }
 
         res.json(request);
@@ -862,8 +882,8 @@ app.post('/api/track-order', async (req, res) => {
 
                     // Add shipment details
                     response.shipment = {
-                        origin: tracking.origin || null,
-                        destination: tracking.destination || null,
+                        origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
+                        destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
                         weight: tracking.weight || null,
                         packages: tracking.packages || null,
                         deliveredDate: tracking.delivered_date || null,
@@ -997,20 +1017,39 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
 // Sync Status Endpoint
 app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     try {
+        // TEST MODE: Use "TEST_MODE" query param or just force it for now as requested
+        const TEST_MODE = true; // Set to false later
+
         const requests = await getAllRequests({ status: 'scheduled' }); // Or get ALL pending/approved?
         // Let's get relevant statuses where shipment is active
         // But getAllRequests filters by single status?
         // We'll iterate common tracking statuses: scheduled, picked_up, in_transit
         // Or just fetch ALL and filter in JS (inefficient but works for small scale)
         const allRequests = await getAllRequests({});
-        const activeRequests = allRequests.filter(r =>
-            ['scheduled', 'picked_up', 'in_transit'].includes(r.status) && r.awbNumber
+
+        let activeRequests = allRequests.filter(r =>
+            ['scheduled', 'picked_up', 'in_transit'].includes(r.status) && (r.awbNumber || TEST_MODE)
         );
+
+        // If TEST MODE, include ALL pending/scheduled requests even without AWB
+        if (TEST_MODE) {
+            activeRequests = allRequests.filter(r => ['scheduled', 'pending'].includes(r.status));
+        }
 
         let updatedCount = 0;
 
         for (const req of activeRequests) {
             try {
+                if (TEST_MODE) {
+                    console.log(`🧪 TEST_MODE: Forcing ${req.requestId} to DELIVERED`);
+                    // If status is scheduled/pending, force to delivered (simulate successful return)
+                    if (req.status !== 'delivered') {
+                        await updateRequestStatus(req.requestId, { status: 'delivered' });
+                        updatedCount++;
+                    }
+                    continue; // Skip real API
+                }
+
                 // Call Shiprocket Tracking API
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
                 if (trackingData && trackingData.tracking_data && trackingData.tracking_data.shipment_track) {
@@ -1030,10 +1069,14 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
                 }
             } catch (err) {
                 console.error(`Failed to sync ${req.requestId}:`, err.message);
+                if (TEST_MODE) { // Try forcing anyway if error (e.g. no AWB)
+                    await updateRequestStatus(req.requestId, { status: 'delivered' });
+                    updatedCount++;
+                }
             }
         }
 
-        res.json({ success: true, updated: updatedCount });
+        res.json({ success: true, updated: updatedCount, message: TEST_MODE ? 'Test Mode Enabled: All pending requests marked Delivered' : 'Sync complete' });
     } catch (error) {
         console.error('Sync error:', error);
         res.status(500).json({ error: 'Failed to sync status' });
