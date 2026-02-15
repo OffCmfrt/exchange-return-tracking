@@ -307,8 +307,34 @@ async function createShiprocketForwardOrder(requestData) {
     try {
         const token = await getShiprocketToken();
 
+        // Address Handling
+        let billingAddress = requestData.newAddress;
+        let billingCity = requestData.newCity;
+        let billingPincode = requestData.newPincode;
+
+        // If no new address, fetch original order to get address parts
+        if (!billingAddress) {
+            try {
+                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestData.orderNumber)}&limit=1`);
+                const order = shopifyData.orders && shopifyData.orders[0];
+                if (order && order.shipping_address) {
+                    billingAddress = order.shipping_address.address1;
+                    billingCity = order.shipping_address.city;
+                    billingPincode = order.shipping_address.zip;
+                }
+            } catch (e) {
+                console.error('Failed to fetch original address for forward order:', e);
+            }
+        }
+
+        if (!billingAddress) {
+            // Fallback to stored shipping_address string if possible, or fail gracefully
+            billingAddress = requestData.shippingAddress || 'Address not available';
+        }
+
         // Forward Order Items (Replacement Items)
-        const orderItems = requestData.items.map(item => ({
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        const orderItems = items.map(item => ({
             name: item.name + (item.replacementVariant ? ` (${item.replacementVariant})` : ''),
             sku: String(item.variantId || item.id) + '-EXCH',
             units: parseInt(item.quantity) || 1,
@@ -321,11 +347,11 @@ async function createShiprocketForwardOrder(requestData) {
             order_id: requestData.requestId + '-FWD',
             order_date: new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0],
             pickup_location: 'warehouse 1', // As provided by user
-            billing_customer_name: requestData.customerName,
+            billing_customer_name: requestData.customerName || 'Customer',
             billing_last_name: '',
-            billing_address: requestData.shippingAddress || requestData.newAddress,
-            billing_city: requestData.newCity || '', // Fallback if missing
-            billing_pincode: requestData.newPincode || '',
+            billing_address: billingAddress,
+            billing_city: billingCity || '',
+            billing_pincode: billingPincode || '',
             billing_state: '', // Auto-detected usually or separate field
             billing_country: 'India',
             billing_email: requestData.email,
@@ -356,6 +382,97 @@ async function createShiprocketForwardOrder(requestData) {
         return data;
     } catch (error) {
         console.error('❌ Failed to create forward order:', error);
+        return null;
+    }
+}
+
+async function createShopifyExchangeOrder(requestData) {
+    try {
+        console.log('Creating Shopify Exchange Order for:', requestData.requestId);
+
+        // Fetch original order
+        const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestData.orderNumber)}&limit=1`);
+        const originalOrder = shopifyData.orders && shopifyData.orders[0];
+
+        if (!originalOrder) {
+            console.error('Original order not found for exchange creation');
+            return null;
+        }
+
+        // Determine Address
+        let shippingAddress = { ...originalOrder.shipping_address };
+        if (requestData.newAddress) {
+            shippingAddress = {
+                address1: requestData.newAddress,
+                city: requestData.newCity,
+                zip: requestData.newPincode,
+                country: 'India',
+                first_name: requestData.customerName?.split(' ')[0] || originalOrder.customer?.first_name || 'Customer',
+                last_name: requestData.customerName?.split(' ').slice(1).join(' ') || originalOrder.customer?.last_name || '',
+                phone: requestData.customerPhone || originalOrder.shipping_address?.phone
+            };
+        }
+
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        const lineItems = [];
+
+        for (const item of items) {
+            if (item.replacementVariant && item.productId) {
+                try {
+                    const variantsData = await shopifyAPI(`products/${item.productId}/variants.json`);
+                    const variants = variantsData.variants || [];
+                    // Find variant matching the option (Size) - strict or loose match
+                    const variant = variants.find(v => v.title === item.replacementVariant || v.option1 === item.replacementVariant || v.option2 === item.replacementVariant);
+
+                    if (variant) {
+                        lineItems.push({
+                            variant_id: variant.id,
+                            quantity: parseInt(item.quantity) || 1
+                        });
+                    } else {
+                        console.warn(`Replacement variant ${item.replacementVariant} not found for product ${item.productId}.`);
+                    }
+                } catch (e) {
+                    console.error(`Failed to fetch variants for product ${item.productId}:`, e);
+                }
+            }
+        }
+
+        if (lineItems.length === 0) {
+            console.error('No valid replacement items identified for Shopify Order creation.');
+            return null;
+        }
+
+        const orderPayload = {
+            order: {
+                line_items: lineItems,
+                shipping_address: shippingAddress,
+                billing_address: shippingAddress,
+                customer: {
+                    id: originalOrder.customer?.id
+                },
+                financial_status: 'paid',
+                send_receipt: true,
+                tags: `Exchange, Replacement, Orig-${requestData.orderNumber}`,
+                note: `Exchange for Request ${requestData.requestId}. Reason: ${requestData.reason}`
+            }
+        };
+
+        const response = await shopifyAPI('orders.json', {
+            method: 'POST',
+            body: JSON.stringify(orderPayload)
+        });
+
+        if (response.order) {
+            console.log('✅ Shopify Exchange Order Created:', response.order.name);
+            return response.order;
+        } else {
+            console.error('Failed to create Shopify order:', response);
+            return null;
+        }
+
+    } catch (error) {
+        console.error('Failed to create Shopify exchange order:', error);
         return null;
     }
 }
@@ -566,8 +683,28 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         // Get Cloudinary Image URLs
         const imageUrls = req.files ? req.files.map(file => file.path) : [];
 
-        // Create Shiprocket Return Order (if enabled)
-        // Verify Payment if paymentId is present
+        // Fetch Order for details
+        let shopifyOrder = null;
+        let originalAddressFormatted = '';
+        try {
+            const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&limit=1`);
+            shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+
+            if (shopifyOrder && shopifyOrder.shipping_address) {
+                const addr = shopifyOrder.shipping_address;
+                originalAddressFormatted = [
+                    addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country
+                ].filter(Boolean).join(', ');
+            }
+        } catch (err) {
+            console.error('Failed to fetch Shopify order for submission:', err);
+        }
+
+        const customerName = req.body.customerName || (shopifyOrder?.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer');
+        const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
+        const email = req.body.email || shopifyOrder?.email;
+
+        // Verify Payment logic...
         if (req.body.paymentId) {
             if (!razorpay) {
                 return res.status(500).json({ error: 'Payment configuration missing on server' });
@@ -577,13 +714,10 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 if (payment.status !== 'captured' && payment.status !== 'authorized') {
                     return res.status(400).json({ error: 'Payment not successful' });
                 }
-                console.log('✅ Payment verified:', req.body.paymentId);
             } catch (payError) {
-                console.error('Payment verification failed:', payError);
                 return res.status(400).json({ error: 'Invalid Payment ID' });
             }
         }
-
 
 
         // Create Shiprocket Return Order (if enabled)
@@ -591,21 +725,13 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         let shipmentId = null;
         let pickupDate = null;
 
-        if (process.env.SHIPROCKET_EMAIL) {
+        if (process.env.SHIPROCKET_EMAIL && shopifyOrder) {
             try {
-                // Fetch full order to get address
-                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&limit=1`);
-                const shopifyOrder = shopifyData.orders && shopifyData.orders[0];
-
-                if (shopifyOrder) {
-                    const shiprocketData = await createShiprocketReturnOrder({ ...req.body, requestId, items }, shopifyOrder);
-                    if (shiprocketData && shiprocketData.shipment_id) {
-                        console.log('Shiprocket return created. ID:', shiprocketData.shipment_id);
-                        shipmentId = shiprocketData.shipment_id;
-                        awbNumber = shiprocketData.awb_code;
-                        // pickup_scheduled_date might be available
-                        pickupDate = shiprocketData.pickup_scheduled_date;
-                    }
+                const shiprocketData = await createShiprocketReturnOrder({ ...req.body, requestId, items }, shopifyOrder);
+                if (shiprocketData && shiprocketData.shipment_id) {
+                    shipmentId = shiprocketData.shipment_id;
+                    awbNumber = shiprocketData.awb_code;
+                    pickupDate = shiprocketData.pickup_scheduled_date;
                 }
             } catch (srError) {
                 console.error('Shiprocket return creation failed:', srError);
@@ -615,9 +741,13 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         await createRequest({
             requestId,
             ...req.body,
+            email,
+            customerName,
+            customerPhone,
             items,
             images: imageUrls,
             type: 'exchange',
+            shippingAddress: originalAddressFormatted, // Save original address
             awbNumber,
             shipmentId,
             pickupDate
@@ -650,57 +780,63 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             }
         }
 
-        // Get Cloudinary Image URLs
         const imageUrls = req.files ? req.files.map(file => file.path) : [];
 
-        // Verify Payment (if return has fee)
-        if (req.body.paymentId) {
-            if (!razorpay) {
-                return res.status(500).json({ error: 'Payment configuration missing on server' });
+        // Fetch Order for details
+        let shopifyOrder = null;
+        let originalAddressFormatted = '';
+        try {
+            const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&limit=1`);
+            shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+
+            if (shopifyOrder && shopifyOrder.shipping_address) {
+                const addr = shopifyOrder.shipping_address;
+                originalAddressFormatted = [
+                    addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country
+                ].filter(Boolean).join(', ');
             }
-            try {
-                const payment = await razorpay.payments.fetch(req.body.paymentId);
-                if (payment.status !== 'captured' && payment.status !== 'authorized') {
-                    return res.status(400).json({ error: 'Payment not successful' });
-                }
-                console.log('✅ Payment verified:', req.body.paymentId);
-            } catch (payError) {
-                console.error('Payment verification failed:', payError);
-                return res.status(400).json({ error: 'Invalid Payment ID' });
-            }
+        } catch (err) {
+            console.error('Failed to fetch Shopify order for submission:', err);
         }
 
-        // Create Shiprocket Return Order (if enabled)
+        const customerName = req.body.customerName || (shopifyOrder?.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer');
+        const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
+        const email = req.body.email || shopifyOrder?.email;
+
+        if (req.body.paymentId) {
+            // Payment verif logic...
+            if (!razorpay) return res.status(500).json({ error: 'Config error' });
+            try {
+                const payment = await razorpay.payments.fetch(req.body.paymentId);
+                if (payment.status !== 'captured' && payment.status !== 'authorized') return res.status(400).json({ error: 'Payment failed' });
+            } catch (e) { return res.status(400).json({ error: 'Invalid payment' }); }
+        }
+
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (process.env.SHIPROCKET_EMAIL) {
+        if (process.env.SHIPROCKET_EMAIL && shopifyOrder) {
             try {
-                // Fetch full order to get address
-                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&limit=1`);
-                const shopifyOrder = shopifyData.orders && shopifyData.orders[0];
-
-                if (shopifyOrder) {
-                    const shiprocketData = await createShiprocketReturnOrder({ ...req.body, requestId, items }, shopifyOrder);
-                    if (shiprocketData && shiprocketData.shipment_id) {
-                        console.log('Shiprocket return created. ID:', shiprocketData.shipment_id);
-                        shipmentId = shiprocketData.shipment_id;
-                        awbNumber = shiprocketData.awb_code;
-                        pickupDate = shiprocketData.pickup_scheduled_date;
-                    }
+                const shiprocketData = await createShiprocketReturnOrder({ ...req.body, requestId, items }, shopifyOrder);
+                if (shiprocketData && shiprocketData.shipment_id) {
+                    shipmentId = shiprocketData.shipment_id;
+                    awbNumber = shiprocketData.awb_code;
+                    pickupDate = shiprocketData.pickup_scheduled_date;
                 }
-            } catch (srError) {
-                console.error('Shiprocket return creation failed:', srError);
-            }
+            } catch (e) { console.error(e); }
         }
 
         await createRequest({
             requestId,
             ...req.body,
+            email,
+            customerName,
+            customerPhone,
             items,
             images: imageUrls,
             type: 'return',
+            shippingAddress: originalAddressFormatted,
             awbNumber,
             shipmentId,
             pickupDate
@@ -985,15 +1121,20 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
         const requestDetails = await getRequestById(requestId);
         let adminNotes = notes || '';
 
-        // Trigger Forward Shipment for Exchange if Shiprocket configured
-        if (requestDetails && requestDetails.type === 'exchange' && process.env.SHIPROCKET_EMAIL) {
-            if (requestDetails.status !== 'approved') {
+        // Trigger Forward Shipment & Create Store Order for Exchange
+        if (requestDetails && requestDetails.type === 'exchange' && requestDetails.status !== 'approved') {
+            // 1. Create Shopify Order
+            const newOrder = await createShopifyExchangeOrder(requestDetails);
+            if (newOrder) {
+                adminNotes += `\nExchange Order Created: #${newOrder.order_number}`;
+            }
+
+            // 2. Create Shiprocket Forward Shipment (if configured)
+            if (process.env.SHIPROCKET_EMAIL) {
                 console.log('Creating Forward Shipment for Exchange:', requestId);
                 const forwardOrder = await createShiprocketForwardOrder(requestDetails);
                 if (forwardOrder && forwardOrder.shipment_id) {
                     adminNotes += `\nForward Shipment Created: ID ${forwardOrder.shipment_id}, AWB: ${forwardOrder.awb_code || 'Pending'}`;
-                } else {
-                    adminNotes += `\nFailed to create Forward Shipment. Check logs.`;
                 }
             }
         }
@@ -1004,144 +1145,3 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
         });
 
         if (!request) {
-            return res.status(404).json({ error: 'Request not found' });
-        }
-
-        res.json({ success: true, message: 'Request approved' });
-    } catch (error) {
-        console.error('Approve request error:', error);
-        res.status(500).json({ error: 'Failed to approve request' });
-    }
-});
-
-// Sync Status Endpoint
-app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
-    try {
-        // TEST MODE: Use "TEST_MODE" query param or just force it for now as requested
-        const TEST_MODE = true; // Set to false later
-
-        const requests = await getAllRequests({ status: 'scheduled' }); // Or get ALL pending/approved?
-        // Let's get relevant statuses where shipment is active
-        // But getAllRequests filters by single status?
-        // We'll iterate common tracking statuses: scheduled, picked_up, in_transit
-        // Or just fetch ALL and filter in JS (inefficient but works for small scale)
-        const allRequests = await getAllRequests({});
-
-        let activeRequests = allRequests.filter(r =>
-            ['scheduled', 'picked_up', 'in_transit'].includes(r.status) && (r.awbNumber || TEST_MODE)
-        );
-
-        // If TEST MODE, include ALL pending/scheduled requests even without AWB
-        if (TEST_MODE) {
-            activeRequests = allRequests.filter(r => ['scheduled', 'pending'].includes(r.status));
-        }
-
-        let updatedCount = 0;
-
-        for (const req of activeRequests) {
-            try {
-                if (TEST_MODE) {
-                    console.log(`🧪 TEST_MODE: Forcing ${req.requestId} to DELIVERED`);
-                    // If status is scheduled/pending, force to delivered (simulate successful return)
-                    if (req.status !== 'delivered') {
-                        await updateRequestStatus(req.requestId, { status: 'delivered' });
-                        updatedCount++;
-                    }
-                    continue; // Skip real API
-                }
-
-                // Call Shiprocket Tracking API
-                const trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
-                if (trackingData && trackingData.tracking_data && trackingData.tracking_data.shipment_track) {
-                    const currentStatus = trackingData.tracking_data.current_status; // e.g., "DELIVERED"
-
-                    let newStatus = req.status;
-                    // Map Shiprocket status to our status
-                    const statusUpper = currentStatus.toUpperCase();
-                    if (statusUpper.includes('DELIVERED')) newStatus = 'delivered';
-                    else if (statusUpper.includes('PICKED UP') || statusUpper.includes('OUT FOR PICKUP')) newStatus = 'picked_up';
-                    else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED')) newStatus = 'in_transit';
-
-                    if (newStatus !== req.status) {
-                        await updateRequestStatus(req.requestId, { status: newStatus });
-                        updatedCount++;
-                    }
-                }
-            } catch (err) {
-                console.error(`Failed to sync ${req.requestId}:`, err.message);
-                if (TEST_MODE) { // Try forcing anyway if error (e.g. no AWB)
-                    await updateRequestStatus(req.requestId, { status: 'delivered' });
-                    updatedCount++;
-                }
-            }
-        }
-
-        res.json({ success: true, updated: updatedCount, message: TEST_MODE ? 'Test Mode Enabled: All pending requests marked Delivered' : 'Sync complete' });
-    } catch (error) {
-        console.error('Sync error:', error);
-        res.status(500).json({ error: 'Failed to sync status' });
-    }
-});
-
-// Reject request (admin) - supports legacy endpoints
-app.post(['/api/admin/reject', '/api/admin/reject-return', '/api/admin/reject-exchange'], authenticateAdmin, async (req, res) => {
-    try {
-        const { requestId, notes } = req.body;
-
-        const request = await updateRequestStatus(requestId, {
-            status: 'rejected',
-            adminNotes: notes
-        });
-
-        if (!request) {
-            return res.status(404).json({ error: 'Request not found' });
-        }
-
-        res.json({ success: true, message: 'Request rejected' });
-    } catch (error) {
-        console.error('Reject request error:', error);
-        res.status(500).json({ error: 'Failed to reject request' });
-    }
-});
-
-// ==================== HEALTH CHECK ====================
-
-app.get('/', (req, res) => {
-    res.json({
-        service: 'Offcomfrt Returns & Exchanges',
-        status: 'running',
-        authorized: !!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken),
-        shiprocketConfigured: !!(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD),
-        endpoints: {
-            oauth: '/auth/install',
-            public: ['/api/get-order', '/api/lookup-order', '/api/submit-exchange', '/api/submit-return', '/api/track-request/:id', '/api/track-order'],
-            admin: ['/api/admin/login', '/api/admin/requests', '/api/admin/approve', '/api/admin/reject']
-        }
-    });
-});
-
-// ==================== ERROR HANDLING ====================
-
-// 404 handler
-app.use((req, res) => {
-    res.status(404).json({ error: 'Endpoint not found' });
-});
-
-// Global error handler
-app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal server error', details: err.message });
-});
-
-// ==================== START SERVER ====================
-
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📦 Store: ${process.env.SHOPIFY_STORE}`);
-    console.log(`🔐 Shopify Authorized: ${!!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken)}`);
-    console.log(`📮 Shiprocket Configured: ${!!(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD)}`);
-
-    if (!process.env.SHOPIFY_ACCESS_TOKEN && !storage.accessToken) {
-        console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
-    }
-});
