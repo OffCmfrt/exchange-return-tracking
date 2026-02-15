@@ -3,7 +3,8 @@ const cors = require('cors');
 const crypto = require('crypto');
 require('dotenv').config();
 const multer = require('multer');
-const upload = multer();
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,7 +29,22 @@ const storage = {
     adminTokens: new Set()
 };
 
+// ==================== CLOUDINARY CONFIG ====================
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
+const uploadStorage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'returns',
+        allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+    },
+});
+
+const upload = multer({ storage: uploadStorage }); // Use Cloudinary storage
 
 // ==================== OAUTH ROUTES ====================
 
@@ -445,6 +461,9 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             }
         }
 
+        // Get Cloudinary Image URLs
+        const imageUrls = req.files ? req.files.map(file => file.path) : [];
+
         // Create Shiprocket Return Order (if enabled)
         if (process.env.SHIPROCKET_EMAIL) {
             try {
@@ -456,9 +475,6 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                     const shiprocketData = await createShiprocketReturnOrder({ ...req.body, requestId, items }, shopifyOrder);
                     if (shiprocketData && shiprocketData.shipment_id) {
                         console.log('Shiprocket return created. ID:', shiprocketData.shipment_id);
-                        // Access AWB if available immediately (often created asynchronously or returned here)
-                        // For returns, sometimes AWB is not immediate. But usually `awb_code` might be in response or separate call?
-                        // Assuming response has it or we track via shipment_id.
                     }
                 }
             } catch (srError) {
@@ -470,6 +486,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             requestId,
             ...req.body,
             items,
+            images: imageUrls,
             type: 'exchange'
         });
 
@@ -500,6 +517,9 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             }
         }
 
+        // Get Cloudinary Image URLs
+        const imageUrls = req.files ? req.files.map(file => file.path) : [];
+
         // Create Shiprocket Return Order (if enabled)
         if (process.env.SHIPROCKET_EMAIL) {
             try {
@@ -522,6 +542,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             requestId,
             ...req.body,
             items,
+            images: imageUrls,
             type: 'return'
         });
 
