@@ -29,22 +29,37 @@ const storage = {
     adminTokens: new Set()
 };
 
+console.log('Starting server initialization...');
+
 // ==================== CLOUDINARY CONFIG ====================
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-});
 
-const uploadStorage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: {
-        folder: 'returns',
-        allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
-    },
-});
+let uploadStorage;
+try {
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+        throw new Error('Missing Cloudinary Environment Variables');
+    }
 
-const upload = multer({ storage: uploadStorage }); // Use Cloudinary storage
+    cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+
+    uploadStorage = new CloudinaryStorage({
+        cloudinary: cloudinary,
+        params: {
+            folder: 'returns',
+            allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+        },
+    });
+    console.log('✅ Cloudinary storage configured successfully');
+} catch (error) {
+    console.error('⚠️ Cloudinary configuration failed:', error.message);
+    console.warn('⚠️ Falling back to MemoryStorage (Warning: High RAM usage with multiple uploads)');
+    uploadStorage = multer.memoryStorage();
+}
+
+const upload = multer({ storage: uploadStorage });
 
 // ==================== OAUTH ROUTES ====================
 
