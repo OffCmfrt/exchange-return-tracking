@@ -557,7 +557,21 @@ app.post('/api/lookup-order', async (req, res) => {
         // Try to fetch order from Shopify
         let data;
         try {
-            data = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&limit=10`);
+            // 1. Try exact match
+            data = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&status=any&limit=5`);
+
+            // 2. If no result, try adding/removing '#'
+            if (!data.orders || data.orders.length === 0) {
+                let retryOrderNumber = orderNumber;
+                if (orderNumber.startsWith('#')) {
+                    retryOrderNumber = orderNumber.substring(1);
+                } else {
+                    retryOrderNumber = '#' + orderNumber;
+                }
+
+                console.log(`Retrying lookup with: ${retryOrderNumber}`);
+                data = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=5`);
+            }
         } catch (apiError) {
             console.error('Shopify API Error:', apiError.message);
             return res.status(500).json({
@@ -571,7 +585,7 @@ app.post('/api/lookup-order', async (req, res) => {
             return res.status(404).json({
                 error: 'Order not found',
                 isEligible: false,
-                eligibilityMessage: 'Order not found. Please check your order number.'
+                eligibilityMessage: `Order ${orderNumber} not found. Please check your order number.`
             });
         }
 
@@ -954,7 +968,21 @@ app.post('/api/track-order', async (req, res) => {
         // Get order from Shopify
         let shopifyData;
         try {
-            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&limit=10`);
+            // 1. Try exact match
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&status=any&limit=5`);
+
+            // 2. If no result, try adding/removing '#'
+            if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                let retryOrderNumber = orderNumber;
+                if (orderNumber.startsWith('#')) {
+                    retryOrderNumber = orderNumber.substring(1);
+                } else {
+                    retryOrderNumber = '#' + orderNumber;
+                }
+
+                console.log(`Retrying tracking lookup with: ${retryOrderNumber}`);
+                shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=5`);
+            }
         } catch (apiError) {
             console.error('Shopify API Error:', apiError.message);
             return res.status(500).json({ error: 'Failed to fetch order from Shopify' });
