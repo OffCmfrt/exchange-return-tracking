@@ -635,24 +635,42 @@ app.post('/api/lookup-order', async (req, res) => {
         console.log('Eligibility:', { isFulfilled, isWithin60Days, daysSinceOrder });
 
         // Fetch product images
+        // Fetch product images and variants for inventory check
         const productIds = [...new Set(order.line_items.map(item => item.product_id).filter(id => id))];
-        const productImages = {};
+        const productDataMap = {}; // Stores images and variants
 
         if (productIds.length > 0) {
             try {
-                const productsData = await shopifyAPI(`products.json?ids=${productIds.join(',')}&fields=id,image,images`);
+                // Fetch fields: id, image, images, variants (for inventory)
+                const productsData = await shopifyAPI(`products.json?ids=${productIds.join(',')}&fields=id,image,images,variants`);
                 if (productsData.products) {
                     productsData.products.forEach(p => {
+                        let imageUrl = null;
                         if (p.image) {
-                            productImages[p.id] = p.image.src;
+                            imageUrl = p.image.src;
                         } else if (p.images && p.images.length > 0) {
-                            productImages[p.id] = p.images[0].src;
+                            imageUrl = p.images[0].src;
                         }
+
+                        // Process variants
+                        const variants = p.variants.map(v => ({
+                            id: v.id,
+                            title: v.title,
+                            price: v.price,
+                            inventory_quantity: v.inventory_quantity,
+                            inventory_policy: v.inventory_policy,
+                            inventory_management: v.inventory_management
+                        }));
+
+                        productDataMap[p.id] = {
+                            image: imageUrl,
+                            variants: variants
+                        };
                     });
                 }
             } catch (err) {
-                console.error('Failed to fetch product images:', err);
-                // Continue without images
+                console.error('Failed to fetch product data:', err);
+                // Continue without extra data
             }
         }
 
@@ -673,6 +691,7 @@ app.post('/api/lookup-order', async (req, res) => {
         res.json({
             isEligible: isFulfilled && isWithin60Days,
             eligibilityMessage,
+            productVariants: productDataMap, // Send variants to frontend
             order: {
                 orderNumber: order.name,
                 customerName: order.customer
@@ -683,18 +702,19 @@ app.post('/api/lookup-order', async (req, res) => {
                 orderDate: order.created_at,
                 totalAmount: order.total_price,
                 shippingAddress,
-                items: order.line_items.map(item => ({
-                    id: item.id,
-                    productId: item.product_id,
-                    variantId: item.variant_id,
-                    name: item.name,
-                    variant: item.variant_title || 'Default',
-                    quantity: item.quantity,
-                    price: item.price,
-                    image: productImages[item.product_id] ||
-                        (item.properties && item.properties.image) ||
-                        `https://cdn.shopify.com/shopifycloud/placeholder.jpg`
-                }))
+                items: order.line_items.map(item => {
+                    const pData = productDataMap[item.product_id] || {};
+                    return {
+                        id: item.id,
+                        productId: item.product_id,
+                        variantId: item.variant_id,
+                        name: item.name,
+                        variant: item.variant_title || 'Default',
+                        quantity: item.quantity,
+                        price: item.price,
+                        image: pData.image || (item.properties && item.properties.image) || `https://cdn.shopify.com/shopifycloud/placeholder.jpg`
+                    };
+                })
             }
         });
     } catch (error) {
@@ -1265,50 +1285,39 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
 // Sync Status Endpoint
 app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     try {
-        // TEST MODE: Use "TEST_MODE" query param or just force it for now as requested
-        const TEST_MODE = true; // Set to false later
-
-        const requests = await getAllRequests({ status: 'scheduled' }); // Or get ALL pending/approved?
-        // Let's get relevant statuses where shipment is active
-        // But getAllRequests filters by single status?
-        // We'll iterate common tracking statuses: scheduled, picked_up, in_transit
-        // Or just fetch ALL and filter in JS (inefficient but works for small scale)
+        // Get relevant statuses where shipment is active
         const allRequests = await getAllRequests({});
 
         let activeRequests = allRequests.filter(r =>
-            ['scheduled', 'picked_up', 'in_transit'].includes(r.status) && (r.awbNumber || TEST_MODE)
+            ['scheduled', 'picked_up', 'in_transit'].includes(r.status) && r.awbNumber
         );
-
-        // If TEST MODE, include ALL pending/scheduled requests even without AWB
-        if (TEST_MODE) {
-            activeRequests = allRequests.filter(r => ['scheduled', 'pending'].includes(r.status));
-        }
 
         let updatedCount = 0;
 
         for (const req of activeRequests) {
             try {
-                if (TEST_MODE) {
-                    console.log(`🧪 TEST_MODE: Forcing ${req.requestId} to DELIVERED`);
-                    // If status is scheduled/pending, force to delivered (simulate successful return)
-                    if (req.status !== 'delivered') {
-                        await updateRequestStatus(req.requestId, { status: 'delivered' });
-                        updatedCount++;
-                    }
-                    continue; // Skip real API
-                }
-
                 // Call Shiprocket Tracking API
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
-                if (trackingData && trackingData.tracking_data && trackingData.tracking_data.shipment_track) {
-                    const currentStatus = trackingData.tracking_data.current_status; // e.g., "DELIVERED"
+
+                if (trackingData && trackingData.tracking_data) {
+                    const tracking = trackingData.tracking_data;
+                    const currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+
+                    if (!currentStatus) continue;
 
                     let newStatus = req.status;
                     // Map Shiprocket status to our status
                     const statusUpper = currentStatus.toUpperCase();
-                    if (statusUpper.includes('DELIVERED')) newStatus = 'delivered';
-                    else if (statusUpper.includes('PICKED UP') || statusUpper.includes('OUT FOR PICKUP')) newStatus = 'picked_up';
-                    else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED')) newStatus = 'in_transit';
+
+                    if (statusUpper.includes('DELIVERED')) {
+                        newStatus = 'delivered';
+                    } else if (statusUpper.includes('PICKED UP') || statusUpper.includes('OUT FOR PICKUP')) {
+                        newStatus = 'picked_up';
+                    } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED')) {
+                        newStatus = 'in_transit';
+                    } else if (statusUpper.includes('RTO') || statusUpper.includes('RETURNED')) {
+                        newStatus = 'rejected'; // Or handle RTO separately
+                    }
 
                     if (newStatus !== req.status) {
                         await updateRequestStatus(req.requestId, { status: newStatus });
@@ -1317,14 +1326,10 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
                 }
             } catch (err) {
                 console.error(`Failed to sync ${req.requestId}:`, err.message);
-                if (TEST_MODE) { // Try forcing anyway if error (e.g. no AWB)
-                    await updateRequestStatus(req.requestId, { status: 'delivered' });
-                    updatedCount++;
-                }
             }
         }
 
-        res.json({ success: true, updated: updatedCount, message: TEST_MODE ? 'Test Mode Enabled: All pending requests marked Delivered' : 'Sync complete' });
+        res.json({ success: true, updated: updatedCount, message: 'Sync complete' });
     } catch (error) {
         console.error('Sync error:', error);
         res.status(500).json({ error: 'Failed to sync status' });
