@@ -1142,7 +1142,7 @@ app.post('/api/track-order', async (req, res) => {
                     // Update response with Shiprocket data
                     response.currentStatus = tracking.current_status || response.currentStatus;
                     response.courierName = tracking.courier_name || response.courierName;
-                    response.estimatedDelivery = tracking.edd || null;
+                    response.estimatedDelivery = tracking.etd || tracking.edd || null; // Fix: Shiprocket returns 'etd'
 
                     // Add shipment details
                     response.shipment = {
