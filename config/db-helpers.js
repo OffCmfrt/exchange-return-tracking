@@ -82,11 +82,26 @@ async function getAllRequests(filters = {}) {
             .lte('created_at', endDate.toISOString());
     }
 
+    if (filters.search) {
+        const searchTerm = filters.search;
+        console.log('Applying Admin Search:', searchTerm);
+        // Search across multiple columns: request_id, order_number, customer_name, customer_email, or customer_phone
+        // We use .or() with ilike (case-insensitive)
+        query = query.or(`request_id.ilike.%${searchTerm}%,order_number.ilike.%${searchTerm}%,customer_name.ilike.%${searchTerm}%,customer_email.ilike.%${searchTerm}%,customer_phone.ilike.%${searchTerm}%`);
+    }
+
     query = query.order('created_at', { ascending: false });
 
     const { data, error } = await query;
 
-    if (error) throw error;
+    if (filters.search) {
+        console.log(`Search Results for "${filters.search}": ${data ? data.length : 0} records found`);
+    }
+
+    if (error) {
+        console.error('Database Query Error:', error);
+        throw error;
+    }
 
     return data.map(convertFromSnakeCase);
 }
