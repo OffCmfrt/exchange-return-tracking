@@ -653,14 +653,20 @@ app.post('/api/lookup-order', async (req, res) => {
         if (order.fulfillments && order.fulfillments.length > 0) {
             const fulfillment = order.fulfillments[0];
             const awb = fulfillment.tracking_number;
+            console.log('Fulfillment found. AWB:', awb);
+
             if (awb) {
                 const tracking = await getShiprocketTracking(awb);
+                console.log('Tracking data fetched:', tracking ? 'Yes' : 'No');
+
                 if (tracking) {
-                    deliveredDate = tracking.delivered_date || null;
-                    // If no delivered date but status is delivered, maybe use current date or something? 
-                    // But usually delivered_date is present.
+                    // Try multiple fields for delivered date
+                    deliveredDate = tracking.delivered_date || tracking.etd || tracking.edd || null;
+                    console.log('Extracted deliveredDate:', deliveredDate);
                 }
             }
+        } else {
+            console.log('No fulfillments found for order');
         }
 
         // Fetch product images and variants for inventory check
