@@ -16,7 +16,8 @@ const {
     getRequestById,
     getAllRequests,
     getRequestStats,
-    updateRequestStatus
+    updateRequestStatus,
+    deleteRequests
 } = require('./config/db-helpers');
 
 // Middleware
@@ -1386,10 +1387,27 @@ app.post(['/api/admin/reject', '/api/admin/reject-return', '/api/admin/reject-ex
             return res.status(404).json({ error: 'Request not found' });
         }
 
-        res.json({ success: true, message: 'Request rejected' });
     } catch (error) {
         console.error('Reject request error:', error);
         res.status(500).json({ error: 'Failed to reject request' });
+    }
+});
+
+// Delete requests (admin)
+app.post('/api/admin/delete-requests', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestIds } = req.body;
+
+        if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
+            return res.status(400).json({ error: 'Invalid request IDs' });
+        }
+
+        const result = await deleteRequests(requestIds);
+
+        res.json({ success: true, count: result.count, message: `Deleted ${result.count || 0} requests` });
+    } catch (error) {
+        console.error('Delete requests error:', error);
+        res.status(500).json({ error: 'Failed to delete requests' });
     }
 });
 
@@ -1434,3 +1452,4 @@ app.listen(PORT, () => {
         console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
     }
 });
+
