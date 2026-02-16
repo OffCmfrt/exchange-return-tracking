@@ -1134,6 +1134,7 @@ app.post('/api/track-order', async (req, res) => {
         if (trackingNumber && process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD) {
             try {
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${trackingNumber}`);
+                console.log('Shiprocket Tracking Response:', JSON.stringify(trackingData, null, 2));
 
                 if (trackingData && trackingData.tracking_data) {
                     const tracking = trackingData.tracking_data;
@@ -1227,9 +1228,9 @@ app.post('/api/admin/login', (req, res) => {
 // Get all requests (admin)
 app.get('/api/admin/requests', authenticateAdmin, async (req, res) => {
     try {
-        const { status, type, date } = req.query;
+        const { status, type, date, search } = req.query;
 
-        const requests = await getAllRequests({ status, type, date });
+        const requests = await getAllRequests({ status, type, date, search });
         const stats = await getRequestStats();
 
         res.json({ requests, stats });
