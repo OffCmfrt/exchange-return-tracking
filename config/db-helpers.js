@@ -148,47 +148,26 @@ async function updateRequestStatus(requestId, updates) {
         .select()
         .single();
 
-    if (error) throw error;
     return convertFromSnakeCase(data);
 }
 
 /**
- * Convert snake_case database fields to camelCase for API responses
+ * Delete multiple requests by ID
  */
-function convertFromSnakeCase(data) {
-    if (!data) return null;
+async function deleteRequests(requestIds) {
+    if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) return { count: 0 };
 
-    return {
-        id: data.id,
-        requestId: data.request_id,
-        orderNumber: data.order_number,
-        email: data.email,
-        customerName: data.customer_name,
-        customerEmail: data.customer_email,
-        customerPhone: data.customer_phone,
-        type: data.type,
-        status: data.status,
-        reason: data.reason,
-        comments: data.comments,
-        items: data.items,
-        shippingAddress: data.shipping_address,
-        newAddress: data.new_address,
-        newCity: data.new_city,
-        newPincode: data.new_pincode,
-        paymentId: data.payment_id,
-        paymentAmount: data.payment_amount,
-        awbNumber: data.awb_number,
-        pickupDate: data.pickup_date,
-        pickedUpAt: data.picked_up_at,
-        inTransitAt: data.in_transit_at,
-        deliveredAt: data.delivered_at,
-        inspectedAt: data.inspected_at,
-        approvedAt: data.approved_at,
-        rejectedAt: data.rejected_at,
-        adminNotes: data.admin_notes,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at
-    };
+    const { data, error, count } = await supabase
+        .from('requests')
+        .delete({ count: 'exact' })
+        .in('request_id', requestIds);
+
+    if (error) {
+        console.error('Delete DB Error:', error);
+        throw error;
+    }
+
+    return { count };
 }
 
 module.exports = {
@@ -196,5 +175,6 @@ module.exports = {
     getRequestById,
     getAllRequests,
     getRequestStats,
-    updateRequestStatus
+    updateRequestStatus,
+    deleteRequests
 };
