@@ -152,6 +152,46 @@ async function updateRequestStatus(requestId, updates) {
 }
 
 /**
+ * Convert snake_case database fields to camelCase for API responses
+ */
+function convertFromSnakeCase(data) {
+    if (!data) return null;
+
+    return {
+        id: data.id,
+        requestId: data.request_id,
+        orderNumber: data.order_number,
+        email: data.email,
+        customerName: data.customer_name,
+        customerEmail: data.customer_email,
+        customerPhone: data.customer_phone,
+        type: data.type,
+        status: data.status,
+        reason: data.reason,
+        comments: data.comments,
+        items: data.items,
+        shippingAddress: data.shipping_address,
+        newAddress: data.new_address,
+        newCity: data.new_city,
+        newPincode: data.new_pincode,
+        paymentId: data.payment_id,
+        paymentAmount: data.payment_amount,
+        awbNumber: data.awb_number,
+        shipmentId: data.shipment_id,
+        pickupDate: data.pickup_date,
+        pickedUpAt: data.picked_up_at,
+        inTransitAt: data.in_transit_at,
+        deliveredAt: data.delivered_at,
+        inspectedAt: data.inspected_at,
+        approvedAt: data.approved_at,
+        rejectedAt: data.rejected_at,
+        adminNotes: data.admin_notes,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at
+    };
+}
+
+/**
  * Delete multiple requests by ID
  */
 async function deleteRequests(requestIds) {
@@ -178,3 +218,4 @@ module.exports = {
     updateRequestStatus,
     deleteRequests
 };
+
