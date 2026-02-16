@@ -547,6 +547,20 @@ app.post('/api/get-order', async (req, res) => {
     }
 });
 
+// Helper to get Shiprocket tracking details
+async function getShiprocketTracking(awb) {
+    if (!awb || !process.env.SHIPROCKET_EMAIL || !process.env.SHIPROCKET_PASSWORD) return null;
+    try {
+        const trackingData = await shiprocketAPI(`/courier/track/awb/${awb}`);
+        if (trackingData && trackingData.tracking_data) {
+            return trackingData.tracking_data;
+        }
+    } catch (error) {
+        console.error('Shiprocket tracking fetch error:', error.message);
+    }
+    return null;
+}
+
 // Lookup order (improved with better error handling)
 app.post('/api/lookup-order', async (req, res) => {
     try {
@@ -634,7 +648,21 @@ app.post('/api/lookup-order', async (req, res) => {
 
         console.log('Eligibility:', { isFulfilled, isWithin60Days, daysSinceOrder });
 
-        // Fetch product images
+        // Get Tracking / Delivered Date
+        let deliveredDate = null;
+        if (order.fulfillments && order.fulfillments.length > 0) {
+            const fulfillment = order.fulfillments[0];
+            const awb = fulfillment.tracking_number;
+            if (awb) {
+                const tracking = await getShiprocketTracking(awb);
+                if (tracking) {
+                    deliveredDate = tracking.delivered_date || null;
+                    // If no delivered date but status is delivered, maybe use current date or something? 
+                    // But usually delivered_date is present.
+                }
+            }
+        }
+
         // Fetch product images and variants for inventory check
         const productIds = [...new Set(order.line_items.map(item => item.product_id).filter(id => id))];
         const productDataMap = {}; // Stores images and variants
@@ -700,6 +728,7 @@ app.post('/api/lookup-order', async (req, res) => {
                 email: order.customer?.email || email,
                 phone: order.customer?.phone || order.shipping_address?.phone || '',
                 orderDate: order.created_at,
+                deliveredDate: deliveredDate, // NEW FIELD
                 totalAmount: order.total_price,
                 shippingAddress,
                 items: order.line_items.map(item => {
