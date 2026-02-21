@@ -16,7 +16,7 @@ async function createRequest(requestData) {
             customer_email: requestData.customerEmail || requestData.email,
             customer_phone: requestData.customerPhone,
             type: requestData.type,
-            status: 'pending',
+            status: requestData.awbNumber ? 'scheduled' : 'pending',
             reason: requestData.reason,
             comments: requestData.comments,
             items: requestData.items,
@@ -28,7 +28,8 @@ async function createRequest(requestData) {
             payment_amount: requestData.paymentAmount,
             awb_number: requestData.awbNumber,
             shipment_id: requestData.shipmentId,
-            pickup_date: requestData.pickupDate
+            pickup_date: requestData.pickupDate,
+            images: requestData.images
         }])
         .select()
         .single();
@@ -141,6 +142,10 @@ async function updateRequestStatus(requestId, updates) {
         updateData.rejected_at = new Date().toISOString();
     }
 
+    if (updates.awbNumber) updateData.awb_number = updates.awbNumber;
+    if (updates.shipmentId) updateData.shipment_id = updates.shipmentId;
+    if (updates.pickupDate) updateData.pickup_date = updates.pickupDate;
+
     const { data, error } = await supabase
         .from('requests')
         .update(updateData)
@@ -186,6 +191,7 @@ function convertFromSnakeCase(data) {
         approvedAt: data.approved_at,
         rejectedAt: data.rejected_at,
         adminNotes: data.admin_notes,
+        images: data.images,
         createdAt: data.created_at,
         updatedAt: data.updated_at
     };
@@ -218,4 +224,3 @@ module.exports = {
     updateRequestStatus,
     deleteRequests
 };
-
