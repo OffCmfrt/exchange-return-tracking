@@ -897,7 +897,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         let pickupDate = null;
 
         if (req.body.reason !== 'defective' && process.env.SHIPROCKET_EMAIL) {
-            console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup...`);
+            console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
                     requestId,
@@ -909,13 +909,15 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                     awbNumber = srResponse.awb_code;
                     shipmentId = srResponse.shipment_id;
                     pickupDate = srResponse.pickup_scheduled_date;
-                    console.log(`[${requestId}] ✅ Auto-Pickup Created: AWB ${awbNumber}`);
+                    console.log(`[${requestId}] ✅ Auto-Pickup Created: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                } else {
+                    console.log(`[${requestId}] ⚠️ Shiprocket accepted request but didn't return shipment_id. Response:`, JSON.stringify(srResponse));
                 }
             } catch (err) {
                 console.error(`[${requestId}] ⚠️ Auto-Pickup Failed but proceeding with DB save:`, err.message);
             }
         } else {
-            console.log(`[${requestId}] Shiprocket Return creation deferred to admin approval (Damaged reason).`);
+            console.log(`[${requestId}] Shiprocket Return creation deferred (Damaged reason or missing config). Reason: ${req.body.reason}`);
         }
 
         try {
@@ -1029,7 +1031,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         let pickupDate = null;
 
         if (req.body.reason !== 'defective' && process.env.SHIPROCKET_EMAIL) {
-            console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup...`);
+            console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
                     requestId,
@@ -1041,13 +1043,15 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                     awbNumber = srResponse.awb_code;
                     shipmentId = srResponse.shipment_id;
                     pickupDate = srResponse.pickup_scheduled_date;
-                    console.log(`[${requestId}] ✅ Auto-Pickup Created: AWB ${awbNumber}`);
+                    console.log(`[${requestId}] ✅ Auto-Pickup Created Success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                } else {
+                    console.log(`[${requestId}] ⚠️ Shiprocket accepted request but didn't return shipment_id. Response:`, JSON.stringify(srResponse));
                 }
             } catch (err) {
                 console.error(`[${requestId}] ⚠️ Auto-Pickup Failed but proceeding with DB save:`, err.message);
             }
         } else {
-            console.log(`[${requestId}] Shiprocket Return creation deferred to admin approval (Damaged reason).`);
+            console.log(`[${requestId}] Shiprocket Return creation deferred (Damaged reason or missing config). Reason: ${req.body.reason}`);
         }
 
         try {
@@ -1485,25 +1489,30 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
                     const tracking = trackingData.tracking_data;
                     const currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
 
-                    if (!currentStatus) continue;
+                    if (!currentStatus) {
+                        console.log(`[${req.requestId}] No status found in tracking data`);
+                        continue;
+                    }
+
+                    console.log(`[${req.requestId}] Syncing status: ${req.status} -> ${currentStatus}`);
 
                     let newStatus = req.status;
-                    // Map Shiprocket status to our status
                     const statusUpper = currentStatus.toUpperCase();
 
-                    if (statusUpper.includes('DELIVERED')) {
+                    if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED')) {
                         newStatus = 'delivered';
-                    } else if (statusUpper.includes('PICKED UP')) {
+                    } else if (statusUpper.includes('PICKED UP') || statusUpper.includes('PICKUP GENERATED')) {
                         newStatus = 'picked_up';
-                    } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED')) {
+                    } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || statusUpper.includes('FORWARDED')) {
                         newStatus = 'in_transit';
-                    } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('GENERATED') || statusUpper.includes('QUEUED') || statusUpper.includes('OUT FOR PICKUP')) {
+                    } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('GENERATED') || statusUpper.includes('QUEUED') || statusUpper.includes('OUT FOR PICKUP') || statusUpper.includes('AWB ASSIGNED')) {
                         newStatus = 'scheduled';
-                    } else if (statusUpper.includes('RTO') || statusUpper.includes('RETURNED')) {
-                        newStatus = 'rejected'; // Or handle RTO separately
+                    } else if (statusUpper.includes('RTO') || statusUpper.includes('RETURNED') || statusUpper.includes('CANCELLED')) {
+                        newStatus = 'rejected';
                     }
 
                     if (newStatus !== req.status) {
+                        console.log(`[${req.requestId}] Updating status to: ${newStatus}`);
                         await updateRequestStatus(req.requestId, { status: newStatus });
                         updatedCount++;
                     }
@@ -1513,6 +1522,7 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
             }
         }
 
+        console.log(`Sync Complete: Updated ${updatedCount} requests`);
         res.json({ success: true, updated: updatedCount, message: 'Sync complete' });
     } catch (error) {
         console.error('Sync error:', error);
