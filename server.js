@@ -223,10 +223,17 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
     try {
         const token = getShiprocketToken ? await getShiprocketToken() : null; // Ensure token function exists
 
-        // Fetch Shopify Order if missing
+        // Fetch Shopify Order if missing with robust name matching
         if (!shopifyOrder) {
             try {
-                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestData.orderNumber)}&limit=1`);
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&limit=1`);
+
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&limit=1`);
+                }
+
                 shopifyOrder = shopifyData.orders && shopifyData.orders[0];
             } catch (e) {
                 console.error('Failed to fetch original order for return creation:', e);
@@ -327,7 +334,15 @@ async function createShiprocketForwardOrder(requestData) {
 
         if (needsAddress || needsCustomer) {
             try {
-                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestData.orderNumber)}&limit=1`);
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&limit=1`);
+
+                // Robust lookup: try with/without '#'
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&limit=1`);
+                }
+
                 shopifyOrder = shopifyData.orders && shopifyData.orders[0];
             } catch (e) {
                 console.error('Failed to fetch original order for forward creation:', e);
@@ -338,14 +353,27 @@ async function createShiprocketForwardOrder(requestData) {
         let billingAddress = requestData.newAddress;
         let billingCity = requestData.newCity;
         let billingPincode = requestData.newPincode;
+        let billingState = '';
 
         if (!billingAddress) {
             if (shopifyOrder && shopifyOrder.shipping_address) {
                 billingAddress = shopifyOrder.shipping_address.address1;
                 billingCity = shopifyOrder.shipping_address.city;
                 billingPincode = shopifyOrder.shipping_address.zip;
-            } else {
-                billingAddress = requestData.shippingAddress || 'Address not available';
+                billingState = shopifyOrder.shipping_address.province;
+            } else if (requestData.shippingAddress) {
+                // FALLBACK: Parse from concatenated string: "Addr1, Addr2, City, State, Pincode, Country"
+                const parts = requestData.shippingAddress.split(',').map(p => p.trim());
+                billingAddress = parts.slice(0, -4).join(', ') || parts[0];
+                billingCity = parts[parts.length - 4] || '';
+                billingState = parts[parts.length - 3] || '';
+                billingPincode = parts[parts.length - 2] || '';
+
+                // Last ditch: regex for pincode if not found
+                if (!billingPincode.match(/^\d{6}$/)) {
+                    const pinMatch = requestData.shippingAddress.match(/\b\d{6}\b/);
+                    if (pinMatch) billingPincode = pinMatch[0];
+                }
             }
         }
 
@@ -402,10 +430,10 @@ async function createShiprocketForwardOrder(requestData) {
             pickup_location: 'warehouse 1', // As provided by user
             billing_customer_name: customerName,
             billing_last_name: '',
-            billing_address: billingAddress,
-            billing_city: billingCity || '',
-            billing_pincode: billingPincode || '',
-            billing_state: '', // Auto-detected usually or separate field
+            billing_address: billingAddress || 'Address not available',
+            billing_city: billingCity || billingState || 'City',
+            billing_pincode: billingPincode || '110001',
+            billing_state: billingState || billingCity || 'State', // Shiprocket requires state
             billing_country: 'India',
             billing_email: requestData.email,
             billing_phone: customerPhone,
@@ -443,8 +471,15 @@ async function createShopifyExchangeOrder(requestData) {
     try {
         console.log('Creating Shopify Exchange Order for:', requestData.requestId);
 
-        // Fetch original order
-        const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestData.orderNumber)}&limit=1`);
+        // Fetch original order with robust name matching
+        let orderName = requestData.orderNumber;
+        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&limit=1`);
+
+        if (!shopifyData.orders || shopifyData.orders.length === 0) {
+            const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&limit=1`);
+        }
+
         const originalOrder = shopifyData.orders && shopifyData.orders[0];
 
         if (!originalOrder) {
