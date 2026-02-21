@@ -491,7 +491,6 @@ async function createShopifyExchangeOrder(requestData) {
             }
         }
 
-
         if (lineItems.length === 0) {
             console.error('No valid replacement items identified for Shopify Order creation.');
             return null;
@@ -1104,13 +1103,12 @@ app.get('/api/track-request/:requestId', async (req, res) => {
             return res.status(404).json({ error: 'Request not found' });
         }
 
-        // Try to fetch Shiprocket Data if AWB exists
+        // 1. Fetch Return Tracking Data
         if (request.awbNumber && process.env.SHIPROCKET_EMAIL) {
             try {
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`);
                 if (trackingData && trackingData.tracking_data) {
                     const tracking = trackingData.tracking_data;
-                    // Add shipment details to request object
                     request.shipment = {
                         origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
                         destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
@@ -1120,7 +1118,26 @@ app.get('/api/track-request/:requestId', async (req, res) => {
                     };
                 }
             } catch (err) {
-                console.error('Failed to fetch Shiprocket tracking for request:', err.message);
+                console.error('Failed to fetch Shiprocket tracking for return:', err.message);
+            }
+        }
+
+        // 2. Fetch Forward Tracking Data (for Exchanges)
+        if (request.forwardAwbNumber && process.env.SHIPROCKET_EMAIL) {
+            try {
+                console.log(`[Tracking] Fetching Forward Tracking for: ${request.forwardAwbNumber}`);
+                const trackingData = await shiprocketAPI(`/courier/track/awb/${request.forwardAwbNumber}`);
+                if (trackingData && trackingData.tracking_data) {
+                    const tracking = trackingData.tracking_data;
+                    request.forwardShipment = {
+                        awb: request.forwardAwbNumber,
+                        status: tracking.current_status,
+                        edd: tracking.edd || null,
+                        activities: tracking.shipment_track || []
+                    };
+                }
+            } catch (err) {
+                console.error('Failed to fetch Shiprocket tracking for forward shipment:', err.message);
             }
         }
 
@@ -1433,8 +1450,8 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
             // 2.1 Create Shopify replacement order
             try {
                 const shopifyExch = await createShopifyExchangeOrder(requestDetails);
-                if (shopifyExch && shopifyExch.order) {
-                    adminNotes += `\nShopify Replacement Order Created: #${shopifyExch.order.name || shopifyExch.order.id}`;
+                if (shopifyExch && (shopifyExch.name || shopifyExch.id)) {
+                    adminNotes += `\nShopify Replacement Order Created: #${shopifyExch.name || shopifyExch.id}`;
                 }
             } catch (shopifyError) {
                 console.error(`[${requestId}] Shopify exchange order creation failed:`, shopifyError.message);
@@ -1450,6 +1467,9 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                 const forwardOrder = await createShiprocketForwardOrder({ ...requestDetails, items });
                 if (forwardOrder && forwardOrder.shipment_id) {
                     adminNotes += `\nReplacement Shipment Created (Shiprocket ID: ${forwardOrder.shipment_id})`;
+                    updates.forwardShipmentId = String(forwardOrder.shipment_id);
+                    updates.forwardAwbNumber = forwardOrder.awb_code || '';
+                    updates.forwardStatus = 'scheduled';
                 } else {
                     adminNotes += `\nFailed to create replacement shipment in Shiprocket. Check logs.`;
                 }
@@ -1457,6 +1477,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
         }
 
         const request = await updateRequestStatus(requestId, {
+            ...updates,
             status: 'approved',
             adminNotes: adminNotes
         });
@@ -1472,7 +1493,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
 app.post('/api/admin/mark-delivered', authenticateAdmin, async (req, res) => {
     try {
         const { requestId } = req.body;
-        console.log(`[${requestId}] Manual Manual Override: Marking as Delivered`);
+        console.log(`[${requestId}] Manual Override: Marking as Delivered`);
 
         const request = await updateRequestStatus(requestId, {
             status: 'delivered',
@@ -1498,65 +1519,79 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
         const allRequests = await getAllRequests({});
 
         let activeRequests = allRequests.filter(r =>
-            ['pending', 'scheduled', 'picked_up', 'in_transit'].includes(r.status) && r.awbNumber
+            (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(r.status) && (r.awbNumber || r.shipmentId)) ||
+            (r.type === 'exchange' && r.forwardAwbNumber && r.forwardStatus !== 'delivered')
         );
 
         let updatedCount = 0;
+        console.log(`[Sync] Processing ${activeRequests.length} requests (including forward shipments)...`);
 
         for (const req of activeRequests) {
             try {
-                // Call Shiprocket Tracking API
-                const trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
-
-                if (trackingData && trackingData.tracking_data) {
-                    const tracking = trackingData.tracking_data;
-                    const currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
-
-                    if (!currentStatus) {
-                        console.log(`[${req.requestId}] No status found in tracking data`);
-                        continue;
+                // --- 1. Sync Return Status (Existing Logic) ---
+                if (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
+                    let trackingData = null;
+                    if (req.awbNumber) {
+                        try { trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`); } catch (e) { }
+                    }
+                    if ((!trackingData || !trackingData.tracking_data) && req.shipmentId) {
+                        try { trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`); } catch (e) { }
                     }
 
-                    console.log(`[${req.requestId}] Syncing status: ${req.status} -> ${currentStatus}`);
+                    if (trackingData && trackingData.tracking_data) {
+                        const tracking = trackingData.tracking_data;
+                        const currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                        if (currentStatus) {
+                            const newAwb = tracking.shipment_track?.[0]?.awb_code || tracking.awb_code;
+                            let newStatus = req.status;
+                            const statusUpper = currentStatus.toUpperCase();
 
-                    let newStatus = req.status;
-                    const statusUpper = currentStatus.toUpperCase();
+                            if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
+                                newStatus = 'delivered';
+                            } else if (statusUpper.includes('PICKED UP') || statusUpper.includes('PICKUP GENERATED')) {
+                                newStatus = 'picked_up';
+                            } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || statusUpper.includes('OUT FOR DELIVERY')) {
+                                newStatus = 'in_transit';
+                            } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('GENERATED') || statusUpper.includes('AWB ASSIGNED')) {
+                                newStatus = 'scheduled';
+                            } else if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || statusUpper.includes('CANCELLED')) {
+                                newStatus = 'rejected';
+                            }
 
-                    // More comprehensive mapping
-                    if (statusUpper.includes('DELIVERED') ||
-                        statusUpper.includes('CLOSED') ||
-                        statusUpper.includes('REACHED AT DESTINATION') ||
-                        statusUpper.includes('REACHED AT DEST_WH')) {
-                        newStatus = 'delivered';
-                    } else if (statusUpper.includes('PICKED UP') ||
-                        statusUpper.includes('PICKUP GENERATED') ||
-                        statusUpper.includes('OUT FOR PICKUP')) {
-                        newStatus = 'picked_up';
-                    } else if (statusUpper.includes('IN TRANSIT') ||
-                        statusUpper.includes('SHIPPED') ||
-                        statusUpper.includes('FORWARDED') ||
-                        statusUpper.includes('OUT FOR DELIVERY')) {
-                        newStatus = 'in_transit';
-                    } else if (statusUpper.includes('SCHEDULED') ||
-                        statusUpper.includes('GENERATED') ||
-                        statusUpper.includes('QUEUED') ||
-                        statusUpper.includes('AWB ASSIGNED')) {
-                        newStatus = 'scheduled';
-                    } else if (statusUpper.includes('RTO') ||
-                        statusUpper.includes('RETURNED') ||
-                        statusUpper.includes('CANCELLED')) {
-                        newStatus = 'rejected';
+                            if (newStatus !== req.status || (newAwb && newAwb !== req.awbNumber)) {
+                                const updatesArr = { status: newStatus };
+                                if (newStatus === 'delivered') updatesArr.deliveredAt = new Date().toISOString();
+                                if (newStatus === 'picked_up') updatesArr.pickedUpAt = new Date().toISOString();
+                                if (newStatus === 'in_transit') updatesArr.inTransitAt = new Date().toISOString();
+                                if (newAwb) updatesArr.awbNumber = newAwb;
+                                await updateRequestStatus(req.requestId, updatesArr);
+                                updatedCount++;
+                            }
+                        }
                     }
+                }
 
-                    if (newStatus !== req.status) {
-                        console.log(`[${req.requestId}] Updating status to: ${newStatus}`);
-                        const updates = { status: newStatus };
-                        if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
-                        if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
-                        if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
+                // --- 2. Sync Forward Status (New Logic) ---
+                if (req.type === 'exchange' && req.forwardAwbNumber && req.forwardStatus !== 'delivered') {
+                    try {
+                        const forwardTrack = await shiprocketAPI(`/courier/track/awb/${req.forwardAwbNumber}`);
+                        if (forwardTrack && forwardTrack.tracking_data) {
+                            const tracking = forwardTrack.tracking_data;
+                            const currentStatus = (tracking.shipment_track?.[0]?.current_status || tracking.current_status || '').toUpperCase();
 
-                        await updateRequestStatus(req.requestId, updates);
-                        updatedCount++;
+                            let newForwardStatus = req.forwardStatus || 'scheduled';
+                            if (currentStatus.includes('DELIVERED')) newForwardStatus = 'delivered';
+                            else if (currentStatus.includes('PICKED UP') || currentStatus.includes('PICKUP GENERATED')) newForwardStatus = 'picked_up';
+                            else if (currentStatus.includes('IN TRANSIT') || currentStatus.includes('SHIPPED') || currentStatus.includes('OUT FOR DELIVERY')) newForwardStatus = 'in_transit';
+
+                            if (newForwardStatus !== req.forwardStatus) {
+                                console.log(`[${req.requestId}] Updating Forward Status: ${newForwardStatus}`);
+                                await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
+                                updatedCount++;
+                            }
+                        }
+                    } catch (e) {
+                        console.error(`[${req.requestId}] Forward Sync Failed:`, e.message);
                     }
                 }
             } catch (err) {
@@ -1585,13 +1620,17 @@ app.post('/api/webhooks/shiprocket', async (req, res) => {
             return res.status(400).json({ error: 'Missing AWB or status' });
         }
 
-        // Find the request with this AWB
+        // Find the request with this AWB or Order ID (which we set to requestId)
+        const orderId = payload.order_id || payload.order_number;
         const allRequests = await getAllRequests({});
-        const request = allRequests.find(r => r.awbNumber === awb);
+        const request = allRequests.find(r =>
+            (awb && r.awbNumber === awb) ||
+            (orderId && r.requestId === orderId)
+        );
 
         if (!request) {
-            console.log(`[Webhook] No request found for AWB: ${awb}`);
-            return res.status(200).json({ message: 'AWB not tracked' });
+            console.log(`[Webhook] No request found for AWB: ${awb} or Order ID: ${orderId}`);
+            return res.status(200).json({ message: 'Request not tracked' });
         }
 
         console.log(`[Webhook] [${request.requestId}] Updating status: ${request.status} -> ${currentStatus}`);
@@ -1602,7 +1641,8 @@ app.post('/api/webhooks/shiprocket', async (req, res) => {
         if (statusUpper.includes('DELIVERED') ||
             statusUpper.includes('CLOSED') ||
             statusUpper.includes('REACHED AT DESTINATION') ||
-            statusUpper.includes('REACHED AT DEST_WH')) {
+            statusUpper.includes('REACHED AT DEST_WH') ||
+            statusUpper.includes('RETURN RECEIVED')) {
             newStatus = 'delivered';
         } else if (statusUpper.includes('PICKED UP') ||
             statusUpper.includes('PICKUP GENERATED') ||
@@ -1615,7 +1655,6 @@ app.post('/api/webhooks/shiprocket', async (req, res) => {
             newStatus = 'in_transit';
         } else if (statusUpper.includes('SCHEDULED') ||
             statusUpper.includes('GENERATED') ||
-            statusUpper.includes('QUEUED') ||
             statusUpper.includes('AWB ASSIGNED')) {
             newStatus = 'scheduled';
         } else if (statusUpper.includes('RTO') ||
@@ -1624,12 +1663,13 @@ app.post('/api/webhooks/shiprocket', async (req, res) => {
             newStatus = 'rejected';
         }
 
-        if (newStatus !== request.status) {
+        if (newStatus !== request.status || (!request.awbNumber && awb)) {
             console.log(`[Webhook] [${request.requestId}] Updating status to: ${newStatus}`);
             const updates = { status: newStatus };
             if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
             if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
             if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
+            if (!request.awbNumber && awb) updates.awbNumber = awb;
 
             await updateRequestStatus(request.requestId, updates);
         }
