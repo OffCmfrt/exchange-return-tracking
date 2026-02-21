@@ -1468,6 +1468,29 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
     }
 });
 
+// Mark request as delivered/received manually (admin override)
+app.post('/api/admin/mark-delivered', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.body;
+        console.log(`[${requestId}] Manual Manual Override: Marking as Delivered`);
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'delivered',
+            deliveredAt: new Date().toISOString()
+        });
+
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        res.json({ success: true, message: 'Request marked as delivered/received', request });
+
+    } catch (error) {
+        console.error('Mark delivered error:', error);
+        res.status(500).json({ error: 'Failed to update status' });
+    }
+});
+
 // Sync Status Endpoint
 app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     try {
@@ -1499,21 +1522,40 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
                     let newStatus = req.status;
                     const statusUpper = currentStatus.toUpperCase();
 
-                    if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED')) {
+                    // More comprehensive mapping
+                    if (statusUpper.includes('DELIVERED') ||
+                        statusUpper.includes('CLOSED') ||
+                        statusUpper.includes('REACHED AT DESTINATION') ||
+                        statusUpper.includes('REACHED AT DEST_WH')) {
                         newStatus = 'delivered';
-                    } else if (statusUpper.includes('PICKED UP') || statusUpper.includes('PICKUP GENERATED')) {
+                    } else if (statusUpper.includes('PICKED UP') ||
+                        statusUpper.includes('PICKUP GENERATED') ||
+                        statusUpper.includes('OUT FOR PICKUP')) {
                         newStatus = 'picked_up';
-                    } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || statusUpper.includes('FORWARDED')) {
+                    } else if (statusUpper.includes('IN TRANSIT') ||
+                        statusUpper.includes('SHIPPED') ||
+                        statusUpper.includes('FORWARDED') ||
+                        statusUpper.includes('OUT FOR DELIVERY')) {
                         newStatus = 'in_transit';
-                    } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('GENERATED') || statusUpper.includes('QUEUED') || statusUpper.includes('OUT FOR PICKUP') || statusUpper.includes('AWB ASSIGNED')) {
+                    } else if (statusUpper.includes('SCHEDULED') ||
+                        statusUpper.includes('GENERATED') ||
+                        statusUpper.includes('QUEUED') ||
+                        statusUpper.includes('AWB ASSIGNED')) {
                         newStatus = 'scheduled';
-                    } else if (statusUpper.includes('RTO') || statusUpper.includes('RETURNED') || statusUpper.includes('CANCELLED')) {
+                    } else if (statusUpper.includes('RTO') ||
+                        statusUpper.includes('RETURNED') ||
+                        statusUpper.includes('CANCELLED')) {
                         newStatus = 'rejected';
                     }
 
                     if (newStatus !== req.status) {
                         console.log(`[${req.requestId}] Updating status to: ${newStatus}`);
-                        await updateRequestStatus(req.requestId, { status: newStatus });
+                        const updates = { status: newStatus };
+                        if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
+                        if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
+                        if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
+
+                        await updateRequestStatus(req.requestId, updates);
                         updatedCount++;
                     }
                 }
@@ -1527,6 +1569,76 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     } catch (error) {
         console.error('Sync error:', error);
         res.status(500).json({ error: 'Failed to sync status' });
+    }
+});
+
+// Shiprocket Webhook for live status updates
+app.post('/api/webhooks/shiprocket', async (req, res) => {
+    try {
+        const payload = req.body;
+        console.log('Incoming Shiprocket Webhook:', JSON.stringify(payload));
+
+        const awb = payload.awb;
+        const currentStatus = payload.current_status || payload.status;
+
+        if (!awb || !currentStatus) {
+            return res.status(400).json({ error: 'Missing AWB or status' });
+        }
+
+        // Find the request with this AWB
+        const allRequests = await getAllRequests({});
+        const request = allRequests.find(r => r.awbNumber === awb);
+
+        if (!request) {
+            console.log(`[Webhook] No request found for AWB: ${awb}`);
+            return res.status(200).json({ message: 'AWB not tracked' });
+        }
+
+        console.log(`[Webhook] [${request.requestId}] Updating status: ${request.status} -> ${currentStatus}`);
+
+        let newStatus = request.status;
+        const statusUpper = currentStatus.toUpperCase();
+
+        if (statusUpper.includes('DELIVERED') ||
+            statusUpper.includes('CLOSED') ||
+            statusUpper.includes('REACHED AT DESTINATION') ||
+            statusUpper.includes('REACHED AT DEST_WH')) {
+            newStatus = 'delivered';
+        } else if (statusUpper.includes('PICKED UP') ||
+            statusUpper.includes('PICKUP GENERATED') ||
+            statusUpper.includes('OUT FOR PICKUP')) {
+            newStatus = 'picked_up';
+        } else if (statusUpper.includes('IN TRANSIT') ||
+            statusUpper.includes('SHIPPED') ||
+            statusUpper.includes('FORWARDED') ||
+            statusUpper.includes('OUT FOR DELIVERY')) {
+            newStatus = 'in_transit';
+        } else if (statusUpper.includes('SCHEDULED') ||
+            statusUpper.includes('GENERATED') ||
+            statusUpper.includes('QUEUED') ||
+            statusUpper.includes('AWB ASSIGNED')) {
+            newStatus = 'scheduled';
+        } else if (statusUpper.includes('RTO') ||
+            statusUpper.includes('RETURNED') ||
+            statusUpper.includes('CANCELLED')) {
+            newStatus = 'rejected';
+        }
+
+        if (newStatus !== request.status) {
+            console.log(`[Webhook] [${request.requestId}] Updating status to: ${newStatus}`);
+            const updates = { status: newStatus };
+            if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
+            if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
+            if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
+
+            await updateRequestStatus(request.requestId, updates);
+        }
+
+        res.json({ success: true });
+
+    } catch (error) {
+        console.error('Webhook processing error:', error);
+        res.status(500).json({ error: 'Webhook processing failed' });
     }
 });
 
