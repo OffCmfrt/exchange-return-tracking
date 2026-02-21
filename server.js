@@ -427,7 +427,7 @@ async function createShiprocketForwardOrder(requestData) {
         const payload = {
             order_id: requestData.requestId + '-FWD',
             order_date: new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0],
-            pickup_location: 'warehouse 1', // As provided by user
+            pickup_location: 'Primary', // Change this to your preferred Shiprocket nickname (e.g., 'warehouse-1', 'Burb')
             billing_customer_name: customerName,
             billing_last_name: '',
             billing_address: billingAddress || 'Address not available',
