@@ -87,6 +87,7 @@ app.get('/auth/install', (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     storage.oauthState = state;
 
+
     const authUrl = `https://${shop}/admin/oauth/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${redirectUri}&state=${state}`;
 
     res.redirect(authUrl);
@@ -1112,39 +1113,44 @@ app.get('/api/track-request/:requestId', async (req, res) => {
                     request.shipment = {
                         origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
                         destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
-                        status: tracking.current_status,
-                        edd: tracking.edd || null,
+                        status: tracking.current_status || 'Pending',
+                        edd: tracking.edd || tracking.etd || null,
                         activities: tracking.shipment_track || []
                     };
                 }
             } catch (err) {
-                console.error('Failed to fetch Shiprocket tracking for return:', err.message);
+                console.error(`[Tracking API] Return Shipment (${request.awbNumber}) failed:`, err.message);
+                // We DON'T throw here so the page still loads basic info
             }
         }
 
         // 2. Fetch Forward Tracking Data (for Exchanges)
         if (request.forwardAwbNumber && process.env.SHIPROCKET_EMAIL) {
             try {
-                console.log(`[Tracking] Fetching Forward Tracking for: ${request.forwardAwbNumber}`);
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${request.forwardAwbNumber}`);
                 if (trackingData && trackingData.tracking_data) {
                     const tracking = trackingData.tracking_data;
                     request.forwardShipment = {
                         awb: request.forwardAwbNumber,
-                        status: tracking.current_status,
-                        edd: tracking.edd || null,
+                        status: tracking.current_status || 'Scheduled',
+                        edd: tracking.edd || tracking.etd || null,
                         activities: tracking.shipment_track || []
                     };
                 }
             } catch (err) {
-                console.error('Failed to fetch Shiprocket tracking for forward shipment:', err.message);
+                console.error(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) failed:`, err.message);
+                // We DON'T throw here so the page still loads basic info
             }
         }
 
         res.json(request);
     } catch (error) {
-        console.error('Track request error:', error);
-        res.status(500).json({ error: 'Failed to track request' });
+        console.error(`[Tracking Error] [${req.params.requestId}]:`, error);
+        res.status(500).json({
+            error: 'Failed to track request',
+            details: error.message,
+            requestId: req.params.requestId
+        });
     }
 });
 
@@ -1607,80 +1613,7 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     }
 });
 
-// Shiprocket Webhook for live status updates
-app.post('/api/webhooks/shiprocket', async (req, res) => {
-    try {
-        const payload = req.body;
-        console.log('Incoming Shiprocket Webhook:', JSON.stringify(payload));
 
-        const awb = payload.awb;
-        const currentStatus = payload.current_status || payload.status;
-
-        if (!awb || !currentStatus) {
-            return res.status(400).json({ error: 'Missing AWB or status' });
-        }
-
-        // Find the request with this AWB or Order ID (which we set to requestId)
-        const orderId = payload.order_id || payload.order_number;
-        const allRequests = await getAllRequests({});
-        const request = allRequests.find(r =>
-            (awb && r.awbNumber === awb) ||
-            (orderId && r.requestId === orderId)
-        );
-
-        if (!request) {
-            console.log(`[Webhook] No request found for AWB: ${awb} or Order ID: ${orderId}`);
-            return res.status(200).json({ message: 'Request not tracked' });
-        }
-
-        console.log(`[Webhook] [${request.requestId}] Updating status: ${request.status} -> ${currentStatus}`);
-
-        let newStatus = request.status;
-        const statusUpper = currentStatus.toUpperCase();
-
-        if (statusUpper.includes('DELIVERED') ||
-            statusUpper.includes('CLOSED') ||
-            statusUpper.includes('REACHED AT DESTINATION') ||
-            statusUpper.includes('REACHED AT DEST_WH') ||
-            statusUpper.includes('RETURN RECEIVED')) {
-            newStatus = 'delivered';
-        } else if (statusUpper.includes('PICKED UP') ||
-            statusUpper.includes('PICKUP GENERATED') ||
-            statusUpper.includes('OUT FOR PICKUP')) {
-            newStatus = 'picked_up';
-        } else if (statusUpper.includes('IN TRANSIT') ||
-            statusUpper.includes('SHIPPED') ||
-            statusUpper.includes('FORWARDED') ||
-            statusUpper.includes('OUT FOR DELIVERY')) {
-            newStatus = 'in_transit';
-        } else if (statusUpper.includes('SCHEDULED') ||
-            statusUpper.includes('GENERATED') ||
-            statusUpper.includes('AWB ASSIGNED')) {
-            newStatus = 'scheduled';
-        } else if (statusUpper.includes('RTO') ||
-            statusUpper.includes('RETURNED') ||
-            statusUpper.includes('CANCELLED')) {
-            newStatus = 'rejected';
-        }
-
-        if (newStatus !== request.status || (!request.awbNumber && awb)) {
-            console.log(`[Webhook] [${request.requestId}] Updating status to: ${newStatus}`);
-            const updates = { status: newStatus };
-            if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
-            if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
-            if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
-            if (!request.awbNumber && awb) updates.awbNumber = awb;
-
-            await updateRequestStatus(request.requestId, updates);
-        }
-
-        res.json({ success: true });
-
-    } catch (error) {
-        console.error('Webhook processing error:', error);
-        res.status(500).json({ error: 'Webhook processing failed' });
-    }
-});
 
 // Reject request (admin) - supports legacy endpoints
 app.post(['/api/admin/reject', '/api/admin/reject-return', '/api/admin/reject-exchange'], authenticateAdmin, async (req, res) => {
