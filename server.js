@@ -220,8 +220,19 @@ async function shiprocketAPI(endpoint, options = {}) {
 
 async function createShiprocketReturnOrder(requestData, shopifyOrder) {
     try {
-        const token = await getShiprocketToken();
-        const address = shopifyOrder.shipping_address || shopifyOrder.customer.default_address;
+        const token = getShiprocketToken ? await getShiprocketToken() : null; // Ensure token function exists
+
+        // Fetch Shopify Order if missing
+        if (!shopifyOrder) {
+            try {
+                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestData.orderNumber)}&limit=1`);
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+            } catch (e) {
+                console.error('Failed to fetch original order for return creation:', e);
+            }
+        }
+
+        const address = shopifyOrder ? (shopifyOrder.shipping_address || shopifyOrder.customer.default_address) : null;
 
         if (!address) {
             console.error('Shiprocket Error: No address found for return pickup');
@@ -454,7 +465,8 @@ async function createShopifyExchangeOrder(requestData) {
             };
         }
 
-        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        let items = requestData.items;
+        if (typeof items === 'string') { try { items = JSON.parse(items); } catch (e) { items = []; } }
         const lineItems = [];
 
         for (const item of items) {
@@ -775,6 +787,34 @@ app.post('/api/get-variants', async (req, res) => {
     }
 });
 
+// ==================== WHATSAPP BOT INTEGRATION ====================
+
+async function sendWhatsAppNotification(phone, message, type, requestId) {
+    if (!phone || !message) return;
+
+    // Use environment variable or default to localhost:3000 (standard for local dev)
+    const botUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:3000';
+
+    try {
+        console.log(`[${requestId}] 📤 Sending WhatsApp notification to ${phone}`);
+        // Ensure fetch is available (Node 18+)
+        const response = await fetch(`${botUrl}/api/internal/send-notification`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone, message, type, requestId })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            console.log(`[${requestId}] ✅ WhatsApp notification sent: ${data.messageId}`);
+        } else {
+            console.warn(`[${requestId}] ⚠️ WhatsApp notification failed: ${data.error}`);
+        }
+    } catch (error) {
+        console.error(`[${requestId}] ❌ WhatsApp notification error:`, error.message);
+    }
+}
+
 // Submit exchange request
 app.post('/api/submit-exchange', upload.any(), async (req, res) => {
     const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
@@ -833,7 +873,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         const email = req.body.email || shopifyOrder?.email;
 
         // Verify Payment logic
-        if (req.body.paymentId) {
+        if (req.body.paymentId && req.body.reason !== 'defective') {
             if (!razorpay) {
                 console.error(`[${requestId}] Payment config missing`);
                 return res.status(500).json({ error: 'Payment configuration missing on server' });
@@ -851,25 +891,12 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         }
 
 
-        // Create Shiprocket Return Order (if enabled)
+        // Shiprocket Return Order (Auto-Pickup) - DEFERRED TO ADMIN APPROVAL
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (process.env.SHIPROCKET_EMAIL && shopifyOrder) {
-            try {
-                console.log(`[${requestId}] Creating Shiprocket Return...`);
-                const shiprocketData = await createShiprocketReturnOrder({ ...req.body, requestId, items }, shopifyOrder);
-                if (shiprocketData && shiprocketData.shipment_id) {
-                    shipmentId = shiprocketData.shipment_id;
-                    awbNumber = shiprocketData.awb_code;
-                    pickupDate = shiprocketData.pickup_scheduled_date;
-                    console.log(`[${requestId}] Shiprocket Return Created: ${shipmentId}`);
-                }
-            } catch (srError) {
-                console.error(`[${requestId}] Shiprocket return creation failed:`, srError);
-            }
-        }
+        console.log(`[${requestId}] Shiprocket Return creation deferred to admin approval.`);
 
         console.log(`[${requestId}] Saving Request to Database...`);
         await createRequest({
@@ -888,6 +915,12 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         });
 
         console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
+
+        // Send WhatsApp Notification
+        const message = `Hello ${customerName}, your exchange request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}. We will update you shortly.`;
+        // Don't await strictly to avoid blocking response
+        sendWhatsAppNotification(customerPhone, message, 'exchange', requestId).catch(err => console.error(err));
+
         res.json({
             success: true,
             requestId,
@@ -952,7 +985,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
         const email = req.body.email || shopifyOrder?.email;
 
-        if (req.body.paymentId) {
+        if (req.body.paymentId && req.body.reason !== 'defective') {
             // Payment verif logic...
             if (!razorpay) return res.status(500).json({ error: 'Config error' });
             try {
@@ -961,20 +994,12 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             } catch (e) { return res.status(400).json({ error: 'Invalid payment' }); }
         }
 
+        // Shiprocket Return Order (Auto-Pickup) - DEFERRED TO ADMIN APPROVAL
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (process.env.SHIPROCKET_EMAIL && shopifyOrder) {
-            try {
-                const shiprocketData = await createShiprocketReturnOrder({ ...req.body, requestId, items }, shopifyOrder);
-                if (shiprocketData && shiprocketData.shipment_id) {
-                    shipmentId = shiprocketData.shipment_id;
-                    awbNumber = shiprocketData.awb_code;
-                    pickupDate = shiprocketData.pickup_scheduled_date;
-                }
-            } catch (e) { console.error(e); }
-        }
+        console.log(`[${requestId}] Shiprocket Return creation deferred to admin approval.`);
 
         await createRequest({
             requestId,
@@ -990,6 +1015,12 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             shipmentId,
             pickupDate
         });
+
+        console.log(`[${requestId}] ✅ Return Request Submitted Successfully`);
+
+        // Send WhatsApp Notification
+        const message = `Hello ${customerName}, your return request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}. We will update you shortly.`;
+        sendWhatsAppNotification(customerPhone, message, 'return', requestId).catch(err => console.error(err));
 
         res.json({
             success: true,
@@ -1283,22 +1314,82 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
 
         // Get request details first
         const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
         let adminNotes = notes || '';
+        let newStatus = 'approved';
+        let updates = { adminNotes };
 
+        // 1. Initial Approval -> Initiate Pickup
+        if (requestDetails.status === 'pending') {
+            console.log(`[${requestId}] Admin authorized pickup. Initiating Shiprocket...`);
+
+            // Need Shopify Order for Shiprocket
+            let shopifyOrder = null;
+            try {
+                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestDetails.orderNumber)}&status=any&limit=1`);
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+            } catch (err) {
+                console.error(`[${requestId}] Failed to fetch Shopify order for approval:`, err);
+            }
+
+            if (process.env.SHIPROCKET_EMAIL && shopifyOrder) {
+                try {
+                    const shiprocketData = await createShiprocketReturnOrder({
+                        ...requestDetails,
+                        requestId
+                    }, shopifyOrder);
+
+                    if (shiprocketData && shiprocketData.shipment_id) {
+                        updates.shipmentId = shiprocketData.shipment_id;
+                        updates.awbNumber = shiprocketData.awb_code;
+                        updates.pickupDate = shiprocketData.pickup_scheduled_date;
+                        updates.status = 'scheduled';
+                        updates.adminNotes = adminNotes + `\nPickup scheduled: AWB ${shiprocketData.awb_code}`;
+
+                        const request = await updateRequestStatus(requestId, updates);
+                        return res.json({ success: true, message: 'Pickup initiated and status updated to scheduled', request });
+                    } else {
+                        throw new Error('Shiprocket did not return shipment data');
+                    }
+                } catch (srError) {
+                    console.error(`[${requestId}] Shiprocket initiation failed:`, srError);
+                    return res.status(500).json({ error: 'Failed to initiate Shiprocket pickup: ' + srError.message });
+                }
+            } else {
+                return res.status(400).json({ error: 'Cannot initiate Shiprocket: Shopify order or config missing' });
+            }
+        }
+
+        // 2. Final Approval -> Quality Check Passed -> Process Resolution
         // Trigger Forward Shipment & Create Store Order for Exchange
-        if (requestDetails && requestDetails.type === 'exchange' && requestDetails.status !== 'approved') {
-            // 1. Create Shopify Order - SKIPPED AS PER USER REQUEST
-            // const newOrder = await createShopifyExchangeOrder(requestDetails);
-            // if (newOrder) {
-            //     adminNotes += `\nExchange Order Created: #${newOrder.order_number}`;
-            // }
+        if (requestDetails.type === 'exchange' && requestDetails.status !== 'approved') {
+            console.log(`[${requestId}] Finalizing exchange resolution...`);
 
-            // 2. Create Shiprocket Forward Shipment (if configured)
+            // 2.1 Create Shopify replacement order
+            try {
+                const shopifyExch = await createShopifyExchangeOrder(requestDetails);
+                if (shopifyExch && shopifyExch.order) {
+                    adminNotes += `\nShopify Replacement Order Created: #${shopifyExch.order.name || shopifyExch.order.id}`;
+                }
+            } catch (shopifyError) {
+                console.error(`[${requestId}] Shopify exchange order creation failed:`, shopifyError.message);
+                adminNotes += `\nWarning: Failed to create Shopify replacement order.`;
+            }
+
+            // 2.2 Create Shiprocket forward shipment
             if (process.env.SHIPROCKET_EMAIL) {
                 console.log('Creating Forward Shipment for Exchange:', requestId);
-                const forwardOrder = await createShiprocketForwardOrder(requestDetails);
+                let items = requestDetails.items;
+                if (typeof items === 'string') { try { items = JSON.parse(items); } catch (e) { items = []; } }
+
+                const forwardOrder = await createShiprocketForwardOrder({ ...requestDetails, items });
                 if (forwardOrder && forwardOrder.shipment_id) {
-                    adminNotes += `\nForward Shipment Created: ID ${forwardOrder.shipment_id}, AWB: ${forwardOrder.awb_code || 'Pending'}`;
+                    adminNotes += `\nReplacement Shipment Created (Shiprocket ID: ${forwardOrder.shipment_id})`;
+                } else {
+                    adminNotes += `\nFailed to create replacement shipment in Shiprocket. Check logs.`;
                 }
             }
         }
@@ -1308,11 +1399,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
             adminNotes: adminNotes
         });
 
-        if (!request) {
-            return res.status(404).json({ error: 'Request not found' });
-        }
-
-        res.json({ success: true, message: 'Request approved' });
+        res.json({ success: true, message: 'Request approved successfully', request });
     } catch (error) {
         console.error('Approve request error:', error);
         res.status(500).json({ error: 'Failed to approve request' });
@@ -1326,7 +1413,7 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
         const allRequests = await getAllRequests({});
 
         let activeRequests = allRequests.filter(r =>
-            ['scheduled', 'picked_up', 'in_transit'].includes(r.status) && r.awbNumber
+            ['pending', 'scheduled', 'picked_up', 'in_transit'].includes(r.status) && r.awbNumber
         );
 
         let updatedCount = 0;
@@ -1348,10 +1435,12 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
 
                     if (statusUpper.includes('DELIVERED')) {
                         newStatus = 'delivered';
-                    } else if (statusUpper.includes('PICKED UP') || statusUpper.includes('OUT FOR PICKUP')) {
+                    } else if (statusUpper.includes('PICKED UP')) {
                         newStatus = 'picked_up';
                     } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED')) {
                         newStatus = 'in_transit';
+                    } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('GENERATED') || statusUpper.includes('QUEUED') || statusUpper.includes('OUT FOR PICKUP')) {
+                        newStatus = 'scheduled';
                     } else if (statusUpper.includes('RTO') || statusUpper.includes('RETURNED')) {
                         newStatus = 'rejected'; // Or handle RTO separately
                     }
@@ -1452,4 +1541,3 @@ app.listen(PORT, () => {
         console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
     }
 });
-
