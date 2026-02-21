@@ -891,28 +891,57 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         }
 
 
-        // Shiprocket Return Order (Auto-Pickup) - DEFERRED TO ADMIN APPROVAL
+        // Shiprocket Return Order (Auto-Pickup) - Selective Initiation
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        console.log(`[${requestId}] Shiprocket Return creation deferred to admin approval.`);
+        if (req.body.reason !== 'defective' && process.env.SHIPROCKET_EMAIL) {
+            console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup...`);
+            try {
+                const srResponse = await createShiprocketReturnOrder({
+                    requestId,
+                    orderNumber: req.body.orderNumber,
+                    items
+                }, shopifyOrder);
 
-        console.log(`[${requestId}] Saving Request to Database...`);
-        await createRequest({
-            requestId,
-            ...req.body,
-            email,
-            customerName,
-            customerPhone,
-            items,
-            images: imageUrls,
-            type: 'exchange',
-            shippingAddress: originalAddressFormatted, // Save original address
-            awbNumber,
-            shipmentId,
-            pickupDate
-        });
+                if (srResponse && srResponse.shipment_id) {
+                    awbNumber = srResponse.awb_code;
+                    shipmentId = srResponse.shipment_id;
+                    pickupDate = srResponse.pickup_scheduled_date;
+                    console.log(`[${requestId}] ✅ Auto-Pickup Created: AWB ${awbNumber}`);
+                }
+            } catch (err) {
+                console.error(`[${requestId}] ⚠️ Auto-Pickup Failed but proceeding with DB save:`, err.message);
+            }
+        } else {
+            console.log(`[${requestId}] Shiprocket Return creation deferred to admin approval (Damaged reason).`);
+        }
+
+        try {
+            console.log(`[${requestId}] Saving Request to Database...`);
+            await createRequest({
+                requestId,
+                ...req.body,
+                email,
+                customerName,
+                customerPhone,
+                items,
+                images: imageUrls,
+                type: 'exchange',
+                shippingAddress: originalAddressFormatted, // Save original address
+                awbNumber,
+                shipmentId,
+                pickupDate
+            });
+        } catch (dbError) {
+            console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
+            // Check for common error: missing column
+            if (dbError.message.includes('column "images"')) {
+                return res.status(500).json({ error: 'Database mismatch: Please run the SQL command to add the "images" column to the requests table.' });
+            }
+            throw dbError; // rethrow to be caught by outer catch
+        }
 
         console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
 
@@ -994,27 +1023,56 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             } catch (e) { return res.status(400).json({ error: 'Invalid payment' }); }
         }
 
-        // Shiprocket Return Order (Auto-Pickup) - DEFERRED TO ADMIN APPROVAL
+        // Shiprocket Return Order (Auto-Pickup) - Selective Initiation
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        console.log(`[${requestId}] Shiprocket Return creation deferred to admin approval.`);
+        if (req.body.reason !== 'defective' && process.env.SHIPROCKET_EMAIL) {
+            console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup...`);
+            try {
+                const srResponse = await createShiprocketReturnOrder({
+                    requestId,
+                    orderNumber: req.body.orderNumber,
+                    items
+                }, shopifyOrder);
 
-        await createRequest({
-            requestId,
-            ...req.body,
-            email,
-            customerName,
-            customerPhone,
-            items,
-            images: imageUrls,
-            type: 'return',
-            shippingAddress: originalAddressFormatted,
-            awbNumber,
-            shipmentId,
-            pickupDate
-        });
+                if (srResponse && srResponse.shipment_id) {
+                    awbNumber = srResponse.awb_code;
+                    shipmentId = srResponse.shipment_id;
+                    pickupDate = srResponse.pickup_scheduled_date;
+                    console.log(`[${requestId}] ✅ Auto-Pickup Created: AWB ${awbNumber}`);
+                }
+            } catch (err) {
+                console.error(`[${requestId}] ⚠️ Auto-Pickup Failed but proceeding with DB save:`, err.message);
+            }
+        } else {
+            console.log(`[${requestId}] Shiprocket Return creation deferred to admin approval (Damaged reason).`);
+        }
+
+        try {
+            console.log(`[${requestId}] Saving Request to Database...`);
+            await createRequest({
+                requestId,
+                ...req.body,
+                email,
+                customerName,
+                customerPhone,
+                items,
+                images: imageUrls,
+                type: 'return',
+                shippingAddress: originalAddressFormatted,
+                awbNumber,
+                shipmentId,
+                pickupDate
+            });
+        } catch (dbError) {
+            console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
+            if (dbError.message.includes('column "images"')) {
+                return res.status(500).json({ error: 'Database mismatch: Please run the SQL command to add the "images" column to the requests table.' });
+            }
+            throw dbError;
+        }
 
         console.log(`[${requestId}] ✅ Return Request Submitted Successfully`);
 
@@ -1475,6 +1533,8 @@ app.post(['/api/admin/reject', '/api/admin/reject-return', '/api/admin/reject-ex
         if (!request) {
             return res.status(404).json({ error: 'Request not found' });
         }
+
+        res.json({ success: true, request });
 
     } catch (error) {
         console.error('Reject request error:', error);
