@@ -16,7 +16,7 @@ async function createRequest(requestData) {
             customer_email: requestData.customerEmail || requestData.email,
             customer_phone: requestData.customerPhone,
             type: requestData.type,
-            status: requestData.awbNumber ? 'scheduled' : 'pending',
+            status: (requestData.awbNumber || requestData.shipmentId) ? 'scheduled' : 'pending',
             reason: requestData.reason,
             comments: requestData.comments,
             items: requestData.items,
@@ -146,6 +146,17 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.shipmentId) updateData.shipment_id = updates.shipmentId;
     if (updates.pickupDate) updateData.pickup_date = updates.pickupDate;
 
+    // Status Timestamps
+    if (updates.deliveredAt) updateData.delivered_at = updates.deliveredAt;
+    if (updates.pickedUpAt) updateData.picked_up_at = updates.pickedUpAt;
+    if (updates.inTransitAt) updateData.in_transit_at = updates.inTransitAt;
+    if (updates.inspectedAt) updateData.inspected_at = updates.inspectedAt;
+
+    // Forward Tracking
+    if (updates.forwardShipmentId) updateData.forward_shipment_id = updates.forwardShipmentId;
+    if (updates.forwardAwbNumber) updateData.forward_awb_number = updates.forwardAwbNumber;
+    if (updates.forwardStatus) updateData.forward_status = updates.forwardStatus;
+
     const { data, error } = await supabase
         .from('requests')
         .update(updateData)
@@ -192,6 +203,9 @@ function convertFromSnakeCase(data) {
         rejectedAt: data.rejected_at,
         adminNotes: data.admin_notes,
         images: data.images,
+        forwardShipmentId: data.forward_shipment_id,
+        forwardAwbNumber: data.forward_awb_number,
+        forwardStatus: data.forward_status,
         createdAt: data.created_at,
         updatedAt: data.updated_at
     };
