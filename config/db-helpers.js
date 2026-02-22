@@ -16,7 +16,7 @@ async function createRequest(requestData) {
             customer_email: requestData.customerEmail || requestData.email,
             customer_phone: requestData.customerPhone,
             type: requestData.type,
-            status: requestData.status || ((requestData.awbNumber || requestData.shipmentId) ? 'scheduled' : 'pending'),
+            status: requestData.status || 'pending',
             reason: requestData.reason,
             comments: requestData.comments,
             items: requestData.items,
@@ -115,8 +115,7 @@ async function getAllRequests(filters = {}) {
 async function getRequestStats() {
     const { data: allRequests, error: allError } = await supabase
         .from('requests')
-        .select('status')
-        .neq('status', 'waiting_payment'); // Only count finalized requests
+        .select('status'); // Include all statuses for accurate stats
 
     if (allError) throw allError;
 
@@ -149,7 +148,10 @@ async function updateRequestStatus(requestId, updates) {
     }
 
     // Payment Info
-    if (updates.paymentId !== undefined) updateData.payment_id = updates.paymentId;
+    if (updates.paymentId !== undefined) {
+        updateData.payment_id = updates.paymentId;
+        console.log(`[${requestId}] 💳 DB Update: payment_id = ${updates.paymentId}`);
+    }
     if (updates.paymentAmount !== undefined) updateData.payment_amount = updates.paymentAmount;
 
     // Tracking Info
