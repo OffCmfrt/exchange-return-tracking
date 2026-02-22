@@ -1099,13 +1099,15 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         const needsPayment = !isFeeWaived && !paymentVerified;
 
+        console.log(`[${requestId}] Status Calculation: isFeeWaived=${isFeeWaived}, paymentVerified=${paymentVerified}, needsPayment=${needsPayment}`);
+
 
         // Shiprocket Return Order (Auto-Pickup) - Selective Initiation
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (!isFeeWaived && !needsPayment && process.env.SHIPROCKET_EMAIL) {
+        if (!needsPayment && process.env.SHIPROCKET_EMAIL) {
             console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
@@ -1131,7 +1133,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         try {
             console.log(`[${requestId}] Saving Request to Database...`);
-            await createRequest({
+            const requestData = {
                 requestId,
                 ...req.body,
                 email,
@@ -1145,21 +1147,20 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 shipmentId,
                 pickupDate,
                 status: needsPayment ? 'waiting_payment' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')
-            });
+            };
+
+            console.log(`[${requestId}] Final Status: ${requestData.status}, AWB: ${awbNumber}`);
+            await createRequest(requestData);
         } catch (dbError) {
             console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
-            // Check for common error: missing column
             if (dbError.message.includes('column "images"')) {
-                return res.status(500).json({ error: 'Database mismatch: Please run the SQL command to add the "images" column to the requests table.' });
+                return res.status(500).json({ error: 'Database mismatch: Please add "images" column.' });
             }
-            throw dbError; // rethrow to be caught by outer catch
+            throw dbError;
         }
 
         console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
-
-        // Send WhatsApp Notification
-        const message = `Hello ${customerName}, your exchange request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}. We will update you shortly.`;
-        // Don't await strictly to avoid blocking response
+        const message = `Hello ${customerName}, your exchange request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
         sendWhatsAppNotification(customerPhone, message, 'exchange', requestId).catch(err => console.error(err));
 
         res.json({
@@ -1250,12 +1251,14 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         const needsPayment = !isFeeWaivedReturn && !paymentVerified;
 
+        console.log(`[${requestId}] Status Calculation (Return): isFeeWaivedReturn=${isFeeWaivedReturn}, paymentVerified=${paymentVerified}, needsPayment=${needsPayment}`);
+
         // Shiprocket Return Order (Auto-Pickup) - Selective Initiation
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (!isFeeWaivedReturn && !needsPayment && process.env.SHIPROCKET_EMAIL) {
+        if (!needsPayment && process.env.SHIPROCKET_EMAIL) {
             console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
@@ -1281,7 +1284,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         try {
             console.log(`[${requestId}] Saving Request to Database...`);
-            await createRequest({
+            const requestData = {
                 requestId,
                 ...req.body,
                 email,
@@ -1295,19 +1298,20 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 shipmentId,
                 pickupDate,
                 status: needsPayment ? 'waiting_payment' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')
-            });
+            };
+
+            console.log(`[${requestId}] Final Status (Return): ${requestData.status}, AWB: ${awbNumber}`);
+            await createRequest(requestData);
         } catch (dbError) {
             console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
             if (dbError.message.includes('column "images"')) {
-                return res.status(500).json({ error: 'Database mismatch: Please run the SQL command to add the "images" column to the requests table.' });
+                return res.status(500).json({ error: 'Database mismatch: Please add "images" column.' });
             }
             throw dbError;
         }
 
         console.log(`[${requestId}] ✅ Return Request Submitted Successfully`);
-
-        // Send WhatsApp Notification
-        const message = `Hello ${customerName}, your return request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}. We will update you shortly.`;
+        const message = `Hello ${customerName}, your return request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
         sendWhatsAppNotification(customerPhone, message, 'return', requestId).catch(err => console.error(err));
 
         res.json({
