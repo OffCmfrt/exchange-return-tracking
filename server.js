@@ -876,6 +876,8 @@ async function sendWhatsAppNotification(phone, message, type, requestId) {
 app.post('/api/submit-exchange', upload.any(), async (req, res) => {
     const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
     console.log(`[${requestId}] 📥 Received exchange submission`);
+    console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
+    console.log(`[${requestId}] Files:`, req.files ? req.files.length : 0);
 
     try {
         // Parse items if string
@@ -889,7 +891,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             }
         }
 
-        console.log(`[${requestId}] Order: ${req.body.orderNumber}, Items: ${items.length}, PaymentId: ${req.body.paymentId || 'None'}`);
+        console.log(`[${requestId}] Order: ${req.body.orderNumber}, Items: ${items.length}, PaymentId: ${req.body.paymentId || 'None'}, Amount: ${req.body.paymentAmount || 0}`);
 
         // Get Cloudinary Image URLs
         const imageUrls = req.files ? req.files.map(file => file.path) : [];
@@ -937,7 +939,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             }
             try {
                 const payment = await razorpay.payments.fetch(req.body.paymentId);
-                console.log(`[${requestId}] Payment Status: ${payment.status}`);
+                console.log(`[${requestId}] Razorpay Verification - PaymentId: ${req.body.paymentId}, Status: ${payment.status}, Amount: ${payment.amount / 100} ${payment.currency}`);
                 if (payment.status !== 'captured' && payment.status !== 'authorized') {
                     return res.status(400).json({ error: 'Payment not successful' });
                 }
@@ -1022,9 +1024,12 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
 // Submit return request
 app.post('/api/submit-return', upload.any(), async (req, res) => {
-    try {
-        const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    console.log(`[${requestId}] 📥 Received return submission`);
+    console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
+    console.log(`[${requestId}] Files:`, req.files ? req.files.length : 0);
 
+    try {
         // Parse items if string
         let items = req.body.items;
         if (typeof items === 'string') {
@@ -1078,8 +1083,12 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             if (!razorpay) return res.status(500).json({ error: 'Config error' });
             try {
                 const payment = await razorpay.payments.fetch(req.body.paymentId);
+                console.log(`[${requestId}] Razorpay Verification (Return) - PaymentId: ${req.body.paymentId}, Status: ${payment.status}, Amount: ${payment.amount / 100} ${payment.currency}`);
                 if (payment.status !== 'captured' && payment.status !== 'authorized') return res.status(400).json({ error: 'Payment failed' });
-            } catch (e) { return res.status(400).json({ error: 'Invalid payment' }); }
+            } catch (e) {
+                console.error(`[${requestId}] Razorpay Verification Failed (Return):`, e.message);
+                return res.status(400).json({ error: 'Invalid payment' });
+            }
         }
 
         // Shiprocket Return Order (Auto-Pickup) - Selective Initiation
