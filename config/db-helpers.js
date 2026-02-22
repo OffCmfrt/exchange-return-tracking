@@ -16,7 +16,7 @@ async function createRequest(requestData) {
             customer_email: requestData.customerEmail || requestData.email,
             customer_phone: requestData.customerPhone,
             type: requestData.type,
-            status: (requestData.awbNumber || requestData.shipmentId) ? 'scheduled' : 'pending',
+            status: requestData.status || ((requestData.awbNumber || requestData.shipmentId) ? 'scheduled' : 'pending'),
             reason: requestData.reason,
             comments: requestData.comments,
             items: requestData.items,
@@ -65,6 +65,8 @@ async function getAllRequests(filters = {}) {
     if (filters.status) {
         query = query.eq('status', filters.status);
     }
+    // No default exclusion anymore, show all finalized and waiting_payment requests in main view if desired
+
 
     if (filters.type) {
         query = query.eq('type', filters.type);
@@ -113,15 +115,18 @@ async function getAllRequests(filters = {}) {
 async function getRequestStats() {
     const { data: allRequests, error: allError } = await supabase
         .from('requests')
-        .select('status');
+        .select('status')
+        .neq('status', 'waiting_payment'); // Only count finalized requests
 
     if (allError) throw allError;
 
     const stats = {
         total: allRequests.length,
         pending: allRequests.filter(r => r.status === 'pending').length,
+        scheduled: allRequests.filter(r => r.status === 'scheduled').length,
         approved: allRequests.filter(r => r.status === 'approved').length,
-        rejected: allRequests.filter(r => r.status === 'rejected').length
+        rejected: allRequests.filter(r => r.status === 'rejected').length,
+        waitingPayment: allRequests.filter(r => r.status === 'waiting_payment').length
     };
 
     return stats;
@@ -131,20 +136,26 @@ async function getRequestStats() {
  * Update request status (approve/reject)
  */
 async function updateRequestStatus(requestId, updates) {
-    const updateData = {
-        status: updates.status,
-        admin_notes: updates.adminNotes
-    };
+    const updateData = {};
 
+    if (updates.status !== undefined) updateData.status = updates.status;
+    if (updates.adminNotes !== undefined) updateData.admin_notes = updates.adminNotes;
+
+    // Status Timestamps
     if (updates.status === 'approved') {
         updateData.approved_at = new Date().toISOString();
     } else if (updates.status === 'rejected') {
         updateData.rejected_at = new Date().toISOString();
     }
 
-    if (updates.awbNumber) updateData.awb_number = updates.awbNumber;
-    if (updates.shipmentId) updateData.shipment_id = updates.shipmentId;
-    if (updates.pickupDate) updateData.pickup_date = updates.pickupDate;
+    // Payment Info
+    if (updates.paymentId !== undefined) updateData.payment_id = updates.paymentId;
+    if (updates.paymentAmount !== undefined) updateData.payment_amount = updates.paymentAmount;
+
+    // Tracking Info
+    if (updates.awbNumber !== undefined) updateData.awb_number = updates.awbNumber;
+    if (updates.shipmentId !== undefined) updateData.shipment_id = updates.shipmentId;
+    if (updates.pickupDate !== undefined) updateData.pickup_date = updates.pickupDate;
 
     // Status Timestamps
     if (updates.deliveredAt) updateData.delivered_at = updates.deliveredAt;
@@ -157,12 +168,19 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.forwardAwbNumber) updateData.forward_awb_number = updates.forwardAwbNumber;
     if (updates.forwardStatus) updateData.forward_status = updates.forwardStatus;
 
+    if (Object.keys(updateData).length === 0) return null;
+
     const { data, error } = await supabase
         .from('requests')
         .update(updateData)
         .eq('request_id', requestId)
         .select()
         .single();
+
+    if (error) {
+        console.error('Update Request Error:', error);
+        throw error;
+    }
 
     return convertFromSnakeCase(data);
 }
