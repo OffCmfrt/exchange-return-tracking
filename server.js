@@ -22,7 +22,11 @@ const {
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+    verify: (req, res, buf) => {
+        req.rawBody = buf.toString();
+    }
+}));
 app.use(express.static('public'));
 
 // In-memory storage for OAuth tokens only (admin tokens can stay in memory)
@@ -528,24 +532,38 @@ async function createShopifyExchangeOrder(requestData) {
         const lineItems = [];
 
         for (const item of items) {
-            if (item.replacementVariant && item.productId) {
+            let variantId = item.replacementVariantId;
+
+            // If variantId is missing (legacy request) or "Same", try to resolve it
+            if ((!variantId || variantId === 'Same') && item.replacementVariant && item.productId) {
                 try {
                     const variantsData = await shopifyAPI(`products/${item.productId}/variants.json`);
                     const variants = variantsData.variants || [];
-                    // Find variant matching the option (Size) - strict or loose match
-                    const variant = variants.find(v => v.title === item.replacementVariant || v.option1 === item.replacementVariant || v.option2 === item.replacementVariant);
-
-                    if (variant) {
-                        lineItems.push({
-                            variant_id: variant.id,
-                            quantity: parseInt(item.quantity) || 1
-                        });
-                    } else {
-                        console.warn(`Replacement variant ${item.replacementVariant} not found for product ${item.productId}.`);
-                    }
+                    const variant = variants.find(v =>
+                        v.title === item.replacementVariant ||
+                        v.option1 === item.replacementVariant ||
+                        v.option2 === item.replacementVariant ||
+                        v.id.toString() === item.replacementVariant
+                    );
+                    if (variant) variantId = variant.id;
                 } catch (e) {
                     console.error(`Failed to fetch variants for product ${item.productId}:`, e);
                 }
+            }
+
+            if (variantId && variantId !== 'Same') {
+                lineItems.push({
+                    variant_id: variantId,
+                    quantity: parseInt(item.quantity) || 1
+                });
+            } else if (variantId === 'Same') {
+                // If still "Same", use original variantId
+                lineItems.push({
+                    variant_id: item.variantId,
+                    quantity: parseInt(item.quantity) || 1
+                });
+            } else {
+                console.warn(`No valid replacement variant identified for item ${item.name} (Request ${requestData.requestId})`);
             }
         }
 
@@ -831,13 +849,66 @@ app.post('/api/lookup-order', async (req, res) => {
     }
 });
 
-// Get product variants
+// Search products for exchange
+app.get('/api/products/search', async (req, res) => {
+    try {
+        const query = req.query.q || '';
+        // Fetch products - limit to 50 for performance
+        const data = await shopifyAPI(`products.json?limit=50&fields=id,title,image,variants`);
+
+        let products = data.products || [];
+
+        if (query) {
+            const lowerQuery = query.toLowerCase();
+            products = products.filter(p =>
+                p.title.toLowerCase().includes(lowerQuery) ||
+                p.id.toString() === query
+            );
+        }
+
+        const formatted = products.map(p => ({
+            id: p.id,
+            title: p.title,
+            image: p.image ? p.image.src : (p.images && p.images.length > 0 ? p.images[0].src : null),
+            variants: p.variants.map(v => ({
+                id: v.id,
+                title: v.title,
+                price: v.price,
+                inventory_quantity: v.inventory_quantity,
+                inventory_policy: v.inventory_policy,
+                inventory_management: v.inventory_management
+            }))
+        }));
+
+        res.json(formatted);
+    } catch (error) {
+        console.error('Product search error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get product variants with full info
 app.post('/api/get-variants', async (req, res) => {
     try {
         const { productId } = req.body;
+        const data = await shopifyAPI(`products/${productId}.json?fields=id,title,image,variants`);
 
-        const data = await shopifyAPI(`products/${productId}.json`);
-        res.json(data.product.variants);
+        if (!data.product) return res.status(404).json({ error: 'Product not found' });
+
+        const p = data.product;
+        res.json({
+            id: p.id,
+            title: p.title,
+            image: p.image ? p.image.src : (p.images && p.images.length > 0 ? p.images[0].src : null),
+            variants: p.variants.map(v => ({
+                id: v.id,
+                title: v.title,
+                price: v.price,
+                inventory_quantity: v.inventory_quantity,
+                inventory_policy: v.inventory_policy,
+                inventory_management: v.inventory_management
+            }))
+        });
     } catch (error) {
         console.error('Get variants error:', error);
         res.status(500).json({ error: error.message });
@@ -869,6 +940,78 @@ async function sendWhatsAppNotification(phone, message, type, requestId) {
         }
     } catch (error) {
         console.error(`[${requestId}] ❌ WhatsApp notification error:`, error.message);
+    }
+}
+
+/**
+ * Finalize a request after payment is confirmed (either via frontend response or webhook)
+ */
+async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) {
+    console.log(`[${requestId}] 🚀 Finalizing request after payment confirmation. PaymentId: ${paymentId}`);
+
+    try {
+        const request = await getRequestById(requestId);
+        if (!request) {
+            console.error(`[${requestId}] ❌ Cannot finalize: Request not found in DB`);
+            return { success: false, error: 'Request not found' };
+        }
+
+        if (request.status !== 'waiting_payment') {
+            console.log(`[${requestId}] ℹ️ Request already processed (Status: ${request.status})`);
+            return { success: true, alreadyProcessed: true };
+        }
+
+        // 1. Prepare Updates
+        const updates = {
+            paymentId: paymentId,
+            paymentAmount: paymentAmount,
+            status: 'pending' // Default status after payment
+        };
+
+        // 2. Trigger Shiprocket Return (Auto-Pickup)
+        let awbNumber = null;
+        let shipmentId = null;
+        let pickupDate = null;
+
+        if (process.env.SHIPROCKET_EMAIL) {
+            console.log(`[${requestId}] Initiating Shiprocket Pickup (Background)...`);
+            try {
+                const srResponse = await createShiprocketReturnOrder({
+                    requestId,
+                    orderNumber: request.orderNumber,
+                    items: request.items
+                }, null); // Force re-fetch Shopify Order
+
+                if (srResponse && srResponse.shipment_id) {
+                    awbNumber = srResponse.awb_code;
+                    shipmentId = srResponse.shipment_id;
+                    pickupDate = srResponse.pickup_scheduled_date;
+
+                    updates.status = 'scheduled';
+                    updates.awbNumber = awbNumber;
+                    updates.shipmentId = shipmentId;
+                    updates.pickupDate = pickupDate;
+                    console.log(`[${requestId}] ✅ Background Auto-Pickup Success: ${shipmentId}`);
+                }
+            } catch (err) {
+                console.error(`[${requestId}] ⚠️ Background Shiprocket creation failed:`, err.message);
+            }
+        }
+
+        // 3. Save to DB
+        await updateRequestStatus(requestId, updates);
+        console.log(`[${requestId}] ✅ Request finalized and updated in DB`);
+
+        // 4. Send WhatsApp Notification
+        const customerName = request.customerName || 'Customer';
+        const typeLabel = request.type === 'exchange' ? 'Exchange' : 'Return';
+        const message = `Payment confirmed for your ${typeLabel} Request ${requestId}. Status: ${updates.status.replace('_', ' ')}. We've recorded your request and will process it shortly.`;
+        sendWhatsAppNotification(request.customerPhone, message, request.type, requestId).catch(err => console.error(err));
+
+        return { success: true, status: updates.status };
+    } catch (error) {
+        console.error(`[${requestId}] ❌ Finalize Error:`, error);
+        return { success: false, error: error.message };
     }
 }
 
@@ -933,6 +1076,8 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         // Verify Payment logic
         const isFeeWaived = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
+        let paymentVerified = false;
+
         if (req.body.paymentId && !isFeeWaived) {
             if (!razorpay) {
                 console.error(`[${requestId}] Payment config missing`);
@@ -941,7 +1086,9 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             try {
                 const payment = await razorpay.payments.fetch(req.body.paymentId);
                 console.log(`[${requestId}] Razorpay Verification - PaymentId: ${req.body.paymentId}, Status: ${payment.status}, Amount: ${payment.amount / 100} ${payment.currency}`);
-                if (payment.status !== 'captured' && payment.status !== 'authorized') {
+                if (payment.status === 'captured' || payment.status === 'authorized') {
+                    paymentVerified = true;
+                } else {
                     return res.status(400).json({ error: 'Payment not successful' });
                 }
             } catch (payError) {
@@ -950,13 +1097,15 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             }
         }
 
+        const needsPayment = !isFeeWaived && !paymentVerified;
+
 
         // Shiprocket Return Order (Auto-Pickup) - Selective Initiation
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (!isFeeWaived && process.env.SHIPROCKET_EMAIL) {
+        if (!isFeeWaived && !needsPayment && process.env.SHIPROCKET_EMAIL) {
             console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
@@ -991,10 +1140,11 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 items,
                 images: imageUrls,
                 type: 'exchange',
-                shippingAddress: originalAddressFormatted, // Save original address
+                shippingAddress: originalAddressFormatted,
                 awbNumber,
                 shipmentId,
-                pickupDate
+                pickupDate,
+                status: needsPayment ? 'waiting_payment' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')
             });
         } catch (dbError) {
             console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
@@ -1080,25 +1230,32 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         const email = req.body.email || shopifyOrder?.email;
 
         const isFeeWaivedReturn = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
+        let paymentVerified = false;
+
         if (req.body.paymentId && !isFeeWaivedReturn) {
-            // Payment verif logic...
             if (!razorpay) return res.status(500).json({ error: 'Config error' });
             try {
                 const payment = await razorpay.payments.fetch(req.body.paymentId);
                 console.log(`[${requestId}] Razorpay Verification (Return) - PaymentId: ${req.body.paymentId}, Status: ${payment.status}, Amount: ${payment.amount / 100} ${payment.currency}`);
-                if (payment.status !== 'captured' && payment.status !== 'authorized') return res.status(400).json({ error: 'Payment failed' });
+                if (payment.status === 'captured' || payment.status === 'authorized') {
+                    paymentVerified = true;
+                } else {
+                    return res.status(400).json({ error: 'Payment failed' });
+                }
             } catch (e) {
                 console.error(`[${requestId}] Razorpay Verification Failed (Return):`, e.message);
                 return res.status(400).json({ error: 'Invalid payment' });
             }
         }
 
+        const needsPayment = !isFeeWaivedReturn && !paymentVerified;
+
         // Shiprocket Return Order (Auto-Pickup) - Selective Initiation
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (!isFeeWaivedReturn && process.env.SHIPROCKET_EMAIL) {
+        if (!isFeeWaivedReturn && !needsPayment && process.env.SHIPROCKET_EMAIL) {
             console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
@@ -1136,7 +1293,8 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 shippingAddress: originalAddressFormatted,
                 awbNumber,
                 shipmentId,
-                pickupDate
+                pickupDate,
+                status: needsPayment ? 'waiting_payment' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')
             });
         } catch (dbError) {
             console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
@@ -1721,6 +1879,68 @@ app.post('/api/admin/delete-requests', authenticateAdmin, async (req, res) => {
         console.error('Delete requests error:', error);
         res.status(500).json({ error: 'Failed to delete requests' });
     }
+});
+
+// Finalize payment from frontend
+app.post('/api/finalize-payment', async (req, res) => {
+    const { requestId, paymentId, paymentAmount } = req.body;
+    console.log(`[${requestId}] Frontend requesting finalization for payment ${paymentId}`);
+
+    if (!requestId || !paymentId) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+        const result = await finalizeRequestAfterPayment(requestId, paymentId, paymentAmount);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Razorpay Webhook
+app.post('/api/razorpay-webhook', async (req, res) => {
+    const signature = req.headers['x-razorpay-signature'];
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+    console.log('📥 Received Razorpay Webhook');
+
+    if (secret && signature) {
+        const expectedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(req.rawBody)
+            .digest('hex');
+
+        if (signature !== expectedSignature) {
+            console.error('❌ Razorpay Webhook Signature Mismatch');
+            return res.status(400).send('Invalid signature');
+        }
+    } else if (!secret) {
+        console.warn('⚠️ RAZORPAY_WEBHOOK_SECRET missing. Skipping signature verification (DEVELOPMENT ONLY)');
+    }
+
+    const event = req.body.event;
+    const payload = req.body.payload;
+
+    if (event === 'payment.captured' || event === 'payment.authorized') {
+        const payment = payload.payment.entity;
+        const requestId = payment.notes?.requestId;
+        const paymentId = payment.id;
+        const amount = payment.amount / 100;
+
+        if (requestId && requestId.startsWith('REQ-')) {
+            console.log(`[${requestId}] 🛡️ Webhook Safety Net: Processing payment ${paymentId} (${amount})`);
+            await finalizeRequestAfterPayment(requestId, paymentId, amount);
+        } else {
+            console.log(`[Webhook] Payment ${paymentId} received but no requestId found in notes.`);
+        }
+    }
+
+    res.json({ status: 'ok' });
 });
 
 // ==================== HEALTH CHECK ====================
