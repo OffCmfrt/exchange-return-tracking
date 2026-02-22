@@ -257,19 +257,21 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
 
                 if (!shopifyData.orders || shopifyData.orders.length === 0) {
                     const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    console.log(`[${requestData.requestId}] Order not found by "${orderName}", retrying with "${altName}"...`);
                     shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&limit=1`);
                 }
 
                 shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+                if (!shopifyOrder) console.warn(`[${requestData.requestId}] ⚠️ Shopify order not found even with fuzzy lookup for: ${orderName}`);
             } catch (e) {
-                console.error('Failed to fetch original order for return creation:', e);
+                console.error(`[${requestData.requestId}] Failed to fetch original order:`, e);
             }
         }
 
-        const address = shopifyOrder ? (shopifyOrder.shipping_address || shopifyOrder.customer.default_address) : null;
+        const address = shopifyOrder ? (shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address)) : null;
 
         if (!address) {
-            console.error('Shiprocket Error: No address found for return pickup');
+            console.error(`[${requestData.requestId}] ❌ Shiprocket Error: No address found. ShopifyOrder fetched: ${!!shopifyOrder}`);
             return null;
         }
 
@@ -956,8 +958,8 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
             return { success: false, error: 'Request not found' };
         }
 
-        if (request.status !== 'waiting_payment') {
-            console.log(`[${requestId}] ℹ️ Request already processed (Status: ${request.status})`);
+        if (request.status !== 'waiting_payment' && request.status !== 'pending') {
+            console.log(`[${requestId}] ℹ️ Request already fully processed (Status: ${request.status})`);
             return { success: true, alreadyProcessed: true };
         }
 
@@ -1134,9 +1136,10 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         try {
             console.log(`[${requestId}] Saving Request to Database...`);
             const requestData = {
-                requestId,
                 ...req.body,
+                requestId,
                 email,
+                customerEmail: email,
                 customerName,
                 customerPhone,
                 items,
@@ -1146,6 +1149,8 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 awbNumber,
                 shipmentId,
                 pickupDate,
+                paymentId: req.body.paymentId || null,
+                paymentAmount: req.body.paymentAmount || 0,
                 status: needsPayment ? 'waiting_payment' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')
             };
 
@@ -1285,9 +1290,10 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         try {
             console.log(`[${requestId}] Saving Request to Database...`);
             const requestData = {
-                requestId,
                 ...req.body,
+                requestId,
                 email,
+                customerEmail: email,
                 customerName,
                 customerPhone,
                 items,
@@ -1297,6 +1303,8 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 awbNumber,
                 shipmentId,
                 pickupDate,
+                paymentId: req.body.paymentId || null,
+                paymentAmount: req.body.paymentAmount || 0,
                 status: needsPayment ? 'waiting_payment' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')
             };
 
