@@ -932,7 +932,8 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         const email = req.body.email || shopifyOrder?.email;
 
         // Verify Payment logic
-        if (req.body.paymentId && req.body.reason !== 'defective') {
+        const isFeeWaived = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
+        if (req.body.paymentId && !isFeeWaived) {
             if (!razorpay) {
                 console.error(`[${requestId}] Payment config missing`);
                 return res.status(500).json({ error: 'Payment configuration missing on server' });
@@ -955,7 +956,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         let shipmentId = null;
         let pickupDate = null;
 
-        if (req.body.reason !== 'defective' && process.env.SHIPROCKET_EMAIL) {
+        if (!isFeeWaived && process.env.SHIPROCKET_EMAIL) {
             console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
@@ -1078,7 +1079,8 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
         const email = req.body.email || shopifyOrder?.email;
 
-        if (req.body.paymentId && req.body.reason !== 'defective') {
+        const isFeeWaivedReturn = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
+        if (req.body.paymentId && !isFeeWaivedReturn) {
             // Payment verif logic...
             if (!razorpay) return res.status(500).json({ error: 'Config error' });
             try {
@@ -1096,7 +1098,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         let shipmentId = null;
         let pickupDate = null;
 
-        if (req.body.reason !== 'defective' && process.env.SHIPROCKET_EMAIL) {
+        if (!isFeeWaivedReturn && process.env.SHIPROCKET_EMAIL) {
             console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
