@@ -219,6 +219,28 @@ async function shiprocketAPI(endpoint, options = {}) {
 }
 
 
+// ==================== SHIPROCKET HELPERS ====================
+
+/**
+ * Ensures an email is valid for Shiprocket, with fallbacks.
+ */
+function getValidEmail(inputEmail, shopifyOrder) {
+    const isValid = (email) => {
+        if (!email || typeof email !== 'string') return false;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    };
+
+    if (isValid(inputEmail)) return inputEmail;
+
+    if (shopifyOrder) {
+        if (isValid(shopifyOrder.email)) return shopifyOrder.email;
+        if (shopifyOrder.customer && isValid(shopifyOrder.customer.email)) return shopifyOrder.customer.email;
+    }
+
+    // Default placeholder email to ensure label creation doesn't fail
+    return 'returns@offcomfort.com';
+}
+
 async function createShiprocketReturnOrder(requestData, shopifyOrder) {
     try {
         const token = getShiprocketToken ? await getShiprocketToken() : null; // Ensure token function exists
@@ -272,8 +294,8 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             pickup_state: address.province,
             pickup_country: address.country_code || 'IN',
             pickup_pincode: address.zip,
-            pickup_email: shopifyOrder.email || 'noreply@example.com',
-            pickup_phone: address.phone || shopifyOrder.phone || '9999999999',
+            pickup_email: getValidEmail(shopifyOrder?.email, shopifyOrder),
+            pickup_phone: address.phone || shopifyOrder?.phone || '9999999999',
 
             // Shipping Details (Warehouse - Destination)
             shipping_customer_name: 'BURB MANUFACTURES PVT LTD',
@@ -435,7 +457,7 @@ async function createShiprocketForwardOrder(requestData) {
             billing_pincode: billingPincode || '110001',
             billing_state: billingState || billingCity || 'State', // Shiprocket requires state
             billing_country: 'India',
-            billing_email: requestData.email,
+            billing_email: getValidEmail(requestData.email, shopifyOrder),
             billing_phone: customerPhone,
             shipping_is_billing: true,
             order_items: orderItems,
