@@ -1104,13 +1104,15 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         console.log(`[${requestId}] Status Calculation: isFeeWaived=${isFeeWaived}, paymentVerified=${paymentVerified}, needsPayment=${needsPayment}`);
 
 
-        // Shiprocket Return Order (Auto-Pickup) - Selective Initiation
+        // Shiprocket Return Order (Auto-Pickup) Logic:
+        // - SIZE / FIT reasons: auto-initiate pickup at submission (no admin approval needed)
+        // - FEE-WAIVED reasons (damaged/wrong_item): go to admin for review first, pickup triggered upon admin approval
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (!needsPayment && process.env.SHIPROCKET_EMAIL) {
-            console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
+        if (!isFeeWaived && !needsPayment && process.env.SHIPROCKET_EMAIL) {
+            console.log(`[${requestId}] Auto-Pickup: initiating Shiprocket for size/fit reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
                     requestId,
@@ -1129,8 +1131,8 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             } catch (err) {
                 console.error(`[${requestId}] ⚠️ Auto-Pickup Failed but proceeding with DB save:`, err.message);
             }
-        } else {
-            console.log(`[${requestId}] Shiprocket Return creation deferred (Damaged reason or missing config). Reason: ${req.body.reason}`);
+        } else if (isFeeWaived) {
+            console.log(`[${requestId}] Fee-waived reason (${req.body.reason}): deferring pickup to admin approval.`);
         }
 
         try {
@@ -1151,7 +1153,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 pickupDate,
                 paymentId: req.body.paymentId || null,
                 paymentAmount: req.body.paymentAmount || 0,
-                status: needsPayment ? 'waiting_payment' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')
+                status: needsPayment ? 'waiting_payment' : (isFeeWaived ? 'pending' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending'))
             };
 
             console.log(`[${requestId}] Final Status: ${requestData.status}, AWB: ${awbNumber}`);
@@ -1258,13 +1260,15 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         console.log(`[${requestId}] Status Calculation (Return): isFeeWaivedReturn=${isFeeWaivedReturn}, paymentVerified=${paymentVerified}, needsPayment=${needsPayment}`);
 
-        // Shiprocket Return Order (Auto-Pickup) - Selective Initiation
+        // Shiprocket Return Order (Auto-Pickup) Logic:
+        // - SIZE / FIT reasons: auto-initiate pickup at submission (no admin approval needed)
+        // - FEE-WAIVED reasons (damaged/wrong_item): go to admin for review first, pickup triggered upon admin approval
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (!needsPayment && process.env.SHIPROCKET_EMAIL) {
-            console.log(`[${requestId}] Initiating Automatic Shiprocket Pickup for reason: ${req.body.reason}`);
+        if (!isFeeWaivedReturn && !needsPayment && process.env.SHIPROCKET_EMAIL) {
+            console.log(`[${requestId}] Auto-Pickup: initiating Shiprocket for size/fit reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
                     requestId,
@@ -1276,15 +1280,15 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                     awbNumber = srResponse.awb_code;
                     shipmentId = srResponse.shipment_id;
                     pickupDate = srResponse.pickup_scheduled_date;
-                    console.log(`[${requestId}] ✅ Auto-Pickup Created Success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    console.log(`[${requestId}] ✅ Auto-Pickup Created: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
                 } else {
                     console.log(`[${requestId}] ⚠️ Shiprocket accepted request but didn't return shipment_id. Response:`, JSON.stringify(srResponse));
                 }
             } catch (err) {
                 console.error(`[${requestId}] ⚠️ Auto-Pickup Failed but proceeding with DB save:`, err.message);
             }
-        } else {
-            console.log(`[${requestId}] Shiprocket Return creation deferred (Damaged reason or missing config). Reason: ${req.body.reason}`);
+        } else if (isFeeWaivedReturn) {
+            console.log(`[${requestId}] Fee-waived reason (${req.body.reason}): deferring pickup to admin approval.`);
         }
 
         try {
@@ -1305,7 +1309,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 pickupDate,
                 paymentId: req.body.paymentId || null,
                 paymentAmount: req.body.paymentAmount || 0,
-                status: needsPayment ? 'waiting_payment' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')
+                status: needsPayment ? 'waiting_payment' : (isFeeWaivedReturn ? 'pending' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending'))
             };
 
             console.log(`[${requestId}] Final Status (Return): ${requestData.status}, AWB: ${awbNumber}`);
@@ -1687,22 +1691,11 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
         }
 
         // 2. Final Approval -> Quality Check Passed -> Process Resolution
-        // Trigger Forward Shipment & Create Store Order for Exchange
+        // Trigger Forward Shipment on Shiprocket only (no Shopify exchange order)
         if (requestDetails.type === 'exchange' && requestDetails.status !== 'approved') {
             console.log(`[${requestId}] Finalizing exchange resolution...`);
 
-            // 2.1 Create Shopify replacement order
-            try {
-                const shopifyExch = await createShopifyExchangeOrder(requestDetails);
-                if (shopifyExch && (shopifyExch.name || shopifyExch.id)) {
-                    adminNotes += `\nShopify Replacement Order Created: #${shopifyExch.name || shopifyExch.id}`;
-                }
-            } catch (shopifyError) {
-                console.error(`[${requestId}] Shopify exchange order creation failed:`, shopifyError.message);
-                adminNotes += `\nWarning: Failed to create Shopify replacement order.`;
-            }
-
-            // 2.2 Create Shiprocket forward shipment
+            // Create Shiprocket forward shipment (Shopify exchange order creation intentionally skipped)
             if (process.env.SHIPROCKET_EMAIL) {
                 console.log('Creating Forward Shipment for Exchange:', requestId);
                 let items = requestDetails.items;
