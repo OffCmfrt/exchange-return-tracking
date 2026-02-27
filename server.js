@@ -32,7 +32,8 @@ app.use(express.static('public'));
 // In-memory storage for OAuth tokens only (admin tokens can stay in memory)
 const storage = {
     accessToken: null,
-    adminTokens: new Set()
+    adminTokens: new Set(),
+    processingPayments: new Set() // Dedup guard: prevent double-processing same payment
 };
 
 console.log('Starting server initialization...');
@@ -970,12 +971,14 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
             status: 'pending' // Default status after payment
         };
 
-        // 2. Trigger Shiprocket Return (Auto-Pickup)
+        // 2. Auto-Pickup: only for paid non-fee-waived requests.
+        // Fee-waived (defective/wrong_item) stay 'pending' for admin review before pickup.
+        const isFeeWaived = request.reason === 'defective' || request.reason === 'wrong_item';
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
 
-        if (process.env.SHIPROCKET_EMAIL) {
+        if (!isFeeWaived && process.env.SHIPROCKET_EMAIL) {
             console.log(`[${requestId}] Initiating Shiprocket Pickup (Background)...`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
@@ -998,6 +1001,8 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
             } catch (err) {
                 console.error(`[${requestId}] ⚠️ Background Shiprocket creation failed:`, err.message);
             }
+        } else if (isFeeWaived) {
+            console.log(`[${requestId}] Fee-waived reason (${request.reason}): keeping pending for admin review.`);
         }
 
         // 3. Save to DB
@@ -1653,40 +1658,49 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
         if (requestDetails.status === 'pending') {
             console.log(`[${requestId}] Admin authorized pickup. Initiating Shiprocket...`);
 
-            // Need Shopify Order for Shiprocket
-            let shopifyOrder = null;
-            try {
-                const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestDetails.orderNumber)}&status=any&limit=1`);
-                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
-            } catch (err) {
-                console.error(`[${requestId}] Failed to fetch Shopify order for approval:`, err);
+            if (!process.env.SHIPROCKET_EMAIL) {
+                return res.status(400).json({ error: 'Shiprocket not configured on server' });
             }
 
-            if (process.env.SHIPROCKET_EMAIL && shopifyOrder) {
-                try {
-                    const shiprocketData = await createShiprocketReturnOrder({
-                        ...requestDetails,
-                        requestId
-                    }, shopifyOrder);
-
-                    if (shiprocketData && shiprocketData.shipment_id) {
-                        updates.shipmentId = shiprocketData.shipment_id;
-                        updates.awbNumber = shiprocketData.awb_code;
-                        updates.pickupDate = shiprocketData.pickup_scheduled_date;
-                        updates.status = 'scheduled';
-                        updates.adminNotes = adminNotes + `\nPickup scheduled: AWB ${shiprocketData.awb_code}`;
-
-                        const request = await updateRequestStatus(requestId, updates);
-                        return res.json({ success: true, message: 'Pickup initiated and status updated to scheduled', request });
-                    } else {
-                        throw new Error('Shiprocket did not return shipment data');
-                    }
-                } catch (srError) {
-                    console.error(`[${requestId}] Shiprocket initiation failed:`, srError);
-                    return res.status(500).json({ error: 'Failed to initiate Shiprocket pickup: ' + srError.message });
+            // Try to fetch Shopify order but don't block on failure —
+            // createShiprocketReturnOrder will re-fetch it internally as well.
+            let shopifyOrder = null;
+            try {
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestDetails.orderNumber)}&status=any&limit=1`);
+                // Fuzzy retry with/without '#'
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const alt = requestDetails.orderNumber.startsWith('#')
+                        ? requestDetails.orderNumber.substring(1)
+                        : '#' + requestDetails.orderNumber;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(alt)}&status=any&limit=1`);
                 }
-            } else {
-                return res.status(400).json({ error: 'Cannot initiate Shiprocket: Shopify order or config missing' });
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+                if (!shopifyOrder) console.warn(`[${requestId}] Shopify order not found for ${requestDetails.orderNumber} — Shiprocket will use stored request data as fallback.`);
+            } catch (err) {
+                console.warn(`[${requestId}] Shopify fetch failed, proceeding with stored data:`, err.message);
+            }
+
+            try {
+                const shiprocketData = await createShiprocketReturnOrder({
+                    ...requestDetails,
+                    requestId
+                }, shopifyOrder); // passes null if not found — function handles internally
+
+                if (shiprocketData && shiprocketData.shipment_id) {
+                    updates.shipmentId = shiprocketData.shipment_id;
+                    updates.awbNumber = shiprocketData.awb_code;
+                    updates.pickupDate = shiprocketData.pickup_scheduled_date;
+                    updates.status = 'scheduled';
+                    updates.adminNotes = adminNotes + `\nPickup scheduled: AWB ${shiprocketData.awb_code || 'Pending'}`;
+
+                    const request = await updateRequestStatus(requestId, updates);
+                    return res.json({ success: true, message: 'Pickup initiated and status updated to scheduled', request });
+                } else {
+                    throw new Error('Shiprocket did not return shipment data');
+                }
+            } catch (srError) {
+                console.error(`[${requestId}] Shiprocket initiation failed:`, srError);
+                return res.status(500).json({ error: 'Failed to initiate Shiprocket pickup: ' + srError.message });
             }
         }
 
@@ -1938,8 +1952,18 @@ app.post('/api/razorpay-webhook', async (req, res) => {
         const amount = payment.amount / 100;
 
         if (requestId && requestId.startsWith('REQ-')) {
-            console.log(`[${requestId}] 🛡️ Webhook Safety Net: Processing payment ${paymentId} (${amount})`);
-            await finalizeRequestAfterPayment(requestId, paymentId, amount);
+            // Dedup guard: Razorpay often fires the same webhook twice simultaneously
+            if (storage.processingPayments.has(paymentId)) {
+                console.log(`[${requestId}] ⏭️ Webhook duplicate: payment ${paymentId} already being processed. Skipping.`);
+            } else {
+                storage.processingPayments.add(paymentId);
+                console.log(`[${requestId}] 🛡️ Webhook Safety Net: Processing payment ${paymentId} (${amount})`);
+                try {
+                    await finalizeRequestAfterPayment(requestId, paymentId, amount);
+                } finally {
+                    storage.processingPayments.delete(paymentId);
+                }
+            }
         } else {
             console.log(`[Webhook] Payment ${paymentId} received but no requestId found in notes.`);
         }
