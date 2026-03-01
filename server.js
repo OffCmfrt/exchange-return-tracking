@@ -18,6 +18,7 @@ const {
     getAllRequests,
     getRequestStats,
     updateRequestStatus,
+    updateRequestData,
     deleteRequests
 } = require('./config/db-helpers');
 
@@ -1078,12 +1079,18 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         // ── One request per order guard ──────────────────────────────────────────
         const existingRequests = await getRequestsByOrderNumber(req.body.orderNumber);
-        const activeExisting = existingRequests.filter(r => r.status !== 'rejected' && r.status !== 'waiting_payment');
+        const activeExisting = existingRequests.filter(r => r.status !== 'rejected');
+        let reuseRequestId = null; // Will be set if resubmitting a waiting_payment request
         if (activeExisting.length > 0) {
-            console.log(`[${requestId}] ❌ Duplicate blocked — existing request ${activeExisting[0].requestId} for order ${req.body.orderNumber}`);
-            return res.status(400).json({
-                error: `A return/exchange request (${activeExisting[0].requestId}) already exists for this order. Only one request is allowed per order.`
-            });
+            if (activeExisting[0].status === 'waiting_payment') {
+                reuseRequestId = activeExisting[0].requestId;
+                console.log(`[${requestId}] ♻️  Reusing REQ ID ${reuseRequestId} (was waiting_payment)`);
+            } else {
+                console.log(`[${requestId}] ❌ Duplicate blocked — ${activeExisting[0].requestId} (${activeExisting[0].status})`);
+                return res.status(400).json({
+                    error: `A request (${activeExisting[0].requestId}) already exists for this order. Only one request is allowed per order.`
+                });
+            }
         }
         // ────────────────────────────────────────────────────────────────────────
 
@@ -1206,7 +1213,13 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             };
 
             console.log(`[${requestId}] Final Status: ${requestData.status}, AWB: ${awbNumber}`);
-            await createRequest(requestData);
+            if (reuseRequestId) {
+                // Resubmission — update existing record, keep same REQ ID
+                requestData.requestId = reuseRequestId;
+                await updateRequestData(reuseRequestId, requestData);
+            } else {
+                await createRequest(requestData);
+            }
         } catch (dbError) {
             console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
             if (dbError.message.includes('column "images"')) {
@@ -1214,6 +1227,9 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             }
             throw dbError;
         }
+
+        // If resubmitting, use the reused REQ ID for notifications and response
+        if (reuseRequestId) requestId = reuseRequestId;
 
         console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
         const message = `Hello ${customerName}, your exchange request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
@@ -1251,12 +1267,19 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         // ── One request per order guard ──────────────────────────────────────────
         const existingRequests = await getRequestsByOrderNumber(req.body.orderNumber);
-        const activeExisting = existingRequests.filter(r => r.status !== 'rejected' && r.status !== 'waiting_payment');
+        const activeExisting = existingRequests.filter(r => r.status !== 'rejected');
+        let reuseRequestId = null; // Will be set if resubmitting a waiting_payment request
         if (activeExisting.length > 0) {
-            console.log(`[${requestId}] ❌ Duplicate blocked — existing request ${activeExisting[0].requestId} for order ${req.body.orderNumber}`);
-            return res.status(400).json({
-                error: `A return/exchange request (${activeExisting[0].requestId}) already exists for this order. Only one request is allowed per order.`
-            });
+            if (activeExisting[0].status === 'waiting_payment') {
+                // Reuse same REQ ID — update existing record instead of creating new
+                reuseRequestId = activeExisting[0].requestId;
+                console.log(`[${requestId}] ♻️  Reusing REQ ID ${reuseRequestId} (was waiting_payment)`);
+            } else {
+                console.log(`[${requestId}] ❌ Duplicate blocked — existing request ${activeExisting[0].requestId} for order ${req.body.orderNumber}`);
+                return res.status(400).json({
+                    error: `A return/exchange request (${activeExisting[0].requestId}) already exists for this order. Only one request is allowed per order.`
+                });
+            }
         }
         // ────────────────────────────────────────────────────────────────────────
 
@@ -1373,7 +1396,13 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             };
 
             console.log(`[${requestId}] Final Status (Return): ${requestData.status}, AWB: ${awbNumber}`);
-            await createRequest(requestData);
+            if (reuseRequestId) {
+                // Resubmission — update existing record, keep same REQ ID
+                requestData.requestId = reuseRequestId;
+                await updateRequestData(reuseRequestId, requestData);
+            } else {
+                await createRequest(requestData);
+            }
         } catch (dbError) {
             console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
             if (dbError.message.includes('column "images"')) {
@@ -1381,6 +1410,9 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             }
             throw dbError;
         }
+
+        // If resubmitting, use the reused REQ ID for notifications and response
+        if (reuseRequestId) requestId = reuseRequestId;
 
         console.log(`[${requestId}] ✅ Return Request Submitted Successfully`);
         const message = `Hello ${customerName}, your return request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
