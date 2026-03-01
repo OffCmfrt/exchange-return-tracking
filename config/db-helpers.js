@@ -163,6 +163,41 @@ async function getRequestStats() {
 }
 
 /**
+ * Overwrite core submission data on an existing request (used when resubmitting a waiting_payment request)
+ * Preserves the REQ ID — does NOT create a new record.
+ */
+async function updateRequestData(requestId, data) {
+    const updateData = {
+        type: data.type,
+        reason: data.reason,
+        comments: data.comments,
+        items: data.items,
+        images: data.images,
+        customer_name: data.customerName,
+        customer_email: data.customerEmail,
+        customer_phone: data.customerPhone,
+        shipping_address: data.shippingAddress,
+        new_address: data.newAddress,
+        new_city: data.newCity,
+        new_pincode: data.newPincode,
+        payment_id: data.paymentId || null,
+        payment_amount: data.paymentAmount || null,
+        status: data.status || 'waiting_payment',
+        updated_at: new Date().toISOString()
+    };
+
+    const { data: row, error } = await supabase
+        .from('requests')
+        .update(updateData)
+        .eq('request_id', requestId)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return convertFromSnakeCase(row);
+}
+
+/**
  * Update request status (approve/reject)
  */
 async function updateRequestStatus(requestId, updates) {
@@ -288,5 +323,6 @@ module.exports = {
     getAllRequests,
     getRequestStats,
     updateRequestStatus,
+    updateRequestData,
     deleteRequests
 };
