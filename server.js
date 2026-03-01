@@ -1053,6 +1053,17 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         console.log(`[${requestId}] Order: ${req.body.orderNumber}, Items: ${items.length}, PaymentId: ${req.body.paymentId || 'None'}, Amount: ${req.body.paymentAmount || 0}`);
 
+        // ── One request per order guard ──────────────────────────────────────────
+        const existingRequests = await getRequestsByOrderNumber(req.body.orderNumber);
+        const activeExisting = existingRequests.filter(r => r.status !== 'rejected');
+        if (activeExisting.length > 0) {
+            console.log(`[${requestId}] ❌ Duplicate blocked — existing request ${activeExisting[0].requestId} for order ${req.body.orderNumber}`);
+            return res.status(400).json({
+                error: `A return/exchange request (${activeExisting[0].requestId}) already exists for this order. Only one request is allowed per order.`
+            });
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
         // Get Cloudinary Image URLs
         const imageUrls = req.files ? req.files.map(file => file.path) : [];
 
@@ -1214,6 +1225,17 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 items = [];
             }
         }
+
+        // ── One request per order guard ──────────────────────────────────────────
+        const existingRequests = await getRequestsByOrderNumber(req.body.orderNumber);
+        const activeExisting = existingRequests.filter(r => r.status !== 'rejected');
+        if (activeExisting.length > 0) {
+            console.log(`[${requestId}] ❌ Duplicate blocked — existing request ${activeExisting[0].requestId} for order ${req.body.orderNumber}`);
+            return res.status(400).json({
+                error: `A return/exchange request (${activeExisting[0].requestId}) already exists for this order. Only one request is allowed per order.`
+            });
+        }
+        // ────────────────────────────────────────────────────────────────────────
 
         const imageUrls = req.files ? req.files.map(file => file.path) : [];
 
