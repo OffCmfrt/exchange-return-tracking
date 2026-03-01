@@ -726,6 +726,28 @@ app.post('/api/lookup-order', async (req, res) => {
 
         console.log('Order found:', order.name);
 
+        // ── One request per order guard ──────────────────────────────────────────
+        // Check BEFORE eligibility so the form never loads for duplicate orders
+        try {
+            const existingForOrder = await getRequestsByOrderNumber(order.name);
+            const activeForOrder = existingForOrder.filter(r => r.status !== 'rejected');
+            if (activeForOrder.length > 0) {
+                const existing = activeForOrder[0];
+                console.log(`Order ${order.name} already has active request ${existing.requestId}`);
+                return res.status(400).json({
+                    isEligible: false,
+                    alreadyHasRequest: true,
+                    existingRequestId: existing.requestId,
+                    existingRequestType: existing.type,
+                    eligibilityMessage: `A ${existing.type} request (${existing.requestId}) has already been raised for this order. You can track it on the Track Request page.`
+                });
+            }
+        } catch (dupCheckErr) {
+            // Non-fatal — if duplicate check fails, continue and let submit-time guard catch it
+            console.warn('Duplicate check failed (non-fatal):', dupCheckErr.message);
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
         const isFulfilled = order.fulfillment_status === 'fulfilled';
 
         // Fetch delivery date BEFORE eligibility check so we can base window on it
