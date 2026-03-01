@@ -739,6 +739,7 @@ app.post('/api/lookup-order', async (req, res) => {
                     alreadyHasRequest: true,
                     existingRequestId: existing.requestId,
                     existingRequestType: existing.type,
+                    error: `A ${existing.type} request (${existing.requestId}) already exists for this order. Track it at the Track Request page.`,
                     eligibilityMessage: `A ${existing.type} request (${existing.requestId}) has already been raised for this order. You can track it on the Track Request page.`
                 });
             }
