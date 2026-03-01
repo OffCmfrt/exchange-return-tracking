@@ -57,6 +57,37 @@ async function getRequestById(requestId) {
 }
 
 /**
+ * Get all requests for a given order number (customer may have multiple)
+ */
+async function getRequestsByOrderNumber(orderNumber) {
+    // Try both with and without # prefix since orders may be stored either way
+    const bare = orderNumber.replace(/^#/, '');  // '1234'
+    const hashed = '#' + bare;                   // '#1234'
+
+    // Run both lookups in parallel
+    const [res1, res2] = await Promise.all([
+        supabase.from('requests').select('*').eq('order_number', bare).order('created_at', { ascending: false }),
+        supabase.from('requests').select('*').eq('order_number', hashed).order('created_at', { ascending: false })
+    ]);
+
+    if (res1.error && res1.error.code !== 'PGRST116') throw res1.error;
+    if (res2.error && res2.error.code !== 'PGRST116') throw res2.error;
+
+    // Merge and deduplicate by request_id
+    const seen = new Set();
+    const merged = [...(res1.data || []), ...(res2.data || [])].filter(row => {
+        if (seen.has(row.request_id)) return false;
+        seen.add(row.request_id);
+        return true;
+    });
+
+    // Sort newest first
+    merged.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    return merged.map(convertFromSnakeCase);
+}
+
+/**
  * Get all requests with optional filters
  */
 async function getAllRequests(filters = {}) {
@@ -253,6 +284,7 @@ async function deleteRequests(requestIds) {
 module.exports = {
     createRequest,
     getRequestById,
+    getRequestsByOrderNumber,
     getAllRequests,
     getRequestStats,
     updateRequestStatus,
