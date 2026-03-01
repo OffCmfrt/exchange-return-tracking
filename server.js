@@ -726,21 +726,9 @@ app.post('/api/lookup-order', async (req, res) => {
 
         console.log('Order found:', order.name);
 
-        // Check eligibility
-        const orderDate = new Date(order.created_at);
-        const daysSinceOrder = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
         const isFulfilled = order.fulfillment_status === 'fulfilled';
-        const isWithin60Days = daysSinceOrder <= 60;
 
-        const eligibilityMessage = !isFulfilled
-            ? 'Order must be fulfilled before exchange/return'
-            : !isWithin60Days
-                ? 'Order is older than 60 days and not eligible'
-                : 'Order is eligible for exchange/return';
-
-        console.log('Eligibility:', { isFulfilled, isWithin60Days, daysSinceOrder });
-
-        // Get Tracking / Delivered Date
+        // Fetch delivery date BEFORE eligibility check so we can base window on it
         let deliveredDate = null;
         if (order.fulfillments && order.fulfillments.length > 0) {
             const fulfillment = order.fulfillments[0];
@@ -752,7 +740,6 @@ app.post('/api/lookup-order', async (req, res) => {
                 console.log('Tracking data fetched:', tracking ? 'Yes' : 'No');
 
                 if (tracking) {
-                    // Try multiple fields for delivered date
                     deliveredDate = tracking.delivered_date || tracking.etd || tracking.edd || null;
                     console.log('Extracted deliveredDate:', deliveredDate);
                 }
@@ -760,6 +747,28 @@ app.post('/api/lookup-order', async (req, res) => {
         } else {
             console.log('No fulfillments found for order');
         }
+
+        // Eligibility: must be fulfilled AND within 2 days of delivery
+        const RETURN_WINDOW_DAYS = 2;
+        let daysSinceDelivery = null;
+        let isWithinWindow = false;
+
+        if (deliveredDate) {
+            const delivered = new Date(deliveredDate);
+            daysSinceDelivery = (Date.now() - delivered.getTime()) / (1000 * 60 * 60 * 24);
+            isWithinWindow = daysSinceDelivery <= RETURN_WINDOW_DAYS;
+        } else if (isFulfilled) {
+            // No delivery date available yet — allow if fulfilled (pickup pending)
+            isWithinWindow = true;
+        }
+
+        const eligibilityMessage = !isFulfilled
+            ? 'Order must be delivered before exchange/return'
+            : !isWithinWindow
+                ? `Return/exchange window has closed. Requests must be raised within ${RETURN_WINDOW_DAYS} days of delivery.`
+                : 'Order is eligible for exchange/return';
+
+        console.log('Eligibility:', { isFulfilled, deliveredDate, daysSinceDelivery, isWithinWindow });
 
         // Fetch product images and variants for inventory check
         const productIds = [...new Set(order.line_items.map(item => item.product_id).filter(id => id))];
@@ -815,7 +824,7 @@ app.post('/api/lookup-order', async (req, res) => {
         }
 
         res.json({
-            isEligible: isFulfilled && isWithin60Days,
+            isEligible: isFulfilled && isWithinWindow,
             eligibilityMessage,
             productVariants: productDataMap, // Send variants to frontend
             order: {
