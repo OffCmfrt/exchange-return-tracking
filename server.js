@@ -14,6 +14,7 @@ const PORT = process.env.PORT || 3000;
 const {
     createRequest,
     getRequestById,
+    getRequestsByOrderNumber,
     getAllRequests,
     getRequestStats,
     updateRequestStatus,
@@ -1342,16 +1343,12 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
     }
 });
 
-// Track request (Return/Exchange)
-app.get('/api/track-request/:requestId', async (req, res) => {
-    try {
-        const request = await getRequestById(req.params.requestId);
+// Track request (Return/Exchange) — accepts REQ ID or Order Number
+app.get('/api/track-request/:identifier', async (req, res) => {
+    const { identifier } = req.params;
 
-        if (!request) {
-            return res.status(404).json({ error: 'Request not found' });
-        }
-
-        // 1. Fetch Return Tracking Data
+    // Helper to enrich a request with live Shiprocket tracking data
+    async function enrichWithTracking(request) {
         if (request.awbNumber && process.env.SHIPROCKET_EMAIL) {
             try {
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`);
@@ -1367,11 +1364,8 @@ app.get('/api/track-request/:requestId', async (req, res) => {
                 }
             } catch (err) {
                 console.error(`[Tracking API] Return Shipment (${request.awbNumber}) failed:`, err.message);
-                // We DON'T throw here so the page still loads basic info
             }
         }
-
-        // 2. Fetch Forward Tracking Data (for Exchanges)
         if (request.forwardAwbNumber && process.env.SHIPROCKET_EMAIL) {
             try {
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${request.forwardAwbNumber}`);
@@ -1386,17 +1380,39 @@ app.get('/api/track-request/:requestId', async (req, res) => {
                 }
             } catch (err) {
                 console.error(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) failed:`, err.message);
-                // We DON'T throw here so the page still loads basic info
             }
         }
+        return request;
+    }
 
-        res.json(request);
+    try {
+        // Detect: REQ IDs always start with 'REQ-'; everything else treated as an order number
+        const isReqId = identifier.toUpperCase().startsWith('REQ-');
+
+        if (isReqId) {
+            // --- Normal path: single request by REQ ID ---
+            const request = await getRequestById(identifier);
+            if (!request) return res.status(404).json({ error: 'Request not found' });
+            await enrichWithTracking(request);
+            return res.json(request);
+        } else {
+            // --- Order number path: may return multiple requests ---
+            const requests = await getRequestsByOrderNumber(identifier);
+            if (!requests || requests.length === 0) {
+                return res.status(404).json({ error: 'No return or exchange request found for this order number' });
+            }
+            // Enrich all with live tracking data
+            const enriched = await Promise.all(requests.map(enrichWithTracking));
+            // If exactly one, return as single object (keeps frontend backward compatible)
+            if (enriched.length === 1) return res.json(enriched[0]);
+            // Multiple: return as array under 'requests' key
+            return res.json({ multiple: true, requests: enriched });
+        }
     } catch (error) {
-        console.error(`[Tracking Error] [${req.params.requestId}]:`, error);
+        console.error(`[Tracking Error] [${identifier}]:`, error);
         res.status(500).json({
             error: 'Failed to track request',
-            details: error.message,
-            requestId: req.params.requestId
+            details: error.message
         });
     }
 });
