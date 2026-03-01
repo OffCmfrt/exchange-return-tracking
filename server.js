@@ -730,7 +730,7 @@ app.post('/api/lookup-order', async (req, res) => {
         // Check BEFORE eligibility so the form never loads for duplicate orders
         try {
             const existingForOrder = await getRequestsByOrderNumber(order.name);
-            const activeForOrder = existingForOrder.filter(r => r.status !== 'rejected');
+            const activeForOrder = existingForOrder.filter(r => r.status !== 'rejected' && r.status !== 'waiting_payment');
             if (activeForOrder.length > 0) {
                 const existing = activeForOrder[0];
                 console.log(`Order ${order.name} already has active request ${existing.requestId}`);
@@ -1078,7 +1078,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         // ── One request per order guard ──────────────────────────────────────────
         const existingRequests = await getRequestsByOrderNumber(req.body.orderNumber);
-        const activeExisting = existingRequests.filter(r => r.status !== 'rejected');
+        const activeExisting = existingRequests.filter(r => r.status !== 'rejected' && r.status !== 'waiting_payment');
         if (activeExisting.length > 0) {
             console.log(`[${requestId}] ❌ Duplicate blocked — existing request ${activeExisting[0].requestId} for order ${req.body.orderNumber}`);
             return res.status(400).json({
@@ -1251,7 +1251,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         // ── One request per order guard ──────────────────────────────────────────
         const existingRequests = await getRequestsByOrderNumber(req.body.orderNumber);
-        const activeExisting = existingRequests.filter(r => r.status !== 'rejected');
+        const activeExisting = existingRequests.filter(r => r.status !== 'rejected' && r.status !== 'waiting_payment');
         if (activeExisting.length > 0) {
             console.log(`[${requestId}] ❌ Duplicate blocked — existing request ${activeExisting[0].requestId} for order ${req.body.orderNumber}`);
             return res.status(400).json({
