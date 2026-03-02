@@ -313,6 +313,48 @@ async function saveAgentNotes(requestId, notes) {
     return convertFromSnakeCase(data);
 }
 
+// ── Dynamic Power Settings ──
+
+let settingsCache = {};
+let lastCacheUpdate = 0;
+const CACHE_TTL = 60 * 1000; // 1 minute
+
+/**
+ * Fetch a setting by key. Uses in-memory cache to prevent DB spam.
+ */
+async function getSetting(key, defaultValue = null) {
+    try {
+        if (Date.now() - lastCacheUpdate > CACHE_TTL) {
+            const { data, error } = await supabase.from('store_settings').select('key, value');
+            if (!error && data) {
+                const newCache = {};
+                data.forEach(row => newCache[row.key] = row.value);
+                settingsCache = newCache;
+                lastCacheUpdate = Date.now();
+            }
+        }
+        if (settingsCache[key] !== undefined) return settingsCache[key];
+    } catch (err) {
+        console.error('Error fetching setting:', err);
+    }
+    return defaultValue;
+}
+
+/**
+ * Update or insert a setting
+ */
+async function updateSetting(key, value) {
+    const { error } = await supabase
+        .from('store_settings')
+        .upsert({ key, value, updated_at: new Date().toISOString() });
+
+    if (error) throw error;
+
+    // Update local cache immediately
+    settingsCache[key] = value;
+    return value;
+}
+
 /**
  * Delete multiple requests by ID
  */
@@ -341,5 +383,7 @@ module.exports = {
     updateRequestStatus,
     updateRequestData,
     saveAgentNotes,
-    deleteRequests
+    deleteRequests,
+    getSetting,
+    updateSetting
 };
