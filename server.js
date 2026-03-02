@@ -18,6 +18,7 @@ const {
     getAllRequests,
     getRequestStats,
     updateRequestData,
+    updateRequestStatus,
     saveAgentNotes,
     deleteRequests,
     getSetting,
