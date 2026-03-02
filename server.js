@@ -19,6 +19,7 @@ const {
     getRequestStats,
     updateRequestStatus,
     updateRequestData,
+    saveAgentNotes,
     deleteRequests
 } = require('./config/db-helpers');
 
@@ -1725,6 +1726,71 @@ app.post('/api/admin/login', (req, res) => {
         res.status(401).json({ error: 'Invalid password' });
     }
 });
+
+// ==================== AGENT ENDPOINTS (Read-only + Notes) ====================
+
+// Agent auth middleware
+function authenticateAgent(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const token = authHeader.substring(7);
+    if (!storage.agentTokens || !storage.agentTokens.has(token)) {
+        return res.status(401).json({ error: 'Invalid agent token' });
+    }
+    next();
+}
+
+// Agent login
+app.post('/api/agent/login', (req, res) => {
+    const { password } = req.body;
+    const agentPass = process.env.AGENT_PASSWORD;
+    if (!agentPass) return res.status(503).json({ error: 'Agent access not configured' });
+    if (password !== agentPass) return res.status(401).json({ error: 'Invalid password' });
+
+    if (!storage.agentTokens) storage.agentTokens = new Set();
+    const token = crypto.randomBytes(32).toString('hex');
+    storage.agentTokens.add(token);
+    res.json({ success: true, token });
+});
+
+// Agent — read-only request list
+app.get('/api/agent/requests', authenticateAgent, async (req, res) => {
+    try {
+        const { status, type, search } = req.query;
+        const requests = await getAllRequests({ status, type, search });
+        res.json({ requests });
+    } catch (error) {
+        console.error('Agent get requests error:', error);
+        res.status(500).json({ error: 'Failed to fetch requests' });
+    }
+});
+
+// Agent — read-only stats
+app.get('/api/agent/stats', authenticateAgent, async (req, res) => {
+    try {
+        const stats = await getRequestStats();
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+});
+
+// Agent — save notes on a request
+app.post('/api/agent/save-notes', authenticateAgent, async (req, res) => {
+    try {
+        const { requestId, notes } = req.body;
+        if (!requestId) return res.status(400).json({ error: 'requestId required' });
+        await saveAgentNotes(requestId, notes || '');
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Agent save notes error:', error);
+        res.status(500).json({ error: 'Failed to save notes' });
+    }
+});
+
+// ==========================================================================
 
 // Get all requests (admin)
 app.get('/api/admin/requests', authenticateAdmin, async (req, res) => {
