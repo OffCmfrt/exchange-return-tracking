@@ -288,6 +288,7 @@ function convertFromSnakeCase(data) {
         approvedAt: data.approved_at,
         rejectedAt: data.rejected_at,
         adminNotes: data.admin_notes,
+        agentNotes: data.agent_notes,
         images: data.images,
         forwardShipmentId: data.forward_shipment_id,
         forwardAwbNumber: data.forward_awb_number,
@@ -295,6 +296,21 @@ function convertFromSnakeCase(data) {
         createdAt: data.created_at,
         updatedAt: data.updated_at
     };
+}
+
+/**
+ * Save agent notes on a request (visible to admin, agent cannot approve/reject)
+ */
+async function saveAgentNotes(requestId, notes) {
+    const { data, error } = await supabase
+        .from('requests')
+        .update({ agent_notes: notes, updated_at: new Date().toISOString() })
+        .eq('request_id', requestId)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return convertFromSnakeCase(data);
 }
 
 /**
@@ -324,5 +340,6 @@ module.exports = {
     getRequestStats,
     updateRequestStatus,
     updateRequestData,
+    saveAgentNotes,
     deleteRequests
 };
