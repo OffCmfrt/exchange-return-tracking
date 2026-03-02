@@ -307,7 +307,11 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             pickup_country: address.country_code || 'IN',
             pickup_pincode: address.zip,
             pickup_email: getValidEmail(shopifyOrder?.email, shopifyOrder),
-            pickup_phone: address.phone || shopifyOrder?.phone || '9999999999',
+            pickup_phone: (() => {
+                let rawPhone = requestData.customerPhone || address.phone || shopifyOrder?.phone || '9999999999';
+                let digits = String(rawPhone).replace(/\D/g, '');
+                return digits.length >= 10 ? digits.slice(-10) : '9999999999';
+            })(),
 
             // Shipping Details (Warehouse - Destination)
             shipping_customer_name: 'BURB MANUFACTURES PVT LTD',
@@ -429,6 +433,11 @@ async function createShiprocketForwardOrder(requestData) {
                 customerPhone = shopifyOrder.shipping_address?.phone || shopifyOrder.customer?.phone || '';
             }
         }
+
+        // Sanitize to exactly 10 digits for Shiprocket rules
+        let cleanPhone = String(customerPhone).replace(/\D/g, '');
+        customerPhone = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : '9999999999';
+
 
         // Sanitize Phone (Shiprocket requires 10 digits for India)
         // Remove all non-digits
@@ -1021,6 +1030,7 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                 const srResponse = await createShiprocketReturnOrder({
                     requestId,
                     orderNumber: request.orderNumber,
+                    customerPhone: request.customerPhone,
                     items: request.items
                 }, null); // Force re-fetch Shopify Order
 
@@ -1183,6 +1193,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 const srResponse = await createShiprocketReturnOrder({
                     requestId,
                     orderNumber: req.body.orderNumber,
+                    customerPhone: customerPhone,
                     items
                 }, shopifyOrder);
 
@@ -1372,6 +1383,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 const srResponse = await createShiprocketReturnOrder({
                     requestId,
                     orderNumber: req.body.orderNumber,
+                    customerPhone: customerPhone,
                     items
                 }, shopifyOrder);
 
