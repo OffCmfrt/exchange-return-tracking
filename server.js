@@ -17,10 +17,11 @@ const {
     getRequestsByOrderNumber,
     getAllRequests,
     getRequestStats,
-    updateRequestStatus,
     updateRequestData,
     saveAgentNotes,
-    deleteRequests
+    deleteRequests,
+    getSetting,
+    updateSetting
 } = require('./config/db-helpers');
 
 // Middleware
@@ -773,8 +774,8 @@ app.post('/api/lookup-order', async (req, res) => {
             console.log('No fulfillments found for order');
         }
 
-        // Eligibility: must be fulfilled AND within 2 days of delivery
-        const RETURN_WINDOW_DAYS = 2;
+        // Eligibility: must be fulfilled AND within X days of delivery
+        const RETURN_WINDOW_DAYS = await getSetting('return_window_days', 2);
         let daysSinceDelivery = null;
         let isWithinWindow = false;
 
@@ -1059,6 +1060,11 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
 
 // Submit exchange request
 app.post('/api/submit-exchange', upload.any(), async (req, res) => {
+    const allowExchanges = await getSetting('allow_exchanges', true);
+    if (!allowExchanges) {
+        return res.status(403).json({ error: 'Exchanges are currently disabled by the administrator.' });
+    }
+
     const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
     console.log(`[${requestId}] 📥 Received exchange submission`);
     console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
@@ -1134,7 +1140,9 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         const email = req.body.email || shopifyOrder?.email;
 
         // Verify Payment logic
-        const isFeeWaived = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
+        const autoApproveReasons = await getSetting('auto_approve_reasons', ['size', 'fit']);
+        // If reason is not in the auto-approve list, admin must review it first (waive fee / manual pickup)
+        const isFeeWaived = !autoApproveReasons.includes(req.body.reason);
         let paymentVerified = false;
 
         if (req.body.paymentId && !isFeeWaived) {
@@ -1249,6 +1257,11 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
 // Submit return request
 app.post('/api/submit-return', upload.any(), async (req, res) => {
+    const allowReturns = await getSetting('allow_returns', true);
+    if (!allowReturns) {
+        return res.status(403).json({ error: 'Returns are currently disabled by the administrator.' });
+    }
+
     const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
     console.log(`[${requestId}] 📥 Received return submission`);
     console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
@@ -1321,7 +1334,8 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
         const email = req.body.email || shopifyOrder?.email;
 
-        const isFeeWaivedReturn = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
+        const autoApproveReasons = await getSetting('auto_approve_reasons', ['size', 'fit']);
+        const isFeeWaivedReturn = !autoApproveReasons.includes(req.body.reason);
         let paymentVerified = false;
 
         if (req.body.paymentId && !isFeeWaivedReturn) {
@@ -1727,6 +1741,41 @@ app.post('/api/admin/login', (req, res) => {
     }
 });
 
+// Admin: Get Settings
+app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
+    try {
+        const settings = {
+            return_window_days: await getSetting('return_window_days', 2),
+            allow_returns: await getSetting('allow_returns', true),
+            allow_exchanges: await getSetting('allow_exchanges', true),
+            auto_approve_reasons: await getSetting('auto_approve_reasons', ['size', 'fit'])
+        };
+        res.json(settings);
+    } catch (error) {
+        console.error('Get settings error:', error);
+        res.status(500).json({ error: 'Failed to get settings' });
+    }
+});
+
+// Admin: Update Settings
+app.post('/api/admin/settings', authenticateAdmin, async (req, res) => {
+    try {
+        const { updates } = req.body;
+        if (!updates || typeof updates !== 'object') {
+            return res.status(400).json({ error: 'Invalid updates object' });
+        }
+
+        for (const [key, value] of Object.entries(updates)) {
+            await updateSetting(key, value);
+        }
+
+        res.json({ success: true, message: 'Settings updated' });
+    } catch (error) {
+        console.error('Update settings error:', error);
+        res.status(500).json({ error: 'Failed to update settings' });
+    }
+});
+
 // ==================== AGENT ENDPOINTS (Read-only + Notes) ====================
 
 // Agent auth middleware
@@ -1931,7 +1980,166 @@ app.post('/api/admin/mark-delivered', authenticateAdmin, async (req, res) => {
     }
 });
 
+// ── Admin: Manually create a request (bypasses eligibility + duplicate checks) ──
+app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
+    const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    console.log(`[ADMIN CREATE] ${requestId} — Manual request creation started`);
+
+    try {
+        const { orderNumber, type, reason, comments, items, overrideExisting } = req.body;
+
+        if (!orderNumber || !type || !reason) {
+            return res.status(400).json({ error: 'orderNumber, type, and reason are required' });
+        }
+        if (!['return', 'exchange'].includes(type)) {
+            return res.status(400).json({ error: 'type must be "return" or "exchange"' });
+        }
+
+        // ── Fetch order from Shopify ──────────────────────────────────────────
+        const shopifyResponse = await fetch(
+            `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2023-10/orders.json?name=${encodeURIComponent(orderNumber)}&status=any&fields=id,name,email,customer,line_items,fulfillment_status,fulfillments`,
+            { headers: { 'X-Shopify-Access-Token': process.env.SHOPIFY_ADMIN_TOKEN } }
+        );
+        const shopifyData = await shopifyResponse.json();
+        const order = shopifyData.orders && shopifyData.orders[0];
+        if (!order) {
+            return res.status(404).json({ error: `Order ${orderNumber} not found in Shopify` });
+        }
+
+        const customerName = order.customer ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() : 'N/A';
+        const customerEmail = order.customer ? order.customer.email : (order.email || '');
+        const customerPhone = order.customer ? order.customer.phone : '';
+
+        // ── Optional: block if active request already exists (unless overrideExisting=true) ──
+        if (!overrideExisting) {
+            const existing = await getRequestsByOrderNumber(order.name);
+            const active = existing.filter(r => r.status !== 'rejected' && r.status !== 'waiting_payment');
+            if (active.length > 0) {
+                return res.status(409).json({
+                    error: `Order already has an active request (${active[0].requestId}). Pass overrideExisting: true to create anyway.`,
+                    existingRequestId: active[0].requestId
+                });
+            }
+        }
+
+        // ── Build items list ──────────────────────────────────────────────────
+        let parsedItems = [];
+        if (items && items.length > 0) {
+            parsedItems = items;
+        } else {
+            // Default: use all line items from Shopify
+            parsedItems = (order.line_items || []).map(li => ({
+                name: li.title,
+                variant: li.variant_title || 'Default',
+                quantity: li.quantity,
+                price: li.price,
+                image: null,
+                lineItemId: li.id
+            }));
+        }
+
+        // ── Schedule pickup via Shiprocket ────────────────────────────────────
+        let awbNumber = null, shipmentId = null, pickupDate = null;
+        try {
+            const shiprocketToken = await getShiprocketToken();
+            if (shiprocketToken) {
+                const pickupResult = await schedulePickup(shiprocketToken, requestId, order, parsedItems, type);
+                if (pickupResult) {
+                    awbNumber = pickupResult.awbNumber;
+                    shipmentId = pickupResult.shipmentId;
+                    pickupDate = pickupResult.pickupDate;
+                }
+            }
+        } catch (srErr) {
+            console.warn(`[ADMIN CREATE] Shiprocket booking failed (non-fatal):`, srErr.message);
+        }
+
+        // ── Insert into DB ────────────────────────────────────────────────────
+        const shippingAddress = order.fulfillments && order.fulfillments[0] && order.fulfillments[0].destination
+            ? `${order.fulfillments[0].destination.address1 || ''}, ${order.fulfillments[0].destination.city || ''} - ${order.fulfillments[0].destination.zip || ''}`
+            : '';
+
+        await createRequest({
+            requestId,
+            orderNumber: order.name,
+            email: customerEmail,
+            customerName,
+            customerEmail,
+            customerPhone,
+            type,
+            status: (awbNumber || shipmentId) ? 'scheduled' : 'pending',
+            reason,
+            comments: comments || '',
+            items: parsedItems,
+            shippingAddress,
+            awbNumber,
+            shipmentId,
+            pickupDate,
+            adminNotes: `Manually created by admin on ${new Date().toLocaleDateString('en-IN')}`
+        });
+
+        console.log(`[ADMIN CREATE] ${requestId} ✅ Created successfully (AWB: ${awbNumber || 'N/A'})`);
+
+        res.json({
+            success: true,
+            requestId,
+            awbNumber: awbNumber || null,
+            pickupDate: pickupDate || null,
+            status: (awbNumber || shipmentId) ? 'scheduled' : 'pending',
+            message: `Request ${requestId} created successfully`
+        });
+
+    } catch (error) {
+        console.error(`[ADMIN CREATE] Error:`, error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ── Admin: Lookup order for manual request creation (no eligibility check) ──
+app.post('/api/admin/lookup-order-force', authenticateAdmin, async (req, res) => {
+    try {
+        const { orderNumber } = req.body;
+        if (!orderNumber) return res.status(400).json({ error: 'orderNumber required' });
+
+        const shopifyResponse = await fetch(
+            `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2023-10/orders.json?name=${encodeURIComponent(orderNumber)}&status=any&fields=id,name,email,customer,line_items,fulfillment_status,fulfillments,financial_status`,
+            { headers: { 'X-Shopify-Access-Token': process.env.SHOPIFY_ADMIN_TOKEN } }
+        );
+        const shopifyData = await shopifyResponse.json();
+        const order = shopifyData.orders && shopifyData.orders[0];
+
+        if (!order) return res.status(404).json({ error: `Order ${orderNumber} not found` });
+
+        // Check for existing active request
+        const existingRequests = await getRequestsByOrderNumber(order.name);
+        const active = existingRequests.filter(r => r.status !== 'rejected');
+
+        res.json({
+            found: true,
+            order: {
+                name: order.name,
+                email: order.customer ? order.customer.email : order.email,
+                customerName: order.customer ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() : 'N/A',
+                customerPhone: order.customer ? order.customer.phone : '',
+                fulfillmentStatus: order.fulfillment_status,
+                lineItems: (order.line_items || []).map(li => ({
+                    id: li.id,
+                    name: li.title,
+                    variant: li.variant_title || 'Default',
+                    quantity: li.quantity,
+                    price: li.price
+                }))
+            },
+            existingRequests: active.map(r => ({ requestId: r.requestId, status: r.status, type: r.type }))
+        });
+    } catch (error) {
+        console.error('Admin lookup-order-force error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Sync Status Endpoint
+
 app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     try {
         // Get relevant statuses where shipment is active
