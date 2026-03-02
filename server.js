@@ -1065,7 +1065,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         return res.status(403).json({ error: 'Exchanges are currently disabled by the administrator.' });
     }
 
-    const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    let requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
     console.log(`[${requestId}] 📥 Received exchange submission`);
     console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
     console.log(`[${requestId}] Files:`, req.files ? req.files.length : 0);
@@ -1262,7 +1262,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         return res.status(403).json({ error: 'Returns are currently disabled by the administrator.' });
     }
 
-    const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    let requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
     console.log(`[${requestId}] 📥 Received return submission`);
     console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
     console.log(`[${requestId}] Files:`, req.files ? req.files.length : 0);
