@@ -2114,11 +2114,12 @@ app.post('/api/admin/lookup-order-force', authenticateAdmin, async (req, res) =>
         const { orderNumber } = req.body;
         if (!orderNumber) return res.status(400).json({ error: 'orderNumber required' });
 
-        const shopifyResponse = await fetch(
-            `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2023-10/orders.json?name=${encodeURIComponent(orderNumber)}&status=any&fields=id,name,email,customer,line_items,fulfillment_status,fulfillments,financial_status`,
-            { headers: { 'X-Shopify-Access-Token': process.env.SHOPIFY_ADMIN_TOKEN } }
-        );
-        const shopifyData = await shopifyResponse.json();
+        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&status=any&fields=id,name,email,customer,line_items,fulfillment_status,fulfillments,financial_status`);
+
+        if (!shopifyData.orders || shopifyData.orders.length === 0) {
+            const retryOrderNumber = orderNumber.startsWith('#') ? orderNumber.substring(1) : '#' + orderNumber;
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&fields=id,name,email,customer,line_items,fulfillment_status,fulfillments,financial_status`);
+        }
         const order = shopifyData.orders && shopifyData.orders[0];
 
         if (!order) return res.status(404).json({ error: `Order ${orderNumber} not found` });
