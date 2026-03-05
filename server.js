@@ -2151,6 +2151,89 @@ app.post('/api/admin/lookup-order-force', authenticateAdmin, async (req, res) =>
     }
 });
 
+// ── Admin: Create Request manually (Bypass rules, overrides) ──
+app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
+    try {
+        const { orderNumber, type, reason, comments, items, overrideExisting } = req.body;
+
+        if (!orderNumber || !type || !reason || !items || items.length === 0) {
+            return res.status(400).json({ error: 'Missing required configuration (type, reason, items).' });
+        }
+
+        const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+
+        // Fetch Order for full details
+        let shopifyOrder = null;
+        let originalAddressFormatted = '';
+        try {
+            let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&status=any&limit=1`);
+
+            if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                const retryOrderNumber = orderNumber.startsWith('#') ? orderNumber.substring(1) : '#' + orderNumber;
+                shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=1`);
+            }
+
+            shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+
+            if (shopifyOrder && shopifyOrder.shipping_address) {
+                const addr = shopifyOrder.shipping_address;
+                originalAddressFormatted = [
+                    addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country
+                ].filter(Boolean).join(', ');
+            }
+        } catch (err) {
+            console.error(`[ADMIN CREATE] Failed to fetch Shopify order:`, err);
+        }
+
+        if (!shopifyOrder) return res.status(404).json({ error: 'Order not found in Shopify' });
+
+        // Duplicate Guard
+        const existingRequests = await getRequestsByOrderNumber(shopifyOrder.name);
+        const active = existingRequests.filter(r => r.status !== 'rejected');
+
+        if (active.length > 0 && !overrideExisting) {
+            return res.status(409).json({
+                error: `Order already has an active request (${active[0].requestId}). Check 'Override Existing Request' to proceed anyway.`
+            });
+        }
+
+        const customerName = shopifyOrder.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer';
+        const customerPhone = shopifyOrder.shipping_address?.phone || shopifyOrder.customer?.phone || '9999999999';
+        const email = shopifyOrder.email || 'returns@offcomfort.com';
+
+        const requestData = {
+            requestId,
+            orderNumber: shopifyOrder.name,
+            email,
+            customerEmail: email,
+            customerName,
+            customerPhone,
+            items,
+            images: [],
+            reason,
+            comments: comments || '',
+            type,
+            shippingAddress: originalAddressFormatted,
+            status: 'pending', // Admins manually approve it on the dashboard subsequently
+            paymentAmount: 0,
+            paymentId: null,
+            adminNotes: 'Manually created by Admin'
+        };
+
+        await createRequest(requestData);
+
+        return res.json({
+            success: true,
+            requestId,
+            status: 'pending'
+        });
+
+    } catch (error) {
+        console.error('Admin create-request error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Sync Status Endpoint
 
 app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
