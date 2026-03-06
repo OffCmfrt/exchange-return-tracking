@@ -259,12 +259,12 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
         if (!shopifyOrder) {
             try {
                 let orderName = requestData.orderNumber;
-                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&limit=1`);
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
 
                 if (!shopifyData.orders || shopifyData.orders.length === 0) {
                     const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
                     console.log(`[${requestData.requestId}] Order not found by "${orderName}", retrying with "${altName}"...`);
-                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&limit=1`);
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
                 }
 
                 shopifyOrder = shopifyData.orders && shopifyData.orders[0];
@@ -373,12 +373,12 @@ async function createShiprocketForwardOrder(requestData) {
         if (needsAddress || needsCustomer) {
             try {
                 let orderName = requestData.orderNumber;
-                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&limit=1`);
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
 
                 // Robust lookup: try with/without '#'
                 if (!shopifyData.orders || shopifyData.orders.length === 0) {
                     const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
-                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&limit=1`);
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
                 }
 
                 shopifyOrder = shopifyData.orders && shopifyData.orders[0];
@@ -516,11 +516,11 @@ async function createShopifyExchangeOrder(requestData) {
 
         // Fetch original order with robust name matching
         let orderName = requestData.orderNumber;
-        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&limit=1`);
+        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
 
         if (!shopifyData.orders || shopifyData.orders.length === 0) {
             const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
-            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&limit=1`);
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
         }
 
         const originalOrder = shopifyData.orders && shopifyData.orders[0];
@@ -639,7 +639,7 @@ app.post('/api/get-order', async (req, res) => {
     try {
         const { orderNumber, email } = req.body;
 
-        const data = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&email=${encodeURIComponent(email)}&limit=1`);
+        const data = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&email=${encodeURIComponent(email)}&status=any&limit=1`);
 
         if (!data.orders || data.orders.length === 0) {
             return res.status(404).json({ error: 'Order not found' });
