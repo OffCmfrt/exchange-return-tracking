@@ -626,9 +626,11 @@ async function createShopifyExchangeOrder(requestData) {
 // ==================== CONFIG ENDPOINT ====================
 
 // Get frontend configuration (Razorpay key, etc.)
-app.get('/api/config', (req, res) => {
+app.get('/api/config', async (req, res) => {
     res.json({
-        razorpayKey: process.env.RAZORPAY_KEY_ID || null
+        razorpayKey: process.env.RAZORPAY_KEY_ID || null,
+        allowReturns: await getSetting('allow_returns', true),
+        allowExchanges: await getSetting('allow_exchanges', true)
     });
 });
 
