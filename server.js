@@ -2258,7 +2258,18 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
                 if (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
                     let trackingData = null;
                     if (req.awbNumber) {
-                        try { trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`); } catch (e) { }
+                        try {
+                            trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
+                        } catch (e) {
+                            const msg = (e.message || '').toLowerCase();
+                            if (msg.includes('cancelled') || msg.includes('canceled')) {
+                                // AWB was cancelled in Shiprocket — stop polling, mark as rejected
+                                console.log(`[Sync] AWB ${req.awbNumber} (${req.requestId}) is cancelled in Shiprocket — marking as rejected`);
+                                await updateRequestStatus(req.requestId, { status: 'rejected' });
+                                updatedCount++;
+                            }
+                            // Skip to next request regardless
+                        }
                     }
                     if ((!trackingData || !trackingData.tracking_data) && req.shipmentId) {
                         try { trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`); } catch (e) { }
@@ -2488,3 +2499,4 @@ app.listen(PORT, () => {
         console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
     }
 });
+
