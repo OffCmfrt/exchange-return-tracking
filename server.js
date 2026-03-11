@@ -1516,7 +1516,12 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                     };
                 }
             } catch (err) {
-                console.error(`[Tracking API] Return Shipment (${request.awbNumber}) failed:`, err.message);
+                if (err.message.toLowerCase().includes('cancelled') || err.message.toLowerCase().includes('canceled')) {
+                    console.log(`[Tracking API] Return Shipment (${request.awbNumber}) is cancelled in Shiprocket.`);
+                    request.shipment = { status: 'Cancelled', edd: null, activities: [] };
+                } else {
+                    console.error(`[Tracking API] Return Shipment (${request.awbNumber}) failed:`, err.message);
+                }
             }
         }
         if (request.forwardAwbNumber && process.env.SHIPROCKET_EMAIL) {
@@ -1532,7 +1537,12 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                     };
                 }
             } catch (err) {
-                console.error(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) failed:`, err.message);
+                if (err.message.toLowerCase().includes('cancelled') || err.message.toLowerCase().includes('canceled')) {
+                    console.log(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) is cancelled in Shiprocket.`);
+                    request.forwardShipment = { awb: request.forwardAwbNumber, status: 'Cancelled', edd: null, activities: [] };
+                } else {
+                    console.error(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) failed:`, err.message);
+                }
             }
         }
         return request;
