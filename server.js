@@ -671,7 +671,19 @@ async function getShiprocketTracking(awb) {
 // Lookup order (improved with better error handling)
 app.post('/api/lookup-order', async (req, res) => {
     try {
+        console.log('--- LOOKUP REQUEST ---');
+        console.log('Body:', req.body);
+        console.log('Headers:', req.headers['content-type']);
+        
         const { orderNumber, email } = req.body;
+        
+        if (!orderNumber || !email) {
+            console.log('Lookup attempt with missing fields:', { orderNumber, email });
+            return res.status(400).json({ 
+                error: 'Order number and email/phone are required',
+                isEligible: false
+            });
+        }
 
         console.log('Looking up order:', orderNumber, 'for email:', email);
 
@@ -2499,4 +2511,3 @@ app.listen(PORT, () => {
         console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
     }
 });
-
