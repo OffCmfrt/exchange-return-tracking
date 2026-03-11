@@ -144,6 +144,31 @@ app.get('/auth/callback', async (req, res) => {
     }
 });
 
+// ==================== API RETRY HELPER ====================
+
+/**
+ * A wrapper around fetch that retries on network errors (like ECONNRESET)
+ * @param {string} url - The URL to fetch
+ * @param {object} options - Fetch options
+ * @param {number} retries - Maximum number of retries
+ * @param {number} backoff - Initial backoff delay in ms
+ */
+async function fetchWithRetry(url, options = {}, retries = 3, backoff = 500) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            return response;
+        } catch (error) {
+            // If it's the last retry, throw the error
+            if (i === retries - 1) throw error;
+            
+            console.warn(`[Network Retry] Attempt ${i + 1}/${retries} failed for ${url}. Error: ${error.message}. Retrying in ${backoff}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoff));
+            backoff *= 2; // Exponential backoff
+        }
+    }
+}
+
 // ==================== SHOPIFY API HELPER ====================
 
 async function shopifyAPI(endpoint, options = {}) {
@@ -154,7 +179,7 @@ async function shopifyAPI(endpoint, options = {}) {
         throw new Error('Not authorized. Please complete OAuth flow first.');
     }
 
-    const response = await fetch(`https://${shop}/admin/api/2024-01/${endpoint}`, {
+    const response = await fetchWithRetry(`https://${shop}/admin/api/2024-01/${endpoint}`, {
         ...options,
         headers: {
             'X-Shopify-Access-Token': token,
@@ -184,7 +209,7 @@ async function getShiprocketToken() {
 
     // Get new token
     try {
-        const response = await fetch('https://apiv2.shiprocket.in/v1/external/auth/login', {
+        const response = await fetchWithRetry('https://apiv2.shiprocket.in/v1/external/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -211,7 +236,7 @@ async function getShiprocketToken() {
 async function shiprocketAPI(endpoint, options = {}) {
     const token = await getShiprocketToken();
 
-    const response = await fetch(`https://apiv2.shiprocket.in/v1/external${endpoint}`, {
+    const response = await fetchWithRetry(`https://apiv2.shiprocket.in/v1/external${endpoint}`, {
         ...options,
         headers: {
             'Authorization': `Bearer ${token}`,
