@@ -308,6 +308,31 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
 
         const orderDate = new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0];
 
+        // Fetch dynamic warehouse location settings
+        const warehouseLocation = await getSetting('warehouse_location', null);
+        
+        let shippingCustomerName = 'BURB MANUFACTURES PVT LTD';
+        let shippingAddress = 'VILLAGE - BAIRAWAS, NEAR GOVT. SCHOOL';
+        let shippingAddress2 = '';
+        let shippingCity = 'MAHENDERGARH';
+        let shippingState = 'Haryana';
+        let shippingCountry = 'IN';
+        let shippingPincode = '123028';
+        let shippingEmail = 'returns@offcomfort.com';
+        let shippingPhone = '9138514222';
+
+        if (warehouseLocation) {
+            shippingCustomerName = warehouseLocation.name || shippingCustomerName;
+            shippingAddress = warehouseLocation.address || warehouseLocation.address_line_1 || shippingAddress;
+            shippingAddress2 = warehouseLocation.address_2 || warehouseLocation.address_line_2 || shippingAddress2;
+            shippingCity = warehouseLocation.city || shippingCity;
+            shippingState = warehouseLocation.state || shippingState;
+            shippingCountry = warehouseLocation.country || shippingCountry;
+            shippingPincode = warehouseLocation.pin_code || warehouseLocation.pincode || shippingPincode;
+            shippingEmail = warehouseLocation.email || shippingEmail;
+            shippingPhone = warehouseLocation.phone || shippingPhone;
+        }
+
         const returnItems = requestData.items.map(item => ({
             name: item.name,
             sku: item.sku || String(item.variantId || item.id), // Fallback SKU
@@ -339,16 +364,16 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             })(),
 
             // Shipping Details (Warehouse - Destination)
-            shipping_customer_name: 'BURB MANUFACTURES PVT LTD',
+            shipping_customer_name: shippingCustomerName,
             shipping_last_name: '',
-            shipping_address: 'VILLAGE - BAIRAWAS, NEAR GOVT. SCHOOL',
-            shipping_address_2: '',
-            shipping_city: 'MAHENDERGARH',
-            shipping_state: 'Haryana',
-            shipping_country: 'IN',
-            shipping_pincode: '123028',
-            shipping_email: 'returns@offcomfort.com',
-            shipping_phone: '9138514222',
+            shipping_address: shippingAddress,
+            shipping_address_2: shippingAddress2,
+            shipping_city: shippingCity,
+            shipping_state: shippingState,
+            shipping_country: shippingCountry,
+            shipping_pincode: shippingPincode,
+            shipping_email: shippingEmail,
+            shipping_phone: shippingPhone,
 
             order_items: returnItems,
             payment_method: 'Prepaid',
@@ -492,10 +517,16 @@ async function createShiprocketForwardOrder(requestData) {
             tax: 0
         }));
 
+        // Fetch dynamic warehouse location settings
+        const warehouseLocation = await getSetting('warehouse_location', null);
+        const pickupLocationNickname = warehouseLocation && warehouseLocation.pickup_location 
+            ? warehouseLocation.pickup_location 
+            : 'Primary';
+
         const payload = {
             order_id: requestData.requestId + '-FWD',
             order_date: new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0],
-            pickup_location: 'Primary', // Change this to your preferred Shiprocket nickname (e.g., 'warehouse-1', 'Burb')
+            pickup_location: pickupLocationNickname, // Dynamically set from Shiprocket settings
             billing_customer_name: customerName,
             billing_last_name: '',
             billing_address: billingAddress || 'Address not available',
@@ -1190,9 +1221,8 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         const email = req.body.email || shopifyOrder?.email;
 
         // Verify Payment logic
-        const autoApproveReasons = await getSetting('auto_approve_reasons', ['size', 'fit']);
-        // If reason is not in the auto-approve list, admin must review it first (waive fee / manual pickup)
-        const isFeeWaived = !autoApproveReasons.includes(req.body.reason);
+        // Fee is ONLY waived for defective/wrong items (requires manual review)
+        const isFeeWaived = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
         let paymentVerified = false;
 
         if (req.body.paymentId && !isFeeWaived) {
@@ -1227,7 +1257,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         let pickupDate = null;
 
         if (!isFeeWaived && !needsPayment && process.env.SHIPROCKET_EMAIL) {
-            console.log(`[${requestId}] Auto-Pickup: initiating Shiprocket for size/fit reason: ${req.body.reason}`);
+            console.log(`[${requestId}] Auto-Pickup: initiating Shiprocket for paid reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
                     requestId,
@@ -1248,7 +1278,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 console.error(`[${requestId}] ⚠️ Auto-Pickup Failed but proceeding with DB save:`, err.message);
             }
         } else if (isFeeWaived) {
-            console.log(`[${requestId}] Fee-waived reason (${req.body.reason}): deferring pickup to admin approval.`);
+            console.log(`[${requestId}] Reason (${req.body.reason}) is fee-waived. Deferring pickup for manual admin review.`);
         }
 
         try {
@@ -1385,8 +1415,8 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
         const email = req.body.email || shopifyOrder?.email;
 
-        const autoApproveReasons = await getSetting('auto_approve_reasons', ['size', 'fit']);
-        const isFeeWaivedReturn = !autoApproveReasons.includes(req.body.reason);
+        // Verify Payment logic for Return
+        const isFeeWaivedReturn = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
         let paymentVerified = false;
 
         if (req.body.paymentId && !isFeeWaivedReturn) {
@@ -1417,7 +1447,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         let pickupDate = null;
 
         if (!isFeeWaivedReturn && !needsPayment && process.env.SHIPROCKET_EMAIL) {
-            console.log(`[${requestId}] Auto-Pickup: initiating Shiprocket for size/fit reason: ${req.body.reason}`);
+            console.log(`[${requestId}] Auto-Pickup: initiating Shiprocket for paid reason: ${req.body.reason}`);
             try {
                 const srResponse = await createShiprocketReturnOrder({
                     requestId,
@@ -1438,7 +1468,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 console.error(`[${requestId}] ⚠️ Auto-Pickup Failed but proceeding with DB save:`, err.message);
             }
         } else if (isFeeWaivedReturn) {
-            console.log(`[${requestId}] Fee-waived reason (${req.body.reason}): deferring pickup to admin approval.`);
+            console.log(`[${requestId}] Reason (${req.body.reason}) is fee-waived. Deferring pickup for manual admin review.`);
         }
 
         try {
@@ -1810,12 +1840,43 @@ app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
             return_window_days: await getSetting('return_window_days', 2),
             allow_returns: await getSetting('allow_returns', true),
             allow_exchanges: await getSetting('allow_exchanges', true),
-            auto_approve_reasons: await getSetting('auto_approve_reasons', ['size', 'fit'])
+            auto_approve_reasons: await getSetting('auto_approve_reasons', ['size', 'fit']),
+            warehouse_location: await getSetting('warehouse_location', null)
         };
         res.json(settings);
     } catch (error) {
         console.error('Get settings error:', error);
         res.status(500).json({ error: 'Failed to get settings' });
+    }
+});
+
+// Admin: Get Shiprocket Locations
+app.get('/api/admin/shiprocket-locations', authenticateAdmin, async (req, res) => {
+    try {
+        const token = await getShiprocketToken();
+        const response = await fetchWithRetry('https://apiv2.shiprocket.in/v1/external/settings/company/pickup', {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
+        }
+        
+        const data = await response.json();
+        
+        // Shiprocket returns an array of pickup locations
+        if (data && data.data && data.data.shipping_address) {
+            res.json({ success: true, locations: data.data.shipping_address });
+        } else {
+            res.json({ success: true, locations: [] });
+        }
+    } catch (error) {
+        console.error('Get Shiprocket locations error:', error);
+        res.status(500).json({ error: 'Failed to fetch Shiprocket pickup locations' });
     }
 });
 
