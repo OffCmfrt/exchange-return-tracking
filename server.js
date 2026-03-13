@@ -1250,7 +1250,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
 
         // Shiprocket Return Order (Auto-Pickup) Logic:
-        // - SIZE / FIT reasons: auto-initiate pickup at submission (no admin approval needed)
+        // - PAID reasons: auto-initiate pickup at submission
         // - FEE-WAIVED reasons (damaged/wrong_item): go to admin for review first, pickup triggered upon admin approval
         let awbNumber = null;
         let shipmentId = null;
@@ -1440,7 +1440,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         console.log(`[${requestId}] Status Calculation (Return): isFeeWaivedReturn=${isFeeWaivedReturn}, paymentVerified=${paymentVerified}, needsPayment=${needsPayment}`);
 
         // Shiprocket Return Order (Auto-Pickup) Logic:
-        // - SIZE / FIT reasons: auto-initiate pickup at submission (no admin approval needed)
+        // - PAID reasons: auto-initiate pickup at submission
         // - FEE-WAIVED reasons (damaged/wrong_item): go to admin for review first, pickup triggered upon admin approval
         let awbNumber = null;
         let shipmentId = null;
