@@ -846,8 +846,11 @@ app.post('/api/lookup-order', async (req, res) => {
                 console.log('Tracking data fetched:', tracking ? 'Yes' : 'No');
 
                 if (tracking) {
-                    deliveredDate = tracking.delivered_date || tracking.etd || tracking.edd || null;
-                    console.log('Extracted deliveredDate:', deliveredDate);
+                    // Only use the ACTUAL delivered_date — NOT estimated dates (etd/edd).
+                    // Using estimated dates caused orders to fail the return window check
+                    // even when they were delivered today or still in transit.
+                    deliveredDate = tracking.delivered_date || null;
+                    console.log('Extracted deliveredDate (actual only):', deliveredDate);
                 }
             }
         } else {
