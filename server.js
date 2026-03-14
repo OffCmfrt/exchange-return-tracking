@@ -2393,11 +2393,13 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
 
                             if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
                                 newStatus = 'delivered';
-                            } else if (statusUpper.includes('PICKED UP') || statusUpper.includes('PICKUP GENERATED')) {
+                            } else if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
+                                // Only mark as picked_up when the courier has ACTUALLY collected the parcel
                                 newStatus = 'picked_up';
                             } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || statusUpper.includes('OUT FOR DELIVERY')) {
                                 newStatus = 'in_transit';
-                            } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('GENERATED') || statusUpper.includes('AWB ASSIGNED')) {
+                            } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('GENERATED') || statusUpper.includes('AWB ASSIGNED') || statusUpper.includes('PICKUP GENERATED')) {
+                                // PICKUP GENERATED = pickup request filed, item NOT yet with courier
                                 newStatus = 'scheduled';
                             } else if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || statusUpper.includes('CANCELLED')) {
                                 newStatus = 'rejected';
@@ -2426,8 +2428,9 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
 
                             let newForwardStatus = req.forwardStatus || 'scheduled';
                             if (currentStatus.includes('DELIVERED')) newForwardStatus = 'delivered';
-                            else if (currentStatus.includes('PICKED UP') || currentStatus.includes('PICKUP GENERATED')) newForwardStatus = 'picked_up';
+                            else if (currentStatus.includes('PICKED UP') && !currentStatus.includes('GENERATED')) newForwardStatus = 'picked_up';
                             else if (currentStatus.includes('IN TRANSIT') || currentStatus.includes('SHIPPED') || currentStatus.includes('OUT FOR DELIVERY')) newForwardStatus = 'in_transit';
+                            else if (currentStatus.includes('PICKUP GENERATED') || currentStatus.includes('AWB ASSIGNED') || currentStatus.includes('SCHEDULED')) newForwardStatus = 'scheduled';
 
                             if (newForwardStatus !== req.forwardStatus) {
                                 console.log(`[${req.requestId}] Updating Forward Status: ${newForwardStatus}`);
