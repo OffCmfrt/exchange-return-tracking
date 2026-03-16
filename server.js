@@ -224,7 +224,7 @@ async function getShiprocketToken() {
 
         const data = await response.json();
         shiprocketToken = data.token;
-        shiprocketTokenExpiry = Date.now() + (10 * 24 * 60 * 60 * 1000); // 10 days
+        shiprocketTokenExpiry = Date.now() + (24 * 60 * 60 * 1000); // Reduce to 24 hours for safety
 
         return shiprocketToken;
     } catch (error) {
@@ -233,24 +233,38 @@ async function getShiprocketToken() {
     }
 }
 
-async function shiprocketAPI(endpoint, options = {}) {
+async function shiprocketAPI(endpoint, options = {}, retries = 2) {
     const token = await getShiprocketToken();
 
-    const response = await fetchWithRetry(`https://apiv2.shiprocket.in/v1/external${endpoint}`, {
-        ...options,
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            ...options.headers
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const response = await fetchWithRetry(`https://apiv2.shiprocket.in/v1/external${endpoint}`, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                // Retry on 5xx errors (like the user experienced)
+                if (response.status >= 500 && i < retries) {
+                    console.warn(`[Shiprocket Retry] Status ${response.status} for ${endpoint}. Attempt ${i + 1}/${retries + 1}.`);
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // 1s, 2s... delay
+                    continue;
+                }
+                throw new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
+            }
+
+            return response.json();
+        } catch (error) {
+            if (i === retries) throw error;
+            console.warn(`[Shiprocket Exception Retry] Attempt ${i + 1}/${retries + 1}. Error: ${error.message}`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
         }
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
     }
-
-    return response.json();
 }
 
 
@@ -1744,8 +1758,9 @@ app.post('/api/track-order', async (req, res) => {
         // Try to get detailed tracking from Shiprocket if AWB exists
         if (trackingNumber && process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD) {
             try {
+                // Wrap in additional try/catch specifically for the API call to ensure we log the AWB
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${trackingNumber}`);
-                console.log('Shiprocket Tracking Response:', JSON.stringify(trackingData, null, 2));
+                console.log(`Shiprocket Tracking for ${trackingNumber}:`, trackingData?.tracking_data ? 'Success' : 'No Data');
 
                 if (trackingData && trackingData.tracking_data) {
                     const tracking = trackingData.tracking_data;
@@ -2613,3 +2628,4 @@ app.listen(PORT, () => {
         console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
     }
 });
+
