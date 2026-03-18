@@ -533,7 +533,7 @@ async function createShiprocketForwardOrder(requestData) {
                 name: finalName,
                 sku: String(finalVariantId) + '-EXCH',
                 units: parseInt(item.quantity) || 1,
-                selling_price: parseFloat(item.price) || 0,
+                selling_price: parseFloat(item.replacementPrice || item.price) || 0,
                 discount: 0,
                 tax: 0
             };
