@@ -522,14 +522,22 @@ async function createShiprocketForwardOrder(requestData) {
 
         // Forward Order Items (Replacement Items)
         const items = Array.isArray(requestData.items) ? requestData.items : [];
-        const orderItems = items.map(item => ({
-            name: item.name + (item.replacementVariant ? ` (${item.replacementVariant})` : ''),
-            sku: String(item.variantId || item.id) + '-EXCH',
-            units: parseInt(item.quantity) || 1,
-            selling_price: parseFloat(item.price) || 0,
-            discount: 0,
-            tax: 0
-        }));
+        const orderItems = items.map(item => {
+            const isDifferentProduct = item.replacementProductId && item.replacementProductId !== item.productId;
+            const title = item.replacementProductTitle || item.name;
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const finalName = title + variantStr;
+            const finalVariantId = (item.replacementVariantId && item.replacementVariantId !== 'Same') ? item.replacementVariantId : (item.variantId || item.id);
+            
+            return {
+                name: finalName,
+                sku: String(finalVariantId) + '-EXCH',
+                units: parseInt(item.quantity) || 1,
+                selling_price: parseFloat(item.price) || 0,
+                discount: 0,
+                tax: 0
+            };
+        });
 
         // Fetch dynamic warehouse location settings
         const warehouseLocation = await getSetting('warehouse_location', null);
@@ -2628,4 +2636,3 @@ app.listen(PORT, () => {
         console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
     }
 });
-
