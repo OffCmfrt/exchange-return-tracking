@@ -29,7 +29,9 @@ async function createRequest(requestData) {
             awb_number: requestData.awbNumber,
             shipment_id: requestData.shipmentId,
             pickup_date: requestData.pickupDate,
-            images: requestData.images
+            images: requestData.images,
+            admin_notes: requestData.adminNotes || null,
+            agent_notes: requestData.agentNotes || null
         }])
         .select()
         .single();
@@ -183,6 +185,8 @@ async function updateRequestData(requestId, data) {
         payment_id: data.paymentId || null,
         payment_amount: data.paymentAmount || null,
         status: data.status || 'waiting_payment',
+        admin_notes: data.adminNotes || null,
+        agent_notes: data.agentNotes || null,
         updated_at: new Date().toISOString()
     };
 
@@ -205,6 +209,7 @@ async function updateRequestStatus(requestId, updates) {
 
     if (updates.status !== undefined) updateData.status = updates.status;
     if (updates.adminNotes !== undefined) updateData.admin_notes = updates.adminNotes;
+    if (updates.agentNotes !== undefined) updateData.agent_notes = updates.agentNotes;
 
     // Status Timestamps
     if (updates.status === 'approved') {
