@@ -24,7 +24,9 @@
         "razorpay": "^2.9.2",
         "@supabase/supabase-js": "^2.39.0",
         "cloudinary": "^1.41.0",
-        "multer-storage-cloudinary": "^4.0.0"
+        "multer-storage-cloudinary": "^4.0.0",
+        "express-rate-limit": "^7.4.0",
+        "winston": "^3.11.0"
     },
     "devDependencies": {
         "nodemon": "^3.0.2"
