@@ -65,6 +65,9 @@ const Razorpay = require('razorpay');
 
 const app = express();
 
+// Trust Render's proxy so express-rate-limit can read real client IPs
+app.set('trust proxy', 1);
+
 // Rate limiters
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 mins
