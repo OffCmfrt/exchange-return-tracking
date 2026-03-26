@@ -1,4 +1,60 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
+const winston = require('winston');
+
+// Create the logger
+const logger = winston.createLogger({
+  level: 'warn',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console(),
+    // Add other transports like File or remote logging service if needed
+  ]
+});
+
+// Rate limit event handler with logging
+function rateLimitHandler(req, res, next, options) {
+  const logData = {
+    timestamp: new Date().toISOString(),
+    ip: req.ip,
+    method: req.method,
+    url: req.originalUrl,
+    userAgent: req.headers['user-agent']
+  };
+  logger.warn('Rate limit exceeded', logData);
+
+  res.status(options.statusCode).send(options.message);
+}
+
+// Simple suspicious activity tracker (in-memory, reset every hour)
+const suspiciousActivity = new Map();
+const SUSPICIOUS_THRESHOLD = 10; // number of failed attempts
+const ATTEMPT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function trackSuspicious(ip, action) {
+  const now = Date.now();
+  let record = suspiciousActivity.get(ip);
+
+  if (!record) {
+    record = { count: 0, lastAction: null, timestamps: [] };
+    suspiciousActivity.set(ip, record);
+  }
+
+  // Clean timestamps older than window
+  record.timestamps = record.timestamps.filter(ts => now - ts < ATTEMPT_WINDOW_MS);
+  record.timestamps.push(now);
+  record.count = record.timestamps.length;
+  record.lastAction = action;
+
+  if (record.count >= SUSPICIOUS_THRESHOLD) {
+    logger.warn(`Suspicious activity detected from IP ${ip}`, record);
+    // Here you can add blocking logic, alerts, etc.
+  }
+}
+
 const cors = require('cors');
 const crypto = require('crypto');
 require('dotenv').config();
@@ -8,6 +64,38 @@ const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const Razorpay = require('razorpay');
 
 const app = express();
+
+// Rate limiters
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 mins
+    max: 100, // limit each IP to 100 requests per windowMs
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: 'Too many requests from this IP, please try again after 15 minutes.',
+    handler: rateLimitHandler
+});
+
+const writeLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 20, // Max 20 requests per IP per hour for write
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many submissions from this IP, please try again after an hour.',
+    handler: rateLimitHandler
+});
+    
+
+
+
+// Apply general API rate limiter
+app.use('/api/', apiLimiter);
+
+// Apply stricter limits on sensitive write endpoints
+app.post('/api/submit-return', writeLimiter);
+app.post('/api/submit-exchange', writeLimiter);
+app.post('/api/admin/', writeLimiter);
+app.post('/api/admin/*', writeLimiter);
+
 const PORT = process.env.PORT || 3000;
 
 // Supabase Database
@@ -2395,14 +2483,11 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
                         try {
                             trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
                         } catch (e) {
-                            const msg = (e.message || '').toLowerCase();
-                            if (msg.includes('cancelled') || msg.includes('canceled')) {
-                                // AWB was cancelled in Shiprocket — stop polling, mark as rejected
-                                console.log(`[Sync] AWB ${req.awbNumber} (${req.requestId}) is cancelled in Shiprocket — marking as rejected`);
-                                await updateRequestStatus(req.requestId, { status: 'rejected' });
-                                updatedCount++;
-                            }
-                            // Skip to next request regardless
+                            console.warn(`[Sync] AWB ${req.awbNumber} (${req.requestId}) fetch failed: ${e.message}`);
+                            // Log issue directly into admin notes as requested
+                            const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] Tracking API error: ${e.message}`;
+                            await updateRequestStatus(req.requestId, { adminNotes: (req.adminNotes || '') + note });
+                            continue;
                         }
                     }
                     if ((!trackingData || !trackingData.tracking_data) && req.shipmentId) {
@@ -2428,7 +2513,11 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
                                 // PICKUP GENERATED = pickup request filed, item NOT yet with courier
                                 newStatus = 'scheduled';
                             } else if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || statusUpper.includes('CANCELLED')) {
-                                newStatus = 'rejected';
+                                // Record negative status directly into admin notes as requested
+                                const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] Shiprocket status: ${currentStatus}`;
+                                if (!req.adminNotes || !req.adminNotes.includes(currentStatus)) {
+                                     await updateRequestStatus(req.requestId, { adminNotes: (req.adminNotes || '') + note });
+                                }
                             }
 
                             if (newStatus !== req.status || (newAwb && newAwb !== req.awbNumber)) {
