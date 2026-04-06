@@ -93,21 +93,17 @@ async function getRequestsByOrderNumber(orderNumber) {
  * Get all requests with optional filters
  */
 async function getAllRequests(filters = {}) {
-    let query = supabase.from('requests').select('*');
+    let query = supabase.from('requests').select('*', { count: 'exact' });
 
     if (filters.status) {
         query = query.eq('status', filters.status);
     }
-    // No default exclusion anymore, show all finalized and waiting_payment requests in main view if desired
-
 
     if (filters.type) {
         query = query.eq('type', filters.type);
     }
 
     if (filters.date) {
-        // Filter by specific date (ignoring time)
-        // usage: created_at >= start_of_day AND created_at <= end_of_day
         const startDate = new Date(filters.date);
         startDate.setHours(0, 0, 0, 0);
 
@@ -121,14 +117,19 @@ async function getAllRequests(filters = {}) {
     if (filters.search) {
         const searchTerm = filters.search;
         console.log('Applying Admin Search:', searchTerm);
-        // Search across multiple columns: request_id, order_number, customer_name, customer_email, or customer_phone
-        // We use .or() with ilike (case-insensitive)
         query = query.or(`request_id.ilike.%${searchTerm}%,order_number.ilike.%${searchTerm}%,customer_name.ilike.%${searchTerm}%,customer_email.ilike.%${searchTerm}%,customer_phone.ilike.%${searchTerm}%`);
     }
 
     query = query.order('created_at', { ascending: false });
 
-    const { data, error } = await query;
+    if (filters.page && filters.limit) {
+        const page = parseInt(filters.page, 10) || 1;
+        const limit = parseInt(filters.limit, 10) || 50;
+        const offset = (page - 1) * limit;
+        query = query.range(offset, offset + limit - 1);
+    }
+
+    const { data, count, error } = await query;
 
     if (filters.search) {
         console.log(`Search Results for "${filters.search}": ${data ? data.length : 0} records found`);
@@ -139,7 +140,14 @@ async function getAllRequests(filters = {}) {
         throw error;
     }
 
-    return data.map(convertFromSnakeCase);
+    return {
+        data: data.map(convertFromSnakeCase),
+        pagination: {
+            total: count || 0,
+            page: filters.page ? parseInt(filters.page, 10) : 1,
+            limit: filters.limit ? parseInt(filters.limit, 10) : (count || 0)
+        }
+    };
 }
 
 /**
