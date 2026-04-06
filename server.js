@@ -2047,9 +2047,9 @@ app.post('/api/agent/login', (req, res) => {
 // Agent — read-only request list
 app.get('/api/agent/requests', authenticateAgent, async (req, res) => {
     try {
-        const { status, type, search } = req.query;
-        const requests = await getAllRequests({ status, type, search });
-        res.json({ requests });
+        const { status, type, search, page, limit } = req.query;
+        const result = await getAllRequests({ status, type, search, page, limit });
+        res.json({ requests: result.data, pagination: result.pagination });
     } catch (error) {
         console.error('Agent get requests error:', error);
         res.status(500).json({ error: 'Failed to fetch requests' });
@@ -2084,12 +2084,12 @@ app.post('/api/agent/save-notes', authenticateAgent, async (req, res) => {
 // Get all requests (admin)
 app.get('/api/admin/requests', authenticateAdmin, async (req, res) => {
     try {
-        const { status, type, date, search } = req.query;
+        const { status, type, date, search, page, limit } = req.query;
 
-        const requests = await getAllRequests({ status, type, date, search });
+        const result = await getAllRequests({ status, type, date, search, page, limit });
         const stats = await getRequestStats();
 
-        res.json({ requests, stats });
+        res.json({ requests: result.data, stats, pagination: result.pagination });
     } catch (error) {
         console.error('Get requests error:', error);
         res.status(500).json({ error: 'Failed to fetch requests' });
@@ -2467,9 +2467,9 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
 app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     try {
         // Get relevant statuses where shipment is active
-        const allRequests = await getAllRequests({});
+        const allRequestsResult = await getAllRequests({});
 
-        let activeRequests = allRequests.filter(r =>
+        let activeRequests = allRequestsResult.data.filter(r =>
             (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(r.status) && (r.awbNumber || r.shipmentId)) ||
             (r.type === 'exchange' && r.forwardAwbNumber && r.forwardStatus !== 'delivered')
         );
