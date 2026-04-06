@@ -122,14 +122,17 @@ async function getAllRequests(filters = {}) {
 
     query = query.order('created_at', { ascending: false });
 
-    if (filters.page && filters.limit) {
-        const page = parseInt(filters.page, 10) || 1;
-        const limit = parseInt(filters.limit, 10) || 50;
-        const offset = (page - 1) * limit;
-        query = query.range(offset, offset + limit - 1);
-    }
+    // Ensure pagination defaults
+    const page = parseInt(filters.page, 10) || 1;
+    const limit = parseInt(filters.limit, 10) || 50;
+    const offset = (page - 1) * limit;
+    const rangeTo = offset + limit - 1;
+    
+    console.log(`[Pagination Debug] Page: ${page}, Limit: ${limit}, Range: ${offset} - ${rangeTo}`);
+    query = query.range(offset, rangeTo);
 
     const { data, count, error } = await query;
+    console.log(`[Pagination Debug] Database returned ${data ? data.length : 0} rows. Total count: ${count}`);
 
     if (filters.search) {
         console.log(`Search Results for "${filters.search}": ${data ? data.length : 0} records found`);
