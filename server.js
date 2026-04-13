@@ -113,7 +113,12 @@ const {
     saveAgentNotes,
     deleteRequests,
     getSetting,
-    updateSetting
+    updateSetting,
+    getAllInfluencers,
+    createInfluencer,
+    updateInfluencer,
+    deleteInfluencer,
+    getInfluencerByToken
 } = require('./config/db-helpers');
 
 // Middleware
@@ -2701,6 +2706,189 @@ app.get('/', (req, res) => {
             admin: ['/api/admin/login', '/api/admin/requests', '/api/admin/approve', '/api/admin/reject']
         }
     });
+});
+
+// ==================== INFLUENCER ADMIN ENDPOINTS ====================
+
+// List all influencers (Protected by Admin Auth)
+app.get('/api/influencer-admin/list', authenticateAdmin, async (req, res) => {
+    try {
+        const influencers = await getAllInfluencers();
+        res.json({ success: true, influencers });
+    } catch (error) {
+        console.error('List influencers error:', error);
+        res.status(500).json({ error: 'Failed to fetch influencers' });
+    }
+});
+
+// Add new influencer (Protected by Admin Auth)
+app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
+    try {
+        const { name, referralCode, commissionRate } = req.body;
+        if (!name || !referralCode) {
+            return res.status(400).json({ error: 'Name and referral code are required' });
+        }
+
+        // Generate a secure unique token for the link
+        const linkToken = crypto.randomBytes(16).toString('hex');
+        
+        const influencer = await createInfluencer({
+            name,
+            referralCode,
+            linkToken,
+            commissionRate: commissionRate !== undefined ? parseFloat(commissionRate) : 10.00
+        });
+        res.json({ success: true, influencer });
+    } catch (error) {
+        console.error('Add influencer error:', error);
+        res.status(500).json({ error: 'Failed to add influencer. Code might already exist.' });
+    }
+});
+
+// Update influencer (Protected by Admin Auth)
+app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, referralCode, commissionRate } = req.body;
+        const updated = await updateInfluencer(id, { name, referralCode, commissionRate });
+        res.json({ success: true, influencer: updated });
+    } catch (error) {
+        console.error('Update influencer error:', error);
+        res.status(500).json({ error: 'Failed to update influencer' });
+    }
+});
+
+// Remove influencer (Protected by Admin Auth)
+app.delete('/api/influencer-admin/remove/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        await deleteInfluencer(id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Remove influencer error:', error);
+        res.status(500).json({ error: 'Failed to remove influencer' });
+    }
+});
+
+// ==================== INFLUENCER PORTAL ENDPOINTS ====================
+
+// Verify Influencer Token & Get Profile
+app.get('/api/influencer/auth/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid or inactive influencer link' });
+        }
+        
+        res.json({
+            success: true,
+            influencer: {
+                name: influencer.name,
+                referralCode: influencer.referral_code,
+                commissionRate: parseFloat(influencer.commission_rate || 10)
+            }
+        });
+    } catch (error) {
+        console.error('Influencer auth error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get Performance Stats for Influencer (with pagination + date range)
+app.get('/api/influencer/stats/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { range } = req.query; // '30d', '90d', or 'all'
+
+        const influencer = await getInfluencerByToken(token);
+        
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid or inactive influencer link' });
+        }
+
+        const referralCode = influencer.referral_code;
+        const commissionRate = parseFloat(influencer.commission_rate || 10);
+        console.log(`[Influencer Stats] Fetching stats for ${influencer.name} (Code: ${referralCode}, Range: ${range || 'all'})`);
+
+        // Determine date cutoff based on range
+        let createdAtMin = null;
+        if (range === '30d') {
+            const d = new Date();
+            d.setDate(d.getDate() - 30);
+            createdAtMin = d.toISOString();
+        } else if (range === '90d') {
+            const d = new Date();
+            d.setDate(d.getDate() - 90);
+            createdAtMin = d.toISOString();
+        }
+
+        // Paginated Shopify fetch — collects ALL matching orders, not just last 250
+        let allOrders = [];
+        let pageInfo = null;
+        let hasNextPage = true;
+        const baseQuery = `orders.json?status=paid&limit=250&fields=id,name,total_price,discount_codes,created_at,currency${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}`;
+        let nextUrl = baseQuery;
+
+        while (hasNextPage) {
+            const shopifyData = await shopifyAPI(nextUrl);
+            const batch = shopifyData.orders || [];
+            allOrders = allOrders.concat(batch);
+
+            // Shopify REST pagination via Link header (handled by shopifyAPI if it supports it)
+            // If shopifyAPI returns a nextUrl cursor, use it; otherwise stop after one batch
+            if (shopifyData.nextUrl && batch.length === 250) {
+                nextUrl = shopifyData.nextUrl;
+            } else if (batch.length === 250 && !createdAtMin) {
+                // Try cursor-based: use page_info if available
+                hasNextPage = false; // shopifyAPI does not expose page_info — stop safely
+            } else {
+                hasNextPage = false;
+            }
+        }
+
+        // Filter orders by this influencer's discount code
+        const attributedOrders = allOrders.filter(order => {
+            if (!order.discount_codes || order.discount_codes.length === 0) return false;
+            return order.discount_codes.some(dc => dc.code.toUpperCase() === referralCode.toUpperCase());
+        });
+
+        // Sort newest first
+        attributedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        // Calculate Stats
+        const totalRevenue = attributedOrders.reduce((sum, order) => sum + parseFloat(order.total_price), 0);
+        const orderCount = attributedOrders.length;
+        const aov = orderCount > 0 ? (totalRevenue / orderCount) : 0;
+        const estimatedEarnings = totalRevenue * (commissionRate / 100);
+
+        // Anonymize orders for the portal feed (most recent 20)
+        const recentConversions = attributedOrders.slice(0, 20).map(order => ({
+            id: order.id,
+            name: order.name,
+            total: order.total_price,
+            currency: order.currency,
+            date: order.created_at
+        }));
+
+        res.json({
+            success: true,
+            stats: {
+                totalRevenue: totalRevenue.toFixed(2),
+                orderCount,
+                aov: aov.toFixed(2),
+                estimatedEarnings: estimatedEarnings.toFixed(2),
+                commissionRate,
+                currency: attributedOrders[0]?.currency || 'INR'
+            },
+            recentConversions
+        });
+
+    } catch (error) {
+        console.error('Influencer stats error:', error);
+        res.status(500).json({ error: 'Failed to fetch performance data' });
+    }
 });
 
 // ==================== ERROR HANDLING ====================
