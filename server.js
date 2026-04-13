@@ -4,29 +4,29 @@ const winston = require('winston');
 
 // Create the logger
 const logger = winston.createLogger({
-  level: 'warn',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
-  transports: [
-    new winston.transports.Console(),
-    // Add other transports like File or remote logging service if needed
-  ]
+    level: 'warn',
+    format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.json()
+    ),
+    transports: [
+        new winston.transports.Console(),
+        // Add other transports like File or remote logging service if needed
+    ]
 });
 
 // Rate limit event handler with logging
 function rateLimitHandler(req, res, next, options) {
-  const logData = {
-    timestamp: new Date().toISOString(),
-    ip: req.ip,
-    method: req.method,
-    url: req.originalUrl,
-    userAgent: req.headers['user-agent']
-  };
-  logger.warn('Rate limit exceeded', logData);
+    const logData = {
+        timestamp: new Date().toISOString(),
+        ip: req.ip,
+        method: req.method,
+        url: req.originalUrl,
+        userAgent: req.headers['user-agent']
+    };
+    logger.warn('Rate limit exceeded', logData);
 
-  res.status(options.statusCode).send(options.message);
+    res.status(options.statusCode).send(options.message);
 }
 
 // Simple suspicious activity tracker (in-memory, reset every hour)
@@ -35,24 +35,24 @@ const SUSPICIOUS_THRESHOLD = 10; // number of failed attempts
 const ATTEMPT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 function trackSuspicious(ip, action) {
-  const now = Date.now();
-  let record = suspiciousActivity.get(ip);
+    const now = Date.now();
+    let record = suspiciousActivity.get(ip);
 
-  if (!record) {
-    record = { count: 0, lastAction: null, timestamps: [] };
-    suspiciousActivity.set(ip, record);
-  }
+    if (!record) {
+        record = { count: 0, lastAction: null, timestamps: [] };
+        suspiciousActivity.set(ip, record);
+    }
 
-  // Clean timestamps older than window
-  record.timestamps = record.timestamps.filter(ts => now - ts < ATTEMPT_WINDOW_MS);
-  record.timestamps.push(now);
-  record.count = record.timestamps.length;
-  record.lastAction = action;
+    // Clean timestamps older than window
+    record.timestamps = record.timestamps.filter(ts => now - ts < ATTEMPT_WINDOW_MS);
+    record.timestamps.push(now);
+    record.count = record.timestamps.length;
+    record.lastAction = action;
 
-  if (record.count >= SUSPICIOUS_THRESHOLD) {
-    logger.warn(`Suspicious activity detected from IP ${ip}`, record);
-    // Here you can add blocking logic, alerts, etc.
-  }
+    if (record.count >= SUSPICIOUS_THRESHOLD) {
+        logger.warn(`Suspicious activity detected from IP ${ip}`, record);
+        // Here you can add blocking logic, alerts, etc.
+    }
 }
 
 const cors = require('cors');
@@ -86,7 +86,7 @@ const writeLimiter = rateLimit({
     message: 'Too many submissions from this IP, please try again after an hour.',
     handler: rateLimitHandler
 });
-    
+
 
 
 
@@ -257,7 +257,7 @@ async function fetchWithRetry(url, options = {}, retries = 3, backoff = 500) {
         } catch (error) {
             // If it's the last retry, throw the error
             if (i === retries - 1) throw error;
-            
+
             console.warn(`[Network Retry] Attempt ${i + 1}/${retries} failed for ${url}. Error: ${error.message}. Retrying in ${backoff}ms...`);
             await new Promise(resolve => setTimeout(resolve, backoff));
             backoff *= 2; // Exponential backoff
@@ -420,7 +420,7 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
 
         // Fetch dynamic warehouse location settings
         const warehouseLocation = await getSetting('warehouse_location', null);
-        
+
         let shippingCustomerName = 'BURB MANUFACTURES PVT LTD';
         let shippingAddress = 'VILLAGE - BAIRAWAS, NEAR GOVT. SCHOOL';
         let shippingAddress2 = '';
@@ -624,7 +624,7 @@ async function createShiprocketForwardOrder(requestData) {
             const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
             const finalName = title + variantStr;
             const finalVariantId = (item.replacementVariantId && item.replacementVariantId !== 'Same') ? item.replacementVariantId : (item.variantId || item.id);
-            
+
             return {
                 name: finalName,
                 sku: String(finalVariantId) + '-EXCH',
@@ -637,8 +637,8 @@ async function createShiprocketForwardOrder(requestData) {
 
         // Fetch dynamic warehouse location settings
         const warehouseLocation = await getSetting('warehouse_location', null);
-        const pickupLocationNickname = warehouseLocation && warehouseLocation.pickup_location 
-            ? warehouseLocation.pickup_location 
+        const pickupLocationNickname = warehouseLocation && warehouseLocation.pickup_location
+            ? warehouseLocation.pickup_location
             : 'Primary';
 
         const payload = {
@@ -848,12 +848,12 @@ app.post('/api/lookup-order', async (req, res) => {
         console.log('--- LOOKUP REQUEST ---');
         console.log('Body:', req.body);
         console.log('Headers:', req.headers['content-type']);
-        
+
         const { orderNumber, email } = req.body;
-        
+
         if (!orderNumber || !email) {
             console.log('Lookup attempt with missing fields:', { orderNumber, email });
-            return res.status(400).json({ 
+            return res.status(400).json({
                 error: 'Order number and email/phone are required',
                 isEligible: false
             });
@@ -1982,14 +1982,14 @@ app.get('/api/admin/shiprocket-locations', authenticateAdmin, async (req, res) =
                 'Content-Type': 'application/json'
             }
         });
-        
+
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
         }
-        
+
         const data = await response.json();
-        
+
         // Shiprocket returns an array of pickup locations
         if (data && data.data && data.data.shipping_address) {
             res.json({ success: true, locations: data.data.shipping_address });
@@ -2524,7 +2524,7 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
                                 // Record negative status directly into admin notes as requested
                                 const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] Shiprocket status: ${currentStatus}`;
                                 if (!req.adminNotes || !req.adminNotes.includes(currentStatus)) {
-                                     await updateRequestStatus(req.requestId, { adminNotes: (req.adminNotes || '') + note });
+                                    await updateRequestStatus(req.requestId, { adminNotes: (req.adminNotes || '') + note });
                                 }
                             }
 
@@ -2731,7 +2731,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
 
         // Generate a secure unique token for the link
         const linkToken = crypto.randomBytes(16).toString('hex');
-        
+
         const influencer = await createInfluencer({
             name,
             referralCode,
@@ -2778,11 +2778,11 @@ app.get('/api/influencer/auth/:token', async (req, res) => {
     try {
         const { token } = req.params;
         const influencer = await getInfluencerByToken(token);
-        
+
         if (!influencer) {
             return res.status(401).json({ error: 'Invalid or inactive influencer link' });
         }
-        
+
         res.json({
             success: true,
             influencer: {
@@ -2802,15 +2802,15 @@ app.post('/api/influencer/verify', async (req, res) => {
     try {
         const { token, phone } = req.body;
         const influencer = await getInfluencerByToken(token);
-        
+
         if (!influencer) {
             return res.status(401).json({ error: 'Invalid or inactive influencer link' });
         }
-        
+
         // Match phone (clean non-digits for robust comparison)
         const cleanDbPhone = (influencer.phone || '').replace(/\D/g, '');
         const cleanInputPhone = (phone || '').replace(/\D/g, '');
-        
+
         if (cleanInputPhone === cleanDbPhone && cleanDbPhone.length > 0) {
             res.json({ success: true });
         } else {
@@ -2829,7 +2829,7 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
         const { range } = req.query; // '30d', '90d', or 'all'
 
         const influencer = await getInfluencerByToken(token);
-        
+
         if (!influencer) {
             return res.status(401).json({ error: 'Invalid or inactive influencer link' });
         }
