@@ -1,17 +1,21 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const winston = require('winston');
+const jwt = require('jsonwebtoken');
+const helmet = require('helmet');
+
+// Environment check
+const isProduction = process.env.NODE_ENV === 'production';
 
 // Create the logger
 const logger = winston.createLogger({
-    level: 'warn',
+    level: isProduction ? 'error' : 'warn',
     format: winston.format.combine(
         winston.format.timestamp(),
         winston.format.json()
     ),
     transports: [
         new winston.transports.Console(),
-        // Add other transports like File or remote logging service if needed
     ]
 });
 
@@ -25,14 +29,13 @@ function rateLimitHandler(req, res, next, options) {
         userAgent: req.headers['user-agent']
     };
     logger.warn('Rate limit exceeded', logData);
-
-    res.status(options.statusCode).send(options.message);
+    res.status(options.statusCode).json({ error: 'Too many requests, please try again later.' });
 }
 
 // Simple suspicious activity tracker (in-memory, reset every hour)
 const suspiciousActivity = new Map();
-const SUSPICIOUS_THRESHOLD = 10; // number of failed attempts
-const ATTEMPT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const SUSPICIOUS_THRESHOLD = 10;
+const ATTEMPT_WINDOW_MS = 60 * 60 * 1000;
 
 function trackSuspicious(ip, action) {
     const now = Date.now();
@@ -43,15 +46,13 @@ function trackSuspicious(ip, action) {
         suspiciousActivity.set(ip, record);
     }
 
-    // Clean timestamps older than window
     record.timestamps = record.timestamps.filter(ts => now - ts < ATTEMPT_WINDOW_MS);
     record.timestamps.push(now);
     record.count = record.timestamps.length;
     record.lastAction = action;
 
     if (record.count >= SUSPICIOUS_THRESHOLD) {
-        logger.warn(`Suspicious activity detected from IP ${ip}`, record);
-        // Here you can add blocking logic, alerts, etc.
+        logger.warn(`Suspicious activity detected from IP ${ip}`, { count: record.count });
     }
 }
 
@@ -67,6 +68,53 @@ const app = express();
 
 // Trust Render's proxy so express-rate-limit can read real client IPs
 app.set('trust proxy', 1);
+
+// Security middleware - Helmet for security headers
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'"],
+            imgSrc: ["'self'", "data:", "https:"],
+        },
+    },
+    crossOriginEmbedderPolicy: false,
+}));
+
+// JWT Configuration
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET && isProduction) {
+    console.error('FATAL: JWT_SECRET environment variable is required in production');
+    process.exit(1);
+}
+
+// Token expiration time (24 hours)
+const TOKEN_EXPIRY = '24h';
+
+// CORS Configuration - Restrict to Shopify domain
+const corsOptions = {
+    origin: function (origin, callback) {
+        const allowedOrigins = [
+            `https://${process.env.SHOPIFY_STORE}`,
+            `https://${process.env.SHOPIFY_STORE_DOMAIN}`,
+            'https://offcomfrt.myshopify.com',
+        ].filter(Boolean);
+        
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            logger.warn(`CORS blocked request from: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+};
+
+app.use(cors(corsOptions));
 
 // Rate limiters
 const apiLimiter = rateLimit({
@@ -100,6 +148,27 @@ app.post('/api/admin/', writeLimiter);
 app.post('/api/admin/*', writeLimiter);
 
 const PORT = process.env.PORT || 3000;
+
+// JWT Token Generation Helper
+function generateToken(payload) {
+    if (!JWT_SECRET) {
+        // Fallback for development only
+        return crypto.randomBytes(32).toString('hex');
+    }
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+}
+
+// JWT Token Verification Helper
+function verifyToken(token) {
+    if (!JWT_SECRET) {
+        return null; // Development fallback
+    }
+    try {
+        return jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        return null;
+    }
+}
 
 // Supabase Database
 const {
@@ -139,8 +208,7 @@ async function generateUniqueRequestId() {
     return requestId;
 }
 
-// Middleware
-app.use(cors());
+// Body parsing middleware
 app.use(express.json({
     verify: (req, res, buf) => {
         req.rawBody = buf.toString();
@@ -148,10 +216,9 @@ app.use(express.json({
 }));
 app.use(express.static('public'));
 
-// In-memory storage for OAuth tokens only (admin tokens can stay in memory)
+// In-memory storage for OAuth tokens and payment processing
 const storage = {
     accessToken: null,
-    adminTokens: new Set(),
     processingPayments: new Set() // Dedup guard: prevent double-processing same payment
 };
 
@@ -217,18 +284,23 @@ app.get('/auth/install', (req, res) => {
     res.redirect(authUrl);
 });
 
-// OAuth callback
+// OAuth callback - Protected in production
 app.get('/auth/callback', async (req, res) => {
+    // Block OAuth callback in production if already configured
+    if (isProduction && process.env.SHOPIFY_ACCESS_TOKEN) {
+        return res.status(403).json({ error: 'OAuth callback is disabled in production. Shopify is already configured.' });
+    }
+
     const { code, shop } = req.query;
 
     // Validate that we have the required parameters
     if (!code || !shop) {
-        return res.status(400).send('Invalid OAuth callback - missing code or shop parameter');
+        return res.status(400).json({ error: 'Invalid OAuth callback - missing code or shop parameter' });
     }
 
     // Verify shop matches our configured store
     if (shop !== process.env.SHOPIFY_STORE) {
-        return res.status(400).send('Invalid OAuth callback - shop mismatch');
+        return res.status(400).json({ error: 'Invalid OAuth callback - shop mismatch' });
     }
 
     try {
@@ -246,6 +318,15 @@ app.get('/auth/callback', async (req, res) => {
         const data = await tokenResponse.json();
         storage.accessToken = data.access_token;
 
+        // In production, don't expose the token in the response
+        if (isProduction) {
+            return res.json({ 
+                success: true, 
+                message: 'Authorization successful. Token has been stored securely.' 
+            });
+        }
+
+        // Development only: Show token for setup
         res.send(`
       <h1>✅ Authorization Successful!</h1>
       <h2>Your Access Token:</h2>
@@ -1942,7 +2023,7 @@ app.post('/api/track-order', async (req, res) => {
 
 // ==================== ADMIN ENDPOINTS ====================
 
-// Admin authentication middleware
+// Admin authentication middleware with JWT
 function authenticateAdmin(req, res, next) {
     const authHeader = req.headers.authorization;
 
@@ -1951,24 +2032,30 @@ function authenticateAdmin(req, res, next) {
     }
 
     const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
 
-    if (token !== process.env.ADMIN_PASSWORD && !storage.adminTokens.has(token)) {
-        return res.status(401).json({ error: 'Invalid token' });
+    if (!decoded || decoded.role !== 'admin') {
+        trackSuspicious(req.ip, 'invalid_admin_token');
+        return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
+    req.user = decoded;
     next();
 }
 
-// Admin login
+// Admin login with JWT
 app.post('/api/admin/login', (req, res) => {
     const { password } = req.body;
 
-    if (password === process.env.ADMIN_PASSWORD) {
-        const token = crypto.randomBytes(32).toString('hex');
-        storage.adminTokens.add(token);
+    if (!password) {
+        return res.status(400).json({ error: 'Password required' });
+    }
 
+    if (password === process.env.ADMIN_PASSWORD) {
+        const token = generateToken({ role: 'admin', timestamp: Date.now() });
         res.json({ success: true, token });
     } else {
+        trackSuspicious(req.ip, 'failed_admin_login');
         res.status(401).json({ error: 'Invalid password' });
     }
 });
@@ -2041,29 +2128,39 @@ app.post('/api/admin/settings', authenticateAdmin, async (req, res) => {
 
 // ==================== AGENT ENDPOINTS (Read-only + Notes) ====================
 
-// Agent auth middleware
+// Agent auth middleware with JWT
 function authenticateAgent(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     const token = authHeader.substring(7);
-    if (!storage.agentTokens || !storage.agentTokens.has(token)) {
-        return res.status(401).json({ error: 'Invalid agent token' });
+    const decoded = verifyToken(token);
+
+    if (!decoded || decoded.role !== 'agent') {
+        trackSuspicious(req.ip, 'invalid_agent_token');
+        return res.status(401).json({ error: 'Invalid or expired token' });
     }
+
+    req.user = decoded;
     next();
 }
 
-// Agent login
+// Agent login with JWT
 app.post('/api/agent/login', (req, res) => {
     const { password } = req.body;
     const agentPass = process.env.AGENT_PASSWORD;
-    if (!agentPass) return res.status(503).json({ error: 'Agent access not configured' });
-    if (password !== agentPass) return res.status(401).json({ error: 'Invalid password' });
 
-    if (!storage.agentTokens) storage.agentTokens = new Set();
-    const token = crypto.randomBytes(32).toString('hex');
-    storage.agentTokens.add(token);
+    if (!password) {
+        return res.status(400).json({ error: 'Password required' });
+    }
+    if (!agentPass) return res.status(503).json({ error: 'Agent access not configured' });
+    if (password !== agentPass) {
+        trackSuspicious(req.ip, 'failed_agent_login');
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    const token = generateToken({ role: 'agent', timestamp: Date.now() });
     res.json({ success: true, token });
 });
 
@@ -2800,16 +2897,12 @@ app.post('/api/razorpay-webhook', async (req, res) => {
 // ==================== HEALTH CHECK ====================
 
 app.get('/', (req, res) => {
+    // Minimal health check - no sensitive information exposed
     res.json({
         service: 'Offcomfrt Returns & Exchanges',
         status: 'running',
-        authorized: !!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken),
-        shiprocketConfigured: !!(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD),
-        endpoints: {
-            oauth: '/auth/install',
-            public: ['/api/get-order', '/api/lookup-order', '/api/submit-exchange', '/api/submit-return', '/api/track-request/:id', '/api/track-order'],
-            admin: ['/api/admin/login', '/api/admin/requests', '/api/admin/approve', '/api/admin/reject']
-        }
+        version: '1.0.0',
+        timestamp: new Date().toISOString()
     });
 });
 
@@ -3029,10 +3122,23 @@ app.use((req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// Global error handler
+// Global error handler - Sanitized for production
 app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal server error', details: err.message });
+    logger.error('Unhandled error:', { 
+        message: err.message, 
+        stack: err.stack,
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip
+    });
+    
+    // Don't expose error details in production
+    const response = { error: 'Internal server error' };
+    if (!isProduction) {
+        response.details = err.message;
+    }
+    
+    res.status(500).json(response);
 });
 
 // ==================== START SERVER ====================
