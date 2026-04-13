@@ -2638,6 +2638,93 @@ app.post('/api/admin/delete-requests', authenticateAdmin, async (req, res) => {
     }
 });
 
+// Bulk Initiate Pickup (Admin)
+app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestIds } = req.body;
+        if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
+            return res.status(400).json({ error: 'Invalid or missing request IDs' });
+        }
+
+        if (!process.env.SHIPROCKET_EMAIL) {
+            return res.status(400).json({ error: 'Shiprocket not configured on server' });
+        }
+
+        const results = {
+            total: requestIds.length,
+            successful: [],
+            failed: []
+        };
+
+        for (const requestId of requestIds) {
+            try {
+                const requestDetails = await getRequestById(requestId);
+                if (!requestDetails) {
+                    results.failed.push({ id: requestId, error: 'Request not found' });
+                    continue;
+                }
+
+                if (requestDetails.status !== 'pending') {
+                    results.failed.push({ id: requestId, error: `Invalid status: ${requestDetails.status}` });
+                    continue;
+                }
+
+                console.log(`[${requestId}] Admin BULK authorized pickup. Initiating Shiprocket...`);
+
+                let shopifyOrder = null;
+                try {
+                    let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestDetails.orderNumber)}&status=any&limit=1`);
+                    if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                        const alt = requestDetails.orderNumber.startsWith('#')
+                            ? requestDetails.orderNumber.substring(1)
+                            : '#' + requestDetails.orderNumber;
+                        shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(alt)}&status=any&limit=1`);
+                    }
+                    shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+                } catch (err) {
+                    console.warn(`[${requestId}] Bulk Shopify fetch failed:`, err.message);
+                }
+
+                const shiprocketData = await createShiprocketReturnOrder({
+                    ...requestDetails,
+                    requestId
+                }, shopifyOrder);
+
+                if (shiprocketData && shiprocketData.shipment_id) {
+                    let adminNotes = requestDetails.adminNotes || '';
+                    adminNotes += `\nPickup scheduled (Bulk Action): AWB ${shiprocketData.awb_code || 'Pending'}`;
+
+                    await updateRequestStatus(requestId, {
+                        shipmentId: shiprocketData.shipment_id,
+                        awbNumber: shiprocketData.awb_code,
+                        pickupDate: shiprocketData.pickup_scheduled_date,
+                        status: 'scheduled',
+                        adminNotes
+                    });
+
+                    results.successful.push(requestId);
+                } else {
+                    throw new Error('Shiprocket did not return shipment data');
+                }
+
+            } catch (error) {
+                console.error(`[${requestId}] Bulk initiate error:`, error.message);
+                results.failed.push({ id: requestId, error: error.message });
+            }
+        }
+
+        res.json({
+            success: true,
+            results,
+            message: `Processed ${results.total} requests: ${results.successful.length} successful, ${results.failed.length} failed.`
+        });
+
+    } catch (error) {
+        console.error('Bulk initiate pickup error:', error);
+        res.status(500).json({ error: 'Internal server error while processing batch' });
+    }
+});
+
 // Finalize payment from frontend
 app.post('/api/finalize-payment', async (req, res) => {
     const { requestId, paymentId, paymentAmount } = req.body;
