@@ -92,37 +92,14 @@ if (!JWT_SECRET && isProduction) {
 // Token expiration time (24 hours)
 const TOKEN_EXPIRY = '24h';
 
-// CORS Configuration - Allow Shopify domains and same-origin requests
+// CORS Configuration - Allow all origins for Shopify embedded app
+// Note: In production, consider restricting to your Shopify domain
 const corsOptions = {
-    origin: function (origin, callback) {
-        // Allow requests with no origin (same-origin, mobile apps, curl)
-        if (!origin) {
-            return callback(null, true);
-        }
-        
-        const allowedOrigins = [
-            `https://${process.env.SHOPIFY_STORE}`,
-            `https://${process.env.SHOPIFY_STORE_DOMAIN}`,
-            'https://offcomfrt.myshopify.com',
-            'https://j0yyii-uf.myshopify.com',
-        ].filter(Boolean);
-        
-        // Check if origin matches allowed domains
-        const isAllowed = allowedOrigins.some(allowed => 
-            origin === allowed || origin.endsWith('.myshopify.com')
-        );
-        
-        if (isAllowed) {
-            callback(null, true);
-        } else {
-            logger.warn(`CORS blocked request from: ${origin}`);
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
+    origin: true, // Allow all origins
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     credentials: true,
-    optionsSuccessStatus: 200 // For legacy browser support
+    optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions));
