@@ -390,6 +390,93 @@ async function deleteRequests(requestIds) {
     return { count };
 }
 
+// ── Influencer Helpers ──
+
+/**
+ * Get all influencers
+ */
+async function getAllInfluencers() {
+    const { data, error } = await supabase
+        .from('influencers')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Create a new influencer
+ */
+async function createInfluencer(influencerData) {
+    const { data, error } = await supabase
+        .from('influencers')
+        .insert([{
+            name: influencerData.name,
+            referral_code: influencerData.referralCode,
+            link_token: influencerData.linkToken,
+            commission_rate: influencerData.commissionRate ?? 10.00,
+            is_active: true
+        }])
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Update an influencer's profile (name, referral code, commission rate)
+ */
+async function updateInfluencer(id, updates) {
+    const updateData = { updated_at: new Date().toISOString() };
+    if (updates.name !== undefined) updateData.name = updates.name;
+    if (updates.referralCode !== undefined) updateData.referral_code = updates.referralCode;
+    if (updates.commissionRate !== undefined) updateData.commission_rate = parseFloat(updates.commissionRate);
+    if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+
+    const { data, error } = await supabase
+        .from('influencers')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Delete an influencer
+ */
+async function deleteInfluencer(id) {
+    const { error } = await supabase
+        .from('influencers')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw error;
+    return { success: true };
+}
+
+/**
+ * Get influencer by token (for portal auth)
+ */
+async function getInfluencerByToken(token) {
+    const { data, error } = await supabase
+        .from('influencers')
+        .select('*')
+        .eq('link_token', token)
+        .eq('is_active', true)
+        .single();
+
+    if (error) {
+        if (error.code === 'PGRST116') return null; // Not found
+        throw error;
+    }
+    return data;
+}
+
 module.exports = {
     createRequest,
     getRequestById,
@@ -401,5 +488,12 @@ module.exports = {
     saveAgentNotes,
     deleteRequests,
     getSetting,
-    updateSetting
+    updateSetting,
+    
+    // Influencer Helpers
+    getAllInfluencers,
+    createInfluencer,
+    updateInfluencer,
+    deleteInfluencer,
+    getInfluencerByToken
 };
