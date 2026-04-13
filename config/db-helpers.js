@@ -416,6 +416,7 @@ async function createInfluencer(influencerData) {
             referral_code: influencerData.referralCode,
             link_token: influencerData.linkToken,
             commission_rate: influencerData.commissionRate ?? 10.00,
+            phone: influencerData.phone,
             is_active: true
         }])
         .select()
@@ -433,6 +434,7 @@ async function updateInfluencer(id, updates) {
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.referralCode !== undefined) updateData.referral_code = updates.referralCode;
     if (updates.commissionRate !== undefined) updateData.commission_rate = parseFloat(updates.commissionRate);
+    if (updates.phone !== undefined) updateData.phone = updates.phone;
     if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
 
     const { data, error } = await supabase
