@@ -460,8 +460,8 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             // Pickup Details (Customer Address)
             pickup_customer_name: address.first_name,
             pickup_last_name: address.last_name || '',
-            pickup_address: address.address1,
-            pickup_address_2: address.address2 || '',
+            pickup_address: (address.address1 || '').substring(0, 190),
+            pickup_address_2: (address.address2 || '').substring(0, 190),
             pickup_city: address.city,
             pickup_state: address.province,
             pickup_country: address.country_code || 'IN',
@@ -476,8 +476,8 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             // Shipping Details (Warehouse - Destination)
             shipping_customer_name: shippingCustomerName,
             shipping_last_name: '',
-            shipping_address: shippingAddress,
-            shipping_address_2: shippingAddress2,
+            shipping_address: (shippingAddress || '').substring(0, 190),
+            shipping_address_2: (shippingAddress2 || '').substring(0, 190),
             shipping_city: shippingCity,
             shipping_state: shippingState,
             shipping_country: shippingCountry,
@@ -647,7 +647,7 @@ async function createShiprocketForwardOrder(requestData) {
             pickup_location: pickupLocationNickname, // Dynamically set from Shiprocket settings
             billing_customer_name: customerName,
             billing_last_name: '',
-            billing_address: billingAddress || 'Address not available',
+            billing_address: (billingAddress || 'Address not available').substring(0, 190),
             billing_city: billingCity || billingState || 'City',
             billing_pincode: billingPincode || '110001',
             billing_state: billingState || billingCity || 'State', // Shiprocket requires state
