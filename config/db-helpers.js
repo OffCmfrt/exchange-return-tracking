@@ -156,21 +156,61 @@ async function getAllRequests(filters = {}) {
 /**
  * Get request statistics
  */
+/**
+ * Get request statistics with detailed analytics
+ */
 async function getRequestStats() {
     const { data: allRequests, error: allError } = await supabase
         .from('requests')
-        .select('status'); // Include all statuses for accurate stats
+        .select('status, reason, type, payment_amount');
 
     if (allError) throw allError;
 
     const stats = {
         total: allRequests.length,
-        pending: allRequests.filter(r => r.status === 'pending').length,
-        scheduled: allRequests.filter(r => r.status === 'scheduled').length,
-        approved: allRequests.filter(r => r.status === 'approved').length,
-        rejected: allRequests.filter(r => r.status === 'rejected').length,
-        waitingPayment: allRequests.filter(r => r.status === 'waiting_payment').length
+        pending: 0,
+        scheduled: 0,
+        approved: 0,
+        rejected: 0,
+        waitingPayment: 0,
+        returns: 0,
+        exchanges: 0,
+        totalRevenue: 0,
+        reasons: {
+            size: 0,
+            fit: 0,
+            color: 0,
+            changed_mind: 0,
+            defective: 0,
+            wrong_item: 0,
+            other: 0
+        }
     };
+
+    allRequests.forEach(r => {
+        // Status counts
+        if (r.status === 'pending') stats.pending++;
+        if (r.status === 'scheduled') stats.scheduled++;
+        if (r.status === 'approved') stats.approved++;
+        if (r.status === 'rejected') stats.rejected++;
+        if (r.status === 'waiting_payment') stats.waitingPayment++;
+
+        // Type counts
+        if (r.type === 'return') stats.returns++;
+        if (r.type === 'exchange') stats.exchanges++;
+
+        // Reason counts
+        if (r.reason && stats.reasons[r.reason] !== undefined) {
+            stats.reasons[r.reason]++;
+        } else if (r.reason) {
+            stats.reasons.other++;
+        }
+
+        // Financials (if payment was successful)
+        if (r.payment_amount) {
+            stats.totalRevenue += parseFloat(r.payment_amount) || 0;
+        }
+    });
 
     return stats;
 }
