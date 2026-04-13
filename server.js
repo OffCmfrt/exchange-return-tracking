@@ -121,6 +121,24 @@ const {
     getInfluencerByToken
 } = require('./config/db-helpers');
 
+async function generateUniqueRequestId() {
+    let isUnique = false;
+    let requestId;
+    let retryCount = 0;
+    while (!isUnique && retryCount < 10) {
+        requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+        const existing = await getRequestById(requestId);
+        if (!existing) {
+            isUnique = true;
+        }
+        retryCount++;
+    }
+    if (!isUnique) {
+        requestId = 'REQ-' + Date.now().toString().slice(-5);
+    }
+    return requestId;
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json({
@@ -1267,7 +1285,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         return res.status(403).json({ error: 'Exchanges are currently disabled by the administrator.' });
     }
 
-    let requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    let requestId = await generateUniqueRequestId();
     console.log(`[${requestId}] 📥 Received exchange submission`);
     console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
     console.log(`[${requestId}] Files:`, req.files ? req.files.length : 0);
@@ -1464,7 +1482,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         return res.status(403).json({ error: 'Returns are currently disabled by the administrator.' });
     }
 
-    let requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    let requestId = await generateUniqueRequestId();
     console.log(`[${requestId}] 📥 Received return submission`);
     console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
     console.log(`[${requestId}] Files:`, req.files ? req.files.length : 0);
@@ -2227,7 +2245,7 @@ app.post('/api/admin/mark-delivered', authenticateAdmin, async (req, res) => {
 
 // ── Admin: Manually create a request (bypasses eligibility + duplicate checks) ──
 app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
-    const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+    const requestId = await generateUniqueRequestId();
     console.log(`[ADMIN CREATE] ${requestId} — Manual request creation started`);
 
     try {
@@ -2393,7 +2411,7 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
             return res.status(400).json({ error: 'Missing required configuration (type, reason, items).' });
         }
 
-        const requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+        const requestId = await generateUniqueRequestId();
 
         // Fetch Order for full details
         let shopifyOrder = null;
