@@ -460,8 +460,8 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             // Pickup Details (Customer Address)
             pickup_customer_name: address.first_name,
             pickup_last_name: address.last_name || '',
-            pickup_address: (address.address1 || '').substring(0, 190),
-            pickup_address_2: (address.address2 || '').substring(0, 190),
+            pickup_address: ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 190),
+            pickup_address_2: '',
             pickup_city: address.city,
             pickup_state: address.province,
             pickup_country: address.country_code || 'IN',
@@ -476,8 +476,8 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
             // Shipping Details (Warehouse - Destination)
             shipping_customer_name: shippingCustomerName,
             shipping_last_name: '',
-            shipping_address: (shippingAddress || '').substring(0, 190),
-            shipping_address_2: (shippingAddress2 || '').substring(0, 190),
+            shipping_address: ((shippingAddress || '') + ' ' + (shippingAddress2 || '')).trim().substring(0, 190),
+            shipping_address_2: '',
             shipping_city: shippingCity,
             shipping_state: shippingState,
             shipping_country: shippingCountry,
@@ -509,7 +509,7 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
         const data = await response.json();
         console.log('📦 Shiprocket Response:', JSON.stringify(data, null, 2));
 
-        if (data.status_code === 422 || (data.errors && Object.keys(data.errors).length > 0)) {
+        if (data.status_code === 400 || data.status_code === 422 || (data.errors && Object.keys(data.errors).length > 0)) {
             console.error('❌ Shiprocket Validation Error:', JSON.stringify(data));
             return null;
         }
@@ -672,7 +672,7 @@ async function createShiprocketForwardOrder(requestData) {
         const data = await response.json();
         console.log('📦 Shiprocket Forward Response:', JSON.stringify(data, null, 2));
 
-        if (data.status_code === 422 || (data.errors && Object.keys(data.errors).length > 0)) {
+        if (data.status_code === 400 || data.status_code === 422 || (data.errors && Object.keys(data.errors).length > 0)) {
             console.error('❌ Shiprocket Validation Error (Forward):', JSON.stringify(data));
             return null;
         }
