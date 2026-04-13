@@ -2724,7 +2724,7 @@ app.get('/api/influencer-admin/list', authenticateAdmin, async (req, res) => {
 // Add new influencer (Protected by Admin Auth)
 app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
     try {
-        const { name, referralCode, commissionRate } = req.body;
+        const { name, referralCode, commissionRate, phone } = req.body;
         if (!name || !referralCode) {
             return res.status(400).json({ error: 'Name and referral code are required' });
         }
@@ -2736,6 +2736,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
             name,
             referralCode,
             linkToken,
+            phone,
             commissionRate: commissionRate !== undefined ? parseFloat(commissionRate) : 10.00
         });
         res.json({ success: true, influencer });
@@ -2749,8 +2750,8 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
 app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, referralCode, commissionRate } = req.body;
-        const updated = await updateInfluencer(id, { name, referralCode, commissionRate });
+        const { name, referralCode, commissionRate, phone } = req.body;
+        const updated = await updateInfluencer(id, { name, referralCode, commissionRate, phone });
         res.json({ success: true, influencer: updated });
     } catch (error) {
         console.error('Update influencer error:', error);
@@ -2787,12 +2788,37 @@ app.get('/api/influencer/auth/:token', async (req, res) => {
             influencer: {
                 name: influencer.name,
                 referralCode: influencer.referral_code,
-                commissionRate: parseFloat(influencer.commission_rate || 10)
+                hasPhone: !!influencer.phone
             }
         });
     } catch (error) {
         console.error('Influencer auth error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Verify Phone Number for Influencer Login
+app.post('/api/influencer/verify', async (req, res) => {
+    try {
+        const { token, phone } = req.body;
+        const influencer = await getInfluencerByToken(token);
+        
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid or inactive influencer link' });
+        }
+        
+        // Match phone (clean non-digits for robust comparison)
+        const cleanDbPhone = (influencer.phone || '').replace(/\D/g, '');
+        const cleanInputPhone = (phone || '').replace(/\D/g, '');
+        
+        if (cleanInputPhone === cleanDbPhone && cleanDbPhone.length > 0) {
+            res.json({ success: true });
+        } else {
+            res.status(401).json({ error: 'Incorrect phone number. Please check and try again.' });
+        }
+    } catch (error) {
+        console.error('Influencer verify error:', error);
+        res.status(500).json({ error: 'Verification failed' });
     }
 });
 
