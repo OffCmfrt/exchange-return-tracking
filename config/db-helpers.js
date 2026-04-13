@@ -116,7 +116,8 @@ async function getAllRequests(filters = {}) {
 
     if (filters.search) {
         const searchTerm = filters.search;
-        console.log('Applying Admin Search:', searchTerm);
+        // Log search activity without exposing the actual search term (could contain PII)
+        console.log('Applying Admin Search: [REDACTED]');
         query = query.or(`request_id.ilike.%${searchTerm}%,order_number.ilike.%${searchTerm}%,customer_name.ilike.%${searchTerm}%,customer_email.ilike.%${searchTerm}%,customer_phone.ilike.%${searchTerm}%`);
     }
 
