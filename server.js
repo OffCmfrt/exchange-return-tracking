@@ -1062,27 +1062,46 @@ app.post('/api/lookup-order', async (req, res) => {
             console.log('No fulfillments found for order');
         }
 
-        // Eligibility: must be fulfilled AND within X days of delivery
+        // Eligibility: Check window mode (delivery date vs order date)
         const RETURN_WINDOW_DAYS = await getSetting('return_window_days', 2);
-        let daysSinceDelivery = null;
+        const RETURN_WINDOW_MODE = await getSetting('return_window_mode', 'delivery');
+        let daysSinceReference = null;
         let isWithinWindow = false;
+        let referenceDate = null;
 
-        if (deliveredDate) {
-            const delivered = new Date(deliveredDate);
-            daysSinceDelivery = (Date.now() - delivered.getTime()) / (1000 * 60 * 60 * 24);
-            isWithinWindow = daysSinceDelivery <= RETURN_WINDOW_DAYS;
-        } else if (isFulfilled) {
-            // No delivery date available yet — allow if fulfilled (pickup pending)
-            isWithinWindow = true;
+        if (RETURN_WINDOW_MODE === 'order') {
+            // Calculate from order date
+            referenceDate = order.created_at;
+            if (referenceDate) {
+                const orderDate = new Date(referenceDate);
+                daysSinceReference = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
+                isWithinWindow = daysSinceReference <= RETURN_WINDOW_DAYS;
+            }
+        } else {
+            // Calculate from delivery date (default behavior)
+            if (deliveredDate) {
+                referenceDate = deliveredDate;
+                const delivered = new Date(deliveredDate);
+                daysSinceReference = (Date.now() - delivered.getTime()) / (1000 * 60 * 60 * 24);
+                isWithinWindow = daysSinceReference <= RETURN_WINDOW_DAYS;
+            } else if (isFulfilled) {
+                // No delivery date available yet — allow if fulfilled (pickup pending)
+                isWithinWindow = true;
+            }
         }
 
-        const eligibilityMessage = !isFulfilled
-            ? 'Order must be delivered before exchange/return'
-            : !isWithinWindow
-                ? `Return/exchange window has closed. Requests must be raised within ${RETURN_WINDOW_DAYS} days of delivery.`
-                : 'Order is eligible for exchange/return';
+        const windowTypeText = RETURN_WINDOW_MODE === 'order' ? 'order date' : 'delivery';
+        const eligibilityMessage = RETURN_WINDOW_MODE === 'order'
+            ? (!isWithinWindow
+                ? `Return/exchange window has closed. Requests must be raised within ${RETURN_WINDOW_DAYS} days of order date.`
+                : 'Order is eligible for exchange/return')
+            : (!isFulfilled
+                ? 'Order must be delivered before exchange/return'
+                : !isWithinWindow
+                    ? `Return/exchange window has closed. Requests must be raised within ${RETURN_WINDOW_DAYS} days of delivery.`
+                    : 'Order is eligible for exchange/return');
 
-        console.log('Eligibility:', { isFulfilled, deliveredDate, daysSinceDelivery, isWithinWindow });
+        console.log('Eligibility:', { isFulfilled, deliveredDate, referenceDate, daysSinceReference, isWithinWindow, returnWindowMode: RETURN_WINDOW_MODE });
 
         // Fetch product images and variants for inventory check
         const productIds = [...new Set(order.line_items.map(item => item.product_id).filter(id => id))];
@@ -2053,6 +2072,7 @@ app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
     try {
         const settings = {
             return_window_days: await getSetting('return_window_days', 2),
+            return_window_mode: await getSetting('return_window_mode', 'delivery'),
             allow_returns: await getSetting('allow_returns', true),
             allow_exchanges: await getSetting('allow_exchanges', true),
             auto_approve_reasons: await getSetting('auto_approve_reasons', ['size', 'fit']),
