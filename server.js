@@ -1062,6 +1062,45 @@ app.post('/api/lookup-order', async (req, res) => {
             console.log('No fulfillments found for order');
         }
 
+        // Eligibility: Check cutoff date first
+        const CUTOFF_ENABLED = await getSetting('cutoff_date_enabled', false);
+        const CUTOFF_DATE = await getSetting('cutoff_date', null);
+        
+        if (CUTOFF_ENABLED && CUTOFF_DATE && order.created_at) {
+            const orderDate = new Date(order.created_at);
+            const cutoff = new Date(CUTOFF_DATE);
+            // Set cutoff to end of day for inclusive comparison
+            cutoff.setHours(23, 59, 59, 999);
+            
+            if (orderDate < cutoff) {
+                return res.status(200).json({
+                    isEligible: false,
+                    eligibilityMessage: `This order is not eligible for return/exchange as it was placed before the cutoff date (${CUTOFF_DATE}).`,
+                    order: {
+                        orderNumber: order.name,
+                        customerName: order.customer
+                            ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+                            : 'Customer',
+                        email: order.customer?.email || email,
+                        phone: order.customer?.phone || order.shipping_address?.phone || '',
+                        orderDate: order.created_at,
+                        totalAmount: order.total_price,
+                        items: order.line_items.map(item => ({
+                            id: item.id,
+                            productId: item.product_id,
+                            variantId: item.variant_id,
+                            name: item.name,
+                            variant: item.variant_title || 'Default',
+                            quantity: item.quantity,
+                            price: item.price,
+                            image: item.properties?.image ||
+                                (item.product_id ? `https://cdn.shopify.com/shopifycloud/placeholder.jpg` : '')
+                        }))
+                    }
+                });
+            }
+        }
+
         // Eligibility: Check window mode (delivery date vs order date)
         const RETURN_WINDOW_DAYS = await getSetting('return_window_days', 2);
         const RETURN_WINDOW_MODE = await getSetting('return_window_mode', 'delivery');
@@ -2076,7 +2115,9 @@ app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
             allow_returns: await getSetting('allow_returns', true),
             allow_exchanges: await getSetting('allow_exchanges', true),
             auto_approve_reasons: await getSetting('auto_approve_reasons', ['size', 'fit']),
-            warehouse_location: await getSetting('warehouse_location', null)
+            warehouse_location: await getSetting('warehouse_location', null),
+            cutoff_date_enabled: await getSetting('cutoff_date_enabled', false),
+            cutoff_date: await getSetting('cutoff_date', null)
         };
         res.json(settings);
     } catch (error) {
