@@ -520,6 +520,23 @@ async function getInfluencerByToken(token) {
     return data;
 }
 
+/**
+ * Get influencer by ID (for admin)
+ */
+async function getInfluencerById(id) {
+    const { data, error } = await supabase
+        .from('influencers')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (error) {
+        if (error.code === 'PGRST116') return null; // Not found
+        throw error;
+    }
+    return data;
+}
+
 module.exports = {
     createRequest,
     getRequestById,
@@ -538,5 +555,6 @@ module.exports = {
     createInfluencer,
     updateInfluencer,
     deleteInfluencer,
-    getInfluencerByToken
+    getInfluencerByToken,
+    getInfluencerById
 };
