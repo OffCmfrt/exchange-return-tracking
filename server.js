@@ -175,7 +175,8 @@ const {
     createInfluencer,
     updateInfluencer,
     deleteInfluencer,
-    getInfluencerByToken
+    getInfluencerByToken,
+    getInfluencerById
 } = require('./config/db-helpers');
 
 async function generateUniqueRequestId() {
@@ -3018,6 +3019,114 @@ app.delete('/api/influencer-admin/remove/:id', authenticateAdmin, async (req, re
     }
 });
 
+// Get Influencer Stats for Admin (with date range filter)
+app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { range } = req.query; // '30d', '90d', 'custom', or 'all'
+        const { startDate, endDate } = req.query; // for custom range
+
+        // Get influencer details
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        const referralCode = influencer.referral_code;
+        const commissionRate = parseFloat(influencer.commission_rate || 10);
+        console.log(`[Admin Influencer Stats] Fetching stats for ${influencer.name} (Code: ${referralCode}, Range: ${range || 'all'})`);
+
+        // Determine date range
+        let createdAtMin = null;
+        let createdAtMax = null;
+        
+        if (range === '30d') {
+            const d = new Date();
+            d.setDate(d.getDate() - 30);
+            createdAtMin = d.toISOString();
+        } else if (range === '90d') {
+            const d = new Date();
+            d.setDate(d.getDate() - 90);
+            createdAtMin = d.toISOString();
+        } else if (range === 'custom' && startDate && endDate) {
+            createdAtMin = new Date(startDate).toISOString();
+            createdAtMax = new Date(endDate);
+            createdAtMax.setHours(23, 59, 59, 999);
+            createdAtMax = createdAtMax.toISOString();
+        }
+
+        // Paginated Shopify fetch
+        let allOrders = [];
+        let hasNextPage = true;
+        const baseQuery = `orders.json?status=paid&limit=250&fields=id,name,total_price,discount_codes,created_at,currency${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
+        let nextUrl = baseQuery;
+
+        while (hasNextPage) {
+            const shopifyData = await shopifyAPI(nextUrl);
+            const batch = shopifyData.orders || [];
+            allOrders = allOrders.concat(batch);
+
+            if (shopifyData.nextUrl && batch.length === 250) {
+                nextUrl = shopifyData.nextUrl;
+            } else {
+                hasNextPage = false;
+            }
+        }
+
+        // Filter orders by this influencer's discount code
+        const attributedOrders = allOrders.filter(order => {
+            if (!order.discount_codes || order.discount_codes.length === 0) return false;
+            return order.discount_codes.some(dc => dc.code.toUpperCase() === referralCode.toUpperCase());
+        });
+
+        // Sort newest first
+        attributedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        // Calculate Stats
+        const totalRevenue = attributedOrders.reduce((sum, order) => sum + parseFloat(order.total_price), 0);
+        const orderCount = attributedOrders.length;
+        const aov = orderCount > 0 ? (totalRevenue / orderCount) : 0;
+        const estimatedEarnings = totalRevenue * (commissionRate / 100);
+
+        // Anonymize orders for the feed (most recent 50)
+        const recentConversions = attributedOrders.slice(0, 50).map(order => ({
+            id: order.id,
+            name: order.name,
+            total: order.total_price,
+            currency: order.currency,
+            date: order.created_at
+        }));
+
+        res.json({
+            success: true,
+            influencer: {
+                id: influencer.id,
+                name: influencer.name,
+                referralCode: influencer.referral_code,
+                commissionRate: commissionRate,
+                phone: influencer.phone
+            },
+            stats: {
+                totalRevenue: totalRevenue.toFixed(2),
+                orderCount,
+                aov: aov.toFixed(2),
+                estimatedEarnings: estimatedEarnings.toFixed(2),
+                commissionRate,
+                currency: attributedOrders[0]?.currency || 'INR',
+                dateRange: {
+                    from: createdAtMin,
+                    to: createdAtMax
+                }
+            },
+            recentConversions
+        });
+
+    } catch (error) {
+        console.error('Admin influencer stats error:', error);
+        res.status(500).json({ error: 'Failed to fetch influencer stats' });
+    }
+});
+
 // ==================== INFLUENCER PORTAL ENDPOINTS ====================
 
 // Verify Influencer Token & Get Profile
@@ -3073,7 +3182,7 @@ app.post('/api/influencer/verify', async (req, res) => {
 app.get('/api/influencer/stats/:token', async (req, res) => {
     try {
         const { token } = req.params;
-        const { range } = req.query; // '30d', '90d', or 'all'
+        const { range, startDate, endDate } = req.query; // '30d', '90d', 'custom', or 'all'
 
         const influencer = await getInfluencerByToken(token);
 
@@ -3085,8 +3194,9 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
         const commissionRate = parseFloat(influencer.commission_rate || 10);
         console.log(`[Influencer Stats] Fetching stats for ${influencer.name} (Code: ${referralCode}, Range: ${range || 'all'})`);
 
-        // Determine date cutoff based on range
+        // Determine date range based on selection
         let createdAtMin = null;
+        let createdAtMax = null;
         if (range === '30d') {
             const d = new Date();
             d.setDate(d.getDate() - 30);
@@ -3095,13 +3205,18 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
             const d = new Date();
             d.setDate(d.getDate() - 90);
             createdAtMin = d.toISOString();
+        } else if (range === 'custom' && startDate && endDate) {
+            createdAtMin = new Date(startDate).toISOString();
+            createdAtMax = new Date(endDate);
+            createdAtMax.setHours(23, 59, 59, 999);
+            createdAtMax = createdAtMax.toISOString();
         }
 
         // Paginated Shopify fetch — collects ALL matching orders, not just last 250
         let allOrders = [];
         let pageInfo = null;
         let hasNextPage = true;
-        const baseQuery = `orders.json?status=paid&limit=250&fields=id,name,total_price,discount_codes,created_at,currency${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}`;
+        const baseQuery = `orders.json?status=paid&limit=250&fields=id,name,total_price,discount_codes,created_at,currency${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
         let nextUrl = baseQuery;
 
         while (hasNextPage) {
