@@ -70,6 +70,7 @@ const app = express();
 // Trust Render's proxy so express-rate-limit can read real client IPs
 app.set('trust proxy', 1);
 
+// Deploy timestamp: 2026-04-30 - Admin dashboard with permissive CSP
 // Serve admin dashboard BEFORE helmet (to bypass CSP restrictions)
 app.get('/admin', (req, res) => {
     // Custom CSP for admin - allows inline scripts and event handlers
