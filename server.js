@@ -148,6 +148,9 @@ app.post('/api/admin/*', writeLimiter);
 
 const PORT = process.env.PORT || 3000;
 
+// Force rebuild: Deployment verified 2026-04-30 20:00 IST
+// Admin dashboard frontend hosted on Render with full backend connectivity
+
 // JWT Token Generation Helper
 function generateToken(payload) {
     if (!JWT_SECRET) {
