@@ -58,6 +58,7 @@ function trackSuspicious(ip, action) {
 
 const cors = require('cors');
 const crypto = require('crypto');
+const path = require('path');
 require('dotenv').config();
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
@@ -74,8 +75,10 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            scriptSrc: ["'self'", "https://cdn.jsdelivr.net"],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "https:"],
         },
     },
@@ -204,6 +207,11 @@ app.use(express.json({
     }
 }));
 app.use(express.static('public'));
+
+// Serve admin dashboard at /admin
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
+});
 
 // In-memory storage for OAuth tokens and payment processing
 const storage = {

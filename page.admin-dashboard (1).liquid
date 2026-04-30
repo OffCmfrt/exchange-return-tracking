@@ -1,0 +1,1917 @@
+{{ 'custom-pages.css' | asset_url | stylesheet_tag }}
+<!-- Chart.js for Premium Analytics - Served via jsDelivr CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<!-- Session Lock Overlay -->
+<div id="sessionLockOverlay" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(17, 24, 39, 0.95); backdrop-filter: blur(10px); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0; transition: opacity 0.5s ease;">
+    <div style="text-align: center; color: white; display: flex; flex-direction: column; align-items: center;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1.5rem;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        <h2 style="font-size: 2rem; font-weight: 300; letter-spacing: 2px; margin-bottom: 0.5rem;">SESSION LOCKED</h2>
+        <p style="color: #9ca3af; margin-bottom: 2rem; max-width: 300px;">For your security, your session has been locked due to 15 minutes of inactivity.</p>
+        
+        <form id="unlockForm" style="width: 100%; max-width: 320px;" onsubmit="handleUnlock(event)">
+            <input type="password" id="unlockPassword" placeholder="Enter Admin Password" required style="width: 100%; padding: 1rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white; margin-bottom: 1rem; text-align: center; font-size: 1.1rem; outline: none; transition: border-color 0.3s;">
+            <button type="submit" class="btn" style="width: 100%; padding: 1rem; background: white; color: #111827; border: none; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; border-radius: 8px; cursor: pointer; transition: transform 0.2s;">
+                <span id="unlockBtnText">Unlock Dashboard</span>
+                <span id="unlockSpinner" class="spinner hidden" style="border-color: #111827; border-bottom-color: transparent;"></span>
+            </button>
+            <div id="unlockError" style="color: #ef4444; font-size: 0.85rem; margin-top: 1rem; min-height: 20px;"></div>
+        </form>
+        <button onclick="logout()" style="margin-top: 2rem; background: none; border: none; color: #6b7280; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; text-decoration: underline;">Or Log Out Completely</button>
+    </div>
+</div>
+
+<div class="page-width" style="padding: 3rem 1rem;">
+    <!-- Login Section -->
+    <div id="loginSection" class="container">
+        <div class="header">
+            <h1>Admin Dashboard</h1>
+            <p>Login to manage return and exchange requests</p>
+        </div>
+
+        <div class="card" style="max-width: 500px; margin: 0 auto;">
+            <div id="loginAlert"></div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="adminPassword">Password</label>
+                    <input type="password" id="adminPassword" name="adminPassword" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block">
+                    <span id="loginBtnText">Login</span>
+                    <span id="loginSpinner" class="spinner hidden"></span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard Section -->
+    <div id="dashboardSection" class="hidden">
+        <div class="container">
+            <div class="flex-between" style="margin-bottom: 2rem; align-items: center;">
+                <h1 style="font-size: 1.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #111827; margin: 0;">
+                    Returns & Exchanges Dashboard</h1>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <button onclick="openSettingsModal()" class="btn" style="background: white; border: 1px solid #e5e7eb; color: #111827; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        Settings
+                    </button>
+                    <button onclick="logout()" class="btn" style="background: white; border: 1px solid #e5e7eb; color: #111827; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                        Logout
+                    </button>
+                </div>
+            </div>
+
+            <!-- Premium Analytics Section -->
+            <div style="margin-bottom: 2rem; animation: fadeIn 0.5s ease-out;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1rem;">
+                    <h2 style="font-size: 1.25rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #111827; margin: 0;">Analytics Overview</h2>
+                </div>
+                
+                <!-- KPI Cards -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                    <div class="card" style="padding: 1.5rem; border-left: 4px solid #111827; transition: transform 0.3s ease; cursor: default;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Total Requests</p>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1;" id="totalRequests">0</p>
+                    </div>
+                    <div class="card" style="padding: 1.5rem; border-left: 4px solid #3b82f6; transition: transform 0.3s ease; cursor: default;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Pending Action</p>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1;" id="pendingRequests">0</p>
+                        <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.5rem;"><span id="waitingPaymentRequests">0</span> waiting payment</div>
+                    </div>
+                    <div class="card" style="padding: 1.5rem; border-left: 4px solid #10b981; transition: transform 0.3s ease; cursor: default;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Approved</p>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1;" id="approvedRequests">0</p>
+                    </div>
+                    <div class="card" style="padding: 1.5rem; border-left: 4px solid #ef4444; transition: transform 0.3s ease; cursor: default;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Rejected</p>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1;" id="rejectedRequests">0</p>
+                    </div>
+                    <div class="card" style="padding: 1.5rem; background: #111827; color: white; transition: transform 0.3s ease;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                        <p style="font-size: 0.85rem; color: #9ca3af; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Processed Value</p>
+                        <p style="font-size: 2.5rem; font-weight: 300; line-height: 1;" id="totalRevenue">₹0</p>
+                    </div>
+                </div>
+
+                <!-- Charts Area -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="card" style="padding: 1.5rem; height: 320px; display: flex; flex-direction: column;">
+                        <h3 style="font-size: 0.85rem; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin-top: 0; margin-bottom: 1.5rem; font-weight: 500;">Return & Exchange Reasons</h3>
+                        <div style="position: relative; flex: 1; width: 100%; display: flex; justify-content: center; align-items: center;">
+                            <canvas id="reasonsChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card" style="padding: 1.5rem; height: 320px; display: flex; flex-direction: column;">
+                        <h3 style="font-size: 0.85rem; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin-top: 0; margin-bottom: 1.5rem; font-weight: 500;">Request Types Breakdown</h3>
+                        <div style="position: relative; flex: 1; width: 100%; display: flex; justify-content: center; align-items: center;">
+                            <canvas id="typesChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters & Actions Area -->
+            <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
+                
+                <!-- TOP ROW: Filters & Search -->
+                <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.5rem;">
+                    
+                    <!-- Dropdowns -->
+                    <div style="display: flex; gap: 0.75rem; flex: 1; min-width: 300px;">
+                        <div style="position: relative; flex: 1;">
+                            <select id="statusFilter" onchange="loadRequests(true)" style="width: 100%; padding: 0.6rem 2rem 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; background: white; appearance: none; cursor: pointer; color: #374151;">
+                                <option value="">All Statuses</option>
+                                <option value="waiting_payment">Waiting Payment</option>
+                                <option value="pending">Pending Admin</option>
+                                <option value="scheduled">Pickup Booked</option>
+                                <option value="picked_up">Picked Up</option>
+                                <option value="in_transit">In Transit</option>
+                                <option value="delivered">Delivered (Pending Insp.)</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </div>
+
+                        <div style="position: relative; flex: 1;">
+                            <select id="typeFilter" onchange="loadRequests(true)" style="width: 100%; padding: 0.6rem 2rem 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; background: white; appearance: none; cursor: pointer; color: #374151;">
+                                <option value="">All Types</option>
+                                <option value="return">Returns</option>
+                                <option value="exchange">Exchanges</option>
+                            </select>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </div>
+                        
+                        <input type="date" id="dateFilter" onchange="loadRequests(true)" style="padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; background: white; color: #374151;">
+                    </div>
+
+                    <!-- Search -->
+                    <div class="search-container" style="flex: 1.5; min-width: 300px; position: relative; display: flex; align-items: center;">
+                        <input type="text" id="searchInput" placeholder="Search by Order #, Email, Customer, AWB..." 
+                               onkeyup="if(event.key === 'Enter') loadRequests(true)"
+                               style="width: 100%; padding: 0.6rem 3.5rem 0.6rem 2.5rem; border: 1px solid #e5e7eb; border-radius: 9999px; font-family: inherit; font-size: 0.9rem; transition: border-color 0.2s, box-shadow 0.2s; background: white;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 1rem; color: #9ca3af; pointer-events: none;">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <button onclick="loadRequests(true)" style="position: absolute; right: 0.25rem; padding: 0.35rem 1rem; background: #111827; color: white; border: none; border-radius: 9999px; font-size: 0.8rem; font-weight: 500; cursor: pointer; transition: background 0.2s;">
+                            Search
+                        </button>
+                    </div>
+
+                    <style>
+                        #searchInput:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
+                        .admin-btn {
+                            display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; 
+                            font-size: 0.85rem; font-weight: 500; border-radius: 6px; cursor: pointer; 
+                            transition: all 0.2s; border: 1px solid transparent; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+                        }
+                        .admin-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+                        .admin-btn:active { transform: translateY(0); }
+                        .admin-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+                        
+                        /* Admin Items Comparison View */
+                        .admin-item-comparison { display: flex; flex-direction: column; gap: 1.5rem; margin-bottom: 1.5rem; }
+                        .comparison-card { border: 1px solid var(--gray-medium); border-radius: var(--radius-md); overflow: hidden; display: flex; flex-direction: column; }
+                        .comparison-header { padding: 0.5rem 1rem; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 0.5rem; }
+                        .comparison-header.original { background: #f3f4f6; color: #4b5563; }
+                        .comparison-header.replacement { background: #ecfdf5; color: #059669; }
+                        .comparison-body { padding: 1rem; display: flex; gap: 1rem; align-items: center; }
+                        .comparison-img { width: 60px; height: 60px; object-fit: cover; border-radius: var(--radius-sm); background: #f9fafb; }
+                        .comparison-info h4 { margin: 0 0 0.25rem 0; font-size: 0.9rem; font-weight: 500; }
+                        .comparison-info p { margin: 0; font-size: 0.8rem; color: var(--gray-dark); }
+                        .comparison-arrow { display: flex; justify-content: center; align-items: center; padding: 0.5rem; color: var(--gray-medium); }
+                    </style>
+                </div>
+
+                <!-- BOTTOM ROW: Action Buttons -->
+                <div style="display: flex; gap: 1rem; justify-content: space-between; align-items: center; border-top: 1px solid #e5e7eb; padding-top: 1.25rem;">
+                    
+                    <!-- Left: Bulk Actions -->
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <button onclick="toggleSelectionMode()" class="admin-btn" id="selectBtn" style="background: white; border-color: #d1d5db; color: #374151;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                            Select Multiple
+                        </button>
+                        
+                        <div id="selectionActions" class="hidden" style="display: flex; align-items: center; gap: 0.5rem; margin-left: 0.5rem; border-left: 1px solid #e5e7eb; padding-left: 1rem;">
+                            <span id="selectionCount" style="font-size: 0.85rem; font-weight: 600; color: #111827; margin-right: 0.5rem;">0 selected</span>
+                            <button onclick="selectAllByType('Return')" class="admin-btn" style="background: #f9fafb; border-color: #d1d5db; color: #111827; padding: 0.4rem 0.8rem; box-shadow: none;">All Returns</button>
+                            <button onclick="selectAllByType('Exchange')" class="admin-btn" style="background: #f9fafb; border-color: #d1d5db; color: #111827; padding: 0.4rem 0.8rem; box-shadow: none;">All Exchanges</button>
+                            <button onclick="initiateBulkPickup()" class="admin-btn" id="bulkPickupBtn" style="background: #2563eb; border-color: #2563eb; color: white; padding: 0.4rem 0.8rem; box-shadow: none;" disabled>Initiate Pickups</button>
+                            <button onclick="toggleSelectionMode()" class="admin-btn" id="cancelBtn" style="background: white; border-color: #d1d5db; color: #6b7280; padding: 0.4rem 0.8rem; box-shadow: none;">Cancel</button>
+                            <button onclick="deleteSelected()" class="admin-btn" id="deleteBtn" style="background: white; border-color: #111827; color: #111827; padding: 0.4rem 0.8rem; box-shadow: none;" disabled>
+                                Delete Selected
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Right: Primary Actions -->
+                    <div style="display: flex; gap: 0.75rem; align-items: center;">
+                        <button onclick="syncStatus()" class="admin-btn" id="syncBtn" style="background: white; border-color: #d1d5db; color: #111827;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                            <span id="syncBtnText">Sync Tracking</span>
+                            <span id="syncSpinner" class="spinner hidden" style="width: 14px; height: 14px;"></span>
+                        </button>
+
+                        <button onclick="exportToExcel()" class="admin-btn" style="background: white; color: #111827; border-color: #111827;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            Export Excel
+                        </button>
+
+                        <button onclick="openCreateModal()" class="admin-btn" style="background: #111827; color: white;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            Create Request
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Requests Table Section -->
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th class="select-col hidden"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                            <th>Request ID</th>
+                            <th>Type</th>
+                            <th>Order #</th>
+                            <th>Customer</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requestsTable">
+                        <tr>
+                            <td colspan="7" style="text-align: center; padding: 2rem; color: var(--gray-dark);">
+                                Loading requests...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <!-- Pagination -->
+                <style>
+                    .premium-pagination {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        padding: 1.5rem 1.5rem;
+                        background: #fff;
+                        border-top: 1px solid #eaeaea;
+                        border-bottom-left-radius: 8px;
+                        border-bottom-right-radius: 8px;
+                    }
+                    .premium-pagination-info {
+                        font-size: 0.85rem;
+                        color: #666;
+                        font-weight: 500;
+                        letter-spacing: 0.3px;
+                    }
+                    .premium-pagination-info strong {
+                        color: #000;
+                        font-weight: 700;
+                    }
+                    .premium-pagination-actions {
+                        display: flex;
+                        gap: 0.75rem;
+                    }
+                    .premium-page-btn {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 0.5rem;
+                        padding: 0.5rem 1.25rem;
+                        font-size: 0.8rem;
+                        font-weight: 600;
+                        color: #000;
+                        background: #fff;
+                        border: 1px solid #e5e7eb;
+                        border-radius: 99px;
+                        cursor: pointer;
+                        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    .premium-page-btn svg {
+                        width: 14px;
+                        height: 14px;
+                        transition: transform 0.3s ease;
+                    }
+                    .premium-page-btn:hover:not(:disabled) {
+                        border-color: #000;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                        transform: translateY(-1px);
+                    }
+                    .premium-page-btn.prev-btn:hover:not(:disabled) svg {
+                        transform: translateX(-3px);
+                    }
+                    .premium-page-btn.next-btn:hover:not(:disabled) svg {
+                        transform: translateX(3px);
+                    }
+                    .premium-page-btn:active:not(:disabled) {
+                        transform: translateY(0);
+                        box-shadow: none;
+                    }
+                    .premium-page-btn:disabled {
+                        color: #a1a1aa;
+                        background: #fafafa;
+                        border-color: #f3f4f6;
+                        cursor: not-allowed;
+                    }
+                </style>
+                <div id="paginationControls" class="premium-pagination">
+                    <span id="pageInfo" class="premium-pagination-info">Showing <strong>0</strong> to <strong>0</strong> of <strong>0</strong> requests</span>
+                    <div class="premium-pagination-actions">
+                        <button onclick="changePage(-1)" id="prevPageBtn" class="premium-page-btn prev-btn" disabled>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                            Prev
+                        </button>
+                        <button onclick="changePage(1)" id="nextPageBtn" class="premium-page-btn next-btn" disabled>
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+<!-- ── Admin Create Request Modal ── -->
+<div id="createRequestModal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px;">Create Request (Admin)</h2>
+            <button class="modal-close" onclick="closeCreateModal()">×</button>
+        </div>
+
+        <!-- Step 1: Lookup Order -->
+        <div id="cr-step1">
+            <p style="font-size:0.85rem; color:#666; margin-bottom:1rem;">Bypasses the 2-day delivery window and all eligibility checks.</p>
+            <div class="form-group">
+                <label for="cr-orderNumber">Order Number</label>
+                <input type="text" id="cr-orderNumber" placeholder="#12345" onkeyup="if(event.key==='Enter') crLookupOrder()">
+            </div>
+            <div id="cr-lookup-error" style="color:#111827; font-weight: 500; font-size:0.85rem; margin-bottom:0.75rem; display:none;"></div>
+            <button onclick="crLookupOrder()" class="btn btn-primary" style="background:#111827; color:white;">
+                <span id="cr-lookup-text">Look Up Order</span>
+                <span id="cr-lookup-spin" class="spinner hidden"></span>
+            </button>
+
+            <div id="cr-order-info" style="display:none; margin-top:1.5rem;">
+                <div style="background:#f9fafb; padding:1rem; border-radius:6px; margin-bottom:1rem; font-size:0.88rem; border:1px solid #e5e7eb;">
+                    <p id="cr-customer-info"></p>
+                </div>
+
+                <div id="cr-existing-warning" style="display:none; background:#f9fafb; border:1px solid #d1d5db; border-radius:6px; padding:0.75rem; margin-bottom:1rem; font-size:0.85rem; color:#111827;">
+                    ⚠️ <span id="cr-existing-text"></span>
+                    <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; cursor:pointer; font-weight:600; color:#111827;">
+                        <input type="checkbox" id="cr-override" style="accent-color: #111827;"> Force create a new request anyway
+                    </label>
+                </div>
+
+                <p style="font-weight:600; font-size:0.85rem; margin-bottom:0.5rem;">Select Items</p>
+                <div id="cr-items-list"></div>
+
+                <button onclick="crGoStep2()" class="btn btn-primary" style="margin-top:1rem;">Next →</button>
+            </div>
+        </div>
+
+        <!-- Step 2: Configure & Submit -->
+        <div id="cr-step2" style="display:none;">
+            <button onclick="crBackStep1()" style="background:none;border:none;cursor:pointer;color:#666;font-size:0.85rem;margin-bottom:1rem;">← Back</button>
+
+            <div class="form-group">
+                <label>Request Type</label>
+                <select id="cr-type">
+                    <option value="return">Return</option>
+                    <option value="exchange">Exchange</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Reason</label>
+                <select id="cr-reason">
+                    <option value="size">Wrong Size</option>
+                    <option value="fit">Fit Issue</option>
+                    <option value="color">Different Color Preference</option>
+                    <option value="changed_mind">Changed Mind</option>
+                    <option value="defective">Defective/Damaged Product</option>
+                    <option value="wrong_item">Wrong Item Received</option>
+                    <option value="other">Other/Misc</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Admin Comments (optional)</label>
+                <textarea id="cr-comments" rows="3" style="width:100%; padding:0.6rem; border:1px solid #d1d5db; border-radius:4px; font-family:inherit; font-size:0.9rem;"></textarea>
+            </div>
+
+            <div id="cr-submit-error" style="color:#111827; font-weight: 500; font-size:0.85rem; margin-bottom:0.75rem; display:none;"></div>
+            <div id="cr-success" style="display:none; background:#f9fafb; border:1px solid #d1d5db; border-radius:6px; padding:1rem; margin-bottom:1rem; font-size:0.88rem; color:#111827; font-weight: 500;"></div>
+
+            <button onclick="crSubmit()" class="btn btn-primary" style="background:#111827; border:none;">
+                <span id="cr-submit-text">Create Request</span>
+                <span id="cr-submit-spin" class="spinner hidden"></span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Admin Settings Modal ── -->
+<div id="settingsModal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px;">Dashboard Settings</h2>
+            <button class="modal-close" onclick="closeSettingsModal()">×</button>
+        </div>
+
+        <div id="settings-loading" style="text-align:center; padding:2rem; color:#666;">Loading settings...</div>
+
+        <div id="settings-form" style="display:none;">
+            <!-- Master Switches -->
+            <div style="background:#f9fafb; padding:1.25rem; border-radius:6px; margin-bottom:1.5rem; border:1px solid #e5e7eb;">
+                <h3 style="font-size:1rem; margin:0 0 1rem 0;">Master Controls</h3>
+                
+                <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; cursor:pointer;">
+                    <span style="font-weight:500;">Enable Returns Portal</span>
+                    <input type="checkbox" id="set-allow-returns" style="width:18px;height:18px;accent-color:#111827;">
+                </label>
+                
+                <label style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+                    <span style="font-weight:500;">Enable Exchanges Portal</span>
+                    <input type="checkbox" id="set-allow-exchanges" style="width:18px;height:18px;accent-color:#111827;">
+                </label>
+            </div>
+
+            <!-- Return/Exchange Window Mode -->
+            <div class="form-group" style="margin-bottom:1.5rem;">
+                <label style="font-weight:500; display:block; margin-bottom:0.5rem;">Return/Exchange Window Calculation</label>
+                <p style="font-size:0.8rem; color:#6b7280; margin:0 0 0.5rem 0;">Choose how to calculate the eligible period for returns/exchanges.</p>
+                
+                <div style="display:flex; gap:1rem; margin-bottom:1rem;">
+                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; flex:1; padding:0.75rem; border:1px solid #e5e7eb; border-radius:6px; background:#f9fafb;">
+                        <input type="radio" name="window-mode" value="delivery" id="set-window-mode-delivery" style="accent-color:#111827;" onchange="toggleWindowMode()">
+                        <div>
+                            <div style="font-weight:500; font-size:0.9rem;">From Delivery Date</div>
+                            <div style="font-size:0.75rem; color:#6b7280;">Days after order is delivered</div>
+                        </div>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; flex:1; padding:0.75rem; border:1px solid #e5e7eb; border-radius:6px; background:#f9fafb;">
+                        <input type="radio" name="window-mode" value="order" id="set-window-mode-order" style="accent-color:#111827;" onchange="toggleWindowMode()">
+                        <div>
+                            <div style="font-weight:500; font-size:0.9rem;">From Order Date</div>
+                            <div style="font-size:0.75rem; color:#6b7280;">Days after order was placed</div>
+                        </div>
+                    </label>
+                </div>
+                
+                <div id="window-days-container">
+                    <label style="font-weight:500; display:block; margin-bottom:0.5rem; font-size:0.9rem;">Window Duration (Days)</label>
+                    <input type="number" id="set-return-window" min="1" max="365" style="width:100px; padding:0.5rem; border:1px solid #d1d5db; border-radius:4px;">
+                    <p style="font-size:0.8rem; color:#6b7280; margin:0.5rem 0 0 0;" id="window-days-help">Number of days after delivery date</p>
+                </div>
+            </div>
+
+            <!-- Cutoff Date -->
+            <div class="form-group" style="margin-bottom:1.5rem; padding:1rem; background:#fef2f2; border:1px solid #fecaca; border-radius:6px;">
+                <label style="font-weight:500; display:block; margin-bottom:0.5rem; color:#991b1b;">Order Cutoff Date (Optional)</label>
+                <p style="font-size:0.8rem; color:#7f1d1d; margin:0 0 0.5rem 0;">Orders placed before this date will NOT be eligible for returns or exchanges. Leave empty to allow all orders.</p>
+                <input type="date" id="set-cutoff-date" style="width:200px; padding:0.5rem; border:1px solid #d1d5db; border-radius:4px;">
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.75rem; cursor:pointer;">
+                    <input type="checkbox" id="set-enable-cutoff" style="width:16px;height:16px;accent-color:#dc2626;" onchange="toggleCutoffDate()">
+                    <span style="font-size:0.9rem; color:#7f1d1d;">Enable cutoff date restriction</span>
+                </label>
+            </div>
+
+            <!-- Warehouse Location -->
+            <div class="form-group" style="margin-bottom:1.5rem;">
+                <label style="font-weight:500; display:block; margin-bottom:0.5rem;">Shiprocket Warehouse Location</label>
+                <p style="font-size:0.8rem; color:#6b7280; margin:0 0 0.5rem 0;">Select the Shiprocket pickup location where returned items should be sent, and from where replacement items will be shipped.</p>
+                <select id="set-warehouse-location" style="width:100%; padding:0.5rem; border:1px solid #d1d5db; border-radius:4px;">
+                    <option value="">Loading locations...</option>
+                </select>
+            </div>
+
+            <!-- Auto-Approve Reasons -->
+            <div class="form-group" style="margin-bottom:1.5rem;">
+                <label style="font-weight:500; display:block; margin-bottom:0.5rem;">Auto-Approve Pickups</label>
+                <p style="font-size:0.8rem; color:#6b7280; margin:0 0 0.75rem 0;">
+                    Select reasons that trigger an automatic Shiprocket pickup when the customer submits the form.
+                    <br>Unchecked reasons will require you to manually click "Approve" in the dashboard first.
+                </p>
+                
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;" id="set-reasons-container">
+                    <!-- Checkboxes injected via JS -->
+                </div>
+            </div>
+
+            <div id="settings-result" style="display:none; padding:0.75rem; border-radius:4px; margin-bottom:1rem; font-size:0.85rem;"></div>
+
+            <button onclick="saveSettings()" class="btn btn-primary" style="width:100%; background:#111827; border:none; margin-top:0.5rem;">
+                <span id="save-settings-text">Save Changes</span>
+                <span id="save-settings-spin" class="spinner hidden"></span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Request Details Modal -->
+<div id="detailsModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px;">
+                Request Details</h2>
+            <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+
+        <div id="modalContent">
+            <!-- Content will be populated here -->
+        </div>
+
+        <div id="modalActions" class="hidden" style="margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem;">
+            <button onclick="approveRequest()" class="btn btn-primary" style="flex: 1; background: #111827; min-width: 150px; border: 1px solid #111827;">
+                Approve
+            </button>
+            <button id="markDeliveredBtn" onclick="markDelivered()" class="btn btn-secondary" style="flex: 1; background: white; color: #111827; border: 1px solid #111827; min-width: 150px;">
+                Mark as Received
+            </button>
+            <button onclick="rejectRequest()" class="btn btn-primary" style="flex: 1; background: white; color: #111827; border: 1px solid #111827; min-width: 150px;">
+                Reject
+            </button>
+        </div>
+    </div>
+</div>
+</div>
+<script>
+    // Safety mock to prevent theme scripts from throwing "Cannot read properties of null (reading 'find')"
+    window.initializeSelections = function() {
+        console.log('Safety: initializeSelections mock called (Admin Dashboard).');
+        return;
+    };
+
+    // Dynamic API URL: Detect if we should use local server via '?local=true'
+    const isLocal = new URLSearchParams(window.location.search).get('local') === 'true';
+    const API_URL = isLocal ? 'http://localhost:3000/api' : 'https://exchange-return-tracking.onrender.com/api';
+    console.log('🔗 Admin API:', API_URL);
+    let authToken = null;
+    let currentRequest = null;
+    let fetchedRequests = [];
+
+    // Export to Excel (CSV)
+    function exportToExcel() {
+        if (!fetchedRequests || fetchedRequests.length === 0) {
+            alert('No data to export');
+            return;
+        }
+
+        // Define CSV headers
+        const headers = [
+            'Request ID', 'Type', 'Status', 'Order Number', 'Customer Name', 
+            'Phone', 'Email', 'AWB Number', 'Pickup Date', 'Created At'
+        ];
+
+        // Map data to CSV rows
+        const rows = fetchedRequests.map(req => [
+            req.requestId,
+            req.type,
+            req.status,
+            req.orderNumber,
+            req.customerName,
+            req.customerPhone || '',
+            req.customerEmail || '',
+            req.awbNumber || '',
+            req.pickupDate || '',
+            req.createdAt || ''
+        ]);
+
+        // Combine headers and rows
+        const csvContent = [
+            headers.join(','), 
+            ...rows.map(row => row.map(cell => `"${(cell + '').replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+
+        // Create download link
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `return_requests_${new Date().toISOString().slice(0,10)}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // Login
+    async function handleLogin(e) {
+        e.preventDefault();
+        const password = document.getElementById('adminPassword').value;
+        const loginBtn = document.getElementById('loginBtnText');
+        const spinner = document.getElementById('loginSpinner');
+
+        loginBtn.classList.add('hidden');
+        spinner.classList.remove('hidden');
+
+        try {
+            const response = await fetch(`${API_URL}/admin/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                authToken = data.token;
+                // JWT token stored in memory only (not localStorage) for security
+                // Token expires in 24 hours as configured on the server
+                showDashboard();
+            } else {
+                showLoginAlert(data.error || 'Invalid password', 'error');
+            }
+        } catch (error) {
+            showLoginAlert('Login failed. Please try again.', 'error');
+        } finally {
+            loginBtn.classList.remove('hidden');
+            spinner.classList.add('hidden');
+        }
+    }
+
+    // Check for existing token on load
+    // Note: With JWT, we don't persist tokens in localStorage for security
+    // User must login again after page refresh (token expires in 24h anyway)
+    window.addEventListener('DOMContentLoaded', () => {
+        // Token is stored in memory only (authToken variable)
+        // This is more secure as JWT expires in 24 hours
+        if (authToken) {
+            showDashboard();
+        }
+    });
+
+    function showDashboard() {
+        document.getElementById('loginSection').classList.add('hidden');
+        document.getElementById('dashboardSection').classList.remove('hidden');
+        loadRequests();
+        if (typeof resetInactivityTimer === 'function') resetInactivityTimer();
+    }
+
+    function logout() {
+        authToken = null;
+        // Clear any sensitive data from memory
+        currentRequestId = null;
+        selectedRequests.clear();
+        document.getElementById('dashboardSection').classList.add('hidden');
+        document.getElementById('loginSection').classList.remove('hidden');
+    }
+
+    function formatDateIST(dateString) {
+        if (!dateString) return '';
+        // ensure it's treated as UTC if no timezone info
+        let dateStr = dateString;
+        if (!dateStr.includes('Z') && !dateStr.includes('+') && !dateStr.match(/-\d\d:\d\d$/)) {
+            dateStr += 'Z';
+        }
+        return new Date(dateStr).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    }
+
+    function getStatusLabel(status) {
+        const labels = {
+            'waiting_payment': 'Waiting for Payment',
+            'pending':         'Pending Review',
+            'scheduled':       'Pickup Booked — Awaiting Pickup',
+            'picked_up':       'Item Picked Up by Courier',
+            'in_transit':      'In Transit',
+            'delivered':       'Received at Warehouse',
+            'approved':        'Approved',
+            'rejected':        'Rejected'
+        };
+        return labels[status] || status.replace(/_/g, ' ');
+    }
+
+    // Load Requests
+    let currentPage = 1;
+    let currentLimit = 50;
+
+    async function loadRequests(resetPage = false) {
+        if (resetPage) currentPage = 1;
+
+        console.log('[Dashboard] loadRequests initiated', { currentPage, currentLimit });
+
+        const statusFilter = document.getElementById('statusFilter').value;
+        const typeFilter = document.getElementById('typeFilter').value;
+        const dateFilter = document.getElementById('dateFilter').value;
+
+        try {
+            const params = new URLSearchParams();
+            if (statusFilter) params.append('status', statusFilter);
+            if (typeFilter) params.append('type', typeFilter);
+            if (dateFilter) params.append('date', dateFilter);
+            params.append('page', currentPage);
+            params.append('limit', currentLimit);
+            
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput && searchInput.value.trim()) {
+                params.append('search', searchInput.value.trim());
+            }
+
+            console.log(`[Dashboard] Fetching: ${API_URL}/admin/requests?${params}`);
+
+            const response = await fetch(`${API_URL}/admin/requests?${params}`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            
+            console.log('[Dashboard] Response Status:', response.status);
+            const data = await response.json();
+            console.log('[Dashboard] API Data Received:', data);
+
+            if (response.ok) {
+                fetchedRequests = data.requests;
+                updateStats(data.stats);
+                displayRequests(data.requests);
+                updatePagination(data.pagination);
+            } else {
+                console.warn('[Dashboard] API Error:', data);
+                if (response.status === 401) logout();
+            }
+        } catch (error) {
+            console.error('[Dashboard] CRITICAL ERROR in loadRequests:', error);
+        }
+    }
+
+    function changePage(delta) {
+        currentPage += delta;
+        loadRequests();
+    }
+
+    function updatePagination(pagination) {
+        const prevBtn = document.getElementById('prevPageBtn');
+        const nextBtn = document.getElementById('nextPageBtn');
+        const info = document.getElementById('pageInfo');
+        
+        console.log('[Pagination Debug] Received:', pagination);
+
+        if (!pagination) {
+            if (info) info.innerHTML = '<span style="color:#ef4444;">⚠ Pagination metadata missing from API</span>';
+            return;
+        }
+
+        if (prevBtn && nextBtn && info) {
+            const totalPages = Math.ceil(pagination.total / pagination.limit);
+            prevBtn.disabled = pagination.page <= 1;
+            nextBtn.disabled = pagination.page >= totalPages || pagination.total === 0;
+            
+            const start = (pagination.page - 1) * pagination.limit + 1;
+            const end = Math.min(start + pagination.limit - 1, pagination.total);
+            
+            if (pagination.total === 0) {
+                info.innerHTML = 'No requests found';
+            } else {
+                info.innerHTML = `Showing <strong>${start}</strong> to <strong>${end}</strong> of <strong>${pagination.total}</strong> requests`;
+            }
+        }
+    }
+
+    // Sync Status
+    async function syncStatus() {
+        const btnText = document.getElementById('syncBtnText');
+        const spinner = document.getElementById('syncSpinner');
+        const btn = document.getElementById('syncBtn');
+
+        btn.disabled = true;
+        btnText.classList.add('hidden');
+        spinner.classList.remove('hidden');
+
+        try {
+            const response = await fetch(`${API_URL}/admin/sync-status`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                }
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                alert(`Sync Complete! Updated ${data.updated || 0} requests.`);
+                loadRequests();
+            } else {
+                alert('Sync failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Sync error:', error);
+            alert('Failed to sync status');
+        } finally {
+            btn.disabled = false;
+            btnText.classList.remove('hidden');
+            spinner.classList.add('hidden');
+        }
+    }
+
+    // Premium Charts instances
+    let reasonsChartInstance = null;
+    let typesChartInstance = null;
+
+    function updateStats(stats) {
+        if (!stats) return;
+
+        // Animate numbers for premium feel
+        animateValue("totalRequests", parseInt(document.getElementById('totalRequests').textContent) || 0, stats.total || 0, 1000);
+        animateValue("pendingRequests", parseInt(document.getElementById('pendingRequests').textContent) || 0, stats.pending || 0, 1000);
+        animateValue("approvedRequests", parseInt(document.getElementById('approvedRequests').textContent) || 0, stats.approved || 0, 1000);
+        animateValue("rejectedRequests", parseInt(document.getElementById('rejectedRequests').textContent) || 0, stats.rejected || 0, 1000);
+        
+        if (document.getElementById('waitingPaymentRequests')) {
+            document.getElementById('waitingPaymentRequests').textContent = stats.waitingPayment || 0;
+        }
+
+        // Format and set Total Revenue
+        const revEl = document.getElementById('totalRevenue');
+        if (revEl) {
+            const formattedValue = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(stats.totalRevenue || 0);
+            revEl.textContent = formattedValue;
+        }
+
+        // Update Charts
+        updateCharts(stats);
+    }
+
+    // Number animation helper function
+    function animateValue(id, start, end, duration) {
+        const obj = document.getElementById(id);
+        if (!obj) return;
+        if (start === end) {
+            obj.textContent = end;
+            return;
+        }
+        let startTimestamp = null;
+        const step = (timestamp) => {
+            if (!startTimestamp) startTimestamp = timestamp;
+            const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+            obj.textContent = Math.floor(progress * (end - start) + start);
+            if (progress < 1) {
+                window.requestAnimationFrame(step);
+            } else {
+                obj.textContent = end; // Ensure exact final value
+            }
+        };
+        window.requestAnimationFrame(step);
+    }
+
+    function updateCharts(stats) {
+        // Defaults for OffCmfrt Black & White + minimal accent
+        Chart.defaults.font.family = "'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif";
+        Chart.defaults.color = '#6b7280';
+
+        // 1. Reasons Chart (Bar)
+        if (stats.reasons) {
+            const labels = {
+                size: 'Wrong Size',
+                fit: 'Fit Issue',
+                color: 'Color Pref.',
+                changed_mind: 'Changed Mind',
+                defective: 'Defective',
+                wrong_item: 'Wrong Item',
+                other: 'Other'
+            };
+
+            // Sort data logically (or alphabetically)
+            const sortedLabels = Object.keys(stats.reasons).sort((a,b) => stats.reasons[b] - stats.reasons[a]);
+            const chartLabels = sortedLabels.map(k => labels[k] || k);
+            const chartData = sortedLabels.map(k => stats.reasons[k]);
+
+            const ctx1 = document.getElementById('reasonsChart').getContext('2d');
+            if (reasonsChartInstance) reasonsChartInstance.destroy();
+
+            // Create gradient
+            let gradient = ctx1.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, '#111827');
+            gradient.addColorStop(1, '#4b5563');
+
+            reasonsChartInstance = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        label: 'Requests',
+                        data: chartData,
+                        backgroundColor: gradient,
+                        borderRadius: 6,
+                        borderSkipped: false,
+                        barThickness: 'flex',
+                        maxBarThickness: 40
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                            padding: 12,
+                            titleFont: { size: 13 },
+                            bodyFont: { size: 14, weight: 'bold' },
+                            displayColors: false,
+                            cornerRadius: 8
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#f3f4f6', drawBorder: false },
+                            border: { dash: [4, 4] },
+                            ticks: { precision: 0 }
+                        },
+                        x: {
+                            grid: { display: false, drawBorder: false }
+                        }
+                    },
+                    animation: {
+                        y: {
+                            duration: 1000,
+                            easing: 'easeOutQuart'
+                        }
+                    }
+                }
+            });
+        }
+
+        // 2. Types Chart (Doughnut)
+        const ctx2 = document.getElementById('typesChart').getContext('2d');
+        if (typesChartInstance) typesChartInstance.destroy();
+
+        typesChartInstance = new Chart(ctx2, {
+            type: 'doughnut',
+            data: {
+                labels: ['Returns', 'Exchanges'],
+                datasets: [{
+                    data: [stats.returns || 0, stats.exchanges || 0],
+                    backgroundColor: ['#111827', '#e5e7eb'],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '75%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true,
+                            pointStyle: 'circle'
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8,
+                        displayColors: false
+                    }
+                },
+                animation: {
+                    animateScale: true,
+                    animateRotate: true,
+                    duration: 1200,
+                    easing: 'easeOutQuart'
+                }
+            }
+        });
+    }
+
+    function displayRequests(requests) {
+        const table = document.getElementById('requestsTable');
+
+        if (requests.length === 0) {
+            table.innerHTML = `
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: 2rem; color: var(--gray-dark);">
+                        No requests found
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        table.innerHTML = requests.map(req => `
+            <tr>
+                <td class="select-col hidden"><input type="checkbox" class="req-checkbox" value="${req.requestId}" onchange="updateDeleteButton()"></td>
+                <td>${req.requestId}</td>
+                <td style="text-transform: capitalize;">${req.type}</td>
+                <td>${req.orderNumber}</td>
+                <td>${req.customerName}</td>
+                <td>${formatDateIST(req.createdAt)}</td>
+                <td><span class="badge badge-${req.status.replace(/_/g, '-')}">${getStatusLabel(req.status)}</span></td>
+                <td>
+                    <button onclick="viewDetails('${req.requestId}')" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
+                        View
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    // View Request Details
+    async function viewDetails(requestId) {
+        try {
+            const response = await fetch(`${API_URL}/track-request/${requestId}`);
+            const data = await response.json();
+
+            if (response.ok) {
+                currentRequest = data;
+                displayRequestDetails(data);
+                document.getElementById('detailsModal').classList.add('active');
+            }
+        } catch (error) {
+            console.error('Failed to load request details:', error);
+        }
+    }
+
+    function displayRequestDetails(data) {
+        const modalContent = document.getElementById('modalContent');
+
+        modalContent.innerHTML = `
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Request ID</p>
+                    <p style="font-weight: 500;">${data.requestId}</p>
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Type</p>
+                    <p style="font-weight: 500; text-transform: capitalize;">${data.type}</p>
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Order Number</p>
+                    <p style="font-weight: 500;">${data.orderNumber}</p>
+
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Status</p>
+                    <p><span class="badge badge-${data.status.replace(/_/g, '-')}">${getStatusLabel(data.status)}</span></p>
+                </div>
+            </div>
+
+            <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
+                <p style="font-weight: 500; margin-bottom: 0.5rem;">Customer Information</p>
+                <p style="font-size: 0.9rem;"><strong>Name:</strong> ${data.customerName}</p>
+                <p style="font-size: 0.9rem;"><strong>Email:</strong> ${data.customerEmail}</p>
+                <p style="font-size: 0.9rem;"><strong>Phone:</strong> ${data.customerPhone || 'N/A'}</p>
+                ${data.paymentId ? `<p style="font-size: 0.9rem; margin-top: 0.5rem; color: #166534;"><strong>Payment ID:</strong> ${data.paymentId} (₹${data.paymentAmount})</p>` : ''}
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <p style="font-weight: 500; margin-bottom: 0.75rem;">Items & Exchange Details</p>
+                ${(Array.isArray(data.items) ? data.items : (typeof data.items === 'string' ? JSON.parse(data.items) : (data.items ? [data.items] : []))).map(item => {
+                    if (data.type === 'exchange' && item.replacementVariant) {
+                        return `
+                        <div class="admin-item-comparison">
+                            <div class="comparison-card">
+                                <div class="comparison-header original">
+                                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"></path></svg>
+                                    Original Item
+                                </div>
+                                <div class="comparison-body">
+                                    <img src="${item.image || 'https://via.placeholder.com/100'}" class="comparison-img">
+                                    <div class="comparison-info">
+                                        <h4>${item.name}</h4>
+                                        <p>Size: ${item.variant} | Price: ₹${item.price}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="comparison-arrow">
+                                <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                            </div>
+
+                            <div class="comparison-card" style="border-color: #10b981;">
+                                <div class="comparison-header replacement">
+                                    <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                                    Replacement Item
+                                </div>
+                                <div class="comparison-body">
+                                    <img src="${item.replacementProductImage || item.image || 'https://via.placeholder.com/100'}" class="comparison-img">
+                                    <div class="comparison-info">
+                                        <h4>${item.replacementProductTitle || item.name}</h4>
+                                        <p style="color: #059669; font-weight: 600;">NEW SIZE: ${item.replacementVariant}</p>
+                                        <p>Value: ₹${item.replacementPrice || item.price}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        `;
+                    } else {
+                        return `
+                        <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 0.5rem; border: 1px solid var(--gray-medium);">
+                            <p style="font-size: 0.9rem; font-weight: 500;">${item.name}</p>
+                            <p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.25rem;">Size: ${item.variant} | Qty: ${item.quantity} | Price: ₹${item.price}</p>
+                        </div>
+                        `;
+                    }
+                }).join('')}
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <p style="font-weight: 500; margin-bottom: 0.5rem;">Reason</p>
+                <p style="font-size: 0.9rem; background: var(--gray-light); padding: 0.75rem; border-radius: var(--radius-sm);">${data.reason}</p>
+                ${data.comments ? `<p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.5rem;">${data.comments}</p>` : ''}
+            </div>
+
+            ${data.images && Array.isArray(data.images) && data.images.length > 0 ? `
+                <div style="margin-bottom: 1.5rem;">
+                    <p style="font-weight: 500; margin-bottom: 0.75rem;">Uploaded Photos</p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.75rem;">
+                        ${data.images.map(img => `
+                            <a href="${img}" target="_blank">
+                                <img src="${img}" style="width: 100%; height: 100px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb;">
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : ''}
+
+            ${data.awbNumber ? `
+                <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
+                    <p style="font-weight: 500; margin-bottom: 0.5rem;">Pickup Details</p>
+                    <p style="font-size: 0.9rem;"><strong>AWB:</strong> ${data.awbNumber}</p>
+                    <p style="font-size: 0.9rem;"><strong>Pickup Date:</strong> ${data.pickupDate ? formatDateIST(data.pickupDate) : 'Pending'}</p>
+                </div>
+            ` : ''}
+
+            ${data.status === 'delivered' || data.status === 'pending' ? `
+                <div style="margin-top: 1.5rem;">
+                    <label for="adminNotes" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Admin Notes</label>
+                    <textarea id="adminNotes" style="width: 100%; padding: 0.75rem; border: 1px solid var(--gray-medium); border-radius: var(--radius-sm); min-height: 80px;" placeholder="Add notes..."></textarea>
+                </div>
+            ` : ''}
+        `;
+
+        // Show/hide action buttons
+        const modalActions = document.getElementById('modalActions');
+        // We allow approval if status is 'delivered' (standard flow) or 'scheduled'/'picked_up'/'in_transit' if they want to bypass (optional, but let's stick to delivered for now as per request)
+        // actually, let's allow it for any non-approved/rejected status to be safe, but add a warning? 
+        // User said: "pickup booked -> item delivered -> admin approves". 
+        // So we show buttons if status is 'delivered'.
+        
+        if (['pending', 'scheduled', 'picked_up', 'in_transit', 'delivered'].includes(data.status)) {
+            console.log('Action block status matched:', data.status);
+            modalActions.classList.remove('hidden');
+            
+            const approveBtn = modalActions.querySelector('button.btn-primary[onclick="approveRequest()"]');
+            const rejectBtn = modalActions.querySelector('button.btn-primary[onclick="rejectRequest()"]');
+            const manualReceivedBtn = document.getElementById('markDeliveredBtn');
+            console.log('Buttons found:', { approveBtn: !!approveBtn, rejectBtn: !!rejectBtn, manualReceivedBtn: !!manualReceivedBtn });
+            
+            if (approveBtn) {
+                if (data.status === 'pending') {
+                    // Show Approve (Initiate Pickup) for ALL pending items as a manual fallback
+                    approveBtn.classList.remove('hidden');
+                    approveBtn.textContent = 'Approve & Initiate Pickup';
+                    approveBtn.style.background = '#2563eb'; // Blue
+                } else if (data.status === 'delivered') {
+                    approveBtn.classList.remove('hidden');
+                    if (data.type === 'exchange') {
+                        approveBtn.textContent = 'Approve & Dispatch Replacement';
+                    } else {
+                        approveBtn.textContent = 'Approve (QC Passed)';
+                    }
+                    approveBtn.style.background = '#22c55e'; // Green for final approval
+                } else {
+                    approveBtn.classList.add('hidden');
+                }
+            }
+
+            // Show manual received button for all active shipment statuses AND pending (as fallback)
+            if (manualReceivedBtn) {
+                if (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(data.status)) {
+                    manualReceivedBtn.classList.remove('hidden');
+                } else {
+                    manualReceivedBtn.classList.add('hidden');
+                }
+            }
+
+            if (rejectBtn) {
+                rejectBtn.classList.remove('hidden');
+            }
+        } else {
+            modalActions.classList.add('hidden');
+        }
+    }
+
+    async function approveRequest() {
+        if (!confirm('Are you sure you want to approve this request?')) return;
+        const notes = document.getElementById('adminNotes')?.value || '';
+
+        try {
+            const endpoint = currentRequest.type === 'return' ? 'approve-return' : 'approve-exchange';
+            const response = await fetch(`${API_URL}/admin/${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    requestId: currentRequest.requestId,
+                    notes
+                })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                alert(data.message || 'Action completed successfully');
+                closeModal();
+                loadRequests();
+            } else {
+                alert(data.error || 'Failed to process request');
+            }
+        } catch (error) {
+            console.error('Approval error:', error);
+            alert('An error occurred. Please check console.');
+        }
+    }
+
+    async function markDelivered() {
+        if (!confirm('Mark this product as received at warehouse manually?')) return;
+
+        try {
+            const response = await fetch(`${API_URL}/admin/mark-delivered`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ requestId: currentRequest.requestId })
+            });
+
+            if (response.ok) {
+                alert('Request marked as received');
+                viewDetails(currentRequest.requestId); // Refresh this request detail
+                loadRequests(); // Refresh table
+            } else {
+                alert('Failed to update status');
+            }
+        } catch (error) {
+            alert('Error updating status');
+        }
+    }
+
+    async function rejectRequest() {
+        const notes = prompt('Please provide a reason for rejection:');
+        if (!notes) return;
+
+        try {
+            const endpoint = currentRequest.type === 'return' ? 'reject-return' : 'reject-exchange';
+            const response = await fetch(`${API_URL}/admin/${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    requestId: currentRequest.requestId,
+                    notes
+                })
+            });
+
+            if (response.ok) {
+                alert('Request rejected');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('Failed to reject request');
+            }
+        } catch (error) {
+            alert('Failed to reject request');
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('detailsModal').classList.remove('active');
+        currentRequest = null;
+    }
+
+    function showLoginAlert(message, type) {
+        document.getElementById('loginAlert').innerHTML = `
+            <div class="alert alert-${type}">
+                ${message}
+            </div>
+        `;
+    }
+
+    // --- Selection & Deletion Logic ---
+
+    function toggleSelectionMode() {
+        const isHidden = document.querySelector('.select-col').classList.contains('hidden');
+        const selectCols = document.querySelectorAll('.select-col');
+        
+        selectCols.forEach(el => el.classList.toggle('hidden', !isHidden));
+        
+        // Toggle buttons/actions
+        document.getElementById('selectBtn').classList.toggle('hidden', isHidden);
+        document.getElementById('selectionActions').classList.toggle('hidden', !isHidden);
+
+        // Reset selections when exiting
+        if (!isHidden) {
+            document.querySelectorAll('.req-checkbox').forEach(cb => cb.checked = false);
+            document.getElementById('selectAll').checked = false;
+            updateDeleteButton();
+        }
+    }
+
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('selectAll').checked;
+        document.querySelectorAll('.req-checkbox').forEach(cb => cb.checked = selectAll);
+        updateDeleteButton();
+    }
+
+    function selectAllByType(type) {
+        document.querySelectorAll('.req-checkbox').forEach(cb => {
+            const row = cb.closest('tr');
+            if (!row) return;
+            const rowType = row.cells[2].textContent.toLowerCase();
+            if (rowType.includes(type.toLowerCase())) {
+                cb.checked = true;
+            }
+        });
+        updateDeleteButton();
+    }
+
+    function updateDeleteButton() {
+        const selectedCheckboxes = document.querySelectorAll('.req-checkbox:checked');
+        const count = selectedCheckboxes.length;
+        const deleteBtn = document.getElementById('deleteBtn');
+        const selectionCountEl = document.getElementById('selectionCount');
+        
+        // Update row visual feedback
+        document.querySelectorAll('#requestsTable tr').forEach(row => {
+            const cb = row.querySelector('.req-checkbox');
+            if (cb && cb.checked) {
+                row.style.background = 'rgba(37, 99, 235, 0.05)';
+            } else {
+                row.style.background = '';
+            }
+        });
+
+        deleteBtn.disabled = count === 0;
+        deleteBtn.style.opacity = count === 0 ? '0.5' : '1';
+        
+        const bulkPickupBtn = document.getElementById('bulkPickupBtn');
+        if (bulkPickupBtn) {
+            bulkPickupBtn.disabled = count === 0;
+            bulkPickupBtn.style.opacity = count === 0 ? '0.5' : '1';
+        }
+        
+        if (selectionCountEl) {
+            selectionCountEl.textContent = `${count} selected`;
+        }
+    }
+
+    async function deleteSelected() {
+        const selectedIds = Array.from(document.querySelectorAll('.req-checkbox:checked')).map(cb => cb.value);
+        
+        if (selectedIds.length === 0) return;
+
+        if (!confirm(`Are you sure you want to PERMANENTLY delete ${selectedIds.length} requests? This cannot be undone.`)) {
+            return;
+        }
+
+        const deleteBtn = document.getElementById('deleteBtn');
+        const originalText = deleteBtn.textContent;
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = 'Deleting...';
+
+        try {
+            const response = await fetch(`${API_URL}/admin/delete-requests`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ requestIds: selectedIds })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                alert(data.message || 'Requests deleted successfully');
+                toggleSelectionMode(); // Exit selection mode
+                loadRequests(); // Refresh table
+            } else {
+                alert('Delete failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            alert('Failed to delete requests');
+        } finally {
+            deleteBtn.disabled = false;
+            deleteBtn.textContent = originalText;
+        }
+    }
+
+    async function initiateBulkPickup() {
+        const selectedIds = Array.from(document.querySelectorAll('.req-checkbox:checked')).map(cb => cb.value);
+        
+        if (selectedIds.length === 0) return;
+
+        if (!confirm(`Are you sure you want to initiate pickups for ${selectedIds.length} requests? Only 'Pending' requests will be processed.`)) {
+            return;
+        }
+
+        const btn = document.getElementById('bulkPickupBtn');
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Processing...';
+
+        try {
+            const response = await fetch(`${API_URL}/admin/bulk-initiate-pickup`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ requestIds: selectedIds })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                alert(data.message || `Processed ${data.results?.total || selectedIds.length} requests`);
+                toggleSelectionMode(); // Exit selection mode
+                loadRequests(); // Refresh table
+            } else {
+                alert('Bulk pickup failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Bulk pickup error:', error);
+            alert('Failed to initiate bulk pickups');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+    // ── ADMIN CREATE REQUEST ────────────────────────────────────────────────
+    let crOrderData = null;
+
+    function openCreateModal() {
+        document.getElementById('cr-orderNumber').value = '';
+        document.getElementById('cr-order-info').style.display = 'none';
+        document.getElementById('cr-lookup-error').style.display = 'none';
+        document.getElementById('cr-step1').style.display = '';
+        document.getElementById('cr-step2').style.display = 'none';
+        document.getElementById('cr-success').style.display = 'none';
+        document.getElementById('cr-submit-error').style.display = 'none';
+        crOrderData = null;
+        document.getElementById('createRequestModal').classList.add('active');
+    }
+
+    function closeCreateModal() {
+        document.getElementById('createRequestModal').classList.remove('active');
+    }
+
+    async function crLookupOrder() {
+        const orderNumber = document.getElementById('cr-orderNumber').value.trim();
+        if (!orderNumber) return;
+        const errEl  = document.getElementById('cr-lookup-error');
+        const infoEl = document.getElementById('cr-order-info');
+        errEl.style.display = 'none';
+        infoEl.style.display = 'none';
+        document.getElementById('cr-lookup-text').classList.add('hidden');
+        document.getElementById('cr-lookup-spin').classList.remove('hidden');
+
+        try {
+            const res = await fetch(`${API_URL}/admin/lookup-order-force`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                body: JSON.stringify({ orderNumber })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                errEl.textContent = data.error || 'Order not found';
+                errEl.style.display = '';
+                return;
+            }
+
+            crOrderData = data;
+            const o = data.order;
+
+            document.getElementById('cr-customer-info').innerHTML =
+                `<strong>${o.name}</strong> — ${o.customerName}<br>
+                 Email: ${o.email || '—'} &nbsp;|&nbsp; Phone: ${o.customerPhone || '—'}<br>
+                 Fulfillment: <strong>${o.fulfillmentStatus || 'unfulfilled'}</strong>`;
+
+            // Existing request warning
+            const warnEl = document.getElementById('cr-existing-warning');
+            if (data.existingRequests && data.existingRequests.length > 0) {
+                const r = data.existingRequests[0];
+                document.getElementById('cr-existing-text').textContent =
+                    `This order already has a ${r.status} request (${r.requestId}).`;
+                document.getElementById('cr-override').checked = false;
+                warnEl.style.display = '';
+            } else {
+                warnEl.style.display = 'none';
+            }
+
+            // Items checkboxes
+            const itemsEl = document.getElementById('cr-items-list');
+            itemsEl.innerHTML = (o.lineItems || []).map((li, i) => `
+                <label style="display:flex; align-items:center; gap:0.6rem; padding:0.5rem; border:1px solid #e5e7eb; border-radius:4px; margin-bottom:0.4rem; cursor:pointer;">
+                    <input type="checkbox" class="cr-item-cb" data-idx="${i}" checked style="width:16px;height:16px;">
+                    <span style="flex:1;"><strong>${li.name}</strong> — ${li.variant} &nbsp;×${li.quantity} &nbsp;<span style="color:#666;">₹${li.price}</span></span>
+                </label>
+            `).join('');
+
+            infoEl.style.display = '';
+
+        } catch (err) {
+            errEl.textContent = 'Failed to look up order';
+            errEl.style.display = '';
+        } finally {
+            document.getElementById('cr-lookup-text').classList.remove('hidden');
+            document.getElementById('cr-lookup-spin').classList.add('hidden');
+        }
+    }
+
+    function crGoStep2() {
+        document.getElementById('cr-step1').style.display = 'none';
+        document.getElementById('cr-step2').style.display = '';
+        document.getElementById('cr-success').style.display = 'none';
+        document.getElementById('cr-submit-error').style.display = 'none';
+    }
+
+    function crBackStep1() {
+        document.getElementById('cr-step1').style.display = '';
+        document.getElementById('cr-step2').style.display = 'none';
+    }
+
+    async function crSubmit() {
+        if (!crOrderData) return;
+        const errEl = document.getElementById('cr-submit-error');
+        errEl.style.display = 'none';
+
+        const overrideExisting = crOrderData.existingRequests && crOrderData.existingRequests.length > 0
+            ? document.getElementById('cr-override').checked
+            : false;
+
+        // Build selected items
+        const selectedItems = [];
+        document.querySelectorAll('.cr-item-cb:checked').forEach(cb => {
+            const idx = parseInt(cb.dataset.idx);
+            selectedItems.push(crOrderData.order.lineItems[idx]);
+        });
+
+        if (selectedItems.length === 0) {
+            errEl.textContent = 'Please select at least one item.';
+            errEl.style.display = '';
+            crBackStep1();
+            return;
+        }
+
+        document.getElementById('cr-submit-text').classList.add('hidden');
+        document.getElementById('cr-submit-spin').classList.remove('hidden');
+
+        try {
+            const res = await fetch(`${API_URL}/admin/create-request`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                body: JSON.stringify({
+                    orderNumber: crOrderData.order.name,
+                    type: document.getElementById('cr-type').value,
+                    reason: document.getElementById('cr-reason').value,
+                    comments: document.getElementById('cr-comments').value,
+                    items: selectedItems,
+                    overrideExisting
+                })
+            });
+            const data = await res.json();
+
+            if (res.status === 409) {
+                // Duplicate found but override not checked — go back to step 1
+                errEl.textContent = data.error;
+                errEl.style.display = '';
+                crBackStep1();
+                document.getElementById('cr-existing-warning').style.display = '';
+                document.getElementById('cr-existing-text').textContent = data.error;
+            } else if (res.ok) {
+                const successEl = document.getElementById('cr-success');
+                successEl.innerHTML = `✅ <strong>${data.requestId}</strong> created successfully!
+                    ${data.pickupDate ? `<br>Pickup: ${data.pickupDate}` : ''}
+                    ${data.awbNumber ? `<br>AWB: ${data.awbNumber}` : ''}
+                    <br>Status: <strong>${data.status}</strong>`;
+                successEl.style.display = '';
+                loadRequests(); // Refresh table
+            } else {
+                errEl.textContent = data.error || 'Failed to create request';
+                errEl.style.display = '';
+            }
+        } catch (err) {
+            errEl.textContent = 'Request failed. Please try again.';
+            errEl.style.display = '';
+        } finally {
+            document.getElementById('cr-submit-text').classList.remove('hidden');
+            document.getElementById('cr-submit-spin').classList.add('hidden');
+        }
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
+    // ── ADMIN SETTINGS ──────────────────────────────────────────────────────
+    const AVAILABLE_REASONS = [
+        { id: 'size', label: 'Wrong Size' },
+        { id: 'fit', label: 'Fit Issue' },
+        { id: 'color', label: 'Different Color Preference' },
+        { id: 'changed_mind', label: 'Changed Mind' },
+        { id: 'defective', label: 'Defective/Damaged Product' },
+        { id: 'wrong_item', label: 'Wrong Item Received' },
+        { id: 'other', label: 'Other/Misc' }
+    ];
+
+    function openSettingsModal() {
+        document.getElementById('settingsModal').classList.add('active');
+        document.getElementById('settings-loading').style.display = 'block';
+        document.getElementById('settings-form').style.display = 'none';
+        document.getElementById('settings-result').style.display = 'none';
+        
+        // Build reason checkboxes
+        const container = document.getElementById('set-reasons-container');
+        if (container) {
+            container.innerHTML = AVAILABLE_REASONS.map(r => `
+                <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.9rem; cursor:pointer;">
+                    <input type="checkbox" class="set-reason-cb" value="${r.id}" style="width:16px;height:16px;accent-color:#6366f1;">
+                    ${r.label}
+                </label>
+            `).join('');
+        }
+
+        loadSettings();
+        loadShiprocketLocations();
+    }
+
+    function closeSettingsModal() {
+        document.getElementById('settingsModal').classList.remove('active');
+    }
+
+    function toggleWindowMode() {
+        const isOrderMode = document.getElementById('set-window-mode-order').checked;
+        const helpText = document.getElementById('window-days-help');
+        if (helpText) {
+            helpText.textContent = isOrderMode 
+                ? 'Number of days after order date (when order was placed)' 
+                : 'Number of days after delivery date';
+        }
+    }
+
+    function toggleCutoffDate() {
+        const isEnabled = document.getElementById('set-enable-cutoff').checked;
+        const dateInput = document.getElementById('set-cutoff-date');
+        if (dateInput) {
+            dateInput.disabled = !isEnabled;
+            if (!isEnabled) {
+                dateInput.value = '';
+            }
+        }
+    }
+
+    async function loadSettings() {
+        try {
+            const res = await fetch(`${API_URL}/admin/settings`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                document.getElementById('set-allow-returns').checked = data.allow_returns !== false;
+                document.getElementById('set-allow-exchanges').checked = data.allow_exchanges !== false;
+                document.getElementById('set-return-window').value = data.return_window_days || 2;
+                
+                // Set window mode (default to 'delivery' for backward compatibility)
+                const windowMode = data.return_window_mode || 'delivery';
+                document.getElementById(`set-window-mode-${windowMode}`).checked = true;
+                toggleWindowMode(); // Update help text
+                
+                // Set cutoff date
+                const hasCutoff = data.cutoff_date && data.cutoff_date_enabled;
+                document.getElementById('set-enable-cutoff').checked = hasCutoff;
+                document.getElementById('set-cutoff-date').value = data.cutoff_date || '';
+                toggleCutoffDate();
+                
+                const approvedReasons = data.auto_approve_reasons || [];
+                document.querySelectorAll('.set-reason-cb').forEach(cb => {
+                    cb.checked = approvedReasons.includes(cb.value);
+                });
+                
+                // Store the saved warehouse location to select it later
+                window.savedWarehouseLocation = data.warehouse_location || null;
+                // If locations are already loaded, set the value now
+                if (window.shiprocketLocationsLoaded && window.savedWarehouseLocation) {
+                    const select = document.getElementById('set-warehouse-location');
+                    if (select) {
+                        select.value = window.savedWarehouseLocation.pickup_location || '';
+                    }
+                }
+
+                document.getElementById('settings-loading').style.display = 'none';
+                document.getElementById('settings-form').style.display = '';
+            } else {
+                alert('Failed to load settings');
+                closeSettingsModal();
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to connect to settings API');
+            closeSettingsModal();
+        }
+    }
+
+    async function saveSettings() {
+        const btnText = document.getElementById('save-settings-text');
+        const spinner = document.getElementById('save-settings-spin');
+        const resultEl = document.getElementById('settings-result');
+        
+        btnText.classList.add('hidden');
+        spinner.classList.remove('hidden');
+        resultEl.style.display = 'none';
+
+        const approvedReasons = Array.from(document.querySelectorAll('.set-reason-cb:checked')).map(cb => cb.value);
+
+        const windowMode = document.querySelector('input[name="window-mode"]:checked')?.value || 'delivery';
+        const cutoffEnabled = document.getElementById('set-enable-cutoff').checked;
+        const cutoffDate = document.getElementById('set-cutoff-date').value;
+        
+        const updates = {
+            allow_returns: document.getElementById('set-allow-returns').checked,
+            allow_exchanges: document.getElementById('set-allow-exchanges').checked,
+            return_window_days: parseInt(document.getElementById('set-return-window').value, 10),
+            return_window_mode: windowMode,
+            cutoff_date_enabled: cutoffEnabled,
+            cutoff_date: cutoffEnabled ? cutoffDate : null,
+            auto_approve_reasons: approvedReasons
+        };
+        
+        // Add Warehouse Location Data
+        const locationSelect = document.getElementById('set-warehouse-location');
+        if (locationSelect && locationSelect.value && window.shiprocketLocationsData) {
+            const selectedLocation = window.shiprocketLocationsData.find(loc => loc.pickup_location === locationSelect.value);
+            if (selectedLocation) {
+                updates.warehouse_location = selectedLocation;
+            }
+        }
+
+        try {
+            const res = await fetch(`${API_URL}/admin/settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                body: JSON.stringify({ updates })
+            });
+            
+            if (res.ok) {
+                resultEl.textContent = '✅ Settings saved successfully!';
+                resultEl.style.color = '#166534';
+                resultEl.style.backgroundColor = '#f0fdf4';
+                resultEl.style.border = '1px solid #bbf7d0';
+                resultEl.style.display = 'block';
+                setTimeout(closeSettingsModal, 2000);
+            } else {
+                const err = await res.json();
+                throw new Error(err.error || 'Failed to save');
+            }
+        } catch (err) {
+            resultEl.textContent = '❌ Error: ' + err.message;
+            resultEl.style.color = '#b91c1c';
+            resultEl.style.backgroundColor = '#fef2f2';
+            resultEl.style.border = '1px solid #fecaca';
+            resultEl.style.display = 'block';
+        } finally {
+            btnText.classList.remove('hidden');
+            spinner.classList.add('hidden');
+        }
+    }
+    
+    // Load Shiprocket Locations for Dropdown
+    async function loadShiprocketLocations() {
+        const select = document.getElementById('set-warehouse-location');
+        if (!select) return; // Dropdown not yet in DOM or error
+        
+        select.innerHTML = '<option value="">Loading locations...</option>';
+        select.disabled = true;
+        
+        try {
+            const res = await fetch(`${API_URL}/admin/shiprocket-locations`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            const data = await res.json();
+            
+            if (res.ok && data.success && data.locations) {
+                window.shiprocketLocationsData = data.locations;
+                window.shiprocketLocationsLoaded = true;
+                
+                if (data.locations.length === 0) {
+                    select.innerHTML = '<option value="">No locations found in Shiprocket</option>';
+                    return;
+                }
+                
+                select.innerHTML = '<option value="">Select a Location</option>' + 
+                    data.locations.map(loc => {
+                        const displayName = `${loc.pickup_location} - ${loc.name || ''} (${loc.city}, ${loc.state})`;
+                        return `<option value="${loc.pickup_location}">${displayName}</option>`;
+                    }).join('');
+                    
+                select.disabled = false;
+                
+                // If settings already loaded, select the saved value
+                if (window.savedWarehouseLocation && window.savedWarehouseLocation.pickup_location) {
+                    select.value = window.savedWarehouseLocation.pickup_location;
+                }
+            } else {
+                select.innerHTML = '<option value="">Failed to load locations</option>';
+            }
+        } catch (err) {
+            console.error('Failed to load Shiprocket locations', err);
+            select.innerHTML = '<option value="">Error loading locations</option>';
+        }
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
+    // Session Lock Logic
+    let inactivityTimer;
+    const INACTIVITY_LIMIT = 15 * 60 * 1000; // 15 minutes
+    // const INACTIVITY_LIMIT = 30 * 1000; // 30 seconds for quick testing
+
+    function resetInactivityTimer() {
+        if (!authToken) return; // Only track if logged in
+        clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(lockSession, INACTIVITY_LIMIT);
+    }
+
+    function lockSession() {
+        if (!authToken) return;
+        const overlay = document.getElementById('sessionLockOverlay');
+        overlay.classList.remove('hidden');
+        // Small delay to allow display:flex to apply before setting opacity
+        setTimeout(() => {
+            overlay.style.opacity = '1';
+        }, 10);
+        
+        // Blur background
+        document.querySelector('.page-width').style.filter = 'blur(5px)';
+        document.getElementById('unlockPassword').focus();
+    }
+
+    async function handleUnlock(e) {
+        e.preventDefault();
+        const pwdInput = document.getElementById('unlockPassword');
+        const errDiv = document.getElementById('unlockError');
+        const btnText = document.getElementById('unlockBtnText');
+        const spinner = document.getElementById('unlockSpinner');
+
+        btnText.classList.add('hidden');
+        spinner.classList.remove('hidden');
+        errDiv.textContent = '';
+
+        try {
+            const response = await fetch(`${API_URL}/admin/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pwdInput.value })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Unlock successful - get new JWT token
+                authToken = data.token;
+                // Token stored in memory only (not localStorage) for security
+                
+                const overlay = document.getElementById('sessionLockOverlay');
+                overlay.style.opacity = '0';
+                document.querySelector('.page-width').style.filter = 'none';
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    pwdInput.value = '';
+                }, 500); // match transition length
+                
+                resetInactivityTimer();
+                // If they were looking at stale data, we can optionally refresh
+                // loadRequests(); 
+            } else {
+                errDiv.textContent = 'Incorrect password. Please try again.';
+                pwdInput.value = '';
+                pwdInput.focus();
+            }
+        } catch (error) {
+            errDiv.textContent = 'Server error. Please check your connection.';
+        } finally {
+            btnText.classList.remove('hidden');
+            spinner.classList.add('hidden');
+        }
+    }
+
+    // Set up activity listeners
+    ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
+        window.addEventListener(evt, () => {
+            if (authToken && document.getElementById('sessionLockOverlay').classList.contains('hidden')) {
+                resetInactivityTimer();
+            }
+        }, { passive: true });
+    });
+
+</script>
