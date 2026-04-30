@@ -70,7 +70,14 @@ const app = express();
 // Trust Render's proxy so express-rate-limit can read real client IPs
 app.set('trust proxy', 1);
 
-// Security middleware - Helmet for security headers
+// Serve admin dashboard BEFORE helmet (to bypass CSP restrictions)
+app.get('/admin', (req, res) => {
+    // Custom CSP for admin - allows inline scripts and event handlers
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self';");
+    res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
+});
+
+// Security middleware - Helmet for security headers (applied AFTER admin route)
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
@@ -207,13 +214,6 @@ app.use(express.json({
     }
 }));
 app.use(express.static('public'));
-
-// Serve admin dashboard at /admin (CSP disabled for admin panel)
-app.get('/admin', (req, res) => {
-    // Disable helmet CSP for admin route to allow inline event handlers
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self';");
-    res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
-});
 
 // In-memory storage for OAuth tokens and payment processing
 const storage = {
