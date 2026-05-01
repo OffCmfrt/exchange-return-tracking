@@ -550,8 +550,15 @@
 </div>
 </div>
 <script>
-    // API URL - relative to current origin (works on both Render and localhost)
-    const API_URL = window.location.origin + '/api';
+    // Safety mock to prevent theme scripts from throwing "Cannot read properties of null (reading 'find')"
+    window.initializeSelections = function() {
+        console.log('Safety: initializeSelections mock called (Admin Dashboard).');
+        return;
+    };
+
+    // Dynamic API URL: Detect if we should use local server via '?local=true'
+    const isLocal = new URLSearchParams(window.location.search).get('local') === 'true';
+    const API_URL = isLocal ? 'http://localhost:3000/api' : 'https://exchange-return-tracking.onrender.com/api';
     console.log('🔗 Admin API:', API_URL);
     let authToken = null;
     let currentRequest = null;
