@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&display=swap');
+
 :root {
     --primary-color: #000000;
     --secondary-color: #ffffff;
@@ -8,7 +10,7 @@
     --gray-dark: #6b7280;
     --success-color: #4caf50;
     --error-color: #f44336;
-    --font-family: 'Inter', sans-serif;
+    --font-family: 'Archivo Narrow', sans-serif;
     --transition: all 0.3s ease;
     --radius-sm: 6px;
     --radius-md: 10px;
@@ -196,6 +198,26 @@ header {
 .status-delivered {
     background-color: #e8f5e9;
     color: #2e7d32;
+}
+
+/* Login Page Centering */
+#loginSection {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+}
+
+#loginSection .header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+#loginSection .card {
+    width: 100%;
+    max-width: 500px;
 }
 
 .item-list {
