@@ -5,10 +5,13 @@
     --text-color: #1a1a1a;
     --gray-light: #f5f5f5;
     --gray-medium: #e0e0e0;
+    --gray-dark: #6b7280;
     --success-color: #4caf50;
     --error-color: #f44336;
     --font-family: 'Inter', sans-serif;
     --transition: all 0.3s ease;
+    --radius-sm: 6px;
+    --radius-md: 10px;
 }
 
 * {
@@ -305,4 +308,263 @@ header {
     .btn-sm {
         width: 100%;
     }
+}
+
+/* ============================================================
+   STANDALONE RENDER DEPLOYMENT — Classes previously provided
+   by Shopify theme CSS. Required for admin dashboard to work.
+   ============================================================ */
+
+/* Critical: show/hide utility */
+.hidden {
+    display: none !important;
+}
+
+/* Card component */
+.card {
+    background: var(--secondary-color);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    border: 1px solid #e5e7eb;
+}
+
+/* Header block inside login section */
+.header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.header p {
+    color: var(--gray-dark);
+    font-size: 0.95rem;
+}
+
+/* Flex utility */
+.flex-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Button variants */
+.btn-primary {
+    background-color: var(--primary-color);
+    color: var(--secondary-color);
+    border: none;
+}
+
+.btn-primary:hover {
+    background-color: #222;
+}
+
+.btn-secondary {
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+    border: 1px solid var(--gray-medium);
+}
+
+.btn-secondary:hover {
+    border-color: var(--primary-color);
+}
+
+.btn-block {
+    display: block;
+    width: 100%;
+}
+
+/* Spinner */
+.spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--secondary-color);
+    border-bottom-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Admin table */
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1.5rem;
+    font-size: 0.9rem;
+}
+
+.admin-table thead {
+    background: #f9fafb;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.admin-table th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-dark);
+}
+
+.admin-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f3f4f6;
+    vertical-align: middle;
+}
+
+.admin-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+/* Select column (checkbox) */
+.select-col {
+    width: 40px;
+    text-align: center;
+}
+
+/* Badge / status pills */
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    white-space: nowrap;
+}
+
+.badge-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.badge-waiting-payment {
+    background: #fef9c3;
+    color: #854d0e;
+}
+
+.badge-scheduled {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.badge-picked-up {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+
+.badge-in-transit {
+    background: #cffafe;
+    color: #155e75;
+}
+
+.badge-delivered {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.badge-approved {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.badge-rejected {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Alert messages */
+.alert {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-sm);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.alert-error {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+.alert-success {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+}
+
+/* Modal header & close */
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #9ca3af;
+    line-height: 1;
+    padding: 0.25rem;
+    transition: color 0.2s;
+}
+
+.modal-close:hover {
+    color: #111827;
+}
+
+/* Form controls for standalone */
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: #374151;
+}
+
+.form-group input[type="text"],
+.form-group input[type="password"],
+.form-group input[type="email"],
+.form-group input[type="number"],
+.form-group input[type="date"],
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid #d1d5db;
+    border-radius: var(--radius-sm);
+    font-size: 0.95rem;
+    font-family: inherit;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    border-color: #111827;
+    box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+}
+
+/* Page width container */
+.page-width {
+    max-width: 1400px;
+    margin: 0 auto;
 }

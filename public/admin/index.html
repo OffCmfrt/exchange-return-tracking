@@ -556,13 +556,15 @@
         return;
     };
 
-    // Dynamic API URL: Detect if we should use local server via '?local=true'
+    // Dynamic API URL: Use relative path when on Render (same-origin), localhost for local dev
     const isLocal = new URLSearchParams(window.location.search).get('local') === 'true';
-    const API_URL = isLocal ? 'http://localhost:3000/api' : 'https://exchange-return-tracking.onrender.com/api';
-    console.log('🔗 Admin API:', API_URL);
+    const API_URL = isLocal ? 'http://localhost:3000/api' : '/api';
+    console.log('Admin API:', API_URL);
     let authToken = null;
     let currentRequest = null;
+    let currentRequestId = null;
     let fetchedRequests = [];
+    let selectedRequests = new Set();
 
     // Export to Excel (CSV)
     function exportToExcel() {

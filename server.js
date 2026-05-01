@@ -70,11 +70,11 @@ const app = express();
 // Trust Render's proxy so express-rate-limit can read real client IPs
 app.set('trust proxy', 1);
 
-// Deploy timestamp: 2026-04-30 - Admin dashboard with permissive CSP
+// Deploy timestamp: 2026-05-01 - Admin dashboard with permissive CSP
 // Serve admin dashboard BEFORE helmet (to bypass CSP restrictions)
 app.get('/admin', (req, res) => {
     // Custom CSP for admin - allows inline scripts and event handlers
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self';");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com;");
     res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
 });
 
