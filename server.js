@@ -3155,25 +3155,35 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
 
         // Now create the Shopify discount code
         let shopifyIds = { priceRuleId: null, discountCodeId: null };
+        let shopifyWarning = null;
         try {
             shopifyIds = await createShopifyDiscountCode(referralCode, discount, usage, `Influencer: ${name}`);
+            
+            // Update influencer with Shopify IDs
+            await updateInfluencer(influencer.id, {
+                shopifyPriceRuleId: shopifyIds.priceRuleId.toString(),
+                shopifyDiscountCodeId: shopifyIds.discountCodeId.toString()
+            });
         } catch (shopifyError) {
-            // Rollback: delete the influencer if Shopify creation fails
-            await deleteInfluencer(influencer.id);
-            console.error('Shopify discount creation failed, rolled back influencer creation:', shopifyError.message);
-            return res.status(500).json({ error: `Failed to create Shopify discount code: ${shopifyError.message}` });
+            // Log error but DON'T rollback - influencer is still valuable without Shopify sync
+            console.error('Shopify discount creation failed (non-blocking):', shopifyError.message);
+            
+            // Check if it's a permission error
+            if (shopifyError.message.includes('403') || shopifyError.message.includes('write_price_rules')) {
+                shopifyWarning = 'Shopify discount code not created: Missing write_price_rules permission. Please enable discount permissions in your Shopify app settings, or create the code manually in Shopify admin.';
+            } else {
+                shopifyWarning = `Shopify discount code not created: ${shopifyError.message}. You can create it manually in Shopify admin.`;
+            }
         }
 
-        // Update influencer with Shopify IDs
-        await updateInfluencer(influencer.id, {
-            shopifyPriceRuleId: shopifyIds.priceRuleId.toString(),
-            shopifyDiscountCodeId: shopifyIds.discountCodeId.toString()
-        });
-
-        // Fetch updated influencer with Shopify IDs
+        // Fetch updated influencer (with or without Shopify IDs)
         const updatedInfluencer = await getInfluencerById(influencer.id);
 
-        res.json({ success: true, influencer: updatedInfluencer });
+        res.json({ 
+            success: true, 
+            influencer: updatedInfluencer,
+            warning: shopifyWarning 
+        });
     } catch (error) {
         console.error('Add influencer error:', error);
         res.status(500).json({ error: 'Failed to add influencer. Code might already exist.' });

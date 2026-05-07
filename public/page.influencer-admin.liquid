@@ -1072,7 +1072,7 @@ function renderTable(list) {
       <tr class="ia-row-enter" id="row-${inf.id}">
         <td class="td-name">${esc(inf.name)}</td>
         <td class="td-phone" style="font-size:0.75rem;color:var(--muted);">${esc(inf.phone || '—')}</td>
-        <td><span class="td-code">${esc(inf.referral_code)}</span></td>
+        <td><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced - create manually in Shopify admin">⚠️</span>' : ''}</span></td>
         <td class="td-commission">${parseFloat(inf.commission_rate || 10).toFixed(1)}%</td>
         <td class="td-discount">${parseFloat(discountVal).toFixed(1)}%</td>
         <td class="td-usage">${usageLimit}</td>
@@ -1130,8 +1130,15 @@ async function submitAdd() {
       body: JSON.stringify({ name, referralCode, commissionRate, discountValue, usageLimit, phone })
     });
     if (res.ok) {
+      const d = await res.json();
       closeModal('iaAddModal');
-      showToast('Ambassador created ✓');
+      if (d.warning) {
+        showToast('Ambassador created ⚠️ Shopify code not synced');
+        // Show warning in a more visible way
+        setTimeout(() => alert(d.warning), 300);
+      } else {
+        showToast('Ambassador created ✓');
+      }
       await loadDashboard();
     } else {
       const d = await res.json();
