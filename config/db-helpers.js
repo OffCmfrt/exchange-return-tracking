@@ -457,6 +457,8 @@ async function createInfluencer(influencerData) {
             referral_code: influencerData.referralCode,
             link_token: influencerData.linkToken,
             commission_rate: influencerData.commissionRate ?? 10.00,
+            discount_value: influencerData.discountValue ?? influencerData.commissionRate ?? 10.00,
+            usage_limit: influencerData.usageLimit ?? null,
             phone: influencerData.phone,
             is_active: true
         }])
@@ -475,8 +477,12 @@ async function updateInfluencer(id, updates) {
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.referralCode !== undefined) updateData.referral_code = updates.referralCode;
     if (updates.commissionRate !== undefined) updateData.commission_rate = parseFloat(updates.commissionRate);
+    if (updates.discountValue !== undefined) updateData.discount_value = parseFloat(updates.discountValue);
+    if (updates.usageLimit !== undefined) updateData.usage_limit = updates.usageLimit === '' ? null : parseInt(updates.usageLimit);
     if (updates.phone !== undefined) updateData.phone = updates.phone;
     if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+    if (updates.shopifyPriceRuleId !== undefined) updateData.shopify_price_rule_id = updates.shopifyPriceRuleId;
+    if (updates.shopifyDiscountCodeId !== undefined) updateData.shopify_discount_code_id = updates.shopifyDiscountCodeId;
 
     const { data, error } = await supabase
         .from('influencers')

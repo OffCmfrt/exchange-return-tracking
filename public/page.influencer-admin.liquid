@@ -1,0 +1,1415 @@
+{% layout none %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Influencer HQ - Admin</title>
+{% comment %}
+  OFFCOMFRT — Influencer Admin Dashboard (Ultra-Premium Edition)
+  Monochromatic B&W • Razor-Sharp Borders • Micro-Animations
+{% endcomment %}
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #111111;
+  --border: #1f1f1f;
+  --border-hover: #3a3a3a;
+  --text: #ffffff;
+  --muted: #606060;
+  --subtle: #282828;
+  --accent-line: #ffffff;
+  --danger: #ff3b3b;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --radius: 0px;
+  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ia-wrap {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── LOADING ── */
+.ia-loading {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 9999;
+  gap: 1.5rem;
+  transition: opacity 0.4s ease;
+}
+.ia-loading.out { opacity: 0; pointer-events: none; }
+.ia-spinner {
+  width: 36px; height: 36px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.ia-loading p {
+  font-size: 0.7rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── AUTH ── */
+.ia-auth {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh;
+}
+.ia-auth-card {
+  width: 100%; max-width: 380px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 3rem;
+  animation: fadeUp 0.4s ease both;
+}
+.ia-auth-logo {
+  font-size: 0.65rem;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2.5rem;
+  text-align: center;
+}
+.ia-auth-card h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+  text-align: center;
+}
+.ia-auth-err {
+  font-size: 0.75rem;
+  color: var(--danger);
+  text-align: center;
+  margin-top: 1rem;
+  display: none;
+}
+.ia-auth-err.show { display: block; }
+
+/* ── LAYOUT ── */
+.ia-layout { display: flex; min-height: 100vh; }
+
+.ia-sidebar {
+  width: 220px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 2rem 0;
+  display: flex;
+  flex-direction: column;
+  position: fixed; top: 0; left: 0; bottom: 0;
+  z-index: 100;
+  transition: transform var(--transition);
+}
+.ia-sidebar-logo {
+  padding: 0 1.5rem 2rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+.ia-sidebar-logo span {
+  font-size: 0.6rem;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 0.3rem;
+}
+.ia-sidebar-logo strong {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ia-sidebar-nav {
+  flex: 1;
+  padding: 0 1rem;
+}
+.ia-nav-item {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 2px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  text-transform: uppercase;
+}
+.ia-nav-item:hover, .ia-nav-item.active { color: var(--text); background: var(--subtle); }
+.ia-sidebar-footer {
+  padding: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+.ia-logout-btn {
+  width: 100%;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  padding: 0.6rem 1rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: inherit;
+}
+.ia-logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+/* ── MAIN ── */
+.ia-main {
+  flex: 1;
+  margin-left: 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.ia-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem 2.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky; top: 0;
+  z-index: 50;
+}
+.ia-topbar h1 {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+.ia-topbar-meta {
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+.ia-content { padding: 2.5rem; flex: 1; }
+
+/* ── STAT STRIP ── */
+.ia-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin-bottom: 2.5rem;
+}
+.ia-stat-cell {
+  background: var(--surface);
+  padding: 1.75rem 2rem;
+  position: relative;
+  overflow: hidden;
+  transition: background var(--transition);
+}
+.ia-stat-cell:hover { background: var(--surface-2); }
+.ia-stat-cell::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--text);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.4s cubic-bezier(0.4,0,0.2,1);
+}
+.ia-stat-cell:hover::before { transform: scaleX(1); }
+.ia-stat-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+  font-weight: 500;
+}
+.ia-stat-value {
+  font-size: 2.2rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+/* ── TABLE SECTION ── */
+.ia-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+.ia-section-title {
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.ia-table-wrap {
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.ia-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ia-table thead tr {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.ia-table th {
+  padding: 1rem 1.25rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ia-table td {
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  vertical-align: middle;
+}
+.ia-table tbody tr { transition: background var(--transition); }
+.ia-table tbody tr:hover td { background: var(--surface); }
+.ia-table tbody tr:last-child td { border-bottom: none; }
+.ia-table .td-name { font-weight: 600; letter-spacing: 0.02em; }
+.ia-table .td-code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  background: var(--subtle);
+  padding: 0.2rem 0.6rem;
+  letter-spacing: 0.08em;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+.ia-table .td-commission {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.ia-table .td-orders {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.ia-table .td-date {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.ia-copy-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--transition);
+}
+.ia-copy-btn:hover { border-color: var(--text); color: var(--text); }
+.ia-copy-btn.copied { border-color: var(--success); color: var(--success); }
+
+/* Row action buttons */
+.ia-row-actions { display: flex; gap: 0.5rem; align-items: center; }
+.ia-action-btn {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid;
+  background: transparent;
+  transition: all var(--transition);
+}
+.ia-action-btn.edit { border-color: var(--border); color: var(--muted); }
+.ia-action-btn.edit:hover { border-color: var(--text); color: var(--text); }
+.ia-action-btn.remove { border-color: transparent; color: var(--muted); }
+.ia-action-btn.remove:hover { border-color: var(--danger); color: var(--danger); }
+.ia-action-btn.view { border-color: var(--border); color: var(--success); }
+.ia-action-btn.view:hover { border-color: var(--success); color: var(--success); background: rgba(34, 197, 94, 0.1); }
+
+/* ── EMPTY STATE ── */
+.ia-empty {
+  text-align: center;
+  padding: 5rem 2rem;
+  color: var(--muted);
+}
+.ia-empty h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+.ia-empty p { font-size: 0.78rem; }
+
+/* ── BUTTONS ── */
+.ia-btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: none;
+  transition: all var(--transition);
+}
+.ia-btn-primary {
+  background: var(--text);
+  color: var(--bg);
+}
+.ia-btn-primary:hover {
+  background: #d4d4d4;
+  transform: translateY(-1px);
+}
+.ia-btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.ia-btn-ghost:hover { border-color: var(--border-hover); color: var(--text); }
+.ia-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ── FORM ── */
+.ia-form-group { margin-bottom: 1.25rem; }
+.ia-form-group label {
+  display: block;
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+.ia-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0.8rem 1rem;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.88rem;
+  transition: border-color var(--transition);
+  outline: none;
+}
+.ia-input:focus { border-color: var(--text); }
+.ia-input::placeholder { color: var(--muted); }
+.ia-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.ia-form-hint {
+  font-size: 0.65rem;
+  color: var(--muted);
+  margin-top: 0.4rem;
+  letter-spacing: 0.05em;
+}
+
+/* ── MODAL ── */
+.ia-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.9);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.ia-modal-overlay.open { opacity: 1; pointer-events: all; }
+.ia-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  width: 100%; max-width: 480px;
+  padding: 2.5rem;
+  transform: translateY(16px) scale(0.98);
+  transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+.ia-modal-overlay.open .ia-modal { transform: translateY(0) scale(1); }
+.ia-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 2rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.ia-modal-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.ia-modal-close {
+  background: none; border: none;
+  color: var(--muted); cursor: pointer;
+  font-size: 1.2rem; line-height: 1;
+  padding: 0.25rem;
+  transition: color var(--transition);
+}
+.ia-modal-close:hover { color: var(--text); }
+.ia-modal-actions {
+  display: flex; gap: 0.75rem;
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+.ia-modal-actions .ia-btn { flex: 1; justify-content: center; }
+.ia-modal-error {
+  font-size: 0.72rem;
+  color: var(--danger);
+  margin-top: 0.75rem;
+  display: none;
+}
+.ia-modal-error.show { display: block; }
+
+/* ── TOAST ── */
+.ia-toast {
+  position: fixed;
+  bottom: 2rem; right: 2rem;
+  background: var(--text);
+  color: var(--bg);
+  padding: 1rem 1.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border-left: 3px solid var(--bg);
+  transform: translateY(4rem);
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+  z-index: 9000;
+  pointer-events: none;
+}
+.ia-toast.show { transform: translateY(0); opacity: 1; }
+.ia-toast.error { background: var(--danger); color: #fff; }
+
+/* ── STATS MODAL STYLES ── */
+.ia-stats-filter {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.ia-filter-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.ia-filter-group {
+  flex: 1;
+  min-width: 150px;
+}
+.ia-filter-group label {
+  display: block;
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+.ia-range-buttons {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+}
+.ia-range-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-family: inherit;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.ia-range-btn:last-child { border-right: none; }
+.ia-range-btn:hover { color: var(--text); background: var(--surface-2); }
+.ia-range-btn.active {
+  background: var(--text);
+  color: var(--bg);
+}
+.ia-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+.ia-stat-box {
+  background: var(--surface);
+  padding: 1.5rem;
+  text-align: center;
+}
+.ia-stat-box.highlight {
+  background: var(--surface-2);
+}
+.ia-stat-box-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+}
+.ia-stat-box-value {
+  font-size: 1.75rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.ia-stat-box.highlight .ia-stat-box-value {
+  color: var(--success);
+}
+.ia-stat-box-sub {
+  font-size: 0.65rem;
+  color: var(--muted);
+  margin-top: 0.5rem;
+  letter-spacing: 0.1em;
+}
+.ia-conversions-list {
+  border: 1px solid var(--border);
+  max-height: 300px;
+  overflow-y: auto;
+}
+.ia-conversion-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  transition: background var(--transition);
+}
+.ia-conversion-item:hover { background: var(--surface-2); }
+.ia-conversion-item:last-child { border-bottom: none; }
+.ia-conversion-order {
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+.ia-conversion-date {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
+.ia-conversion-total {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--success);
+}
+.ia-conversion-empty {
+  text-align: center;
+  padding: 3rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.ia-conversion-loading {
+  text-align: center;
+  padding: 2rem;
+}
+.ia-conversion-loading::after {
+  content: '';
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@media (max-width: 768px) {
+  .ia-stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .ia-range-buttons { flex-wrap: wrap; }
+  .ia-range-btn { flex: 1; min-width: 80px; border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+/* ── ANIMATIONS ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ia-row-enter {
+  animation: fadeUp 0.3s ease both;
+}
+
+.hidden { display: none !important; }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  .ia-sidebar { transform: translateX(-100%); }
+  .ia-main { margin-left: 0; }
+  .ia-stat-strip { grid-template-columns: 1fr; }
+  .ia-table th:nth-child(4), .ia-table td:nth-child(4),
+  .ia-table th:nth-child(5), .ia-table td:nth-child(5) { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="ia-wrap">
+
+  <!-- Loading Overlay -->
+  <div id="iaLoading" class="ia-loading">
+    <div class="ia-spinner"></div>
+    <p>Initialising Manager</p>
+  </div>
+
+  <!-- Auth Screen -->
+  <div id="iaAuth" class="ia-auth hidden">
+    <div class="ia-auth-card">
+      <p class="ia-auth-logo">Offcomfrt · Admin</p>
+      <h2>Manager Access</h2>
+      <div class="ia-form-group">
+        <label for="iaPassword">System Password</label>
+        <input type="password" id="iaPassword" class="ia-input" placeholder="Enter password" autocomplete="current-password">
+      </div>
+      <button class="ia-btn ia-btn-primary" style="width:100%;justify-content:center;" id="iaLoginBtn" onclick="handleLogin()">
+        Authenticate
+      </button>
+      <p id="iaLoginErr" class="ia-auth-err">Invalid password. Try again.</p>
+    </div>
+  </div>
+
+  <!-- Main Dashboard -->
+  <div id="iaDashboard" class="ia-layout hidden">
+
+    <!-- Sidebar -->
+    <aside class="ia-sidebar">
+      <div class="ia-sidebar-logo">
+        <span>Offcomfrt</span>
+        <strong>Influencer HQ</strong>
+      </div>
+      <nav class="ia-sidebar-nav">
+        <div class="ia-nav-item active">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Ambassadors
+        </div>
+      </nav>
+      <div class="ia-sidebar-footer">
+        <button class="ia-logout-btn" onclick="handleLogout()">Sign Out</button>
+      </div>
+    </aside>
+
+    <!-- Main Area -->
+    <main class="ia-main">
+      <!-- Top Bar -->
+      <div class="ia-topbar">
+        <h1>Influencer Manager</h1>
+        <span class="ia-topbar-meta" id="iaLastUpdated"></span>
+      </div>
+
+      <!-- Content -->
+      <div class="ia-content">
+
+        <!-- Stat Strip -->
+        <div class="ia-stat-strip">
+          <div class="ia-stat-cell">
+            <div class="ia-stat-label">Total Ambassadors</div>
+            <div class="ia-stat-value" id="statTotal">—</div>
+          </div>
+          <div class="ia-stat-cell">
+            <div class="ia-stat-label">Active</div>
+            <div class="ia-stat-value" id="statActive">—</div>
+          </div>
+          <div class="ia-stat-cell">
+            <div class="ia-stat-label">Avg. Commission</div>
+            <div class="ia-stat-value" id="statAvgCommission">—</div>
+          </div>
+        </div>
+
+        <!-- Table Section -->
+        <div class="ia-section-header">
+          <span class="ia-section-title">All Ambassadors</span>
+          <button class="ia-btn ia-btn-primary" onclick="openAddModal()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Ambassador
+          </button>
+        </div>
+
+        <div class="ia-table-wrap">
+          <table class="ia-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Referral Code</th>
+                <th>Commission %</th>
+                <th>Discount %</th>
+                <th>Usage Limit</th>
+                <th>Total Orders</th>
+                <th>Created</th>
+                <th>Portal Link</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="iaTableBody">
+              <!-- Injected -->
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Add Modal -->
+  <div id="iaAddModal" class="ia-modal-overlay" onclick="handleOverlayClick(event, 'iaAddModal')">
+    <div class="ia-modal">
+      <div class="ia-modal-header">
+        <span class="ia-modal-title">Add New Ambassador</span>
+        <button class="ia-modal-close" onclick="closeModal('iaAddModal')">&times;</button>
+      </div>
+      <div class="ia-form-group">
+        <label for="addName">Full Name</label>
+        <input type="text" id="addName" class="ia-input" placeholder="e.g. Rahul Sharma">
+      </div>
+      <div class="ia-form-group">
+        <label for="addPhone">Phone Number (For Portal Login)</label>
+        <input type="text" id="addPhone" class="ia-input" placeholder="e.g. 9876543210">
+      </div>
+      <div class="ia-form-row">
+        <div class="ia-form-group">
+          <label for="addCode">Shopify Discount Code</label>
+          <input type="text" id="addCode" class="ia-input" placeholder="e.g. RAHUL10" style="text-transform:uppercase;">
+        </div>
+        <div class="ia-form-group">
+          <label for="addCommission">Commission Rate (%)</label>
+          <input type="number" id="addCommission" class="ia-input" placeholder="10" min="0" max="100" step="0.5" value="10">
+          <p class="ia-form-hint">Default: 10%</p>
+        </div>
+      </div>
+      <div class="ia-form-row">
+        <div class="ia-form-group">
+          <label for="addDiscountValue">Customer Discount (%)</label>
+          <input type="number" id="addDiscountValue" class="ia-input" placeholder="10" min="0" max="100" step="0.5" value="10">
+          <p class="ia-form-hint">Discount customers get (default: same as commission)</p>
+        </div>
+        <div class="ia-form-group">
+          <label for="addUsageLimit">Usage Limit</label>
+          <input type="number" id="addUsageLimit" class="ia-input" placeholder="Leave blank = unlimited" min="1">
+          <p class="ia-form-hint">Max uses (blank = unlimited)</p>
+        </div>
+      </div>
+      <p id="addError" class="ia-modal-error">Failed to add. Code might already exist.</p>
+      <div class="ia-modal-actions">
+        <button class="ia-btn ia-btn-ghost" onclick="closeModal('iaAddModal')">Cancel</button>
+        <button class="ia-btn ia-btn-primary" id="addSubmitBtn" onclick="submitAdd()">Create Link</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div id="iaEditModal" class="ia-modal-overlay" onclick="handleOverlayClick(event, 'iaEditModal')">
+    <div class="ia-modal">
+      <div class="ia-modal-header">
+        <span class="ia-modal-title">Edit Ambassador</span>
+        <button class="ia-modal-close" onclick="closeModal('iaEditModal')">&times;</button>
+      </div>
+      <input type="hidden" id="editId">
+      <div class="ia-form-group">
+        <label for="editName">Full Name</label>
+        <input type="text" id="editName" class="ia-input" placeholder="e.g. Rahul Sharma">
+      </div>
+      <div class="ia-form-group">
+        <label for="editPhone">Phone Number</label>
+        <input type="text" id="editPhone" class="ia-input" placeholder="e.g. 9876543210">
+      </div>
+      <div class="ia-form-row">
+        <div class="ia-form-group">
+          <label for="editCode">Referral Code</label>
+          <input type="text" id="editCode" class="ia-input" placeholder="e.g. RAHUL10" style="text-transform:uppercase;">
+        </div>
+        <div class="ia-form-group">
+          <label for="editCommission">Commission Rate (%)</label>
+          <input type="number" id="editCommission" class="ia-input" placeholder="10" min="0" max="100" step="0.5">
+        </div>
+      </div>
+      <div class="ia-form-row">
+        <div class="ia-form-group">
+          <label for="editDiscountValue">Customer Discount (%)</label>
+          <input type="number" id="editDiscountValue" class="ia-input" placeholder="10" min="0" max="100" step="0.5">
+          <p class="ia-form-hint">Discount customers get</p>
+        </div>
+        <div class="ia-form-group">
+          <label for="editUsageLimit">Usage Limit</label>
+          <input type="number" id="editUsageLimit" class="ia-input" placeholder="Leave blank = unlimited" min="1">
+          <p class="ia-form-hint">Max uses (blank = unlimited)</p>
+        </div>
+      </div>
+      <p id="editError" class="ia-modal-error">Failed to update. Please try again.</p>
+      <div class="ia-modal-actions">
+        <button class="ia-btn ia-btn-ghost" onclick="closeModal('iaEditModal')">Cancel</button>
+        <button class="ia-btn ia-btn-primary" id="editSubmitBtn" onclick="submitEdit()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- View Stats Modal -->
+  <div id="iaStatsModal" class="ia-modal-overlay" onclick="handleOverlayClick(event, 'iaStatsModal')">
+    <div class="ia-modal" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+      <div class="ia-modal-header">
+        <span class="ia-modal-title" id="statsModalTitle">Ambassador Performance</span>
+        <button class="ia-modal-close" onclick="closeModal('iaStatsModal')">&times;</button>
+      </div>
+      
+      <!-- Date Range Filter -->
+      <div class="ia-stats-filter">
+        <div class="ia-filter-row">
+          <div class="ia-filter-group">
+            <label>Date Range</label>
+            <div class="ia-range-buttons">
+              <button class="ia-range-btn" data-range="30d" onclick="setStatsRange('30d')">30 Days</button>
+              <button class="ia-range-btn" data-range="90d" onclick="setStatsRange('90d')">90 Days</button>
+              <button class="ia-range-btn active" data-range="all" onclick="setStatsRange('all')">All Time</button>
+              <button class="ia-range-btn" data-range="custom" onclick="toggleCustomDate()">Custom</button>
+            </div>
+          </div>
+        </div>
+        <div class="ia-filter-row" id="customDateRow" style="display: none;">
+          <div class="ia-filter-group">
+            <label>Start Date</label>
+            <input type="date" id="statsStartDate" class="ia-input">
+          </div>
+          <div class="ia-filter-group">
+            <label>End Date</label>
+            <input type="date" id="statsEndDate" class="ia-input">
+          </div>
+          <div class="ia-filter-group" style="display: flex; align-items: flex-end;">
+            <button class="ia-btn ia-btn-primary" onclick="applyCustomDate()">Apply</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="ia-stats-grid" id="statsGrid">
+        <div class="ia-stat-box">
+          <div class="ia-stat-box-label">Total Revenue</div>
+          <div class="ia-stat-box-value" id="statTotalRevenue">—</div>
+        </div>
+        <div class="ia-stat-box">
+          <div class="ia-stat-box-label">Total Orders</div>
+          <div class="ia-stat-box-value" id="statTotalOrders">—</div>
+        </div>
+        <div class="ia-stat-box">
+          <div class="ia-stat-box-label">Avg. Order Value</div>
+          <div class="ia-stat-box-value" id="statAov">—</div>
+        </div>
+        <div class="ia-stat-box highlight">
+          <div class="ia-stat-box-label">Estimated Earnings</div>
+          <div class="ia-stat-box-value" id="statEarnings">—</div>
+          <div class="ia-stat-box-sub" id="statCommissionRate">—</div>
+        </div>
+      </div>
+
+      <!-- Conversions List -->
+      <div class="ia-conversions-section">
+        <div class="ia-section-header" style="margin-top: 2rem;">
+          <span class="ia-section-title">Recent Conversions</span>
+          <span id="statsConversionsCount" style="font-size: 0.65rem; color: var(--muted);"></span>
+        </div>
+        <div class="ia-conversions-list" id="statsConversionsList">
+          <div class="ia-conversion-empty">Select a date range to view conversions</div>
+        </div>
+      </div>
+
+      <div class="ia-modal-actions">
+        <button class="ia-btn ia-btn-ghost" onclick="closeModal('iaStatsModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="iaToast" class="ia-toast"></div>
+
+</div>
+
+<script>
+const API = 'https://exchange-return-tracking.onrender.com/api/influencer-admin';
+let authToken = null; // JWT stored in memory only (not localStorage)
+let influencersData = [];
+
+// ─── BOOT ───────────────────────────────────────────────────────────────────
+// Note: With JWT, we don't persist tokens in localStorage for security
+// User must login again after page refresh (token expires in 24h anyway)
+window.addEventListener('DOMContentLoaded', () => {
+  // Token is stored in memory only (authToken variable)
+  if (authToken) {
+    loadDashboard();
+  } else {
+    hide('iaLoading');
+    show('iaAuth');
+  }
+
+  // Press Enter to login
+  document.getElementById('iaPassword').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleLogin();
+  });
+});
+
+// ─── AUTH ────────────────────────────────────────────────────────────────────
+async function handleLogin() {
+  const btn = document.getElementById('iaLoginBtn');
+  const errEl = document.getElementById('iaLoginErr');
+  const password = document.getElementById('iaPassword').value.trim();
+  if (!password) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Verifying…';
+  errEl.classList.remove('show');
+
+  try {
+    const res = await fetch('https://exchange-return-tracking.onrender.com/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      authToken = data.token;
+      // JWT token stored in memory only (not localStorage) for security
+      // Token expires in 24 hours as configured on the server
+      hide('iaAuth');
+      show('iaLoading');
+      await loadDashboard();
+    } else {
+      errEl.classList.add('show');
+    }
+  } catch (err) {
+    errEl.textContent = 'Connection error. Try again.';
+    errEl.classList.add('show');
+  }
+  btn.disabled = false;
+  btn.textContent = 'Authenticate';
+}
+
+function handleLogout() {
+  authToken = null;
+  // Clear sensitive data from memory
+  influencersData = [];
+  location.reload();
+}
+
+// ─── DATA ────────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const res = await fetch(`${API}/list`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+
+    if (data.success) {
+      influencersData = data.influencers || [];
+      renderStats(influencersData);
+      renderTable(influencersData);
+      updateTimestamp();
+      hide('iaLoading');
+      show('iaDashboard');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to load data', true);
+    hide('iaLoading');
+    show('iaAuth');
+  }
+}
+
+function renderStats(list) {
+  const active = list.filter(i => i.is_active).length;
+  const avgComm = list.length > 0
+    ? (list.reduce((s, i) => s + parseFloat(i.commission_rate || 10), 0) / list.length).toFixed(1)
+    : 0;
+  setText('statTotal', list.length);
+  setText('statActive', active);
+  setText('statAvgCommission', avgComm + '%');
+}
+
+function renderTable(list) {
+  const tbody = document.getElementById('iaTableBody');
+  if (list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="10"><div class="ia-empty"><h3>No Ambassadors Yet</h3><p>Click "Add Ambassador" to get started.</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map(inf => {
+    const portalUrl = `${window.location.origin}/pages/influencer-portal?token=${inf.link_token}`;
+    const created = new Date(inf.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    // Handle discount value (use discount_value if exists, fallback to commission_rate)
+    const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 10);
+    // Handle usage limit
+    const usageLimit = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : 'Unlimited';
+    return `
+      <tr class="ia-row-enter" id="row-${inf.id}">
+        <td class="td-name">${esc(inf.name)}</td>
+        <td class="td-phone" style="font-size:0.75rem;color:var(--muted);">${esc(inf.phone || '—')}</td>
+        <td><span class="td-code">${esc(inf.referral_code)}</span></td>
+        <td class="td-commission">${parseFloat(inf.commission_rate || 10).toFixed(1)}%</td>
+        <td class="td-discount">${parseFloat(discountVal).toFixed(1)}%</td>
+        <td class="td-usage">${usageLimit}</td>
+        <td class="td-orders">—</td>
+        <td class="td-date">${created}</td>
+        <td>
+          <button class="ia-copy-btn" id="copyBtn-${inf.id}" onclick="copyLink('${portalUrl}', ${inf.id})">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy Link
+          </button>
+        </td>
+        <td>
+          <div class="ia-row-actions">
+            <button class="ia-action-btn view" onclick="viewInfluencerStats(${inf.id})">View</button>
+            <button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button>
+            <button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Remove</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ─── ADD ─────────────────────────────────────────────────────────────────────
+function openAddModal() {
+  document.getElementById('addName').value = '';
+  document.getElementById('addPhone').value = '';
+  document.getElementById('addCode').value = '';
+  document.getElementById('addCommission').value = '10';
+  document.getElementById('addDiscountValue').value = '10';
+  document.getElementById('addUsageLimit').value = '';
+  document.getElementById('addError').classList.remove('show');
+  openModal('iaAddModal');
+}
+
+async function submitAdd() {
+  const btn = document.getElementById('addSubmitBtn');
+  const errEl = document.getElementById('addError');
+  const name = document.getElementById('addName').value.trim();
+  const phone = document.getElementById('addPhone').value.trim();
+  const referralCode = document.getElementById('addCode').value.trim().toUpperCase();
+  const commissionRate = parseFloat(document.getElementById('addCommission').value) || 10;
+  const discountValue = document.getElementById('addDiscountValue').value ? parseFloat(document.getElementById('addDiscountValue').value) : commissionRate;
+  const usageLimit = document.getElementById('addUsageLimit').value.trim();
+
+  if (!name || !referralCode || !phone) { errEl.textContent = 'Name, Code, and Phone are required.'; errEl.classList.add('show'); return; }
+
+  btn.disabled = true; btn.textContent = 'Creating…';
+  errEl.classList.remove('show');
+
+  try {
+    const res = await fetch(`${API}/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ name, referralCode, commissionRate, discountValue, usageLimit, phone })
+    });
+    if (res.ok) {
+      closeModal('iaAddModal');
+      showToast('Ambassador created ✓');
+      await loadDashboard();
+    } else {
+      const d = await res.json();
+      errEl.textContent = d.error || 'Failed to add. Code might already exist.';
+      errEl.classList.add('show');
+    }
+  } catch (err) {
+    errEl.textContent = 'Connection error.';
+    errEl.classList.add('show');
+  }
+  btn.disabled = false; btn.textContent = 'Create Link';
+}
+
+// ─── EDIT ─────────────────────────────────────────────────────────────────────
+function openEditModal(id) {
+  const inf = influencersData.find(i => i.id === id);
+  if (!inf) return;
+  document.getElementById('editId').value = id;
+  document.getElementById('editName').value = inf.name;
+  document.getElementById('editPhone').value = inf.phone || '';
+  document.getElementById('editCode').value = inf.referral_code;
+  document.getElementById('editCommission').value = parseFloat(inf.commission_rate || 10).toFixed(1);
+  // Handle discount_value (use discount_value if exists, fallback to commission_rate)
+  const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 10);
+  document.getElementById('editDiscountValue').value = parseFloat(discountVal).toFixed(1);
+  // Handle usage_limit (show empty if null/unlimited)
+  document.getElementById('editUsageLimit').value = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : '';
+  document.getElementById('editError').classList.remove('show');
+  openModal('iaEditModal');
+}
+
+async function submitEdit() {
+  const btn = document.getElementById('editSubmitBtn');
+  const errEl = document.getElementById('editError');
+  const id = document.getElementById('editId').value;
+  const name = document.getElementById('editName').value.trim();
+  const phone = document.getElementById('editPhone').value.trim();
+  const referralCode = document.getElementById('editCode').value.trim().toUpperCase();
+  const commissionRate = parseFloat(document.getElementById('editCommission').value);
+  const discountValue = document.getElementById('editDiscountValue').value ? parseFloat(document.getElementById('editDiscountValue').value) : commissionRate;
+  const usageLimit = document.getElementById('editUsageLimit').value.trim();
+
+  if (!name || !referralCode || !phone) { errEl.textContent = 'All fields are required.'; errEl.classList.add('show'); return; }
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  errEl.classList.remove('show');
+
+  try {
+    const res = await fetch(`${API}/update/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ name, referralCode, commissionRate, discountValue, usageLimit, phone })
+    });
+    if (res.ok) {
+      closeModal('iaEditModal');
+      showToast('Changes saved ✓');
+      await loadDashboard();
+    } else {
+      const d = await res.json();
+      errEl.textContent = d.error || 'Failed to update.';
+      errEl.classList.add('show');
+    }
+  } catch (err) {
+    errEl.textContent = 'Connection error.';
+    errEl.classList.add('show');
+  }
+  btn.disabled = false; btn.textContent = 'Save Changes';
+}
+
+// ─── REMOVE ──────────────────────────────────────────────────────────────────
+async function removeInfluencer(id) {
+  const inf = influencersData.find(i => i.id === id);
+  if (!confirm(`Remove "${inf?.name || 'this ambassador'}"? Their tracking link will be deactivated.`)) return;
+
+  try {
+    const res = await fetch(`${API}/remove/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.ok) {
+      showToast('Ambassador removed');
+      await loadDashboard();
+    } else {
+      showToast('Failed to remove', true);
+    }
+  } catch (err) {
+    showToast('Connection error', true);
+  }
+}
+
+// ─── COPY LINK ────────────────────────────────────────────────────────────────
+async function copyLink(url, id) {
+  try {
+    await navigator.clipboard.writeText(url);
+    const btn = document.getElementById(`copyBtn-${id}`);
+    btn.classList.add('copied');
+    btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy Link';
+    }, 2000);
+  } catch (err) {
+    showToast('Could not copy to clipboard', true);
+  }
+}
+
+// ─── MODAL UTILS ─────────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function handleOverlayClick(e, id) { if (e.target === e.currentTarget) closeModal(id); }
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, isError = false) {
+  const t = document.getElementById('iaToast');
+  clearTimeout(toastTimer);
+  t.textContent = msg;
+  t.className = 'ia-toast' + (isError ? ' error' : '');
+  requestAnimationFrame(() => t.classList.add('show'));
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─── VIEW STATS ──────────────────────────────────────────────────────────────
+let currentStatsId = null;
+let currentStatsRange = 'all';
+
+function viewInfluencerStats(id) {
+  const inf = influencersData.find(i => i.id === id);
+  if (!inf) return;
+  
+  currentStatsId = id;
+  currentStatsRange = 'all';
+  
+  // Reset UI
+  document.getElementById('statsModalTitle').textContent = `${esc(inf.name)} - Performance`;
+  document.getElementById('customDateRow').style.display = 'none';
+  document.getElementById('statsStartDate').value = '';
+  document.getElementById('statsEndDate').value = '';
+  
+  // Reset range buttons
+  document.querySelectorAll('.ia-range-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.range === 'all');
+  });
+  
+  // Show loading state
+  document.getElementById('statTotalRevenue').textContent = '—';
+  document.getElementById('statTotalOrders').textContent = '—';
+  document.getElementById('statAov').textContent = '—';
+  document.getElementById('statEarnings').textContent = '—';
+  document.getElementById('statCommissionRate').textContent = '—';
+  document.getElementById('statsConversionsList').innerHTML = '<div class="ia-conversion-loading"></div>';
+  
+  openModal('iaStatsModal');
+  fetchInfluencerStats(id, 'all');
+}
+
+function setStatsRange(range) {
+  if (range === currentStatsRange && range !== 'custom') return;
+  currentStatsRange = range;
+  
+  // Update active button
+  document.querySelectorAll('#iaStatsModal .ia-range-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.range === range);
+  });
+  
+  if (range === 'custom') {
+    document.getElementById('customDateRow').style.display = 'flex';
+    return; // Don't fetch yet, wait for custom date apply
+  } else {
+    document.getElementById('customDateRow').style.display = 'none';
+  }
+  
+  // Show loading
+  document.getElementById('statsConversionsList').innerHTML = '<div class="ia-conversion-loading"></div>';
+  fetchInfluencerStats(currentStatsId, range);
+}
+
+function toggleCustomDate() {
+  const row = document.getElementById('customDateRow');
+  const isVisible = row.style.display === 'flex';
+  row.style.display = isVisible ? 'none' : 'flex';
+  
+  if (!isVisible) {
+    document.querySelectorAll('#iaStatsModal .ia-range-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.range === 'custom');
+    });
+    currentStatsRange = 'custom';
+  }
+}
+
+function applyCustomDate() {
+  const startDate = document.getElementById('statsStartDate').value;
+  const endDate = document.getElementById('statsEndDate').value;
+  
+  if (!startDate || !endDate) {
+    showToast('Please select both start and end dates', true);
+    return;
+  }
+  
+  if (new Date(startDate) > new Date(endDate)) {
+    showToast('Start date cannot be after end date', true);
+    return;
+  }
+  
+  document.getElementById('statsConversionsList').innerHTML = '<div class="ia-conversion-loading"></div>';
+  fetchInfluencerStats(currentStatsId, 'custom', startDate, endDate);
+}
+
+async function fetchInfluencerStats(id, range, startDate = null, endDate = null) {
+  try {
+    let url = `${API}/stats/${id}?range=${range}`;
+    if (range === 'custom' && startDate && endDate) {
+      url += `&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+    }
+    
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    
+    if (res.status === 401) { handleLogout(); return; }
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      renderInfluencerStats(data);
+    } else {
+      showToast('Failed to load stats', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
+}
+
+function renderInfluencerStats(data) {
+  const stats = data.stats;
+  const influencer = data.influencer;
+  const conversions = data.recentConversions || [];
+  const currency = stats.currency || 'INR';
+  const sym = currency === 'INR' ? '₹' : currency;
+  
+  // Render stats
+  document.getElementById('statTotalRevenue').textContent = `${sym}${fmt(stats.totalRevenue)}`;
+  document.getElementById('statTotalOrders').textContent = stats.orderCount;
+  document.getElementById('statAov').textContent = `${sym}${fmt(stats.aov)}`;
+  document.getElementById('statEarnings').textContent = `${sym}${fmt(stats.estimatedEarnings)}`;
+  document.getElementById('statCommissionRate').textContent = `${stats.commissionRate}% commission`;
+  
+  // Render conversions count
+  document.getElementById('statsConversionsCount').textContent = 
+    conversions.length > 0 ? `${conversions.length} orders` : '';
+  
+  // Render conversions list
+  const listEl = document.getElementById('statsConversionsList');
+  
+  if (conversions.length === 0) {
+    listEl.innerHTML = '<div class="ia-conversion-empty">No conversions found for this date range</div>';
+    return;
+  }
+  
+  listEl.innerHTML = conversions.map((order, i) => `
+    <div class="ia-conversion-item" style="animation: fadeUp 0.3s ease ${i * 0.05}s both;">
+      <div>
+        <div class="ia-conversion-order">Order ${esc(order.name)}</div>
+        <div class="ia-conversion-date">${fmtDate(order.date)}</div>
+      </div>
+      <div class="ia-conversion-total">${sym}${fmt(order.total)}</div>
+    </div>
+  `).join('');
+}
+
+function fmt(num) {
+  return parseFloat(num).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function fmtDate(d) {
+  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+function esc(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function updateTimestamp() {
+  const el = document.getElementById('iaLastUpdated');
+  if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+};
+</script>
+</body>
+</html>

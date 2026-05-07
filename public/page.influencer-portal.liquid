@@ -1,0 +1,815 @@
+{% layout none %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Influencer Performance Portal</title>
+{% comment %}
+  OFFCOMFRT — Influencer Performance Portal (Ultra-Premium Edition)
+  Monochromatic B&W • Estimated Earnings • Date Range Filters • Micro-Animations
+{% endcomment %}
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #121212;
+  --border: #1f1f1f;
+  --border-hover: #3a3a3a;
+  --text: #ffffff;
+  --muted: #555555;
+  --subtle: #1a1a1a;
+  --success: #22c55e;
+  --danger: #ff3b3b;
+  --transition: 0.22s cubic-bezier(0.4,0,0.2,1);
+}
+
+body, html { background: var(--bg); }
+
+.ip-wrap {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── LOADING ── */
+.ip-loading {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 1.5rem;
+  z-index: 999;
+  transition: opacity 0.5s ease;
+}
+.ip-loading.out { opacity: 0; pointer-events: none; }
+.ip-spinner {
+  width: 32px; height: 32px;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+.ip-loading p {
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── AUTH / LOGIN ── */
+.ip-auth {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  padding: 2rem;
+  z-index: 800;
+}
+.ip-auth-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  width: 100%; max-width: 400px;
+  padding: 3rem 2.5rem;
+  text-align: center;
+  animation: fadeUp 0.6s ease both;
+}
+.ip-auth-card h2 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+}
+.ip-auth-group {
+  text-align: left;
+  margin-bottom: 1.5rem;
+}
+.ip-auth-group label {
+  display: block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+  font-weight: 600;
+}
+.ip-auth-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0.8rem 1rem;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: border-color var(--transition);
+  outline: none;
+}
+.ip-auth-input:focus { border-color: var(--text); }
+.ip-auth-btn {
+  width: 100%;
+  background: var(--text);
+  color: var(--bg);
+  border: 1px solid var(--text);
+  padding: 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.ip-auth-btn:hover { background: transparent; color: var(--text); }
+.ip-auth-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ip-auth-err {
+  font-size: 0.72rem;
+  color: var(--danger);
+  margin-top: 1rem;
+  display: none;
+}
+.ip-auth-err.show { display: block; }
+
+/* ── MAIN ── */
+.ip-main {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 4rem 2rem 6rem;
+  display: none;
+}
+.ip-main.visible { display: block; }
+
+/* ── HEADER ── */
+.ip-header {
+  text-align: center;
+  margin-bottom: 4rem;
+  animation: fadeUp 0.6s ease both;
+}
+.ip-header-brand {
+  font-size: 0.6rem;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1.5rem;
+}
+.ip-header-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.ip-header h1 {
+  font-size: clamp(2.2rem, 5vw, 3.5rem);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-bottom: 1.5rem;
+  text-transform: uppercase;
+}
+.ip-code-badge {
+  display: inline-block;
+  border: 1px solid var(--border);
+  padding: 0.5rem 1.25rem;
+  font-size: 0.7rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  letter-spacing: 0.25em;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+/* ── DATE RANGE ── */
+.ip-range-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 1.5rem;
+  animation: fadeUp 0.6s 0.1s ease both;
+  flex-wrap: wrap;
+}
+.ip-range-btn {
+  padding: 0.6rem 1.5rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-family: inherit;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  margin-left: -1px;
+  position: relative;
+  z-index: 1;
+}
+.ip-range-btn:first-child { margin-left: 0; }
+.ip-range-btn:hover { color: var(--text); border-color: var(--border-hover); z-index: 2; }
+.ip-range-btn.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+  z-index: 3;
+}
+
+/* ── CUSTOM DATE FILTER ── */
+.ip-custom-date {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 3rem;
+  animation: fadeUp 0.6s 0.12s ease both;
+  flex-wrap: wrap;
+}
+.ip-custom-date.hidden { display: none; }
+.ip-date-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.ip-date-group label {
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.ip-date-input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 0.6rem 1rem;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  transition: border-color var(--transition);
+  outline: none;
+}
+.ip-date-input:focus { border-color: var(--text); }
+.ip-date-apply {
+  padding: 0.6rem 1.5rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--text);
+  border: 1px solid var(--text);
+  color: var(--bg);
+  cursor: pointer;
+  transition: all var(--transition);
+  align-self: flex-end;
+}
+.ip-date-apply:hover { background: transparent; color: var(--text); }
+.ip-date-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── STATS GRID ── */
+.ip-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin-bottom: 4rem;
+  animation: fadeUp 0.6s 0.15s ease both;
+}
+.ip-stat-card {
+  background: var(--surface);
+  padding: 2.5rem 1.75rem;
+  position: relative;
+  overflow: hidden;
+  transition: background var(--transition);
+}
+.ip-stat-card:hover { background: var(--surface-2); }
+.ip-stat-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--text);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.5s cubic-bezier(0.4,0,0.2,1);
+}
+.ip-stat-card:hover::after { transform: scaleX(1); }
+.ip-stat-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+.ip-stat-value {
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.ip-stat-value.earnings { color: var(--text); }
+.ip-stat-sub {
+  margin-top: 0.6rem;
+  font-size: 0.6rem;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+.ip-stat-loading {
+  display: inline-block;
+  width: 40px; height: 8px;
+  background: var(--subtle);
+  border-radius: 2px;
+  animation: shimmer 1.2s ease infinite;
+}
+@keyframes shimmer {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* ── FEED ── */
+.ip-feed {
+  animation: fadeUp 0.6s 0.25s ease both;
+}
+.ip-feed-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.ip-feed-title {
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.ip-feed-count {
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+.ip-feed-list {
+  border: 1px solid var(--border);
+}
+.ip-feed-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition);
+  animation: fadeUp 0.3s ease both;
+}
+.ip-feed-item:last-child { border-bottom: none; }
+.ip-feed-item:hover { background: var(--surface); }
+.ip-order-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+.ip-order-date {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+  letter-spacing: 0.05em;
+}
+.ip-order-total {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--success);
+}
+.ip-feed-empty {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--muted);
+}
+.ip-feed-empty h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+.ip-feed-empty p { font-size: 0.75rem; }
+
+/* ── FOOTER ── */
+.ip-footer {
+  text-align: center;
+  margin-top: 5rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  animation: fadeUp 0.6s 0.3s ease both;
+}
+
+/* ── ANIMATIONS ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hidden { display: none !important; }
+
+@media (max-width: 700px) {
+  .ip-stats-grid { grid-template-columns: 1fr 1fr; }
+  .ip-header h1 { font-size: 2rem; }
+  .ip-range-btn { padding: 0.5rem 1rem; }
+}
+@media (max-width: 420px) {
+  .ip-stats-grid { grid-template-columns: 1fr; }
+</style>
+</head>
+<body>
+<div class="ip-wrap">
+
+  <!-- Loading -->
+  <div id="ipLoading" class="ip-loading">
+    <div class="ip-spinner"></div>
+    <p>Syncing Performance</p>
+  </div>
+
+  <!-- Error -->
+  <div id="ipError" class="ip-error" style="position: fixed; inset: 0; background: var(--bg); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="12"/>
+      <line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <h2 style="font-size: 0.9rem; font-weight: 600; color: var(--text); letter-spacing: 0.05em;">Invalid Access Link</h2>
+    <p style="font-size: 0.78rem; color: var(--muted);">Please contact your manager for a new portal link.</p>
+  </div>
+
+  <!-- Auth/Login -->
+  <div id="ipAuth" class="ip-auth hidden">
+    <div class="ip-auth-card">
+      <p class="ip-header-brand" style="margin-bottom:0.5rem;">Access Verification</p>
+      <h2 id="ipAuthWelcome">Ambassador Portal</h2>
+      <div class="ip-auth-group">
+        <label for="ipPhone">Registered Phone Number</label>
+        <input type="tel" id="ipPhone" class="ip-auth-input" placeholder="e.g. 9876543210" onkeypress="if(event.key==='Enter') handleLogin()">
+      </div>
+      <button id="ipLoginBtn" class="ip-auth-btn" onclick="handleLogin()">Sign In</button>
+      <p id="ipAuthErr" class="ip-auth-err">Incorrect phone number. Please try again.</p>
+    </div>
+  </div>
+
+  <!-- Portal -->
+  <div id="ipMain" class="ip-main">
+
+    <!-- Header -->
+    <header class="ip-header">
+      <p class="ip-header-brand">Offcomfrt · Ambassador Portal</p>
+      <p class="ip-header-name" id="ipName">—</p>
+      <h1>Performance<br>Dashboard</h1>
+      <div class="ip-code-badge" id="ipCodeBadge">CODE: ——</div>
+    </header>
+
+    <!-- Date Range Filter -->
+    <div class="ip-range-bar">
+      <button class="ip-range-btn" data-range="30d" onclick="setRange('30d')">30 Days</button>
+      <button class="ip-range-btn" data-range="90d" onclick="setRange('90d')">90 Days</button>
+      <button class="ip-range-btn active" data-range="all" onclick="setRange('all')">All Time</button>
+      <button class="ip-range-btn" data-range="custom" onclick="setRange('custom')">Custom</button>
+    </div>
+
+    <!-- Custom Date Filter -->
+    <div class="ip-custom-date hidden" id="customDateFilter">
+      <div class="ip-date-group">
+        <label for="ipStartDate">Start Date</label>
+        <input type="date" id="ipStartDate" class="ip-date-input" onchange="validateCustomDate()">
+      </div>
+      <div class="ip-date-group">
+        <label for="ipEndDate">End Date</label>
+        <input type="date" id="ipEndDate" class="ip-date-input" onchange="validateCustomDate()">
+      </div>
+      <button class="ip-date-apply" id="ipApplyDate" onclick="applyCustomRange()" disabled>Apply</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="ip-stats-grid">
+      <div class="ip-stat-card">
+        <div class="ip-stat-label">Total Revenue</div>
+        <div class="ip-stat-value" id="ipRevenue">
+          <span class="ip-stat-loading"></span>
+        </div>
+        <div class="ip-stat-sub" id="ipRevenueOrders"></div>
+      </div>
+      <div class="ip-stat-card">
+        <div class="ip-stat-label">Conversions</div>
+        <div class="ip-stat-value" id="ipOrders">
+          <span class="ip-stat-loading"></span>
+        </div>
+        <div class="ip-stat-sub" id="ipOrdersSub"></div>
+      </div>
+      <div class="ip-stat-card">
+        <div class="ip-stat-label">Avg. Order Value</div>
+        <div class="ip-stat-value" id="ipAov">
+          <span class="ip-stat-loading"></span>
+        </div>
+      </div>
+      <div class="ip-stat-card">
+        <div class="ip-stat-label">Estimated Earnings</div>
+        <div class="ip-stat-value earnings" id="ipEarnings">
+          <span class="ip-stat-loading"></span>
+        </div>
+        <div class="ip-stat-sub" id="ipEarningsSub"></div>
+      </div>
+    </div>
+
+    <!-- Conversion Feed -->
+    <section class="ip-feed">
+      <div class="ip-feed-header">
+        <span class="ip-feed-title">Recent Conversions</span>
+        <span class="ip-feed-count" id="ipFeedCount"></span>
+      </div>
+      <div class="ip-feed-list" id="ipFeedList">
+        <div class="ip-feed-empty">
+          <span class="ip-stat-loading" style="width:60px;"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="ip-footer">
+      Offcomfrt · Ambassador Program · All data is approximate
+    </footer>
+  </div>
+
+</div>
+
+<script>
+const PORTAL_API = 'https://exchange-return-tracking.onrender.com/api/influencer';
+const params = new URLSearchParams(window.location.search);
+const token = params.get('token');
+let currentRange = 'all';
+let commissionRate = 10;
+let currency = 'INR';
+
+// ─── BOOT ───────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  if (!token) {
+    showError();
+    return;
+  }
+  initPortal();
+});
+
+async function initPortal() {
+  try {
+    // 1. Auth check (Token verification)
+    const authRes = await fetch(`${PORTAL_API}/auth/${token}`);
+    const authData = await authRes.json();
+    if (!authRes.ok || !authData.success) throw new Error('Auth failed');
+
+    // Store data temporarily 
+    const inf = authData.influencer;
+    document.getElementById('ipName').textContent = inf.name.toUpperCase();
+    document.getElementById('ipCodeBadge').textContent = `CODE: ${inf.referralCode}`;
+    document.getElementById('ipAuthWelcome').textContent = `Welcome, ${inf.name.split(' ')[0]}`;
+
+    fadeOutLoading();
+
+    // 2. Check for Phone Auth
+    if (inf.hasPhone) {
+      document.getElementById('ipAuth').classList.remove('hidden');
+    } else {
+      // Fallback if no phone set, just show portal (optional: you could require phone)
+      showDashboard();
+    }
+
+  } catch (err) {
+    console.error(err);
+    showError();
+  }
+}
+
+async function handleLogin() {
+  const phone = document.getElementById('ipPhone').value.trim();
+  const btn = document.getElementById('ipLoginBtn');
+  const errEl = document.getElementById('ipAuthErr');
+
+  if (!phone) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Verifying…';
+  errEl.classList.remove('show');
+
+  try {
+    const res = await fetch(`${PORTAL_API}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, phone })
+    });
+
+    if (res.ok) {
+      document.getElementById('ipAuth').classList.add('hidden');
+      showDashboard();
+    } else {
+      errEl.classList.add('show');
+    }
+  } catch (err) {
+    errEl.textContent = 'Connection error. Try again.';
+    errEl.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
+}
+
+async function showDashboard() {
+  document.getElementById('ipMain').classList.add('visible');
+  await fetchStats('all');
+}
+
+// ─── DATE RANGE ───────────────────────────────────────────────────────────────
+function setRange(range) {
+  if (range === currentRange && range !== 'custom') return;
+  currentRange = range;
+
+  // Update active button
+  document.querySelectorAll('.ip-range-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.range === range);
+  });
+
+  // Handle custom date visibility
+  const customDateEl = document.getElementById('customDateFilter');
+  if (range === 'custom') {
+    customDateEl.classList.remove('hidden');
+    return; // Don't fetch yet, wait for custom date apply
+  } else {
+    customDateEl.classList.add('hidden');
+  }
+
+  // Show shimmer
+  showLoaders();
+
+  fetchStats(range);
+}
+
+function validateCustomDate() {
+  const startDate = document.getElementById('ipStartDate').value;
+  const endDate = document.getElementById('ipEndDate').value;
+  const applyBtn = document.getElementById('ipApplyDate');
+  
+  if (startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (start <= end) {
+      applyBtn.disabled = false;
+    } else {
+      applyBtn.disabled = true;
+    }
+  } else {
+    applyBtn.disabled = true;
+  }
+}
+
+function applyCustomRange() {
+  const startDate = document.getElementById('ipStartDate').value;
+  const endDate = document.getElementById('ipEndDate').value;
+  
+  if (!startDate || !endDate) return;
+  
+  if (new Date(startDate) > new Date(endDate)) {
+    alert('Start date cannot be after end date');
+    return;
+  }
+  
+  showLoaders();
+  fetchStats('custom', startDate, endDate);
+}
+
+// ─── STATS ───────────────────────────────────────────────────────────────────
+async function fetchStats(range, startDate = null, endDate = null) {
+  try {
+    let qp = '';
+    if (range !== 'all') {
+      qp = `?range=${range}`;
+      if (range === 'custom' && startDate && endDate) {
+        qp += `&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+      }
+    }
+    const res = await fetch(`${PORTAL_API}/stats/${token}${qp}`);
+    const data = await res.json();
+
+    if (!data.success) throw new Error('Stats failed');
+
+    currency = data.stats.currency || 'INR';
+    commissionRate = data.stats.commissionRate || commissionRate;
+
+    renderStats(data.stats);
+    renderFeed(data.recentConversions || []);
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('ipRevenue').textContent = '—';
+    document.getElementById('ipOrders').textContent = '—';
+    document.getElementById('ipAov').textContent = '—';
+    document.getElementById('ipEarnings').textContent = '—';
+  }
+}
+
+function renderStats(stats) {
+  const sym = stats.currency === 'INR' ? '₹' : (stats.currency || '₹');
+  const rangeLabel = currentRange === '30d' ? 'last 30 days' : currentRange === '90d' ? 'last 90 days' : 'all time';
+
+  animateValue('ipRevenue', `${sym}${fmt(stats.totalRevenue)}`);
+  document.getElementById('ipRevenueOrders').textContent = `${stats.orderCount} order${stats.orderCount !== 1 ? 's' : ''} · ${rangeLabel}`;
+
+  animateValue('ipOrders', stats.orderCount);
+  document.getElementById('ipOrdersSub').textContent = rangeLabel;
+
+  animateValue('ipAov', `${sym}${fmt(stats.aov)}`);
+
+  const earningsVal = stats.estimatedEarnings !== undefined
+    ? parseFloat(stats.estimatedEarnings)
+    : parseFloat(stats.totalRevenue) * (commissionRate / 100);
+  animateValue('ipEarnings', `${sym}${fmt(earningsVal)}`);
+  document.getElementById('ipEarningsSub').textContent = `${stats.commissionRate || commissionRate}% commission`;
+}
+
+function renderFeed(conversions) {
+  const list = document.getElementById('ipFeedList');
+  const count = document.getElementById('ipFeedCount');
+
+  if (!conversions || conversions.length === 0) {
+    list.innerHTML = `<div class="ip-feed-empty"><h3>No Conversions Yet</h3><p>Share your code to start earning.</p></div>`;
+    count.textContent = '';
+    return;
+  }
+
+  count.textContent = `${conversions.length} recent`;
+  const sym = currency === 'INR' ? '₹' : (currency || '₹');
+
+  list.innerHTML = conversions.map((order, i) => `
+    <div class="ip-feed-item" style="animation-delay:${i * 0.04}s;">
+      <div>
+        <div class="ip-order-name">Order ${esc(order.name)}</div>
+        <div class="ip-order-date">${fmtDate(order.date)}</div>
+      </div>
+      <div class="ip-order-total">${sym}${fmt(order.total)}</div>
+    </div>
+  `).join('');
+}
+
+// ─── UI UTILS ────────────────────────────────────────────────────────────────
+function showLoaders() {
+  ['ipRevenue','ipOrders','ipAov','ipEarnings'].forEach(id => {
+    document.getElementById(id).innerHTML = '<span class="ip-stat-loading"></span>';
+  });
+  document.getElementById('ipFeedList').innerHTML = '<div class="ip-feed-empty"><span class="ip-stat-loading" style="width:60px;"></span></div>';
+}
+
+function animateValue(id, value) {
+  const el = document.getElementById(id);
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(6px)';
+  el.textContent = value;
+  requestAnimationFrame(() => {
+    el.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
+  });
+}
+
+function fadeOutLoading() {
+  const el = document.getElementById('ipLoading');
+  el.classList.add('out');
+  setTimeout(() => el.style.display = 'none', 500);
+}
+
+function showError() {
+  document.getElementById('ipLoading').style.display = 'none';
+  document.getElementById('ipError').style.display = 'flex';
+}
+
+function fmt(num) {
+  return parseFloat(num).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function fmtDate(d) {
+  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Global safety fix for "Cannot read properties of null (reading 'find')"
+// Some theme scripts expect this function to exist; we provide a safe mock.
+window.initializeSelections = function() {
+  console.log('Safety: initializeSelections mock called.');
+  return;
+};
+</script>
+</body>
+</html>

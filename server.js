@@ -394,6 +394,149 @@ async function shopifyAPI(endpoint, options = {}) {
     return response.json();
 }
 
+// ==================== SHOPIFY DISCOUNT CODE HELPERS ====================
+
+async function createShopifyDiscountCode(code, percentage, usageLimit, title) {
+    try {
+        // Step 1: Create Price Rule
+        const priceRulePayload = {
+            price_rule: {
+                title: title || `Influencer: ${code}`,
+                target_type: 'line_item',
+                target_selection: 'all',
+                allocation_method: 'across',
+                value_type: 'percentage',
+                value: `-${percentage}`,
+                customer_selection: 'all',
+                starts_at: new Date().toISOString()
+            }
+        };
+
+        const priceRuleResponse = await shopifyAPI('price_rules.json', {
+            method: 'POST',
+            body: JSON.stringify(priceRulePayload)
+        });
+
+        const priceRuleId = priceRuleResponse.price_rule.id;
+
+        // Step 2: Create Discount Code attached to Price Rule
+        const discountCodePayload = {
+            discount_code: {
+                code: code.toUpperCase()
+            }
+        };
+
+        // If usage limit is set, update the price rule with allocation_limit
+        if (usageLimit && usageLimit > 0) {
+            await shopifyAPI(`price_rules/${priceRuleId}.json`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    price_rule: {
+                        allocation_limit: usageLimit
+                    }
+                })
+            });
+        }
+
+        const discountCodeResponse = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
+            method: 'POST',
+            body: JSON.stringify(discountCodePayload)
+        });
+
+        const discountCodeId = discountCodeResponse.discount_code.id;
+
+        console.log(`✅ Created Shopify discount code: ${code} (Price Rule ID: ${priceRuleId}, Discount Code ID: ${discountCodeId})`);
+
+        return { priceRuleId, discountCodeId };
+    } catch (error) {
+        console.error('❌ Failed to create Shopify discount code:', error.message);
+        throw error;
+    }
+}
+
+async function updateShopifyDiscountCode(priceRuleId, newCode, newPercentage, newUsageLimit) {
+    try {
+        // Update percentage on Price Rule
+        if (newPercentage !== undefined) {
+            await shopifyAPI(`price_rules/${priceRuleId}.json`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    price_rule: {
+                        value: `-${newPercentage}`
+                    }
+                })
+            });
+        }
+
+        // Update usage limit on Price Rule
+        if (newUsageLimit !== undefined) {
+            await shopifyAPI(`price_rules/${priceRuleId}.json`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    price_rule: {
+                        allocation_limit: newUsageLimit || null  // null = unlimited
+                    }
+                })
+            });
+        }
+
+        // If code changed, create new discount code and remove old one
+        if (newCode) {
+            // Get existing discount codes
+            const existingCodes = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`);
+            const oldCodeId = existingCodes.discount_codes?.[0]?.id;
+
+            // Create new code
+            const newCodePayload = {
+                discount_code: {
+                    code: newCode.toUpperCase()
+                }
+            };
+            await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
+                method: 'POST',
+                body: JSON.stringify(newCodePayload)
+            });
+
+            // Remove old code if exists
+            if (oldCodeId) {
+                await shopifyAPI(`price_rules/${priceRuleId}/discount_codes/${oldCodeId}.json`, {
+                    method: 'DELETE'
+                });
+            }
+
+            // Get new discount code ID
+            const updatedCodes = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`);
+            const newDiscountCodeId = updatedCodes.discount_codes?.[0]?.id;
+
+            console.log(`✅ Updated Shopify discount code to: ${newCode} (Discount Code ID: ${newDiscountCodeId})`);
+            return { priceRuleId, discountCodeId: newDiscountCodeId };
+        }
+
+        console.log(`✅ Updated Shopify discount code (Price Rule ID: ${priceRuleId})`);
+        return { priceRuleId };
+    } catch (error) {
+        console.error('❌ Failed to update Shopify discount code:', error.message);
+        throw error;
+    }
+}
+
+async function disableShopifyDiscountCode(priceRuleId) {
+    try {
+        await shopifyAPI(`price_rules/${priceRuleId}.json`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                price_rule: {
+                    ends_at: new Date().toISOString()
+                }
+            })
+        });
+        console.log(`✅ Disabled Shopify discount code (Price Rule ID: ${priceRuleId})`);
+    } catch (error) {
+        console.error('❌ Failed to disable Shopify discount code:', error.message);
+        // Don't throw - we still want to proceed with deletion even if Shopify fails
+    }
+}
+
 // ==================== SHIPROCKET API HELPER ====================
 
 let shiprocketToken = null;
@@ -2986,7 +3129,7 @@ app.get('/api/influencer-admin/list', authenticateAdmin, async (req, res) => {
 // Add new influencer (Protected by Admin Auth)
 app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
     try {
-        const { name, referralCode, commissionRate, phone } = req.body;
+        const { name, referralCode, commissionRate, discountValue, usageLimit, phone } = req.body;
         if (!name || !referralCode) {
             return res.status(400).json({ error: 'Name and referral code are required' });
         }
@@ -2994,14 +3137,43 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
         // Generate a secure unique token for the link
         const linkToken = crypto.randomBytes(16).toString('hex');
 
+        // Parse values
+        const commission = commissionRate !== undefined ? parseFloat(commissionRate) : 10.00;
+        const discount = discountValue !== undefined ? parseFloat(discountValue) : commission;
+        const usage = usageLimit !== undefined && usageLimit !== '' ? parseInt(usageLimit) : null;
+
+        // First create the influencer in Supabase
         const influencer = await createInfluencer({
             name,
             referralCode,
             linkToken,
             phone,
-            commissionRate: commissionRate !== undefined ? parseFloat(commissionRate) : 10.00
+            commissionRate: commission,
+            discountValue: discount,
+            usageLimit: usage
         });
-        res.json({ success: true, influencer });
+
+        // Now create the Shopify discount code
+        let shopifyIds = { priceRuleId: null, discountCodeId: null };
+        try {
+            shopifyIds = await createShopifyDiscountCode(referralCode, discount, usage, `Influencer: ${name}`);
+        } catch (shopifyError) {
+            // Rollback: delete the influencer if Shopify creation fails
+            await deleteInfluencer(influencer.id);
+            console.error('Shopify discount creation failed, rolled back influencer creation:', shopifyError.message);
+            return res.status(500).json({ error: `Failed to create Shopify discount code: ${shopifyError.message}` });
+        }
+
+        // Update influencer with Shopify IDs
+        await updateInfluencer(influencer.id, {
+            shopifyPriceRuleId: shopifyIds.priceRuleId.toString(),
+            shopifyDiscountCodeId: shopifyIds.discountCodeId.toString()
+        });
+
+        // Fetch updated influencer with Shopify IDs
+        const updatedInfluencer = await getInfluencerById(influencer.id);
+
+        res.json({ success: true, influencer: updatedInfluencer });
     } catch (error) {
         console.error('Add influencer error:', error);
         res.status(500).json({ error: 'Failed to add influencer. Code might already exist.' });
@@ -3012,9 +3184,80 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
 app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, referralCode, commissionRate, phone } = req.body;
-        const updated = await updateInfluencer(id, { name, referralCode, commissionRate, phone });
-        res.json({ success: true, influencer: updated });
+        const { name, referralCode, commissionRate, discountValue, usageLimit, phone } = req.body;
+
+        // Get existing influencer to check for Shopify sync
+        const existingInfluencer = await getInfluencerById(id);
+        if (!existingInfluencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        // Update in Supabase first
+        const updated = await updateInfluencer(id, {
+            name,
+            referralCode,
+            commissionRate,
+            discountValue,
+            usageLimit,
+            phone
+        });
+
+        // Sync with Shopify if discount code details changed
+        const codeChanged = referralCode && referralCode !== existingInfluencer.referral_code;
+        const discountChanged = discountValue !== undefined && parseFloat(discountValue) !== parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 10);
+        const usageChanged = usageLimit !== undefined && (usageLimit === '' ? null : parseInt(usageLimit)) !== existingInfluencer.usage_limit;
+
+        if (codeChanged || discountChanged || usageChanged) {
+            const priceRuleId = existingInfluencer.shopify_price_rule_id;
+
+            if (priceRuleId) {
+                // Update existing Shopify discount
+                try {
+                    const shopifyIds = await updateShopifyDiscountCode(
+                        priceRuleId,
+                        codeChanged ? referralCode : null,
+                        discountChanged ? parseFloat(discountValue) : undefined,
+                        usageChanged ? (usageLimit === '' ? null : parseInt(usageLimit)) : undefined
+                    );
+
+                    // Update discount code ID if code changed
+                    if (shopifyIds.discountCodeId) {
+                        await updateInfluencer(id, {
+                            shopifyDiscountCodeId: shopifyIds.discountCodeId.toString()
+                        });
+                    }
+                } catch (shopifyError) {
+                    console.error('Shopify discount update failed:', shopifyError.message);
+                    // Continue anyway - don't block the update if Shopify fails
+                }
+            } else {
+                // Backfill: create new Shopify discount for older influencers
+                try {
+                    const finalCode = referralCode || existingInfluencer.referral_code;
+                    const finalDiscount = discountValue !== undefined ? parseFloat(discountValue) : parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 10);
+                    const finalUsage = usageLimit !== undefined ? (usageLimit === '' ? null : parseInt(usageLimit)) : existingInfluencer.usage_limit;
+
+                    const shopifyIds = await createShopifyDiscountCode(
+                        finalCode,
+                        finalDiscount,
+                        finalUsage,
+                        `Influencer: ${name || existingInfluencer.name}`
+                    );
+
+                    await updateInfluencer(id, {
+                        shopifyPriceRuleId: shopifyIds.priceRuleId.toString(),
+                        shopifyDiscountCodeId: shopifyIds.discountCodeId.toString()
+                    });
+                } catch (shopifyError) {
+                    console.error('Shopify discount backfill failed:', shopifyError.message);
+                    // Continue anyway
+                }
+            }
+        }
+
+        // Fetch final updated influencer
+        const finalInfluencer = await getInfluencerById(id);
+        res.json({ success: true, influencer: finalInfluencer });
     } catch (error) {
         console.error('Update influencer error:', error);
         res.status(500).json({ error: 'Failed to update influencer' });
@@ -3025,6 +3268,19 @@ app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res
 app.delete('/api/influencer-admin/remove/:id', authenticateAdmin, async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Get influencer to check for Shopify discount code
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        // Disable Shopify discount code if it exists
+        if (influencer.shopify_price_rule_id) {
+            await disableShopifyDiscountCode(influencer.shopify_price_rule_id);
+        }
+
+        // Delete from Supabase
         await deleteInfluencer(id);
         res.json({ success: true });
     } catch (error) {
