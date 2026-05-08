@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/admin/custom-pages.css">
     <!-- Chart.js for Premium Analytics - Served via jsDelivr CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -173,7 +174,7 @@
                     </div>
 
                     <style>
-                        #searchInput:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
+                        #searchInput:focus { outline: none; border-color: #000000; box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1); }
                         
                         /* Status Badge Colors */
                         .badge-pending {
@@ -389,7 +390,7 @@
                     }
                     
                     .settings-header {
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        background: #000000;
                         color: white;
                         padding: 1.5rem 2rem;
                         border-bottom: none;
@@ -433,7 +434,7 @@
                         width: 48px;
                         height: 48px;
                         border: 4px solid #e5e7eb;
-                        border-top-color: #667eea;
+                        border-top-color: #000000;
                         border-radius: 50%;
                         animation: spin 1s linear infinite;
                     }
@@ -484,7 +485,7 @@
                     }
                     
                     .settings-section h3 i {
-                        color: #667eea;
+                        color: #000000;
                     }
                     
                     .section-desc {
@@ -526,7 +527,7 @@
                     
                     .toggle-label i {
                         font-size: 1.25rem;
-                        color: #667eea;
+                        color: #000000;
                         width: 24px;
                     }
                     
@@ -545,7 +546,7 @@
                     .toggle-switch {
                         width: 48px;
                         height: 24px;
-                        accent-color: #667eea;
+                        accent-color: #000000;
                         cursor: pointer;
                     }
                     
@@ -576,9 +577,9 @@
                     }
                     
                     .carrier-option input[type="radio"]:checked + .carrier-option-content {
-                        background: #ede9fe;
-                        border-color: #667eea;
-                        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+                        background: #f3f4f6;
+                        border-color: #000000;
+                        box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
                     }
                     
                     .carrier-icon {
@@ -664,13 +665,13 @@
                     }
                     
                     .window-mode-option input[type="radio"]:checked + .window-mode-content {
-                        background: #ede9fe;
-                        border-color: #667eea;
+                        background: #f3f4f6;
+                        border-color: #000000;
                     }
                     
                     .window-mode-content i {
                         font-size: 1.5rem;
-                        color: #667eea;
+                        color: #000000;
                     }
                     
                     .window-mode-title {
@@ -788,7 +789,7 @@
                     .reasons-grid input[type="checkbox"] {
                         width: 18px;
                         height: 18px;
-                        accent-color: #667eea;
+                        accent-color: #000000;
                         cursor: pointer;
                     }
                     
@@ -824,14 +825,14 @@
                     }
                     
                     .settings-actions .btn-primary {
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        background: #000000;
                         color: white;
                         border: none;
                     }
                     
                     .settings-actions .btn-primary:hover {
                         transform: translateY(-2px);
-                        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+                        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
                     }
                     
                     .settings-actions .btn-secondary {
@@ -2504,7 +2505,7 @@
         if (container) {
             container.innerHTML = AVAILABLE_REASONS.map(r => `
                 <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.9rem; cursor:pointer;">
-                    <input type="checkbox" class="set-reason-cb" value="${r.id}" style="width:16px;height:16px;accent-color:#6366f1;">
+                    <input type="checkbox" class="set-reason-cb" value="${r.id}" style="width:16px;height:16px;accent-color:#000000;">
                     ${r.label}
                 </label>
             `).join('');
