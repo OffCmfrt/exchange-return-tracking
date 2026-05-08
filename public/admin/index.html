@@ -2542,10 +2542,14 @@
 
     async function loadSettings() {
         try {
+            console.log('Loading settings from:', `${API_URL}/admin/settings`);
             const res = await fetch(`${API_URL}/admin/settings`, {
                 headers: { 'Authorization': `Bearer ${authToken}` }
             });
+            
+            console.log('Settings response status:', res.status);
             const data = await res.json();
+            console.log('Settings response data:', data);
 
             if (res.ok) {
                 // Safely set form values with error handling
@@ -2612,13 +2616,31 @@
                     if (formEl) formEl.style.display = 'block';
                 }
             } else {
-                alert('Failed to load settings');
-                closeSettingsModal();
+                console.error('Failed to load settings:', data);
+                const loadingEl = document.getElementById('settings-loading');
+                if (loadingEl) {
+                    loadingEl.innerHTML = `
+                        <div style="color: #ef4444; text-align: center; padding: 2rem;">
+                            <p style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Failed to Load Settings</p>
+                            <p style="font-size: 0.9rem; color: #6b7280;">Error: ${data.error || 'Unknown error'}</p>
+                            <p style="font-size: 0.85rem; color: #9ca3af; margin-top: 1rem;">Status: ${res.status}</p>
+                            <button onclick="loadSettings()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #000; color: white; border: none; border-radius: 6px; cursor: pointer;">Retry</button>
+                        </div>
+                    `;
+                }
             }
         } catch (err) {
             console.error('Error loading settings:', err);
-            alert('Failed to connect to settings API');
-            closeSettingsModal();
+            const loadingEl = document.getElementById('settings-loading');
+            if (loadingEl) {
+                loadingEl.innerHTML = `
+                    <div style="color: #ef4444; text-align: center; padding: 2rem;">
+                        <p style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem;">Connection Error</p>
+                        <p style="font-size: 0.9rem; color: #6b7280;">${err.message}</p>
+                        <button onclick="loadSettings()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #000; color: white; border: none; border-radius: 6px; cursor: pointer;">Retry</button>
+                    </div>
+                `;
+            }
         }
     }
 
