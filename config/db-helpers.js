@@ -31,7 +31,11 @@ async function createRequest(requestData) {
             pickup_date: requestData.pickupDate,
             images: requestData.images,
             admin_notes: requestData.adminNotes || null,
-            agent_notes: requestData.agentNotes || null
+            agent_notes: requestData.agentNotes || null,
+            carrier: requestData.carrier || 'shiprocket',
+            carrier_shipment_id: requestData.carrierShipmentId,
+            carrier_awb: requestData.carrierAwb,
+            carrier_fallback_reason: requestData.carrierFallbackReason || null
         }])
         .select()
         .single();
@@ -293,6 +297,12 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.forwardAwbNumber) updateData.forward_awb_number = updates.forwardAwbNumber;
     if (updates.forwardStatus) updateData.forward_status = updates.forwardStatus;
 
+    // Carrier Tracking
+    if (updates.carrier !== undefined) updateData.carrier = updates.carrier;
+    if (updates.carrierShipmentId !== undefined) updateData.carrier_shipment_id = updates.carrierShipmentId;
+    if (updates.carrierAwb !== undefined) updateData.carrier_awb = updates.carrierAwb;
+    if (updates.carrierFallbackReason !== undefined) updateData.carrier_fallback_reason = updates.carrierFallbackReason;
+
     if (Object.keys(updateData).length === 0) return null;
 
     const { data, error } = await supabase
@@ -350,6 +360,10 @@ function convertFromSnakeCase(data) {
         forwardShipmentId: data.forward_shipment_id,
         forwardAwbNumber: data.forward_awb_number,
         forwardStatus: data.forward_status,
+        carrier: data.carrier,
+        carrierShipmentId: data.carrier_shipment_id,
+        carrierAwb: data.carrier_awb,
+        carrierFallbackReason: data.carrier_fallback_reason,
         createdAt: data.created_at,
         updatedAt: data.updated_at
     };
