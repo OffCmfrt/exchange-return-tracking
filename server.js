@@ -1962,6 +1962,12 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                 if (trackingData && trackingData.tracking_data) {
                     const tracking = trackingData.tracking_data;
                     const activities = tracking.shipment_track || [];
+                    
+                    // DEBUG: Log first activity structure to understand Shiprocket response
+                    if (activities.length > 0) {
+                        console.log(`[DEBUG] Return Shipment (${request.awbNumber}) - First activity:`, JSON.stringify(activities[0], null, 2));
+                    }
+                    
                     request.shipment = {
                         origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
                         destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,

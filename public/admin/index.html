@@ -1292,6 +1292,12 @@
     function buildShipmentTimeline(shipment, title, isPrimary) {
         const activities = shipment.activities || [];
         const hasActivities = activities.length > 0;
+        
+        // DEBUG: Log shipment data to see what's coming from backend
+        console.log(`[DEBUG] ${title} - Shipment data:`, JSON.stringify(shipment, null, 2));
+        if (hasActivities) {
+            console.log(`[DEBUG] ${title} - First activity:`, JSON.stringify(activities[0], null, 2));
+        }
 
         // Header info
         let html = `
@@ -1324,8 +1330,12 @@
             sortedActivities.forEach((activity, index) => {
                 const isLatest = index === 0;
                 const dateStr = activity.date ? formatDateIST(activity.date + (activity.time ? 'T' + activity.time : '')) : 'N/A';
-                const status = activity.status || activity.activity || 'Update';
-                const location = activity.location || '';
+                
+                // Try multiple field names that Shiprocket might use
+                const status = activity.status || activity.activity || activity.track_message || activity.message || activity.description || 'Update';
+                const location = activity.location || activity.location_name || activity.city || activity.office || '';
+                const detail = activity.activity || activity.track_message || activity.message || activity.description || '';
+                
                 const isDelivered = status.toLowerCase().includes('delivered');
                 const isOutForDelivery = status.toLowerCase().includes('out for delivery');
                 const isInTransit = status.toLowerCase().includes('in transit') || status.toLowerCase().includes('shipped');
@@ -1343,7 +1353,7 @@
                             <div class="timeline-status">${status}</div>
                             ${location ? `<div class="timeline-location">${location}</div>` : ''}
                             <div class="timeline-date">${dateStr}</div>
-                            ${activity.activity ? `<div class="timeline-detail">${activity.activity}</div>` : ''}
+                            ${detail && detail !== status ? `<div class="timeline-detail">${detail}</div>` : ''}
                         </div>
                     </div>
                 `;
