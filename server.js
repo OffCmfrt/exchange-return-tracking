@@ -74,7 +74,7 @@ app.set('trust proxy', 1);
 // Serve admin dashboard BEFORE helmet (to bypass CSP restrictions)
 app.get('/admin', (req, res) => {
     // Custom CSP for admin - allows inline scripts and event handlers
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com;");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
     res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
 });
 
@@ -85,7 +85,7 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-            connectSrc: ["'self'"],
+            connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "https:"],
         },
