@@ -2547,48 +2547,75 @@
             const data = await res.json();
 
             if (res.ok) {
-                document.getElementById('set-allow-returns').checked = data.allow_returns !== false;
-                document.getElementById('set-allow-exchanges').checked = data.allow_exchanges !== false;
-                document.getElementById('set-return-window').value = data.return_window_days || 2;
-                
-                // Set window mode (default to 'delivery' for backward compatibility)
-                const windowMode = data.return_window_mode || 'delivery';
-                document.getElementById(`set-window-mode-${windowMode}`).checked = true;
-                toggleWindowMode(); // Update help text
-                
-                // Set carrier mode (default to 'shiprocket_with_fallback')
-                const carrierMode = data.carrier_mode || 'shiprocket_with_fallback';
-                document.getElementById(`carrier-${carrierMode}`).checked = true;
-                
-                // Set cutoff date
-                const hasCutoff = data.cutoff_date && data.cutoff_date_enabled;
-                document.getElementById('set-enable-cutoff').checked = hasCutoff;
-                document.getElementById('set-cutoff-date').value = data.cutoff_date || '';
-                toggleCutoffDate();
-                
-                const approvedReasons = data.auto_approve_reasons || [];
-                document.querySelectorAll('.set-reason-cb').forEach(cb => {
-                    cb.checked = approvedReasons.includes(cb.value);
-                });
-                
-                // Store the saved warehouse location to select it later
-                window.savedWarehouseLocation = data.warehouse_location || null;
-                // If locations are already loaded, set the value now
-                if (window.shiprocketLocationsLoaded && window.savedWarehouseLocation) {
-                    const select = document.getElementById('set-warehouse-location');
-                    if (select) {
-                        select.value = window.savedWarehouseLocation.pickup_location || '';
+                // Safely set form values with error handling
+                try {
+                    const allowReturns = document.getElementById('set-allow-returns');
+                    if (allowReturns) allowReturns.checked = data.allow_returns !== false;
+                    
+                    const allowExchanges = document.getElementById('set-allow-exchanges');
+                    if (allowExchanges) allowExchanges.checked = data.allow_exchanges !== false;
+                    
+                    const returnWindow = document.getElementById('set-return-window');
+                    if (returnWindow) returnWindow.value = data.return_window_days || 2;
+                    
+                    // Set window mode (default to 'delivery' for backward compatibility)
+                    const windowMode = data.return_window_mode || 'delivery';
+                    const windowModeEl = document.getElementById(`set-window-mode-${windowMode}`);
+                    if (windowModeEl) {
+                        windowModeEl.checked = true;
+                        toggleWindowMode(); // Update help text
                     }
-                }
+                    
+                    // Set carrier mode (default to 'shiprocket_with_fallback')
+                    const carrierMode = data.carrier_mode || 'shiprocket_with_fallback';
+                    const carrierModeEl = document.getElementById(`carrier-${carrierMode}`);
+                    if (carrierModeEl) {
+                        carrierModeEl.checked = true;
+                    }
+                    
+                    // Set cutoff date
+                    const hasCutoff = data.cutoff_date && data.cutoff_date_enabled;
+                    const enableCutoff = document.getElementById('set-enable-cutoff');
+                    if (enableCutoff) enableCutoff.checked = hasCutoff;
+                    
+                    const cutoffDate = document.getElementById('set-cutoff-date');
+                    if (cutoffDate) cutoffDate.value = data.cutoff_date || '';
+                    toggleCutoffDate();
+                    
+                    const approvedReasons = data.auto_approve_reasons || [];
+                    document.querySelectorAll('.set-reason-cb').forEach(cb => {
+                        cb.checked = approvedReasons.includes(cb.value);
+                    });
+                    
+                    // Store the saved warehouse location to select it later
+                    window.savedWarehouseLocation = data.warehouse_location || null;
+                    // If locations are already loaded, set the value now
+                    if (window.shiprocketLocationsLoaded && window.savedWarehouseLocation) {
+                        const select = document.getElementById('set-warehouse-location');
+                        if (select) {
+                            select.value = window.savedWarehouseLocation.pickup_location || '';
+                        }
+                    }
 
-                document.getElementById('settings-loading').style.display = 'none';
-                document.getElementById('settings-form').style.display = '';
+                    // Show the form and hide loading
+                    const loadingEl = document.getElementById('settings-loading');
+                    const formEl = document.getElementById('settings-form');
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    if (formEl) formEl.style.display = 'block';
+                } catch (formError) {
+                    console.error('Error setting form values:', formError);
+                    // Still show the form even if there's an error
+                    const loadingEl = document.getElementById('settings-loading');
+                    const formEl = document.getElementById('settings-form');
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    if (formEl) formEl.style.display = 'block';
+                }
             } else {
                 alert('Failed to load settings');
                 closeSettingsModal();
             }
         } catch (err) {
-            console.error(err);
+            console.error('Error loading settings:', err);
             alert('Failed to connect to settings API');
             closeSettingsModal();
         }
