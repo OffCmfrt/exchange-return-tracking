@@ -1315,12 +1315,54 @@
         `;
 
         if (!hasActivities) {
+            // Show status-based timeline even without detailed activities
             html += `
                 <div class="tracking-empty" style="padding: 1rem 0;">
-                    <p>Status: <strong>${shipment.status || 'Pending'}</strong></p>
-                    <p style="font-size: 0.85rem; color: var(--gray-dark);">Detailed scan events will appear once the courier updates the tracking.</p>
+                    <p><strong>Current Status:</strong> ${shipment.status || 'Pending'}</p>
+                    ${shipment.edd ? `<p style="font-size: 0.85rem; color: var(--gray-dark);">Expected Delivery: ${formatDateIST(shipment.edd)}</p>` : ''}
+                    ${shipment.courierName ? `<p style="font-size: 0.85rem; color: var(--gray-dark);">Courier: ${shipment.courierName}</p>` : ''}
+                    <p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.5rem;">Detailed scan events will appear once the courier updates the tracking.</p>
                 </div>
             `;
+            
+            // Show a basic status timeline based on known Shiprocket statuses
+            const statusMap = {
+                'pending': 'Order Placed',
+                'pickup_scheduled': 'Pickup Scheduled',
+                'pickup_booked': 'Pickup Booked',
+                'picked_up': 'Picked Up',
+                'in_transit': 'In Transit',
+                'out_for_delivery': 'Out For Delivery',
+                'delivered': 'Delivered',
+                'rto_initiated': 'RTO Initiated',
+                'rto_delivered': 'RTO Delivered',
+                'cancelled': 'Cancelled'
+            };
+            
+            const currentStatus = (shipment.status || '').toLowerCase().replace(/ /g, '_');
+            const statusOrder = ['pending', 'pickup_scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered'];
+            const currentIndex = statusOrder.indexOf(currentStatus);
+            
+            if (currentIndex >= 0) {
+                html += `<div class="tracking-timeline">`;
+                statusOrder.slice(0, currentIndex + 1).forEach((status, index) => {
+                    const isLatest = index === currentIndex;
+                    const statusLabel = statusMap[status] || status;
+                    let statusClass = 'completed';
+                    if (isLatest) statusClass = 'active';
+                    
+                    html += `
+                        <div class="timeline-item ${statusClass}">
+                            <div class="timeline-dot"></div>
+                            <div class="timeline-content">
+                                <div class="timeline-status">${statusLabel}</div>
+                                <div class="timeline-date">${isLatest ? 'Current Status' : 'Completed'}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
         } else {
             // Sort activities by date descending (latest first)
             const sortedActivities = [...activities].reverse();
