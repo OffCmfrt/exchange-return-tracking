@@ -2594,7 +2594,9 @@
                     
                     // Set carrier mode (default to 'shiprocket_with_fallback')
                     const carrierMode = data.carrier_mode || 'shiprocket_with_fallback';
-                    const carrierModeEl = document.getElementById(`carrier-${carrierMode}`);
+                    // Convert underscore to hyphen for element ID matching
+                    const carrierModeId = `carrier-${carrierMode.replace(/_/g, '-')}`;
+                    const carrierModeEl = document.getElementById(carrierModeId);
                     if (carrierModeEl) {
                         carrierModeEl.checked = true;
                     }
