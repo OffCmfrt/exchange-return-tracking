@@ -284,6 +284,7 @@
                             <th>Order #</th>
                             <th>Customer</th>
                             <th>Date</th>
+                            <th>Carrier</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -614,7 +615,7 @@
         // Define CSV headers
         const headers = [
             'Request ID', 'Type', 'Status', 'Order Number', 'Customer Name', 
-            'Phone', 'Email', 'AWB Number', 'Pickup Date', 'Created At'
+            'Phone', 'Email', 'Carrier', 'AWB Number', 'Pickup Date', 'Created At'
         ];
 
         // Map data to CSV rows
@@ -626,6 +627,7 @@
             req.customerName,
             req.customerPhone || '',
             req.customerEmail || '',
+            req.carrier || '',
             req.awbNumber || '',
             req.pickupDate || '',
             req.createdAt || ''
@@ -1033,7 +1035,7 @@
         if (requests.length === 0) {
             table.innerHTML = `
                 <tr>
-                    <td colspan="7" style="text-align: center; padding: 2rem; color: var(--gray-dark);">
+                    <td colspan="8" style="text-align: center; padding: 2rem; color: var(--gray-dark);">
                         No requests found
                     </td>
                 </tr>
@@ -1049,6 +1051,13 @@
                 <td>${req.orderNumber}</td>
                 <td>${req.customerName}</td>
                 <td>${formatDateIST(req.createdAt)}</td>
+                <td>
+                    ${req.carrier ? `
+                        <span style="display: inline-flex; align-items: center; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; ${req.carrier === 'delhivery' ? 'background: #fef3c7; color: #92400e;' : 'background: #dbeafe; color: #1e40af;'}">
+                            ${req.carrier === 'delhivery' ? '🚚 Delhivery' : req.carrier === 'shiprocket' ? '📦 Shiprocket' : req.carrier}
+                        </span>
+                    ` : '<span style="color: #9ca3af; font-size: 0.85rem;">—</span>'}
+                </td>
                 <td><span class="badge badge-${req.status.replace(/_/g, '-')}">${getStatusLabel(req.status)}</span></td>
                 <td>
                     <button onclick="viewDetails('${req.requestId}')" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
@@ -1195,6 +1204,23 @@
                     <p style="font-weight: 500; margin-bottom: 0.5rem;">Pickup Details</p>
                     <p style="font-size: 0.9rem;"><strong>AWB:</strong> ${data.awbNumber}</p>
                     <p style="font-size: 0.9rem;"><strong>Pickup Date:</strong> ${data.pickupDate ? formatDateIST(data.pickupDate) : 'Pending'}</p>
+                    ${data.carrier ? `
+                        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #e5e7eb;">
+                            <p style="font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <strong>Carrier:</strong> 
+                                <span style="display: inline-flex; align-items: center; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; ${data.carrier === 'delhivery' ? 'background: #fef3c7; color: #92400e;' : 'background: #dbeafe; color: #1e40af;'}">
+                                    ${data.carrier === 'delhivery' ? '🚚 Delhivery' : data.carrier === 'shiprocket' ? '📦 Shiprocket' : data.carrier}
+                                </span>
+                            </p>
+                            ${data.carrierShipmentId ? `<p style="font-size: 0.9rem; margin-top: 0.5rem;"><strong>Carrier Shipment ID:</strong> ${data.carrierShipmentId}</p>` : ''}
+                            ${data.carrierFallbackReason ? `
+                                <div style="margin-top: 0.75rem; padding: 0.75rem; background: #fef3c7; border-left: 3px solid #f59e0b; border-radius: 4px;">
+                                    <p style="font-size: 0.85rem; font-weight: 600; color: #92400e; margin-bottom: 0.25rem;">⚠️ Fallback Reason:</p>
+                                    <p style="font-size: 0.85rem; color: #78350f; margin: 0;">${data.carrierFallbackReason}</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    ` : ''}
                 </div>
             ` : ''}
 
