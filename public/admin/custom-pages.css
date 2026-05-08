@@ -592,6 +592,106 @@ header {
 }
 
 /* ============================================================
+   WORKFLOW TIMELINE STYLES
+   ============================================================ */
+
+.workflow-timeline {
+    margin-bottom: 1.5rem;
+}
+
+.workflow-item {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    position: relative;
+}
+
+.workflow-item:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 16px;
+    top: 36px;
+    bottom: -1rem;
+    width: 2px;
+    background: #e2e8f0;
+}
+
+.workflow-item.completed:not(:last-child)::before {
+    background: #22c55e;
+}
+
+.workflow-item.active:not(:last-child)::before {
+    background: #3b82f6;
+}
+
+.workflow-dot {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+}
+
+.workflow-item.completed .workflow-dot {
+    background: #dcfce7;
+    border: 2px solid #22c55e;
+}
+
+.workflow-item.active .workflow-dot {
+    background: #dbeafe;
+    border: 2px solid #3b82f6;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+    animation: pulse 2s infinite;
+}
+
+.workflow-content {
+    flex: 1;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+}
+
+.workflow-item.active .workflow-content {
+    border-color: #3b82f6;
+    background: #f8fafc;
+}
+
+.workflow-label {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #1e293b;
+    margin-bottom: 0.25rem;
+}
+
+.workflow-item.active .workflow-label {
+    color: #2563eb;
+}
+
+.workflow-date {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    font-weight: 500;
+}
+
+.workflow-current-badge {
+    display: inline-block;
+    margin-top: 0.5rem;
+    padding: 0.2rem 0.6rem;
+    background: #3b82f6;
+    color: white;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* ============================================================
    TRACKING PIPELINE & TIMELINE STYLES
    ============================================================ */
 

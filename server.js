@@ -1954,8 +1954,80 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 app.get('/api/track-request/:identifier', async (req, res) => {
     const { identifier } = req.params;
 
+    // Helper to build complete workflow history from status timestamps
+    function buildWorkflowHistory(request) {
+        const workflow = [];
+        
+        // Define all possible workflow states with labels
+        const states = [
+            { key: 'created_at', label: 'Request Created', icon: '' },
+            { key: 'waiting_payment', label: 'Waiting Payment', icon: '' },
+            { key: 'payment_received', label: 'Payment Received', icon: '✅' },
+            { key: 'pending_admin', label: 'Pending Admin Review', icon: '👤' },
+            { key: 'pickup_booked', label: 'Pickup Booked', icon: '📦' },
+            { key: 'picked_up_at', label: 'Picked Up', icon: '' },
+            { key: 'in_transit_at', label: 'In Transit', icon: '🛣️' },
+            { key: 'out_for_delivery', label: 'Out For Delivery', icon: '🏠' },
+            { key: 'delivered_at', label: 'Delivered', icon: '✅' },
+            { key: 'inspected_at', label: 'Inspected', icon: '🔍' },
+            { key: 'approved_at', label: 'Approved', icon: '✓' },
+            { key: 'rejected_at', label: 'Rejected', icon: '✗' }
+        ];
+        
+        // Get the current status to determine which states are active
+        const currentStatus = (request.status || '').toLowerCase();
+        
+        // Build status order for returns/exchanges
+        const statusOrder = [
+            'waiting_payment',
+            'pending',
+            'pickup_booked',
+            'picked_up',
+            'in_transit',
+            'delivered',
+            'delivered (pending insp.)',
+            'inspected',
+            'approved',
+            'rejected'
+        ];
+        
+        const currentIndex = statusOrder.indexOf(currentStatus);
+        
+        states.forEach(state => {
+            const timestamp = request[state.key];
+            if (timestamp) {
+                // Determine if this state is completed, active, or future
+                let statusClass = 'completed';
+                
+                // Check if this matches current status
+                if (state.key === 'created_at' && currentIndex === 0) {
+                    statusClass = 'active';
+                } else if (state.key.replace('_at', '') === currentStatus || 
+                          state.key === currentStatus) {
+                    statusClass = 'active';
+                }
+                
+                workflow.push({
+                    label: state.label,
+                    icon: state.icon,
+                    date: new Date(timestamp).toISOString(),
+                    status: statusClass,
+                    completed: true
+                });
+            }
+        });
+        
+        // Sort by date
+        workflow.sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        return workflow;
+    }
+
     // Helper to enrich a request with live Shiprocket tracking data
     async function enrichWithTracking(request) {
+        // Build complete workflow history from timestamps
+        request.workflowHistory = buildWorkflowHistory(request);
+        
         if (request.awbNumber && process.env.SHIPROCKET_EMAIL) {
             try {
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`);

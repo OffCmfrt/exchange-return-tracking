@@ -1077,6 +1077,9 @@
 
     function displayRequestDetails(data) {
         const modalContent = document.getElementById('modalContent');
+        
+        // Store request data globally for workflow timeline access
+        window.currentRequestData = data;
 
         modalContent.innerHTML = `
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
@@ -1314,6 +1317,40 @@
                 </div>
         `;
 
+        // FIRST: Show complete workflow history if available
+        const workflowData = window.currentRequestData?.workflowHistory || [];
+        if (workflowData.length > 0) {
+            html += `
+                <div class="workflow-timeline">
+                    <h5 style="margin: 0 0 1rem 0; font-size: 0.9rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">
+                        Complete Order Journey
+                    </h5>
+            `;
+            
+            workflowData.forEach((step, index) => {
+                const isLatest = index === workflowData.length - 1;
+                const dateStr = formatDateIST(step.date);
+                let statusClass = step.status || 'completed';
+                
+                html += `
+                    <div class="workflow-item ${statusClass}">
+                        <div class="workflow-dot">
+                            ${step.icon || ''}
+                        </div>
+                        <div class="workflow-content">
+                            <div class="workflow-label">${step.label}</div>
+                            <div class="workflow-date">${dateStr}</div>
+                            ${isLatest ? '<div class="workflow-current-badge">Current</div>' : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `</div>`;
+            html += `<div style="border-top: 2px solid #e2e8f0; margin: 1.5rem 0;"></div>`;
+        }
+
+        // THEN: Show Shiprocket tracking activities
         if (!hasActivities) {
             // Show status-based timeline even without detailed activities
             html += `
