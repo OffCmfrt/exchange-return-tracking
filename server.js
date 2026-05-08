@@ -3109,8 +3109,11 @@ app.get('/api/admin/requests', authenticateAdmin, async (req, res) => {
         const { status, type, date, search, page, limit } = req.query;
 
         const result = await getAllRequests({ status, type, date, search, page, limit });
+        
+        // Get stats for analytics dashboard
+        const stats = await getRequestStats();
 
-        res.json({ requests: result.data, pagination: result.pagination });
+        res.json({ requests: result.data, pagination: result.pagination, stats });
     } catch (error) {
         console.error('Get requests error:', error);
         res.status(500).json({ error: 'Failed to fetch requests' });
