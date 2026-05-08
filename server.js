@@ -146,6 +146,17 @@ app.post('/api/submit-exchange', writeLimiter);
 app.post('/api/admin/', writeLimiter);
 app.post('/api/admin/*', writeLimiter);
 
+// Request timeout protection - abort requests taking longer than 10 seconds
+app.use((req, res, next) => {
+    res.setTimeout(10000, () => {
+        console.warn(`[Timeout] Request aborted: ${req.method} ${req.originalUrl}`);
+        if (!res.headersSent) {
+            res.status(503).json({ error: 'Request timeout - operation took too long' });
+        }
+    });
+    next();
+});
+
 const PORT = process.env.PORT || 3000;
 
 // Force rebuild: Deployment verified 2026-04-30 20:00 IST
@@ -225,7 +236,164 @@ const storage = {
     processingPayments: new Set() // Dedup guard: prevent double-processing same payment
 };
 
-console.log('Starting server initialization...');
+// ==================== BACKGROUND SYNC JOB ====================
+const cron = require('node-cron');
+
+// Background sync job - runs 4 times per day (6AM, 12PM, 6PM, 12AM IST)
+let isSyncRunning = false;
+let lastSyncTimestamp = null;
+
+async function performBackgroundSync() {
+    if (isSyncRunning) {
+        console.log('[Background Sync] Sync already running, skipping...');
+        return;
+    }
+    
+    isSyncRunning = true;
+    console.log('[Background Sync] Starting automated sync...');
+    
+    try {
+        // Import supabase for direct database access
+        const supabase = require('./config/supabase');
+        
+        // Fetch only active requests (not all requests)
+        const { data: activeRequests, error } = await supabase
+            .from('requests')
+            .select('*')
+            .or('status.eq.pending,status.eq.scheduled,status.eq.picked_up,status.eq.in_transit')
+            .not('awb_number', 'is', null)
+            .order('created_at', { ascending: false });
+        
+        if (error || !activeRequests) {
+            console.error('[Background Sync] Error fetching requests:', error);
+            return;
+        }
+        
+        console.log(`[Background Sync] Processing ${activeRequests.length} active requests...`);
+        
+        let updatedCount = 0;
+        const BATCH_SIZE = 5; // Process 5 at a time to avoid overwhelming Shiprocket API
+        
+        for (let i = 0; i < activeRequests.length; i += BATCH_SIZE) {
+            const batch = activeRequests.slice(i, i + BATCH_SIZE);
+            
+            // Process batch in parallel
+            await Promise.all(batch.map(async (req) => {
+                try {
+                    await syncSingleRequest(req);
+                    updatedCount++;
+                } catch (err) {
+                    console.error(`[Background Sync] Failed to sync ${req.requestId}:`, err.message);
+                }
+            }));
+        }
+        
+        lastSyncTimestamp = new Date().toISOString();
+        console.log(`[Background Sync] Complete: Updated ${updatedCount} requests`);
+    } catch (error) {
+        console.error('[Background Sync] Fatal error:', error);
+    } finally {
+        isSyncRunning = false;
+    }
+}
+
+// Extract sync logic into reusable function
+async function syncSingleRequest(req) {
+    // Return shipment sync
+    if (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
+        let trackingData = null;
+        
+        if (req.awbNumber) {
+            try {
+                trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
+            } catch (e) {
+                console.warn(`[Sync] AWB ${req.awbNumber} (${req.requestId}) fetch failed: ${e.message}`);
+            }
+        }
+        
+        if ((!trackingData || !trackingData.tracking_data) && req.shipmentId) {
+            try { 
+                trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`); 
+            } catch (e) {}
+        }
+        
+        if (trackingData && trackingData.tracking_data) {
+            const tracking = trackingData.tracking_data;
+            const currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+            
+            if (currentStatus) {
+                const newAwb = tracking.shipment_track?.[0]?.awb_code || tracking.awb_code;
+                let newStatus = req.status;
+                const statusUpper = currentStatus.toUpperCase();
+                
+                if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
+                    newStatus = 'delivered';
+                } else if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
+                    newStatus = 'picked_up';
+                } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || statusUpper.includes('OUT FOR DELIVERY')) {
+                    newStatus = 'in_transit';
+                } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('GENERATED') || statusUpper.includes('AWB ASSIGNED') || statusUpper.includes('PICKUP GENERATED')) {
+                    newStatus = 'scheduled';
+                } else if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || statusUpper.includes('CANCELLED')) {
+                    const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] Shiprocket status: ${currentStatus}`;
+                    if (!req.adminNotes || !req.adminNotes.includes(currentStatus)) {
+                        await updateRequestStatus(req.requestId, { adminNotes: (req.adminNotes || '') + note });
+                    }
+                }
+                
+                if (newStatus !== req.status || (newAwb && newAwb !== req.awbNumber)) {
+                    const updatesArr = { status: newStatus };
+                    if (newStatus === 'delivered') updatesArr.deliveredAt = new Date().toISOString();
+                    if (newStatus === 'picked_up') updatesArr.pickedUpAt = new Date().toISOString();
+                    if (newStatus === 'in_transit') updatesArr.inTransitAt = new Date().toISOString();
+                    if (newAwb) updatesArr.awbNumber = newAwb;
+                    await updateRequestStatus(req.requestId, updatesArr);
+                }
+            }
+        }
+    }
+    
+    // Forward shipment sync for exchanges
+    if (req.type === 'exchange' && req.forwardAwbNumber && req.forwardStatus !== 'delivered') {
+        try {
+            const forwardTrack = await shiprocketAPI(`/courier/track/awb/${req.forwardAwbNumber}`);
+            if (forwardTrack && forwardTrack.tracking_data) {
+                const tracking = forwardTrack.tracking_data;
+                const currentStatus = (tracking.shipment_track?.[0]?.current_status || tracking.current_status || '').toUpperCase();
+                
+                let newForwardStatus = req.forwardStatus || 'scheduled';
+                if (currentStatus.includes('DELIVERED')) newForwardStatus = 'delivered';
+                else if (currentStatus.includes('PICKED UP') && !currentStatus.includes('GENERATED')) newForwardStatus = 'picked_up';
+                else if (currentStatus.includes('IN TRANSIT') || currentStatus.includes('SHIPPED') || currentStatus.includes('OUT FOR DELIVERY')) newForwardStatus = 'in_transit';
+                else if (currentStatus.includes('PICKUP GENERATED') || currentStatus.includes('AWB ASSIGNED') || currentStatus.includes('SCHEDULED')) newForwardStatus = 'scheduled';
+                
+                if (newForwardStatus !== req.forwardStatus) {
+                    console.log(`[${req.requestId}] Updating Forward Status: ${newForwardStatus}`);
+                    await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
+                }
+            }
+        } catch (e) {
+            console.error(`[${req.requestId}] Forward Sync Failed:`, e.message);
+        }
+    }
+}
+
+// Schedule sync to run 4 times per day (6AM, 12PM, 6PM, 12AM IST)
+// Cron format: minute hour * * *
+cron.schedule('0 0,6,12,18 * * *', () => {
+    performBackgroundSync();
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata" // IST timezone
+});
+
+// Run initial sync on server startup (after 30 seconds to allow full initialization)
+setTimeout(() => {
+    console.log('[Background Sync] Running initial sync on startup...');
+    performBackgroundSync();
+}, 30000);
+
+console.log('✅ Background sync scheduled: 4 times daily (6AM, 12PM, 6PM, 12AM IST)');
 
 // ==================== CLOUDINARY CONFIG ====================
 
@@ -2941,12 +3109,22 @@ app.get('/api/admin/requests', authenticateAdmin, async (req, res) => {
         const { status, type, date, search, page, limit } = req.query;
 
         const result = await getAllRequests({ status, type, date, search, page, limit });
-        const stats = await getRequestStats();
 
-        res.json({ requests: result.data, stats, pagination: result.pagination });
+        res.json({ requests: result.data, pagination: result.pagination });
     } catch (error) {
         console.error('Get requests error:', error);
         res.status(500).json({ error: 'Failed to fetch requests' });
+    }
+});
+
+// Get admin stats (optimized, separate endpoint)
+app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await getRequestStats();
+        res.json(stats);
+    } catch (error) {
+        console.error('Get stats error:', error);
+        res.status(500).json({ error: 'Failed to fetch stats' });
     }
 });
 
@@ -3316,114 +3494,18 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
     }
 });
 
-// Sync Status Endpoint
-
-app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
+// Sync Status Endpoint - lightweight status check (sync runs automatically in background)
+app.get('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     try {
-        // Get relevant statuses where shipment is active
-        const allRequestsResult = await getAllRequests({});
-
-        let activeRequests = allRequestsResult.data.filter(r =>
-            (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(r.status) && (r.awbNumber || r.shipmentId)) ||
-            (r.type === 'exchange' && r.forwardAwbNumber && r.forwardStatus !== 'delivered')
-        );
-
-        let updatedCount = 0;
-        console.log(`[Sync] Processing ${activeRequests.length} requests (including forward shipments)...`);
-
-        for (const req of activeRequests) {
-            try {
-                // --- 1. Sync Return Status (Existing Logic) ---
-                if (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
-                    let trackingData = null;
-                    if (req.awbNumber) {
-                        try {
-                            trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
-                        } catch (e) {
-                            console.warn(`[Sync] AWB ${req.awbNumber} (${req.requestId}) fetch failed: ${e.message}`);
-                            // Log issue directly into admin notes as requested
-                            const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] Tracking API error: ${e.message}`;
-                            await updateRequestStatus(req.requestId, { adminNotes: (req.adminNotes || '') + note });
-                            continue;
-                        }
-                    }
-                    if ((!trackingData || !trackingData.tracking_data) && req.shipmentId) {
-                        try { trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`); } catch (e) { }
-                    }
-
-                    if (trackingData && trackingData.tracking_data) {
-                        const tracking = trackingData.tracking_data;
-                        const currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
-                        if (currentStatus) {
-                            const newAwb = tracking.shipment_track?.[0]?.awb_code || tracking.awb_code;
-                            let newStatus = req.status;
-                            const statusUpper = currentStatus.toUpperCase();
-
-                            if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
-                                newStatus = 'delivered';
-                            } else if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
-                                // Only mark as picked_up when the courier has ACTUALLY collected the parcel
-                                newStatus = 'picked_up';
-                            } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || statusUpper.includes('OUT FOR DELIVERY')) {
-                                newStatus = 'in_transit';
-                            } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('GENERATED') || statusUpper.includes('AWB ASSIGNED') || statusUpper.includes('PICKUP GENERATED')) {
-                                // PICKUP GENERATED = pickup request filed, item NOT yet with courier
-                                newStatus = 'scheduled';
-                            } else if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || statusUpper.includes('CANCELLED')) {
-                                // Record negative status directly into admin notes as requested
-                                const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] Shiprocket status: ${currentStatus}`;
-                                if (!req.adminNotes || !req.adminNotes.includes(currentStatus)) {
-                                    await updateRequestStatus(req.requestId, { adminNotes: (req.adminNotes || '') + note });
-                                }
-                            }
-
-                            if (newStatus !== req.status || (newAwb && newAwb !== req.awbNumber)) {
-                                const updatesArr = { status: newStatus };
-                                if (newStatus === 'delivered') updatesArr.deliveredAt = new Date().toISOString();
-                                if (newStatus === 'picked_up') updatesArr.pickedUpAt = new Date().toISOString();
-                                if (newStatus === 'in_transit') updatesArr.inTransitAt = new Date().toISOString();
-                                if (newAwb) updatesArr.awbNumber = newAwb;
-                                await updateRequestStatus(req.requestId, updatesArr);
-                                updatedCount++;
-                            }
-                        }
-                    }
-                }
-
-                // --- 2. Sync Forward Status (New Logic) ---
-                if (req.type === 'exchange' && req.forwardAwbNumber && req.forwardStatus !== 'delivered') {
-                    try {
-                        const forwardTrack = await shiprocketAPI(`/courier/track/awb/${req.forwardAwbNumber}`);
-                        if (forwardTrack && forwardTrack.tracking_data) {
-                            const tracking = forwardTrack.tracking_data;
-                            const currentStatus = (tracking.shipment_track?.[0]?.current_status || tracking.current_status || '').toUpperCase();
-
-                            let newForwardStatus = req.forwardStatus || 'scheduled';
-                            if (currentStatus.includes('DELIVERED')) newForwardStatus = 'delivered';
-                            else if (currentStatus.includes('PICKED UP') && !currentStatus.includes('GENERATED')) newForwardStatus = 'picked_up';
-                            else if (currentStatus.includes('IN TRANSIT') || currentStatus.includes('SHIPPED') || currentStatus.includes('OUT FOR DELIVERY')) newForwardStatus = 'in_transit';
-                            else if (currentStatus.includes('PICKUP GENERATED') || currentStatus.includes('AWB ASSIGNED') || currentStatus.includes('SCHEDULED')) newForwardStatus = 'scheduled';
-
-                            if (newForwardStatus !== req.forwardStatus) {
-                                console.log(`[${req.requestId}] Updating Forward Status: ${newForwardStatus}`);
-                                await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
-                                updatedCount++;
-                            }
-                        }
-                    } catch (e) {
-                        console.error(`[${req.requestId}] Forward Sync Failed:`, e.message);
-                    }
-                }
-            } catch (err) {
-                console.error(`Failed to sync ${req.requestId}:`, err.message);
-            }
-        }
-
-        console.log(`Sync Complete: Updated ${updatedCount} requests`);
-        res.json({ success: true, updated: updatedCount, message: 'Sync complete' });
+        res.json({
+            success: true,
+            isRunning: isSyncRunning,
+            lastSync: lastSyncTimestamp,
+            message: isSyncRunning ? 'Sync in progress' : 'Sync completed',
+            schedule: '4 times daily (6AM, 12PM, 6PM, 12AM IST)'
+        });
     } catch (error) {
-        console.error('Sync error:', error);
-        res.status(500).json({ error: 'Failed to sync status' });
+        res.status(500).json({ error: 'Failed to get sync status' });
     }
 });
 

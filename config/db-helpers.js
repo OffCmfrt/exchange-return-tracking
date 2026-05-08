@@ -162,26 +162,39 @@ async function getAllRequests(filters = {}) {
  * Get request statistics
  */
 /**
- * Get request statistics with detailed analytics
+ * Get request statistics with detailed analytics (OPTIMIZED with database aggregation)
  */
 async function getRequestStats() {
-    const { data: allRequests, error: allError } = await supabase
-        .from('requests')
-        .select('status, reason, type, payment_amount');
+    try {
+        // Fetch counts using database aggregation (much faster than loading all records)
+        const [
+            { count: totalCount },
+            { count: pendingCount },
+            { count: scheduledCount },
+            { count: approvedCount },
+            { count: rejectedCount },
+            { count: waitingPaymentCount },
+            { count: returnsCount },
+            { count: exchangesCount }
+        ] = await Promise.all([
+            supabase.from('requests').select('*', { count: 'exact', head: true }),
+            supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+            supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'scheduled'),
+            supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'approved'),
+            supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'rejected'),
+            supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'waiting_payment'),
+            supabase.from('requests').select('*', { count: 'exact', head: true }).eq('type', 'return'),
+            supabase.from('requests').select('*', { count: 'exact', head: true }).eq('type', 'exchange')
+        ]);
 
-    if (allError) throw allError;
+        // Fetch reason breakdown
+        const { data: reasonData, error: reasonError } = await supabase
+            .from('requests')
+            .select('reason');
+        
+        if (reasonError) throw reasonError;
 
-    const stats = {
-        total: allRequests.length,
-        pending: 0,
-        scheduled: 0,
-        approved: 0,
-        rejected: 0,
-        waitingPayment: 0,
-        returns: 0,
-        exchanges: 0,
-        totalRevenue: 0,
-        reasons: {
+        const reasons = {
             size: 0,
             fit: 0,
             color: 0,
@@ -189,35 +202,42 @@ async function getRequestStats() {
             defective: 0,
             wrong_item: 0,
             other: 0
-        }
-    };
+        };
+        
+        reasonData.forEach(r => {
+            if (r.reason && reasons[r.reason] !== undefined) {
+                reasons[r.reason]++;
+            } else if (r.reason) {
+                reasons.other++;
+            }
+        });
 
-    allRequests.forEach(r => {
-        // Status counts
-        if (r.status === 'pending') stats.pending++;
-        if (r.status === 'scheduled') stats.scheduled++;
-        if (r.status === 'approved') stats.approved++;
-        if (r.status === 'rejected') stats.rejected++;
-        if (r.status === 'waiting_payment') stats.waitingPayment++;
+        // Fetch total revenue (only records with payment_amount)
+        const { data: revenueData, error: revenueError } = await supabase
+            .from('requests')
+            .select('payment_amount')
+            .not('payment_amount', 'is', null);
+        
+        if (revenueError) throw revenueError;
+        
+        const totalRevenue = revenueData.reduce((sum, r) => sum + (parseFloat(r.payment_amount) || 0), 0);
 
-        // Type counts
-        if (r.type === 'return') stats.returns++;
-        if (r.type === 'exchange') stats.exchanges++;
-
-        // Reason counts
-        if (r.reason && stats.reasons[r.reason] !== undefined) {
-            stats.reasons[r.reason]++;
-        } else if (r.reason) {
-            stats.reasons.other++;
-        }
-
-        // Financials (if payment was successful)
-        if (r.payment_amount) {
-            stats.totalRevenue += parseFloat(r.payment_amount) || 0;
-        }
-    });
-
-    return stats;
+        return {
+            total: totalCount || 0,
+            pending: pendingCount || 0,
+            scheduled: scheduledCount || 0,
+            approved: approvedCount || 0,
+            rejected: rejectedCount || 0,
+            waitingPayment: waitingPaymentCount || 0,
+            returns: returnsCount || 0,
+            exchanges: exchangesCount || 0,
+            totalRevenue,
+            reasons
+        };
+    } catch (error) {
+        console.error('Error in getRequestStats:', error);
+        throw error;
+    }
 }
 
 /**
