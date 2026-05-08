@@ -1309,12 +1309,14 @@ async function getDelhiveryTracking(waybill) {
  */
 async function schedulePickup(token, requestId, order, items, type) {
     try {
-        console.log(`[${requestId}] Scheduling pickup via Shiprocket...`);
+        // Get carrier mode from settings
+        const carrierMode = await getSetting('carrier_mode', 'shiprocket_with_fallback');
+        console.log(`[${requestId}] Scheduling pickup with carrier mode: ${carrierMode}`);
         
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
-        let carrierUsed = 'shiprocket';
+        let carrierUsed = null;
         
         // Prepare request data for Shiprocket/Delhivery
         const requestData = {
@@ -1324,48 +1326,96 @@ async function schedulePickup(token, requestId, order, items, type) {
             items: items
         };
 
-        // Try Shiprocket first
-        let srResponse = null;
-
-        try {
-            srResponse = await createShiprocketReturnOrder(requestData, order);
-
+        // Handle based on carrier mode
+        if (carrierMode === 'shiprocket_only') {
+            // Shiprocket only mode
+            if (!process.env.SHIPROCKET_EMAIL) {
+                console.error(`[${requestId}] ❌ Shiprocket not configured`);
+                return null;
+            }
+            
+            console.log(`[${requestId}] Using Shiprocket only...`);
+            const srResponse = await createShiprocketReturnOrder(requestData, order);
+            
             if (!srResponse || !srResponse.shipment_id) {
                 throw new Error('Shiprocket returned empty response');
             }
-        } catch (shiprocketError) {
-            // Fallback to Delhivery
-            console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
             
-            if (process.env.DELHIVERY_API_KEY) {
-                try {
-                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, order);
-                    
-                    if (delhiveryResponse && delhiveryResponse.waybill) {
-                        carrierUsed = 'delhivery';
-                        awbNumber = delhiveryResponse.waybill;
-                        shipmentId = delhiveryResponse.shipment_id;
-                        pickupDate = new Date().toISOString();
-                        
-                        console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
-                    } else {
-                        throw new Error('Delhivery also failed to create shipment');
-                    }
-                } catch (delhiveryError) {
-                    console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
-                    return null;
-                }
-            } else {
-                console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
-                return null;
-            }
-        }
-
-        // If Shiprocket succeeded
-        if (srResponse && srResponse.shipment_id && carrierUsed === 'shiprocket') {
+            carrierUsed = 'shiprocket';
             awbNumber = srResponse.awb_code;
             shipmentId = srResponse.shipment_id;
             pickupDate = srResponse.pickup_scheduled_date;
+            console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+            
+        } else if (carrierMode === 'delhivery_only') {
+            // Delhivery only mode
+            if (!process.env.DELHIVERY_API_KEY) {
+                console.error(`[${requestId}] ❌ Delhivery not configured`);
+                return null;
+            }
+            
+            console.log(`[${requestId}] Using Delhivery only...`);
+            const delhiveryResponse = await createDelhiveryReturnOrder(requestData, order);
+            
+            if (!delhiveryResponse || !delhiveryResponse.waybill) {
+                throw new Error('Delhivery returned empty response');
+            }
+            
+            carrierUsed = 'delhivery';
+            awbNumber = delhiveryResponse.waybill;
+            shipmentId = delhiveryResponse.shipment_id;
+            pickupDate = new Date().toISOString();
+            console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
+            
+        } else {
+            // Shiprocket with Delhivery fallback (default)
+            console.log(`[${requestId}] Using Shiprocket with Delhivery fallback...`);
+            
+            // Try Shiprocket first
+            let srResponse = null;
+
+            try {
+                srResponse = await createShiprocketReturnOrder(requestData, order);
+
+                if (!srResponse || !srResponse.shipment_id) {
+                    throw new Error('Shiprocket returned empty response');
+                }
+            } catch (shiprocketError) {
+                // Fallback to Delhivery
+                console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
+                
+                if (process.env.DELHIVERY_API_KEY) {
+                    try {
+                        const delhiveryResponse = await createDelhiveryReturnOrder(requestData, order);
+                        
+                        if (delhiveryResponse && delhiveryResponse.waybill) {
+                            carrierUsed = 'delhivery';
+                            awbNumber = delhiveryResponse.waybill;
+                            shipmentId = delhiveryResponse.shipment_id;
+                            pickupDate = new Date().toISOString();
+                            
+                            console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
+                        } else {
+                            throw new Error('Delhivery also failed to create shipment');
+                        }
+                    } catch (delhiveryError) {
+                        console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
+                        return null;
+                    }
+                } else {
+                    console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
+                    return null;
+                }
+            }
+
+            // If Shiprocket succeeded
+            if (srResponse && srResponse.shipment_id) {
+                carrierUsed = 'shiprocket';
+                awbNumber = srResponse.awb_code;
+                shipmentId = srResponse.shipment_id;
+                pickupDate = srResponse.pickup_scheduled_date;
+                console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+            }
         }
 
         return {
@@ -1969,79 +2019,126 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
         let shipmentId = null;
         let pickupDate = null;
 
-        if (!isFeeWaived && process.env.SHIPROCKET_EMAIL) {
-            console.log(`[${requestId}] Initiating Shiprocket Pickup (Background)...`);
+        if (!isFeeWaived) {
+            // Get carrier mode from settings
+            const carrierMode = await getSetting('carrier_mode', 'shiprocket_with_fallback');
+            console.log(`[${requestId}] Initiating background pickup with carrier mode: ${carrierMode}`);
             
-            // Try Shiprocket first
-            let srResponse = null;
-            let carrierUsed = 'shiprocket';
+            const requestData = {
+                requestId,
+                orderNumber: request.orderNumber,
+                customerPhone: request.customerPhone,
+                items: request.items
+            };
+            
+            let carrierUsed = null;
             let fallbackReason = null;
 
             try {
-                srResponse = await createShiprocketReturnOrder({
-                    requestId,
-                    orderNumber: request.orderNumber,
-                    customerPhone: request.customerPhone,
-                    items: request.items
-                }, null); // Force re-fetch Shopify Order
-
-                if (!srResponse || !srResponse.shipment_id) {
-                    throw new Error('Shiprocket returned empty response');
-                }
-            } catch (shiprocketError) {
-                // Fallback to Delhivery
-                fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
-                console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
-                
-                if (process.env.DELHIVERY_API_KEY) {
-                    try {
-                        const delhiveryResponse = await createDelhiveryReturnOrder({
-                            requestId,
-                            orderNumber: request.orderNumber,
-                            customerPhone: request.customerPhone,
-                            items: request.items
-                        }, null);
-                        
-                        if (delhiveryResponse && delhiveryResponse.waybill) {
-                            carrierUsed = 'delhivery';
-                            awbNumber = delhiveryResponse.waybill;
-                            shipmentId = delhiveryResponse.shipment_id;
-                            pickupDate = new Date().toISOString();
-                            
-                            updates.status = 'scheduled';
-                            updates.awbNumber = awbNumber;
-                            updates.shipmentId = shipmentId;
-                            updates.pickupDate = pickupDate;
-                            updates.carrier = carrierUsed;
-                            updates.carrierShipmentId = shipmentId;
-                            updates.carrierAwb = awbNumber;
-                            updates.carrierFallbackReason = fallbackReason;
-                            
-                            console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
-                        } else {
-                            throw new Error('Delhivery also failed to create shipment');
-                        }
-                    } catch (delhiveryError) {
-                        console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
-                        // Keep status as 'pending' for manual admin intervention
+                if (carrierMode === 'shiprocket_only') {
+                    // Shiprocket only mode
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
                     }
+                    
+                    console.log(`[${requestId}] Using Shiprocket only...`);
+                    const srResponse = await createShiprocketReturnOrder(requestData, null);
+                    
+                    if (!srResponse || !srResponse.shipment_id) {
+                        throw new Error('Shiprocket returned empty response');
+                    }
+                    
+                    carrierUsed = 'shiprocket';
+                    awbNumber = srResponse.awb_code;
+                    shipmentId = srResponse.shipment_id;
+                    pickupDate = srResponse.pickup_scheduled_date;
+                    console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    
+                } else if (carrierMode === 'delhivery_only') {
+                    // Delhivery only mode
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    
+                    console.log(`[${requestId}] Using Delhivery only...`);
+                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, null);
+                    
+                    if (!delhiveryResponse || !delhiveryResponse.waybill) {
+                        throw new Error('Delhivery returned empty response');
+                    }
+                    
+                    carrierUsed = 'delhivery';
+                    awbNumber = delhiveryResponse.waybill;
+                    shipmentId = delhiveryResponse.shipment_id;
+                    pickupDate = new Date().toISOString();
+                    console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
+                    
                 } else {
-                    console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
+                    // Shiprocket with Delhivery fallback (default)
+                    console.log(`[${requestId}] Using Shiprocket with Delhivery fallback...`);
+                    let srResponse = null;
+
+                    try {
+                        srResponse = await createShiprocketReturnOrder(requestData, null);
+
+                        if (!srResponse || !srResponse.shipment_id) {
+                            throw new Error('Shiprocket returned empty response');
+                        }
+                    } catch (shiprocketError) {
+                        // Fallback to Delhivery
+                        fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
+                        console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
+                        
+                        if (process.env.DELHIVERY_API_KEY) {
+                            try {
+                                const delhiveryResponse = await createDelhiveryReturnOrder(requestData, null);
+                                
+                                if (delhiveryResponse && delhiveryResponse.waybill) {
+                                    carrierUsed = 'delhivery';
+                                    awbNumber = delhiveryResponse.waybill;
+                                    shipmentId = delhiveryResponse.shipment_id;
+                                    pickupDate = new Date().toISOString();
+                                    console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
+                                } else {
+                                    throw new Error('Delhivery also failed to create shipment');
+                                }
+                            } catch (delhiveryError) {
+                                console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
+                                throw delhiveryError;
+                            }
+                        } else {
+                            console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
+                            throw shiprocketError;
+                        }
+                    }
+
+                    // If Shiprocket succeeded
+                    if (srResponse && srResponse.shipment_id) {
+                        carrierUsed = 'shiprocket';
+                        awbNumber = srResponse.awb_code;
+                        shipmentId = srResponse.shipment_id;
+                        pickupDate = srResponse.pickup_scheduled_date;
+                        console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    }
                 }
-            }
 
-            // If Shiprocket succeeded and no fallback was needed
-            if (srResponse && srResponse.shipment_id && carrierUsed === 'shiprocket') {
-                awbNumber = srResponse.awb_code;
-                shipmentId = srResponse.shipment_id;
-                pickupDate = srResponse.pickup_scheduled_date;
-
-                updates.status = 'scheduled';
-                updates.awbNumber = awbNumber;
-                updates.shipmentId = shipmentId;
-                updates.pickupDate = pickupDate;
-                updates.carrier = 'shiprocket';
-                console.log(`[${requestId}] ✅ Background Auto-Pickup Success: ${shipmentId}`);
+                // Update with success data
+                if (carrierUsed) {
+                    updates.status = 'scheduled';
+                    updates.awbNumber = awbNumber;
+                    updates.shipmentId = shipmentId;
+                    updates.pickupDate = pickupDate;
+                    updates.carrier = carrierUsed;
+                    updates.carrierShipmentId = shipmentId;
+                    updates.carrierAwb = awbNumber;
+                    if (fallbackReason) {
+                        updates.carrierFallbackReason = fallbackReason;
+                    }
+                    console.log(`[${requestId}] ✅ Background Auto-Pickup Success: ${shipmentId}`);
+                }
+            } catch (error) {
+                console.error(`[${requestId}] ❌ Background pickup failed:`, error.message);
+                // Keep status as 'pending' for manual admin intervention
             }
         } else if (isFeeWaived) {
             console.log(`[${requestId}] Fee-waived reason (${request.reason}): keeping pending for admin review.`);
@@ -2180,65 +2277,111 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
-        let carrierUsed = 'shiprocket';
+        let carrierUsed = null;
         let fallbackReason = null;
 
-        if (!isFeeWaived && !needsPayment && process.env.SHIPROCKET_EMAIL) {
-            console.log(`[${requestId}] Auto-Pickup: initiating Shiprocket for paid reason: ${req.body.reason}`);
+        if (!isFeeWaived && !needsPayment) {
+            // Get carrier mode from settings
+            const carrierMode = await getSetting('carrier_mode', 'shiprocket_with_fallback');
+            console.log(`[${requestId}] Auto-Pickup with carrier mode: ${carrierMode} for paid reason: ${req.body.reason}`);
             
-            // Try Shiprocket first
-            let srResponse = null;
+            const requestData = {
+                requestId,
+                orderNumber: req.body.orderNumber,
+                customerPhone: customerPhone,
+                items
+            };
 
             try {
-                srResponse = await createShiprocketReturnOrder({
-                    requestId,
-                    orderNumber: req.body.orderNumber,
-                    customerPhone: customerPhone,
-                    items
-                }, shopifyOrder);
-
-                if (!srResponse || !srResponse.shipment_id) {
-                    throw new Error('Shiprocket returned empty response');
-                }
-            } catch (shiprocketError) {
-                // Fallback to Delhivery
-                fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
-                console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
-                
-                if (process.env.DELHIVERY_API_KEY) {
-                    try {
-                        const delhiveryResponse = await createDelhiveryReturnOrder({
-                            requestId,
-                            orderNumber: req.body.orderNumber,
-                            customerPhone: customerPhone,
-                            items
-                        }, shopifyOrder);
-                        
-                        if (delhiveryResponse && delhiveryResponse.waybill) {
-                            carrierUsed = 'delhivery';
-                            awbNumber = delhiveryResponse.waybill;
-                            shipmentId = delhiveryResponse.shipment_id;
-                            pickupDate = new Date().toISOString();
-                            
-                            console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
-                        } else {
-                            throw new Error('Delhivery also failed to create shipment');
-                        }
-                    } catch (delhiveryError) {
-                        console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
-                        // Continue without shipment - will be pending
+                if (carrierMode === 'shiprocket_only') {
+                    // Shiprocket only mode
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
                     }
+                    
+                    console.log(`[${requestId}] Using Shiprocket only...`);
+                    const srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
+                    
+                    if (!srResponse || !srResponse.shipment_id) {
+                        throw new Error('Shiprocket returned empty response');
+                    }
+                    
+                    carrierUsed = 'shiprocket';
+                    awbNumber = srResponse.awb_code;
+                    shipmentId = srResponse.shipment_id;
+                    pickupDate = srResponse.pickup_scheduled_date;
+                    console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    
+                } else if (carrierMode === 'delhivery_only') {
+                    // Delhivery only mode
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    
+                    console.log(`[${requestId}] Using Delhivery only...`);
+                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
+                    
+                    if (!delhiveryResponse || !delhiveryResponse.waybill) {
+                        throw new Error('Delhivery returned empty response');
+                    }
+                    
+                    carrierUsed = 'delhivery';
+                    awbNumber = delhiveryResponse.waybill;
+                    shipmentId = delhiveryResponse.shipment_id;
+                    pickupDate = new Date().toISOString();
+                    console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
+                    
                 } else {
-                    console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
-                }
-            }
+                    // Shiprocket with Delhivery fallback (default)
+                    console.log(`[${requestId}] Using Shiprocket with Delhivery fallback...`);
+                    let srResponse = null;
 
-            // If Shiprocket succeeded and no fallback was needed
-            if (srResponse && srResponse.shipment_id && carrierUsed === 'shiprocket') {
-                awbNumber = srResponse.awb_code;
-                shipmentId = srResponse.shipment_id;
-                pickupDate = srResponse.pickup_scheduled_date;
-                console.log(`[${requestId}] ✅ Auto-Pickup Created: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    try {
+                        srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
+
+                        if (!srResponse || !srResponse.shipment_id) {
+                            throw new Error('Shiprocket returned empty response');
+                        }
+                    } catch (shiprocketError) {
+                        // Fallback to Delhivery
+                        fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
+                        console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
+                        
+                        if (process.env.DELHIVERY_API_KEY) {
+                            try {
+                                const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
+                                
+                                if (delhiveryResponse && delhiveryResponse.waybill) {
+                                    carrierUsed = 'delhivery';
+                                    awbNumber = delhiveryResponse.waybill;
+                                    shipmentId = delhiveryResponse.shipment_id;
+                                    pickupDate = new Date().toISOString();
+                                    console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
+                                } else {
+                                    throw new Error('Delhivery also failed to create shipment');
+                                }
+                            } catch (delhiveryError) {
+                                console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
+                                throw delhiveryError;
+                            }
+                        } else {
+                            console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
+                            throw shiprocketError;
+                        }
+                    }
+
+                    // If Shiprocket succeeded
+                    if (srResponse && srResponse.shipment_id) {
+                        carrierUsed = 'shiprocket';
+                        awbNumber = srResponse.awb_code;
+                        shipmentId = srResponse.shipment_id;
+                        pickupDate = srResponse.pickup_scheduled_date;
+                        console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    }
+                }
+            } catch (error) {
+                console.error(`[${requestId}] ❌ Auto-pickup failed:`, error.message);
+                // Continue without shipment - will be pending
             }
         } else if (isFeeWaived) {
             console.log(`[${requestId}] Reason (${req.body.reason}) is fee-waived. Deferring pickup for manual admin review.`);
@@ -2412,65 +2555,111 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
-        let carrierUsed = 'shiprocket';
+        let carrierUsed = null;
         let fallbackReason = null;
 
-        if (!isFeeWaivedReturn && !needsPayment && process.env.SHIPROCKET_EMAIL) {
-            console.log(`[${requestId}] Auto-Pickup: initiating Shiprocket for paid reason: ${req.body.reason}`);
+        if (!isFeeWaivedReturn && !needsPayment) {
+            // Get carrier mode from settings
+            const carrierMode = await getSetting('carrier_mode', 'shiprocket_with_fallback');
+            console.log(`[${requestId}] Auto-Pickup with carrier mode: ${carrierMode} for paid reason: ${req.body.reason}`);
             
-            // Try Shiprocket first
-            let srResponse = null;
+            const requestData = {
+                requestId,
+                orderNumber: req.body.orderNumber,
+                customerPhone: customerPhone,
+                items
+            };
 
             try {
-                srResponse = await createShiprocketReturnOrder({
-                    requestId,
-                    orderNumber: req.body.orderNumber,
-                    customerPhone: customerPhone,
-                    items
-                }, shopifyOrder);
-
-                if (!srResponse || !srResponse.shipment_id) {
-                    throw new Error('Shiprocket returned empty response');
-                }
-            } catch (shiprocketError) {
-                // Fallback to Delhivery
-                fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
-                console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
-                
-                if (process.env.DELHIVERY_API_KEY) {
-                    try {
-                        const delhiveryResponse = await createDelhiveryReturnOrder({
-                            requestId,
-                            orderNumber: req.body.orderNumber,
-                            customerPhone: customerPhone,
-                            items
-                        }, shopifyOrder);
-                        
-                        if (delhiveryResponse && delhiveryResponse.waybill) {
-                            carrierUsed = 'delhivery';
-                            awbNumber = delhiveryResponse.waybill;
-                            shipmentId = delhiveryResponse.shipment_id;
-                            pickupDate = new Date().toISOString();
-                            
-                            console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
-                        } else {
-                            throw new Error('Delhivery also failed to create shipment');
-                        }
-                    } catch (delhiveryError) {
-                        console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
-                        // Continue without shipment - will be pending
+                if (carrierMode === 'shiprocket_only') {
+                    // Shiprocket only mode
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
                     }
+                    
+                    console.log(`[${requestId}] Using Shiprocket only...`);
+                    const srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
+                    
+                    if (!srResponse || !srResponse.shipment_id) {
+                        throw new Error('Shiprocket returned empty response');
+                    }
+                    
+                    carrierUsed = 'shiprocket';
+                    awbNumber = srResponse.awb_code;
+                    shipmentId = srResponse.shipment_id;
+                    pickupDate = srResponse.pickup_scheduled_date;
+                    console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    
+                } else if (carrierMode === 'delhivery_only') {
+                    // Delhivery only mode
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    
+                    console.log(`[${requestId}] Using Delhivery only...`);
+                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
+                    
+                    if (!delhiveryResponse || !delhiveryResponse.waybill) {
+                        throw new Error('Delhivery returned empty response');
+                    }
+                    
+                    carrierUsed = 'delhivery';
+                    awbNumber = delhiveryResponse.waybill;
+                    shipmentId = delhiveryResponse.shipment_id;
+                    pickupDate = new Date().toISOString();
+                    console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
+                    
                 } else {
-                    console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
-                }
-            }
+                    // Shiprocket with Delhivery fallback (default)
+                    console.log(`[${requestId}] Using Shiprocket with Delhivery fallback...`);
+                    let srResponse = null;
 
-            // If Shiprocket succeeded and no fallback was needed
-            if (srResponse && srResponse.shipment_id && carrierUsed === 'shiprocket') {
-                awbNumber = srResponse.awb_code;
-                shipmentId = srResponse.shipment_id;
-                pickupDate = srResponse.pickup_scheduled_date;
-                console.log(`[${requestId}] ✅ Auto-Pickup Created: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    try {
+                        srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
+
+                        if (!srResponse || !srResponse.shipment_id) {
+                            throw new Error('Shiprocket returned empty response');
+                        }
+                    } catch (shiprocketError) {
+                        // Fallback to Delhivery
+                        fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
+                        console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
+                        
+                        if (process.env.DELHIVERY_API_KEY) {
+                            try {
+                                const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
+                                
+                                if (delhiveryResponse && delhiveryResponse.waybill) {
+                                    carrierUsed = 'delhivery';
+                                    awbNumber = delhiveryResponse.waybill;
+                                    shipmentId = delhiveryResponse.shipment_id;
+                                    pickupDate = new Date().toISOString();
+                                    console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
+                                } else {
+                                    throw new Error('Delhivery also failed to create shipment');
+                                }
+                            } catch (delhiveryError) {
+                                console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
+                                throw delhiveryError;
+                            }
+                        } else {
+                            console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
+                            throw shiprocketError;
+                        }
+                    }
+
+                    // If Shiprocket succeeded
+                    if (srResponse && srResponse.shipment_id) {
+                        carrierUsed = 'shiprocket';
+                        awbNumber = srResponse.awb_code;
+                        shipmentId = srResponse.shipment_id;
+                        pickupDate = srResponse.pickup_scheduled_date;
+                        console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    }
+                }
+            } catch (error) {
+                console.error(`[${requestId}] ❌ Auto-pickup failed:`, error.message);
+                // Continue without shipment - will be pending
             }
         } else if (isFeeWaivedReturn) {
             console.log(`[${requestId}] Reason (${req.body.reason}) is fee-waived. Deferring pickup for manual admin review.`);
@@ -2970,7 +3159,8 @@ app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
             auto_approve_reasons: await getSetting('auto_approve_reasons', ['size', 'fit']),
             warehouse_location: await getSetting('warehouse_location', null),
             cutoff_date_enabled: await getSetting('cutoff_date_enabled', false),
-            cutoff_date: await getSetting('cutoff_date', null)
+            cutoff_date: await getSetting('cutoff_date', null),
+            carrier_mode: await getSetting('carrier_mode', 'shiprocket_with_fallback')
         };
         res.json(settings);
     } catch (error) {

@@ -368,6 +368,483 @@
                         cursor: not-allowed;
                     }
                 </style>
+                <style>
+                    /* Full-Screen Settings Modal Styles */
+                    .modal-fullscreen {
+                        display: flex;
+                        align-items: stretch;
+                        justify-content: stretch;
+                    }
+                    
+                    .modal-fullscreen .modal-settings-fullscreen {
+                        width: 100vw;
+                        height: 100vh;
+                        max-width: 100%;
+                        max-height: 100%;
+                        margin: 0;
+                        border-radius: 0;
+                        overflow: hidden;
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    
+                    .settings-header {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 1.5rem 2rem;
+                        border-bottom: none;
+                        flex-shrink: 0;
+                    }
+                    
+                    .settings-header h2 {
+                        margin: 0;
+                        font-size: 1.75rem;
+                        font-weight: 600;
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                    }
+                    
+                    .settings-header h2 i {
+                        font-size: 1.5rem;
+                    }
+                    
+                    .settings-header .modal-close {
+                        color: white;
+                        opacity: 0.9;
+                        transition: opacity 0.2s;
+                    }
+                    
+                    .settings-header .modal-close:hover {
+                        opacity: 1;
+                    }
+                    
+                    .settings-loading {
+                        flex: 1;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 1rem;
+                        color: #6b7280;
+                    }
+                    
+                    .spinner-large {
+                        width: 48px;
+                        height: 48px;
+                        border: 4px solid #e5e7eb;
+                        border-top-color: #667eea;
+                        border-radius: 50%;
+                        animation: spin 1s linear infinite;
+                    }
+                    
+                    .settings-form-container {
+                        flex: 1;
+                        overflow-y: auto;
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    
+                    .settings-layout {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 2rem;
+                        padding: 2rem;
+                        flex: 1;
+                    }
+                    
+                    @media (max-width: 1024px) {
+                        .settings-layout {
+                            grid-template-columns: 1fr;
+                        }
+                    }
+                    
+                    .settings-column {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 1.5rem;
+                    }
+                    
+                    .settings-section {
+                        background: white;
+                        border: 1px solid #e5e7eb;
+                        border-radius: 12px;
+                        padding: 1.5rem;
+                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+                    }
+                    
+                    .settings-section h3 {
+                        margin: 0 0 1rem 0;
+                        font-size: 1.1rem;
+                        font-weight: 600;
+                        color: #111827;
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                    }
+                    
+                    .settings-section h3 i {
+                        color: #667eea;
+                    }
+                    
+                    .section-desc {
+                        font-size: 0.875rem;
+                        color: #6b7280;
+                        margin: 0 0 1rem 0;
+                    }
+                    
+                    /* Toggle Styles */
+                    .toggle-group {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 1rem;
+                    }
+                    
+                    .toggle-item {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        padding: 1rem;
+                        background: #f9fafb;
+                        border: 1px solid #e5e7eb;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    }
+                    
+                    .toggle-item:hover {
+                        background: #f3f4f6;
+                        border-color: #d1d5db;
+                    }
+                    
+                    .toggle-label {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        flex: 1;
+                    }
+                    
+                    .toggle-label i {
+                        font-size: 1.25rem;
+                        color: #667eea;
+                        width: 24px;
+                    }
+                    
+                    .toggle-title {
+                        font-weight: 600;
+                        color: #111827;
+                        font-size: 0.95rem;
+                    }
+                    
+                    .toggle-desc {
+                        font-size: 0.8rem;
+                        color: #6b7280;
+                        margin-top: 0.25rem;
+                    }
+                    
+                    .toggle-switch {
+                        width: 48px;
+                        height: 24px;
+                        accent-color: #667eea;
+                        cursor: pointer;
+                    }
+                    
+                    /* Carrier Options */
+                    .carrier-options {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 0.75rem;
+                    }
+                    
+                    .carrier-option {
+                        cursor: pointer;
+                    }
+                    
+                    .carrier-option input[type="radio"] {
+                        display: none;
+                    }
+                    
+                    .carrier-option-content {
+                        display: flex;
+                        align-items: center;
+                        gap: 1rem;
+                        padding: 1rem;
+                        background: #f9fafb;
+                        border: 2px solid #e5e7eb;
+                        border-radius: 8px;
+                        transition: all 0.2s;
+                    }
+                    
+                    .carrier-option input[type="radio"]:checked + .carrier-option-content {
+                        background: #ede9fe;
+                        border-color: #667eea;
+                        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+                    }
+                    
+                    .carrier-icon {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: 8px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 1.5rem;
+                        flex-shrink: 0;
+                    }
+                    
+                    .shiprocket-icon {
+                        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+                        color: white;
+                    }
+                    
+                    .delhivery-icon {
+                        background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+                        color: white;
+                    }
+                    
+                    .combo-icon {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                    }
+                    
+                    .carrier-info {
+                        flex: 1;
+                    }
+                    
+                    .carrier-name {
+                        font-weight: 600;
+                        color: #111827;
+                        font-size: 1rem;
+                        margin-bottom: 0.25rem;
+                    }
+                    
+                    .carrier-desc {
+                        font-size: 0.85rem;
+                        color: #6b7280;
+                    }
+                    
+                    .badge-recommended {
+                        display: inline-block;
+                        padding: 0.2rem 0.5rem;
+                        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                        color: white;
+                        font-size: 0.7rem;
+                        font-weight: 600;
+                        border-radius: 4px;
+                        margin-left: 0.5rem;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    
+                    /* Window Mode Options */
+                    .window-mode-options {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 0.75rem;
+                        margin-bottom: 1rem;
+                    }
+                    
+                    .window-mode-option {
+                        cursor: pointer;
+                    }
+                    
+                    .window-mode-option input[type="radio"] {
+                        display: none;
+                    }
+                    
+                    .window-mode-content {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        padding: 1rem;
+                        background: #f9fafb;
+                        border: 2px solid #e5e7eb;
+                        border-radius: 8px;
+                        transition: all 0.2s;
+                    }
+                    
+                    .window-mode-option input[type="radio"]:checked + .window-mode-content {
+                        background: #ede9fe;
+                        border-color: #667eea;
+                    }
+                    
+                    .window-mode-content i {
+                        font-size: 1.5rem;
+                        color: #667eea;
+                    }
+                    
+                    .window-mode-title {
+                        font-weight: 600;
+                        color: #111827;
+                        font-size: 0.95rem;
+                    }
+                    
+                    .window-mode-desc {
+                        font-size: 0.8rem;
+                        color: #6b7280;
+                        margin-top: 0.25rem;
+                    }
+                    
+                    .window-days-input {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 0.5rem;
+                    }
+                    
+                    .window-days-input label {
+                        font-weight: 600;
+                        color: #111827;
+                        font-size: 0.9rem;
+                    }
+                    
+                    .window-days-input input[type="number"] {
+                        width: 120px;
+                        padding: 0.75rem;
+                        border: 1px solid #d1d5db;
+                        border-radius: 6px;
+                        font-size: 1rem;
+                    }
+                    
+                    .help-text {
+                        font-size: 0.8rem;
+                        color: #6b7280;
+                        margin: 0;
+                    }
+                    
+                    /* Cutoff Section */
+                    .cutoff-section {
+                        background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+                        border-color: #fecaca;
+                    }
+                    
+                    .cutoff-section h3 {
+                        color: #991b1b;
+                    }
+                    
+                    .cutoff-section h3 i {
+                        color: #dc2626;
+                    }
+                    
+                    .cutoff-section .section-desc {
+                        color: #7f1d1d;
+                    }
+                    
+                    .cutoff-control {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 1rem;
+                    }
+                    
+                    .cutoff-date-input {
+                        padding: 0.75rem;
+                        border: 1px solid #d1d5db;
+                        border-radius: 6px;
+                        font-size: 1rem;
+                        width: 100%;
+                        max-width: 300px;
+                    }
+                    
+                    .cutoff-date-input:disabled {
+                        background: #f3f4f6;
+                        cursor: not-allowed;
+                    }
+                    
+                    /* Warehouse Select */
+                    .warehouse-select {
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid #d1d5db;
+                        border-radius: 6px;
+                        font-size: 0.95rem;
+                        background: white;
+                        cursor: pointer;
+                    }
+                    
+                    /* Reasons Grid */
+                    .reasons-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                        gap: 0.75rem;
+                    }
+                    
+                    .reasons-grid label {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        padding: 0.75rem;
+                        background: #f9fafb;
+                        border: 1px solid #e5e7eb;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        font-size: 0.9rem;
+                    }
+                    
+                    .reasons-grid label:hover {
+                        background: #f3f4f6;
+                        border-color: #d1d5db;
+                    }
+                    
+                    .reasons-grid input[type="checkbox"] {
+                        width: 18px;
+                        height: 18px;
+                        accent-color: #667eea;
+                        cursor: pointer;
+                    }
+                    
+                    /* Footer */
+                    .settings-footer {
+                        padding: 1.5rem 2rem;
+                        background: #f9fafb;
+                        border-top: 1px solid #e5e7eb;
+                        flex-shrink: 0;
+                    }
+                    
+                    .settings-result {
+                        padding: 0.75rem;
+                        border-radius: 6px;
+                        margin-bottom: 1rem;
+                        font-size: 0.9rem;
+                        font-weight: 500;
+                    }
+                    
+                    .settings-actions {
+                        display: flex;
+                        gap: 1rem;
+                        justify-content: flex-end;
+                    }
+                    
+                    .settings-actions .btn {
+                        padding: 0.75rem 2rem;
+                        font-size: 0.95rem;
+                        font-weight: 600;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    }
+                    
+                    .settings-actions .btn-primary {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                    }
+                    
+                    .settings-actions .btn-primary:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+                    }
+                    
+                    .settings-actions .btn-secondary {
+                        background: white;
+                        color: #111827;
+                        border: 1px solid #d1d5db;
+                    }
+                    
+                    .settings-actions .btn-secondary:hover {
+                        background: #f9fafb;
+                        border-color: #111827;
+                    }
+                </style>
                 <div id="paginationControls" class="premium-pagination">
                     <span id="pageInfo" class="premium-pagination-info">Showing <strong>0</strong> to <strong>0</strong> of <strong>0</strong> requests</span>
                     <div class="premium-pagination-actions">
@@ -464,99 +941,186 @@
 </div>
 
 <!-- ── Admin Settings Modal ── -->
-<div id="settingsModal" class="modal">
-    <div class="modal-content" style="max-width: 500px;">
-        <div class="modal-header">
-            <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px;">Dashboard Settings</h2>
+<div id="settingsModal" class="modal modal-fullscreen">
+    <div class="modal-content modal-settings-fullscreen">
+        <div class="modal-header settings-header">
+            <h2><i class="fas fa-cog"></i> Dashboard Settings</h2>
             <button class="modal-close" onclick="closeSettingsModal()">×</button>
         </div>
 
-        <div id="settings-loading" style="text-align:center; padding:2rem; color:#666;">Loading settings...</div>
+        <div id="settings-loading" class="settings-loading">
+            <div class="spinner-large"></div>
+            <p>Loading settings...</p>
+        </div>
 
-        <div id="settings-form" style="display:none;">
-            <!-- Master Switches -->
-            <div style="background:#f9fafb; padding:1.25rem; border-radius:6px; margin-bottom:1.5rem; border:1px solid #e5e7eb;">
-                <h3 style="font-size:1rem; margin:0 0 1rem 0;">Master Controls</h3>
-                
-                <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; cursor:pointer;">
-                    <span style="font-weight:500;">Enable Returns Portal</span>
-                    <input type="checkbox" id="set-allow-returns" style="width:18px;height:18px;accent-color:#111827;">
-                </label>
-                
-                <label style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
-                    <span style="font-weight:500;">Enable Exchanges Portal</span>
-                    <input type="checkbox" id="set-allow-exchanges" style="width:18px;height:18px;accent-color:#111827;">
-                </label>
-            </div>
-
-            <!-- Return/Exchange Window Mode -->
-            <div class="form-group" style="margin-bottom:1.5rem;">
-                <label style="font-weight:500; display:block; margin-bottom:0.5rem;">Return/Exchange Window Calculation</label>
-                <p style="font-size:0.8rem; color:#6b7280; margin:0 0 0.5rem 0;">Choose how to calculate the eligible period for returns/exchanges.</p>
-                
-                <div style="display:flex; gap:1rem; margin-bottom:1rem;">
-                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; flex:1; padding:0.75rem; border:1px solid #e5e7eb; border-radius:6px; background:#f9fafb;">
-                        <input type="radio" name="window-mode" value="delivery" id="set-window-mode-delivery" style="accent-color:#111827;" onchange="toggleWindowMode()">
-                        <div>
-                            <div style="font-weight:500; font-size:0.9rem;">From Delivery Date</div>
-                            <div style="font-size:0.75rem; color:#6b7280;">Days after order is delivered</div>
+        <div id="settings-form" class="settings-form-container" style="display:none;">
+            <div class="settings-layout">
+                <!-- Left Column -->
+                <div class="settings-column">
+                    <!-- Master Controls -->
+                    <div class="settings-section">
+                        <h3><i class="fas fa-toggle-on"></i> Master Controls</h3>
+                        <div class="toggle-group">
+                            <label class="toggle-item">
+                                <span class="toggle-label">
+                                    <i class="fas fa-undo"></i>
+                                    <div>
+                                        <div class="toggle-title">Enable Returns Portal</div>
+                                        <div class="toggle-desc">Allow customers to submit return requests</div>
+                                    </div>
+                                </span>
+                                <input type="checkbox" id="set-allow-returns" class="toggle-switch">
+                            </label>
+                            
+                            <label class="toggle-item">
+                                <span class="toggle-label">
+                                    <i class="fas fa-exchange-alt"></i>
+                                    <div>
+                                        <div class="toggle-title">Enable Exchanges Portal</div>
+                                        <div class="toggle-desc">Allow customers to submit exchange requests</div>
+                                    </div>
+                                </span>
+                                <input type="checkbox" id="set-allow-exchanges" class="toggle-switch">
+                            </label>
                         </div>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; flex:1; padding:0.75rem; border:1px solid #e5e7eb; border-radius:6px; background:#f9fafb;">
-                        <input type="radio" name="window-mode" value="order" id="set-window-mode-order" style="accent-color:#111827;" onchange="toggleWindowMode()">
-                        <div>
-                            <div style="font-weight:500; font-size:0.9rem;">From Order Date</div>
-                            <div style="font-size:0.75rem; color:#6b7280;">Days after order was placed</div>
+                    </div>
+
+                    <!-- Carrier Configuration -->
+                    <div class="settings-section">
+                        <h3><i class="fas fa-shipping-fast"></i> Carrier Configuration</h3>
+                        <p class="section-desc">Select which shipping carrier(s) to use for return pickups</p>
+                        
+                        <div class="carrier-options">
+                            <label class="carrier-option">
+                                <input type="radio" name="carrier-mode" value="shiprocket_only" id="carrier-shiprocket-only">
+                                <div class="carrier-option-content">
+                                    <div class="carrier-icon shiprocket-icon">
+                                        <i class="fas fa-rocket"></i>
+                                    </div>
+                                    <div class="carrier-info">
+                                        <div class="carrier-name">Shiprocket Only</div>
+                                        <div class="carrier-desc">Use only Shiprocket for all shipments</div>
+                                    </div>
+                                </div>
+                            </label>
+                            
+                            <label class="carrier-option">
+                                <input type="radio" name="carrier-mode" value="delhivery_only" id="carrier-delhivery-only">
+                                <div class="carrier-option-content">
+                                    <div class="carrier-icon delhivery-icon">
+                                        <i class="fas fa-truck"></i>
+                                    </div>
+                                    <div class="carrier-info">
+                                        <div class="carrier-name">Delhivery Only</div>
+                                        <div class="carrier-desc">Use only Delhivery for all shipments</div>
+                                    </div>
+                                </div>
+                            </label>
+                            
+                            <label class="carrier-option">
+                                <input type="radio" name="carrier-mode" value="shiprocket_with_fallback" id="carrier-shiprocket-fallback" checked>
+                                <div class="carrier-option-content">
+                                    <div class="carrier-icon combo-icon">
+                                        <i class="fas fa-layer-group"></i>
+                                    </div>
+                                    <div class="carrier-info">
+                                        <div class="carrier-name">Shiprocket + Delhivery Fallback <span class="badge-recommended">Recommended</span></div>
+                                        <div class="carrier-desc">Primary: Shiprocket, Fallback: Delhivery if Shiprocket fails</div>
+                                    </div>
+                                </div>
+                            </label>
                         </div>
-                    </label>
+                    </div>
+
+                    <!-- Return/Exchange Window Mode -->
+                    <div class="settings-section">
+                        <h3><i class="fas fa-clock"></i> Return/Exchange Window</h3>
+                        <p class="section-desc">Choose how to calculate the eligible period for returns/exchanges</p>
+                        
+                        <div class="window-mode-options">
+                            <label class="window-mode-option">
+                                <input type="radio" name="window-mode" value="delivery" id="set-window-mode-delivery" onchange="toggleWindowMode()">
+                                <div class="window-mode-content">
+                                    <i class="fas fa-box-open"></i>
+                                    <div>
+                                        <div class="window-mode-title">From Delivery Date</div>
+                                        <div class="window-mode-desc">Days after order is delivered</div>
+                                    </div>
+                                </div>
+                            </label>
+                            <label class="window-mode-option">
+                                <input type="radio" name="window-mode" value="order" id="set-window-mode-order" onchange="toggleWindowMode()">
+                                <div class="window-mode-content">
+                                    <i class="fas fa-calendar-check"></i>
+                                    <div>
+                                        <div class="window-mode-title">From Order Date</div>
+                                        <div class="window-mode-desc">Days after order was placed</div>
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                        
+                        <div id="window-days-container" class="window-days-input">
+                            <label>Window Duration (Days)</label>
+                            <input type="number" id="set-return-window" min="1" max="365">
+                            <p class="help-text" id="window-days-help">Number of days after delivery date</p>
+                        </div>
+                    </div>
                 </div>
-                
-                <div id="window-days-container">
-                    <label style="font-weight:500; display:block; margin-bottom:0.5rem; font-size:0.9rem;">Window Duration (Days)</label>
-                    <input type="number" id="set-return-window" min="1" max="365" style="width:100px; padding:0.5rem; border:1px solid #d1d5db; border-radius:4px;">
-                    <p style="font-size:0.8rem; color:#6b7280; margin:0.5rem 0 0 0;" id="window-days-help">Number of days after delivery date</p>
+
+                <!-- Right Column -->
+                <div class="settings-column">
+                    <!-- Cutoff Date -->
+                    <div class="settings-section cutoff-section">
+                        <h3><i class="fas fa-calendar-times"></i> Order Cutoff Date</h3>
+                        <p class="section-desc">Orders placed before this date will NOT be eligible for returns/exchanges</p>
+                        
+                        <div class="cutoff-control">
+                            <label class="toggle-item">
+                                <span class="toggle-label">
+                                    <i class="fas fa-lock"></i>
+                                    <div>
+                                        <div class="toggle-title">Enable cutoff date restriction</div>
+                                    </div>
+                                </span>
+                                <input type="checkbox" id="set-enable-cutoff" class="toggle-switch" onchange="toggleCutoffDate()">
+                            </label>
+                            <input type="date" id="set-cutoff-date" class="cutoff-date-input">
+                        </div>
+                    </div>
+
+                    <!-- Warehouse Location -->
+                    <div class="settings-section">
+                        <h3><i class="fas fa-warehouse"></i> Warehouse Location</h3>
+                        <p class="section-desc">Shiprocket pickup location for returns and replacement shipments</p>
+                        <select id="set-warehouse-location" class="warehouse-select">
+                            <option value="">Loading locations...</option>
+                        </select>
+                    </div>
+
+                    <!-- Auto-Approve Reasons -->
+                    <div class="settings-section">
+                        <h3><i class="fas fa-check-circle"></i> Auto-Approve Pickups</h3>
+                        <p class="section-desc">Select reasons that trigger automatic Shiprocket pickup on submission</p>
+                        
+                        <div class="reasons-grid" id="set-reasons-container">
+                            <!-- Checkboxes injected via JS -->
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Cutoff Date -->
-            <div class="form-group" style="margin-bottom:1.5rem; padding:1rem; background:#fef2f2; border:1px solid #fecaca; border-radius:6px;">
-                <label style="font-weight:500; display:block; margin-bottom:0.5rem; color:#991b1b;">Order Cutoff Date (Optional)</label>
-                <p style="font-size:0.8rem; color:#7f1d1d; margin:0 0 0.5rem 0;">Orders placed before this date will NOT be eligible for returns or exchanges. Leave empty to allow all orders.</p>
-                <input type="date" id="set-cutoff-date" style="width:200px; padding:0.5rem; border:1px solid #d1d5db; border-radius:4px;">
-                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.75rem; cursor:pointer;">
-                    <input type="checkbox" id="set-enable-cutoff" style="width:16px;height:16px;accent-color:#dc2626;" onchange="toggleCutoffDate()">
-                    <span style="font-size:0.9rem; color:#7f1d1d;">Enable cutoff date restriction</span>
-                </label>
-            </div>
-
-            <!-- Warehouse Location -->
-            <div class="form-group" style="margin-bottom:1.5rem;">
-                <label style="font-weight:500; display:block; margin-bottom:0.5rem;">Shiprocket Warehouse Location</label>
-                <p style="font-size:0.8rem; color:#6b7280; margin:0 0 0.5rem 0;">Select the Shiprocket pickup location where returned items should be sent, and from where replacement items will be shipped.</p>
-                <select id="set-warehouse-location" style="width:100%; padding:0.5rem; border:1px solid #d1d5db; border-radius:4px;">
-                    <option value="">Loading locations...</option>
-                </select>
-            </div>
-
-            <!-- Auto-Approve Reasons -->
-            <div class="form-group" style="margin-bottom:1.5rem;">
-                <label style="font-weight:500; display:block; margin-bottom:0.5rem;">Auto-Approve Pickups</label>
-                <p style="font-size:0.8rem; color:#6b7280; margin:0 0 0.75rem 0;">
-                    Select reasons that trigger an automatic Shiprocket pickup when the customer submits the form.
-                    <br>Unchecked reasons will require you to manually click "Approve" in the dashboard first.
-                </p>
-                
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;" id="set-reasons-container">
-                    <!-- Checkboxes injected via JS -->
+            <!-- Footer Actions -->
+            <div class="settings-footer">
+                <div id="settings-result" class="settings-result" style="display:none;"></div>
+                <div class="settings-actions">
+                    <button onclick="closeSettingsModal()" class="btn btn-secondary">Cancel</button>
+                    <button onclick="saveSettings()" class="btn btn-primary">
+                        <span id="save-settings-text">Save Changes</span>
+                        <span id="save-settings-spin" class="spinner hidden"></span>
+                    </button>
                 </div>
             </div>
-
-            <div id="settings-result" style="display:none; padding:0.75rem; border-radius:4px; margin-bottom:1rem; font-size:0.85rem;"></div>
-
-            <button onclick="saveSettings()" class="btn btn-primary" style="width:100%; background:#111827; border:none; margin-top:0.5rem;">
-                <span id="save-settings-text">Save Changes</span>
-                <span id="save-settings-spin" class="spinner hidden"></span>
-            </button>
         </div>
     </div>
 </div>
@@ -1992,6 +2556,10 @@
                 document.getElementById(`set-window-mode-${windowMode}`).checked = true;
                 toggleWindowMode(); // Update help text
                 
+                // Set carrier mode (default to 'shiprocket_with_fallback')
+                const carrierMode = data.carrier_mode || 'shiprocket_with_fallback';
+                document.getElementById(`carrier-${carrierMode}`).checked = true;
+                
                 // Set cutoff date
                 const hasCutoff = data.cutoff_date && data.cutoff_date_enabled;
                 document.getElementById('set-enable-cutoff').checked = hasCutoff;
@@ -2038,6 +2606,7 @@
         const approvedReasons = Array.from(document.querySelectorAll('.set-reason-cb:checked')).map(cb => cb.value);
 
         const windowMode = document.querySelector('input[name="window-mode"]:checked')?.value || 'delivery';
+        const carrierMode = document.querySelector('input[name="carrier-mode"]:checked')?.value || 'shiprocket_with_fallback';
         const cutoffEnabled = document.getElementById('set-enable-cutoff').checked;
         const cutoffDate = document.getElementById('set-cutoff-date').value;
         
@@ -2046,6 +2615,7 @@
             allow_exchanges: document.getElementById('set-allow-exchanges').checked,
             return_window_days: parseInt(document.getElementById('set-return-window').value, 10),
             return_window_mode: windowMode,
+            carrier_mode: carrierMode,
             cutoff_date_enabled: cutoffEnabled,
             cutoff_date: cutoffEnabled ? cutoffDate : null,
             auto_approve_reasons: approvedReasons
