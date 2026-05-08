@@ -372,9 +372,13 @@
                 <style>
                     /* Full-Screen Settings Modal Styles */
                     .modal-fullscreen {
-                        display: flex;
+                        display: none;
                         align-items: stretch;
                         justify-content: stretch;
+                    }
+                    
+                    .modal-fullscreen.active {
+                        display: flex;
                     }
                     
                     .modal-fullscreen .modal-settings-fullscreen {
