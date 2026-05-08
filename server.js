@@ -1317,6 +1317,7 @@ async function schedulePickup(token, requestId, order, items, type) {
         let shipmentId = null;
         let pickupDate = null;
         let carrierUsed = null;
+        let fallbackReason = null;
         
         // Prepare request data for Shiprocket/Delhivery
         const requestData = {
@@ -1382,6 +1383,7 @@ async function schedulePickup(token, requestId, order, items, type) {
                 }
             } catch (shiprocketError) {
                 // Fallback to Delhivery
+                fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
                 console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
                 
                 if (process.env.DELHIVERY_API_KEY) {
@@ -1422,7 +1424,8 @@ async function schedulePickup(token, requestId, order, items, type) {
             awbNumber,
             shipmentId,
             pickupDate,
-            carrier: carrierUsed
+            carrier: carrierUsed,
+            fallbackReason: fallbackReason
         };
     } catch (error) {
         console.error(`[${requestId}] schedulePickup error:`, error.message);
@@ -3503,8 +3506,8 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
             }));
         }
 
-        // ── Schedule pickup via Shiprocket ────────────────────────────────────
-        let awbNumber = null, shipmentId = null, pickupDate = null;
+        // ── Schedule pickup via carrier (respects carrier_mode setting) ────────────────────────────────────
+        let awbNumber = null, shipmentId = null, pickupDate = null, carrierUsed = null, fallbackReason = null;
         try {
             const shiprocketToken = await getShiprocketToken();
             if (shiprocketToken) {
@@ -3513,10 +3516,12 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
                     awbNumber = pickupResult.awbNumber;
                     shipmentId = pickupResult.shipmentId;
                     pickupDate = pickupResult.pickupDate;
+                    carrierUsed = pickupResult.carrier;
+                    fallbackReason = pickupResult.fallbackReason;
                 }
             }
         } catch (srErr) {
-            console.warn(`[ADMIN CREATE] Shiprocket booking failed (non-fatal):`, srErr.message);
+            console.warn(`[ADMIN CREATE] Pickup scheduling failed (non-fatal):`, srErr.message);
         }
 
         // ── Insert into DB ────────────────────────────────────────────────────
@@ -3540,16 +3545,22 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
             awbNumber,
             shipmentId,
             pickupDate,
+            carrier: carrierUsed || 'shiprocket',
+            carrierShipmentId: shipmentId,
+            carrierAwb: awbNumber,
+            carrierFallbackReason: fallbackReason,
             adminNotes: `Manually created by admin on ${new Date().toLocaleDateString('en-IN')}`
         });
 
-        console.log(`[ADMIN CREATE] ${requestId} ✅ Created successfully (AWB: ${awbNumber || 'N/A'})`);
+        console.log(`[ADMIN CREATE] ${requestId} ✅ Created successfully (Carrier: ${carrierUsed || 'N/A'}, AWB: ${awbNumber || 'N/A'})`);
 
         res.json({
             success: true,
             requestId,
             awbNumber: awbNumber || null,
+            shipmentId: shipmentId || null,
             pickupDate: pickupDate || null,
+            carrier: carrierUsed || null,
             status: (awbNumber || shipmentId) ? 'scheduled' : 'pending',
             message: `Request ${requestId} created successfully`
         });
@@ -3604,88 +3615,7 @@ app.post('/api/admin/lookup-order-force', authenticateAdmin, async (req, res) =>
     }
 });
 
-// ── Admin: Create Request manually (Bypass rules, overrides) ──
-app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
-    try {
-        const { orderNumber, type, reason, comments, items, overrideExisting } = req.body;
 
-        if (!orderNumber || !type || !reason || !items || items.length === 0) {
-            return res.status(400).json({ error: 'Missing required configuration (type, reason, items).' });
-        }
-
-        const requestId = await generateUniqueRequestId();
-
-        // Fetch Order for full details
-        let shopifyOrder = null;
-        let originalAddressFormatted = '';
-        try {
-            let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&status=any&limit=1`);
-
-            if (!shopifyData.orders || shopifyData.orders.length === 0) {
-                const retryOrderNumber = orderNumber.startsWith('#') ? orderNumber.substring(1) : '#' + orderNumber;
-                shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=1`);
-            }
-
-            shopifyOrder = shopifyData.orders && shopifyData.orders[0];
-
-            if (shopifyOrder && shopifyOrder.shipping_address) {
-                const addr = shopifyOrder.shipping_address;
-                originalAddressFormatted = [
-                    addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country
-                ].filter(Boolean).join(', ');
-            }
-        } catch (err) {
-            console.error(`[ADMIN CREATE] Failed to fetch Shopify order:`, err);
-        }
-
-        if (!shopifyOrder) return res.status(404).json({ error: 'Order not found in Shopify' });
-
-        // Duplicate Guard
-        const existingRequests = await getRequestsByOrderNumber(shopifyOrder.name);
-        const active = existingRequests.filter(r => r.status !== 'rejected');
-
-        if (active.length > 0 && !overrideExisting) {
-            return res.status(409).json({
-                error: `Order already has an active request (${active[0].requestId}). Check 'Override Existing Request' to proceed anyway.`
-            });
-        }
-
-        const customerName = shopifyOrder.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer';
-        const customerPhone = shopifyOrder.shipping_address?.phone || shopifyOrder.customer?.phone || '9999999999';
-        const email = shopifyOrder.email || 'returns@offcomfort.com';
-
-        const requestData = {
-            requestId,
-            orderNumber: shopifyOrder.name,
-            email,
-            customerEmail: email,
-            customerName,
-            customerPhone,
-            items,
-            images: [],
-            reason,
-            comments: comments || '',
-            type,
-            shippingAddress: originalAddressFormatted,
-            status: 'pending', // Admins manually approve it on the dashboard subsequently
-            paymentAmount: 0,
-            paymentId: null,
-            adminNotes: 'Manually created by Admin'
-        };
-
-        await createRequest(requestData);
-
-        return res.json({
-            success: true,
-            requestId,
-            status: 'pending'
-        });
-
-    } catch (error) {
-        console.error('Admin create-request error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
 
 // Sync Status Endpoint - lightweight status check (sync runs automatically in background)
 app.get('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
