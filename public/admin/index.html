@@ -1095,8 +1095,18 @@
                 </div>
                 <div>
                     <p style="font-size: 0.8rem; color: var(--gray-dark);">Status</p>
-                    <p><span class="badge badge-${data.status.replace(/_/g, '-')}">${getStatusLabel(data.status)}</span></p>
+                    <p><span class="badge badge-${data.status.replace(/_/g, '-')} tracking-status-toggle" 
+                             onclick="toggleTrackingPipeline()" 
+                             style="cursor: pointer;"
+                             title="Click to view full tracking pipeline">
+                        ${getStatusLabel(data.status)}
+                        <span style="font-size: 0.7em; margin-left: 4px; opacity: 0.7;">(click to expand)</span>
+                    </span></p>
                 </div>
+            </div>
+
+            <div id="trackingPipeline" class="tracking-pipeline hidden">
+                ${buildTrackingPipeline(data)}
             </div>
 
             <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
@@ -1243,6 +1253,138 @@
         } else {
             modalActions.classList.add('hidden');
         }
+    }
+
+    // Toggle tracking pipeline visibility
+    function toggleTrackingPipeline() {
+        const pipeline = document.getElementById('trackingPipeline');
+        if (pipeline) {
+            pipeline.classList.toggle('hidden');
+        }
+    }
+
+    // Build tracking pipeline HTML from Shiprocket data
+    function buildTrackingPipeline(data) {
+        if (!data.shipment && !data.forwardShipment) {
+            return `
+                <div class="tracking-empty">
+                    <p>No tracking information available yet.</p>
+                    <p style="font-size: 0.85rem; color: var(--gray-dark);">Tracking will appear once the shipment is booked with the courier.</p>
+                </div>
+            `;
+        }
+
+        let html = '';
+
+        // Return Shipment Section
+        if (data.shipment) {
+            html += buildShipmentTimeline(data.shipment, 'Return Shipment', data.type === 'return');
+        }
+
+        // Forward Shipment Section (for exchanges)
+        if (data.forwardShipment && data.type === 'exchange') {
+            html += buildShipmentTimeline(data.forwardShipment, 'Forward Shipment (Replacement)', true);
+        }
+
+        return html;
+    }
+
+    function buildShipmentTimeline(shipment, title, isPrimary) {
+        const activities = shipment.activities || [];
+        const hasActivities = activities.length > 0;
+
+        // Header info
+        let html = `
+            <div class="tracking-shipment-section ${isPrimary ? 'primary' : ''}">
+                <div class="tracking-header">
+                    <div class="tracking-header-title">
+                        <h4>${title}</h4>
+                        ${shipment.awb ? `<span class="tracking-awb">AWB: ${shipment.awb}</span>` : ''}
+                    </div>
+                    <div class="tracking-header-meta">
+                        ${shipment.courierName ? `<span class="tracking-courier">${shipment.courierName}</span>` : ''}
+                        ${shipment.edd ? `<span class="tracking-edd">Est. Delivery: ${formatDateIST(shipment.edd)}</span>` : ''}
+                    </div>
+                </div>
+        `;
+
+        if (!hasActivities) {
+            html += `
+                <div class="tracking-empty" style="padding: 1rem 0;">
+                    <p>Status: <strong>${shipment.status || 'Pending'}</strong></p>
+                    <p style="font-size: 0.85rem; color: var(--gray-dark);">Detailed scan events will appear once the courier updates the tracking.</p>
+                </div>
+            `;
+        } else {
+            // Sort activities by date descending (latest first)
+            const sortedActivities = [...activities].reverse();
+
+            html += `<div class="tracking-timeline">`;
+
+            sortedActivities.forEach((activity, index) => {
+                const isLatest = index === 0;
+                const dateStr = activity.date ? formatDateIST(activity.date + (activity.time ? 'T' + activity.time : '')) : 'N/A';
+                const status = activity.status || activity.activity || 'Update';
+                const location = activity.location || '';
+                const isDelivered = status.toLowerCase().includes('delivered');
+                const isOutForDelivery = status.toLowerCase().includes('out for delivery');
+                const isInTransit = status.toLowerCase().includes('in transit') || status.toLowerCase().includes('shipped');
+
+                let statusClass = 'completed';
+                if (isLatest) statusClass = 'active';
+                if (isDelivered) statusClass = 'delivered';
+                else if (isOutForDelivery) statusClass = 'out-for-delivery';
+                else if (isInTransit) statusClass = 'in-transit';
+
+                html += `
+                    <div class="timeline-item ${statusClass}">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-status">${status}</div>
+                            ${location ? `<div class="timeline-location">${location}</div>` : ''}
+                            <div class="timeline-date">${dateStr}</div>
+                            ${activity.activity ? `<div class="timeline-detail">${activity.activity}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+        }
+
+        // Origin to destination summary
+        if (shipment.origin || shipment.destination) {
+            html += `
+                <div class="tracking-route">
+                    <span class="route-origin">${shipment.origin || 'Origin'}</span>
+                    <span class="route-arrow">&#8594;</span>
+                    <span class="route-destination">${shipment.destination || 'Destination'}</span>
+                </div>
+            `;
+        }
+
+        // Delivered info
+        if (shipment.deliveredDate) {
+            html += `
+                <div class="tracking-delivered">
+                    <span class="delivered-check">&#10003;</span>
+                    Delivered on ${formatDateIST(shipment.deliveredDate)}
+                    ${shipment.deliveredTo ? ` to ${shipment.deliveredTo}` : ''}
+                </div>
+            `;
+        }
+
+        // Track URL
+        if (shipment.trackUrl) {
+            html += `
+                <div class="tracking-link">
+                    <a href="${shipment.trackUrl}" target="_blank" rel="noopener">View on Shiprocket &#8599;</a>
+                </div>
+            `;
+        }
+
+        html += `</div>`;
+        return html;
     }
 
     async function approveRequest() {

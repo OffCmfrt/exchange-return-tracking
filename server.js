@@ -1961,18 +1961,26 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`);
                 if (trackingData && trackingData.tracking_data) {
                     const tracking = trackingData.tracking_data;
+                    const activities = tracking.shipment_track || [];
                     request.shipment = {
                         origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
                         destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
                         status: tracking.current_status || 'Pending',
                         edd: tracking.edd || tracking.etd || null,
-                        activities: tracking.shipment_track || []
+                        activities: activities,
+                        courierName: tracking.courier_name || null,
+                        deliveredDate: tracking.delivered_date || null,
+                        deliveredTo: tracking.delivered_to || null,
+                        trackUrl: tracking.track_url || null,
+                        awb: request.awbNumber,
+                        pickupDate: activities.length > 0 ? activities[activities.length - 1].date : null,
+                        packageCount: tracking.packages ? tracking.packages.length : null
                     };
                 }
             } catch (err) {
                 if (err.message.toLowerCase().includes('cancelled') || err.message.toLowerCase().includes('canceled')) {
                     console.log(`[Tracking API] Return Shipment (${request.awbNumber}) is cancelled in Shiprocket.`);
-                    request.shipment = { status: 'Cancelled', edd: null, activities: [] };
+                    request.shipment = { status: 'Cancelled', edd: null, activities: [], awb: request.awbNumber };
                 } else {
                     console.error(`[Tracking API] Return Shipment (${request.awbNumber}) failed:`, err.message);
                 }
@@ -1983,11 +1991,20 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                 const trackingData = await shiprocketAPI(`/courier/track/awb/${request.forwardAwbNumber}`);
                 if (trackingData && trackingData.tracking_data) {
                     const tracking = trackingData.tracking_data;
+                    const activities = tracking.shipment_track || [];
                     request.forwardShipment = {
                         awb: request.forwardAwbNumber,
                         status: tracking.current_status || 'Scheduled',
                         edd: tracking.edd || tracking.etd || null,
-                        activities: tracking.shipment_track || []
+                        activities: activities,
+                        courierName: tracking.courier_name || null,
+                        deliveredDate: tracking.delivered_date || null,
+                        deliveredTo: tracking.delivered_to || null,
+                        trackUrl: tracking.track_url || null,
+                        origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
+                        destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
+                        pickupDate: activities.length > 0 ? activities[activities.length - 1].date : null,
+                        packageCount: tracking.packages ? tracking.packages.length : null
                     };
                 }
             } catch (err) {

@@ -590,3 +590,324 @@ header {
     max-width: 1400px;
     margin: 0 auto;
 }
+
+/* ============================================================
+   TRACKING PIPELINE & TIMELINE STYLES
+   ============================================================ */
+
+.tracking-pipeline {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    animation: fadeIn 0.3s ease;
+}
+
+.tracking-pipeline.hidden {
+    display: none;
+}
+
+.tracking-empty {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #64748b;
+}
+
+.tracking-empty p {
+    margin: 0.25rem 0;
+}
+
+/* Shipment Section */
+.tracking-shipment-section {
+    margin-bottom: 1.5rem;
+}
+
+.tracking-shipment-section:last-child {
+    margin-bottom: 0;
+}
+
+.tracking-shipment-section.primary {
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 1.5rem;
+}
+
+.tracking-shipment-section.primary:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+/* Header */
+.tracking-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.tracking-header-title h4 {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.tracking-awb {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #475569;
+    background: #e2e8f0;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+}
+
+.tracking-header-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.tracking-courier {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #334155;
+    background: #dbeafe;
+    padding: 0.25rem 0.6rem;
+    border-radius: 20px;
+}
+
+.tracking-edd {
+    font-size: 0.8rem;
+    color: #059669;
+    background: #d1fae5;
+    padding: 0.25rem 0.6rem;
+    border-radius: 20px;
+}
+
+/* Timeline */
+.tracking-timeline {
+    position: relative;
+    padding-left: 1.5rem;
+}
+
+.tracking-timeline::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: #cbd5e1;
+}
+
+.timeline-item {
+    position: relative;
+    padding-bottom: 1.25rem;
+}
+
+.timeline-item:last-child {
+    padding-bottom: 0;
+}
+
+.timeline-dot {
+    position: absolute;
+    left: -1.5rem;
+    top: 4px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #94a3b8;
+    border: 2px solid #f8fafc;
+    box-shadow: 0 0 0 2px #cbd5e1;
+    z-index: 1;
+}
+
+.timeline-item.active .timeline-dot {
+    background: #3b82f6;
+    box-shadow: 0 0 0 2px #3b82f6, 0 0 0 4px rgba(59, 130, 246, 0.2);
+    animation: pulse 2s infinite;
+}
+
+.timeline-item.delivered .timeline-dot {
+    background: #22c55e;
+    box-shadow: 0 0 0 2px #22c55e;
+}
+
+.timeline-item.out-for-delivery .timeline-dot {
+    background: #f59e0b;
+    box-shadow: 0 0 0 2px #f59e0b;
+}
+
+.timeline-item.in-transit .timeline-dot {
+    background: #6366f1;
+    box-shadow: 0 0 0 2px #6366f1;
+}
+
+.timeline-content {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+}
+
+.timeline-status {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #1e293b;
+    margin-bottom: 0.25rem;
+}
+
+.timeline-item.active .timeline-status {
+    color: #2563eb;
+}
+
+.timeline-item.delivered .timeline-status {
+    color: #16a34a;
+}
+
+.timeline-location {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-bottom: 0.25rem;
+}
+
+.timeline-date {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    font-weight: 500;
+}
+
+.timeline-detail {
+    font-size: 0.85rem;
+    color: #475569;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed #e2e8f0;
+}
+
+/* Route */
+.tracking-route {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: white;
+    border-radius: 8px;
+    border: 1px dashed #cbd5e1;
+}
+
+.route-origin,
+.route-destination {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.route-arrow {
+    color: #94a3b8;
+    font-size: 1.1rem;
+}
+
+/* Delivered Banner */
+.tracking-delivered {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    color: #166534;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.delivered-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: #22c55e;
+    color: white;
+    border-radius: 50%;
+    font-size: 0.75rem;
+}
+
+/* Track Link */
+.tracking-link {
+    margin-top: 0.75rem;
+    text-align: right;
+}
+
+.tracking-link a {
+    font-size: 0.85rem;
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.tracking-link a:hover {
+    text-decoration: underline;
+}
+
+/* Clickable Status Toggle */
+.tracking-status-toggle {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.tracking-status-toggle:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Pulse Animation for Active Status */
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 2px #3b82f6, 0 0 0 4px rgba(59, 130, 246, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 0 2px #3b82f6, 0 0 0 8px rgba(59, 130, 246, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 2px #3b82f6, 0 0 0 4px rgba(59, 130, 246, 0.2);
+    }
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+    .tracking-header {
+        flex-direction: column;
+    }
+
+    .tracking-header-meta {
+        width: 100%;
+    }
+
+    .tracking-timeline {
+        padding-left: 1.25rem;
+    }
+
+    .timeline-dot {
+        left: -1.25rem;
+        width: 12px;
+        height: 12px;
+    }
+
+    .tracking-route {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .route-arrow {
+        transform: rotate(90deg);
+    }
+}
