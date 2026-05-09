@@ -410,7 +410,7 @@ async function performShopifyUsageSync() {
     isShopifySyncRunning = true;
     lastShopifySyncTimestamp = new Date().toISOString();
 
-    console.log('[Shopify Usage Sync] Starting Shopify usage data sync...');
+    console.log('[Shopify Usage Sync] Starting Shopify usage & stats sync...');
 
     try {
         const { createClient } = require('@supabase/supabase-js');
@@ -427,52 +427,92 @@ async function performShopifyUsageSync() {
             return;
         }
 
+        console.log(`[Shopify Usage Sync] Fetching orders from Shopify (last 60 days)...`);
+        
+        // Fetch orders from Shopify ONCE for all influencers (last 60 days)
+        const sixtyDaysAgo = new Date();
+        sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+        
+        let allOrders = [];
+        let nextUrl = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,currency,financial_status&created_at_min=${encodeURIComponent(sixtyDaysAgo.toISOString())}`;
+        let pageCount = 0;
+        
+        while (nextUrl && pageCount < 20) {
+            pageCount++;
+            
+            const response = await fetch(`https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/${nextUrl}`, {
+                headers: {
+                    'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const data = await response.json();
+            const batch = data.orders || [];
+            allOrders = allOrders.concat(batch);
+            
+            console.log(`[Shopify Usage Sync] Page ${pageCount}: ${batch.length} orders (total: ${allOrders.length})`);
+            
+            // Extract next URL from Link header
+            const linkHeader = response.headers.get('Link');
+            if (linkHeader) {
+                const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+                nextUrl = nextMatch ? nextMatch[1] : null;
+            } else {
+                nextUrl = null;
+            }
+        }
+        
+        console.log(`[Shopify Usage Sync] ✅ Fetched ${allOrders.length} total orders\n`);
+
         let syncedCount = 0;
         let failedCount = 0;
 
+        // Calculate stats for each influencer
         for (const influencer of influencers) {
             try {
-                const priceRuleId = influencer.shopify_price_rule_id;
-                const discountCodeId = influencer.shopify_discount_code_id;
-
-                if (!priceRuleId || !discountCodeId) {
-                    console.log(`[Shopify Usage Sync] ⚠️  ${influencer.name} (${influencer.referral_code}) - No Shopify IDs, skipping`);
-                    continue;
-                }
-
-                // Fetch usage data from Shopify
-                const response = await fetch(
-                    `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/price_rules/${priceRuleId}/discount_codes/${discountCodeId}.json`,
-                    {
-                        method: 'GET',
-                        headers: {
-                            'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
-                            'Content-Type': 'application/json'
-                        }
-                    }
+                const referralCode = influencer.referral_code.toUpperCase();
+                
+                // Find orders with this influencer's code
+                const attributedOrders = allOrders.filter(order => {
+                    // Skip cancelled orders
+                    if (order.cancelled_at) return false;
+                    
+                    // Skip orders with no discount codes
+                    if (!order.discount_codes || order.discount_codes.length === 0) return false;
+                    
+                    // Check if order used this code
+                    return order.discount_codes.some(dc => dc.code.toUpperCase() === referralCode);
+                });
+                
+                // Calculate stats
+                const usageCount = attributedOrders.length;
+                const totalRevenue = attributedOrders.reduce((sum, order) => 
+                    sum + parseFloat(order.total_price || 0), 0
                 );
+                const commissionRate = parseFloat(influencer.commission_rate || 10);
+                const estimatedEarnings = totalRevenue * (commissionRate / 100);
+                
+                // Update stats in Supabase
+                const { error: updateError } = await supabase
+                    .from('influencers')
+                    .update({
+                        usage_count: usageCount,
+                        total_revenue: totalRevenue,
+                        total_orders: usageCount,
+                        estimated_earnings: estimatedEarnings,
+                        stats_last_updated: new Date().toISOString(),
+                        stats_date_range: 'last_60_days',
+                        last_synced_at: new Date().toISOString()
+                    })
+                    .eq('id', influencer.id);
 
-                const data = await response.json();
-
-                if (data.discount_code) {
-                    const usageCount = data.discount_code.usage_count || 0;
-
-                    // Update usage_count in Supabase
-                    const { error: updateError } = await supabase
-                        .from('influencers')
-                        .update({
-                            usage_count: usageCount,
-                            last_synced_at: new Date().toISOString()
-                        })
-                        .eq('id', influencer.id);
-
-                    if (updateError) {
-                        console.error(`[Shopify Usage Sync] ❌ ${influencer.name} - Error updating: ${updateError.message}`);
-                        failedCount++;
-                    } else {
-                        console.log(`[Shopify Usage Sync] ✅ ${influencer.name} (${influencer.referral_code}) - Usage: ${usageCount}`);
-                        syncedCount++;
-                    }
+                if (updateError) {
+                    console.error(`[Shopify Usage Sync] ❌ ${influencer.name} - Error updating: ${updateError.message}`);
+                    failedCount++;
+                } else {
+                    console.log(`[Shopify Usage Sync] ✅ ${influencer.name} (${influencer.referral_code}) - Orders: ${usageCount}, Revenue: ₹${totalRevenue.toFixed(2)}, Earnings: ₹${estimatedEarnings.toFixed(2)}`);
+                    syncedCount++;
                 }
             } catch (error) {
                 console.error(`[Shopify Usage Sync] ❌ ${influencer.name} - Error: ${error.message}`);
@@ -480,7 +520,7 @@ async function performShopifyUsageSync() {
             }
         }
 
-        console.log(`[Shopify Usage Sync] Completed: ${syncedCount} synced, ${failedCount} failed`);
+        console.log(`\n[Shopify Usage Sync] ✅ Completed: ${syncedCount} synced, ${failedCount} failed`);
 
     } catch (error) {
         console.error('[Shopify Usage Sync] Fatal error:', error);
@@ -4346,8 +4386,7 @@ app.delete('/api/influencer-admin/remove/:id', authenticateAdmin, async (req, re
 app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        const { range } = req.query; // '30d', '90d', 'custom', or 'all'
-        const { startDate, endDate } = req.query; // for custom range
+        const { range } = req.query; // '30d', '90d', 'all'
 
         // Get influencer details
         const influencer = await getInfluencerById(id);
@@ -4357,102 +4396,51 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
 
         const referralCode = influencer.referral_code;
         const commissionRate = parseFloat(influencer.commission_rate || 10);
-        console.log(`[Admin Influencer Stats] Fetching stats for ${influencer.name} (Code: ${referralCode}, Range: ${range || 'all'})`);
+        console.log(`[Admin Influencer Stats] Fetching cached stats for ${influencer.name} (Code: ${referralCode})`);
 
-        // Determine date range
-        let createdAtMin = null;
-        let createdAtMax = null;
-        
-        if (range === '30d') {
-            const d = new Date();
-            d.setDate(d.getDate() - 30);
-            createdAtMin = d.toISOString();
-        } else if (range === '90d') {
-            const d = new Date();
-            d.setDate(d.getDate() - 90);
-            createdAtMin = d.toISOString();
-        } else if (range === 'custom' && startDate && endDate) {
-            createdAtMin = new Date(startDate).toISOString();
-            createdAtMax = new Date(endDate);
-            createdAtMax.setHours(23, 59, 59, 999);
-            createdAtMax = createdAtMax.toISOString();
+        // FAST: Read pre-calculated stats from Supabase (no Shopify API calls!)
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+        const { data: influencerData, error } = await supabase
+            .from('influencers')
+            .select('total_revenue, total_orders, estimated_earnings, stats_last_updated, stats_date_range')
+            .eq('id', id)
+            .single();
+
+        if (error) {
+            console.error('[Admin Influencer Stats] Error fetching stats:', error);
+            // Fallback: return zeros if stats columns don't exist yet
+            return res.json({
+                success: true,
+                influencer: {
+                    id: influencer.id,
+                    name: influencer.name,
+                    referralCode: influencer.referral_code,
+                    commissionRate: commissionRate,
+                    phone: influencer.phone
+                },
+                stats: {
+                    totalRevenue: '0.00',
+                    orderCount: 0,
+                    aov: '0.00',
+                    estimatedEarnings: '0.00',
+                    commissionRate,
+                    currency: 'INR',
+                    dateRange: { from: null, to: null },
+                    cached: false,
+                    message: 'Stats columns not yet added. Run SQL migration and trigger sync.'
+                },
+                recentConversions: []
+            });
         }
 
-        // Paginated Shopify fetch — collects ALL matching orders across all statuses
-        // OPTIMIZATION: Only fetch last 180 days max to avoid timeout on large stores
-        let allOrders = [];
-        
-        // If range is 'all', default to last 180 days to prevent timeout
-        if (!createdAtMin) {
-            const defaultStart = new Date();
-            defaultStart.setDate(defaultStart.getDate() - 180);
-            createdAtMin = defaultStart.toISOString();
-            console.log(`[Admin Influencer Stats] Defaulting to last 180 days to prevent timeout`);
-        }
-        
-        let nextUrl = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,currency,financial_status,fulfillment_status${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
-
-        console.log(`[Admin Influencer Stats] Starting pagination fetch for influencer stats...`);
-
-        let pageCount = 0;
-        const maxPages = 20; // Safety limit: max 5000 orders (20 pages × 250)
-        
-        while (nextUrl && pageCount < maxPages) {
-            pageCount++;
-            const shopifyData = await shopifyAPI(nextUrl);
-            const batch = shopifyData.orders || [];
-            allOrders = allOrders.concat(batch);
-
-            console.log(`[Admin Influencer Stats] Page ${pageCount}: Fetched ${batch.length} orders (total: ${allOrders.length})`);
-
-            // Use the full nextUrl from shopifyAPI response
-            nextUrl = shopifyData.nextUrl || null;
-        }
-        
-        if (pageCount >= maxPages) {
-            console.log(`[Admin Influencer Stats] ⚠️  Reached max pages limit (${maxPages}), stopping pagination`);
-        }
-
-        console.log(`[Admin Influencer Stats] Total orders fetched: ${allOrders.length}`);
-
-        // Filter orders by this influencer's discount code
-        // Only count orders that are not cancelled and have actual revenue
-        const attributedOrders = allOrders.filter(order => {
-            // Skip cancelled orders
-            if (order.cancelled_at) return false;
-            
-            // Skip orders with no discount codes
-            if (!order.discount_codes || order.discount_codes.length === 0) return false;
-            
-            // Check if this order used the influencer's code
-            const usedCode = order.discount_codes.some(dc => dc.code.toUpperCase() === referralCode.toUpperCase());
-            if (!usedCode) return false;
-            
-            // Only count orders that have been paid (not just created)
-            // Include: paid, partially_paid, pending, authorized
-            const paidStatuses = ['paid', 'partially_paid', 'pending', 'authorized'];
-            return paidStatuses.includes(order.financial_status);
-        });
-
-        // Sort newest first
-        attributedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-        console.log(`[Admin Influencer Stats] Found ${attributedOrders.length} orders with code ${referralCode}`);
-
-        // Calculate Stats
-        const totalRevenue = attributedOrders.reduce((sum, order) => sum + parseFloat(order.total_price), 0);
-        const orderCount = attributedOrders.length;
+        const totalRevenue = parseFloat(influencerData.total_revenue || 0);
+        const orderCount = parseInt(influencerData.total_orders || 0);
+        const estimatedEarnings = parseFloat(influencerData.estimated_earnings || 0);
         const aov = orderCount > 0 ? (totalRevenue / orderCount) : 0;
-        const estimatedEarnings = totalRevenue * (commissionRate / 100);
 
-        // Anonymize orders for the feed (most recent 50)
-        const recentConversions = attributedOrders.slice(0, 50).map(order => ({
-            id: order.id,
-            name: order.name,
-            total: order.total_price,
-            currency: order.currency,
-            date: order.created_at
-        }));
+        console.log(`[Admin Influencer Stats] ✅ Cached stats: ${orderCount} orders, ₹${totalRevenue} revenue`);
 
         res.json({
             success: true,
@@ -4469,38 +4457,22 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
                 aov: aov.toFixed(2),
                 estimatedEarnings: estimatedEarnings.toFixed(2),
                 commissionRate,
-                currency: attributedOrders[0]?.currency || 'INR',
+                currency: 'INR',
                 dateRange: {
-                    from: createdAtMin,
-                    to: createdAtMax
-                }
+                    from: influencerData.stats_date_range || 'last_60_days',
+                    to: influencerData.stats_last_updated || null
+                },
+                cached: true,
+                lastUpdated: influencerData.stats_last_updated
             },
-            recentConversions
+            recentConversions: [] // Will be populated when we fetch order details separately if needed
         });
 
     } catch (error) {
         console.error('Admin influencer stats error:', error);
-        console.error('Error stack:', error.stack);
-        
-        // Return more specific error message
-        if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
-            return res.status(504).json({ 
-                error: 'Request timed out. Please try a shorter date range (30d or 90d).',
-                details: error.message 
-            });
-        }
-        
-        if (error.message.includes('memory') || error.message.includes('heap')) {
-            return res.status(504).json({ 
-                error: 'Server memory limit reached. Please try a shorter date range.',
-                details: error.message 
-            });
-        }
-        
         res.status(500).json({ 
             error: 'Failed to fetch influencer stats',
-            details: error.message,
-            hint: 'Try using a shorter date range (30d or 90d) instead of "all"'
+            details: error.message
         });
     }
 });
