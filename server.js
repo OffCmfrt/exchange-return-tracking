@@ -4375,20 +4375,38 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
         }
 
         // Paginated Shopify fetch — collects ALL matching orders across all statuses
+        // OPTIMIZATION: Only fetch last 180 days max to avoid timeout on large stores
         let allOrders = [];
+        
+        // If range is 'all', default to last 180 days to prevent timeout
+        if (!createdAtMin) {
+            const defaultStart = new Date();
+            defaultStart.setDate(defaultStart.getDate() - 180);
+            createdAtMin = defaultStart.toISOString();
+            console.log(`[Admin Influencer Stats] Defaulting to last 180 days to prevent timeout`);
+        }
+        
         let nextUrl = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,currency,financial_status,fulfillment_status${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
 
         console.log(`[Admin Influencer Stats] Starting pagination fetch for influencer stats...`);
 
-        while (nextUrl) {
+        let pageCount = 0;
+        const maxPages = 20; // Safety limit: max 5000 orders (20 pages × 250)
+        
+        while (nextUrl && pageCount < maxPages) {
+            pageCount++;
             const shopifyData = await shopifyAPI(nextUrl);
             const batch = shopifyData.orders || [];
             allOrders = allOrders.concat(batch);
 
-            console.log(`[Admin Influencer Stats] Fetched ${batch.length} orders (total: ${allOrders.length})`);
+            console.log(`[Admin Influencer Stats] Page ${pageCount}: Fetched ${batch.length} orders (total: ${allOrders.length})`);
 
             // Use the full nextUrl from shopifyAPI response
             nextUrl = shopifyData.nextUrl || null;
+        }
+        
+        if (pageCount >= maxPages) {
+            console.log(`[Admin Influencer Stats] ⚠️  Reached max pages limit (${maxPages}), stopping pagination`);
         }
 
         console.log(`[Admin Influencer Stats] Total orders fetched: ${allOrders.length}`);
@@ -4458,7 +4476,28 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
 
     } catch (error) {
         console.error('Admin influencer stats error:', error);
-        res.status(500).json({ error: 'Failed to fetch influencer stats' });
+        console.error('Error stack:', error.stack);
+        
+        // Return more specific error message
+        if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+            return res.status(504).json({ 
+                error: 'Request timed out. Please try a shorter date range (30d or 90d).',
+                details: error.message 
+            });
+        }
+        
+        if (error.message.includes('memory') || error.message.includes('heap')) {
+            return res.status(504).json({ 
+                error: 'Server memory limit reached. Please try a shorter date range.',
+                details: error.message 
+            });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to fetch influencer stats',
+            details: error.message,
+            hint: 'Try using a shorter date range (30d or 90d) instead of "all"'
+        });
     }
 });
 
@@ -4548,21 +4587,39 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
         }
 
         // Paginated Shopify fetch — collects ALL matching orders across all statuses
+        // OPTIMIZATION: Only fetch last 180 days max to avoid timeout on large stores
         let allOrders = [];
+        
+        // If range is 'all', default to last 180 days to prevent timeout
+        if (!createdAtMin) {
+            const defaultStart = new Date();
+            defaultStart.setDate(defaultStart.getDate() - 180);
+            createdAtMin = defaultStart.toISOString();
+            console.log(`[Influencer Stats] Defaulting to last 180 days to prevent timeout`);
+        }
+        
         const baseQuery = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,currency,financial_status,fulfillment_status${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
         let nextUrl = baseQuery;
 
         console.log(`[Influencer Stats] Starting pagination fetch for ${influencer.name}...`);
 
-        while (nextUrl) {
+        let pageCount = 0;
+        const maxPages = 20; // Safety limit: max 5000 orders
+        
+        while (nextUrl && pageCount < maxPages) {
+            pageCount++;
             const shopifyData = await shopifyAPI(nextUrl);
             const batch = shopifyData.orders || [];
             allOrders = allOrders.concat(batch);
 
-            console.log(`[Influencer Stats] Fetched ${batch.length} orders (total: ${allOrders.length})`);
+            console.log(`[Influencer Stats] Page ${pageCount}: Fetched ${batch.length} orders (total: ${allOrders.length})`);
 
             // Use the full nextUrl from shopifyAPI response
             nextUrl = shopifyData.nextUrl || null;
+        }
+        
+        if (pageCount >= maxPages) {
+            console.log(`[Influencer Stats] ⚠️  Reached max pages limit (${maxPages}), stopping pagination`);
         }
 
         console.log(`[Influencer Stats] Total orders fetched: ${allOrders.length}`);
@@ -4621,7 +4678,28 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
 
     } catch (error) {
         console.error('Influencer stats error:', error);
-        res.status(500).json({ error: 'Failed to fetch performance data' });
+        console.error('Error stack:', error.stack);
+        
+        // Return more specific error message
+        if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+            return res.status(504).json({ 
+                error: 'Request timed out. Please try a shorter date range (30d or 90d).',
+                details: error.message 
+            });
+        }
+        
+        if (error.message.includes('memory') || error.message.includes('heap')) {
+            return res.status(504).json({ 
+                error: 'Server memory limit reached. Please try a shorter date range.',
+                details: error.message 
+            });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to fetch performance data',
+            details: error.message,
+            hint: 'Try using a shorter date range (30d or 90d) instead of "all"'
+        });
     }
 });
 
