@@ -4481,6 +4481,135 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
     }
 });
 
+// Get Recent Conversions for an Influencer (fetches actual order details from Shopify)
+app.get('/api/influencer-admin/conversions/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { range } = req.query; // '30d', '90d', 'all'
+        
+        console.log(`[Admin Conversions] Fetching conversions for influencer ${id}`);
+        
+        // Get influencer details
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+        
+        const referralCode = influencer.referral_code.toUpperCase();
+        
+        // Calculate date range
+        let createdAtMin = null;
+        let createdAtMax = null;
+        
+        if (range === '30d') {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            createdAtMin = thirtyDaysAgo.toISOString();
+        } else if (range === '90d') {
+            const ninetyDaysAgo = new Date();
+            ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+            createdAtMin = ninetyDaysAgo.toISOString();
+        } else {
+            // 'all' - default to last 90 days to prevent timeout
+            const ninetyDaysAgo = new Date();
+            ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+            createdAtMin = ninetyDaysAgo.toISOString();
+        }
+        
+        // Fetch orders from Shopify
+        let allOrders = [];
+        let nextUrl = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,currency,financial_status,customer${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
+        let pageCount = 0;
+        let aborted = false;
+        
+        req.on('close', () => {
+            aborted = true;
+        });
+        
+        while (nextUrl && pageCount < 20 && !aborted) {
+            pageCount++;
+            
+            const fullUrl = nextUrl.startsWith('http') ? nextUrl : `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/${nextUrl}`;
+            const response = await fetch(fullUrl, {
+                headers: {
+                    'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Shopify API error: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            const batch = data.orders || [];
+            allOrders = allOrders.concat(batch);
+            
+            // Extract next page URL from Link header (lowercase 'link')
+            const linkHeader = response.headers.get('link');
+            nextUrl = null;
+            if (linkHeader) {
+                const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/i);
+                if (nextMatch) {
+                    nextUrl = nextMatch[1];
+                }
+            }
+        }
+        
+        console.log(`[Admin Conversions] Fetched ${allOrders.length} orders`);
+        
+        // Filter orders by this influencer's discount code
+        const attributedOrders = allOrders.filter(order => {
+            // Skip cancelled orders
+            if (order.cancelled_at) return false;
+            
+            // Skip orders with no discount codes
+            if (!order.discount_codes || order.discount_codes.length === 0) return false;
+            
+            // Check if this order used the influencer's code
+            const usedCode = order.discount_codes.some(dc => dc.code.toUpperCase() === referralCode);
+            if (!usedCode) return false;
+            
+            // Only count orders that have been paid
+            const paidStatuses = ['paid', 'partially_paid', 'pending', 'authorized'];
+            return paidStatuses.includes(order.financial_status);
+        });
+        
+        console.log(`[Admin Conversions] Found ${attributedOrders.length} orders with code ${referralCode}`);
+        
+        // Get most recent 20 orders
+        const recentOrders = attributedOrders.slice(0, 20);
+        
+        // Format for frontend
+        const conversions = recentOrders.map(order => ({
+            id: order.id,
+            orderName: order.name,
+            total: parseFloat(order.total_price).toFixed(2),
+            currency: order.currency || 'INR',
+            date: order.created_at,
+            customerName: order.customer ? (order.customer.first_name + ' ' + order.customer.last_name).trim() : 'Guest',
+            discountCode: order.discount_codes.find(dc => dc.code.toUpperCase() === referralCode)?.code
+        }));
+        
+        res.json({
+            success: true,
+            conversions,
+            totalCount: attributedOrders.length,
+            dateRange: {
+                from: createdAtMin,
+                to: createdAtMax || new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error('Admin conversions error:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch conversions',
+            details: error.message
+        });
+    }
+});
+
 // ==================== INFLUENCER PORTAL ENDPOINTS ====================
 
 // Verify Influencer Token & Get Profile

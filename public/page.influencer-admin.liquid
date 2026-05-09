@@ -1356,24 +1356,50 @@ function applyCustomDate() {
 
 async function fetchInfluencerStats(id, range, startDate = null, endDate = null) {
   try {
-    let url = `${API}/stats/${id}?range=${range}`;
+    // Fetch stats (from cache - fast)
+    let statsUrl = `${API}/stats/${id}?range=${range}`;
     if (range === 'custom' && startDate && endDate) {
-      url += `&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+      statsUrl += `&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
     }
     
-    const res = await fetch(url, {
+    const statsRes = await fetch(statsUrl, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     
-    if (res.status === 401) { handleLogout(); return; }
+    if (statsRes.status === 401) { handleLogout(); return; }
     
-    const data = await res.json();
+    const statsData = await statsRes.json();
     
-    if (data.success) {
-      renderInfluencerStats(data);
-    } else {
+    if (!statsData.success) {
       showToast('Failed to load stats', true);
+      return;
     }
+    
+    // Fetch conversions separately (from Shopify - may take a moment)
+    let conversionsUrl = `${API}/conversions/${id}?range=${range}`;
+    if (range === 'custom' && startDate && endDate) {
+      conversionsUrl += `&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+    }
+    
+    let conversions = [];
+    try {
+      const conversionsRes = await fetch(conversionsUrl, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      
+      if (conversionsRes.ok) {
+        const conversionsData = await conversionsRes.json();
+        conversions = conversionsData.conversions || [];
+      }
+    } catch (err) {
+      console.warn('Failed to fetch conversions:', err);
+      // Don't fail the whole request if conversions fail
+    }
+    
+    // Merge and render
+    statsData.recentConversions = conversions;
+    renderInfluencerStats(statsData);
+    
   } catch (err) {
     console.error(err);
     showToast('Connection error', true);
@@ -1409,10 +1435,13 @@ function renderInfluencerStats(data) {
   listEl.innerHTML = conversions.map((order, i) => `
     <div class="ia-conversion-item" style="animation: fadeUp 0.3s ease ${i * 0.05}s both;">
       <div>
-        <div class="ia-conversion-order">Order ${esc(order.name)}</div>
-        <div class="ia-conversion-date">${fmtDate(order.date)}</div>
+        <div class="ia-conversion-order">Order ${esc(order.orderName || order.name)}</div>
+        <div class="ia-conversion-date">${fmtDate(order.date)} • ${esc(order.customerName || 'Guest')}</div>
       </div>
-      <div class="ia-conversion-total">${sym}${fmt(order.total)}</div>
+      <div style="text-align: right;">
+        <div class="ia-conversion-total">${sym}${fmt(order.total)}</div>
+        <div style="font-size: 0.75rem; color: var(--muted); margin-top: 2px;">${esc(order.discountCode || '')}</div>
+      </div>
     </div>
   `).join('');
 }
