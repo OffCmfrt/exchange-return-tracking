@@ -395,6 +395,116 @@ setTimeout(() => {
 
 console.log('✅ Background sync scheduled: 4 times daily (6AM, 12PM, 6PM, 12AM IST)');
 
+// ==================== SHOPIFY INFLUENCER USAGE SYNC ====================
+
+// Background sync job for Shopify discount code usage - runs 4 times per day (6AM, 12PM, 6PM, 12AM IST)
+let isShopifySyncRunning = false;
+let lastShopifySyncTimestamp = null;
+
+async function performShopifyUsageSync() {
+    if (isShopifySyncRunning) {
+        console.log('[Shopify Usage Sync] Sync already running, skipping...');
+        return;
+    }
+
+    isShopifySyncRunning = true;
+    lastShopifySyncTimestamp = new Date().toISOString();
+
+    console.log('[Shopify Usage Sync] Starting Shopify usage data sync...');
+
+    try {
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+        // Fetch all active influencers
+        const { data: influencers, error } = await supabase
+            .from('influencers')
+            .select('*')
+            .eq('is_active', true);
+
+        if (error) {
+            console.error('[Shopify Usage Sync] Error fetching influencers:', error);
+            return;
+        }
+
+        let syncedCount = 0;
+        let failedCount = 0;
+
+        for (const influencer of influencers) {
+            try {
+                const priceRuleId = influencer.shopify_price_rule_id;
+                const discountCodeId = influencer.shopify_discount_code_id;
+
+                if (!priceRuleId || !discountCodeId) {
+                    console.log(`[Shopify Usage Sync] ⚠️  ${influencer.name} (${influencer.referral_code}) - No Shopify IDs, skipping`);
+                    continue;
+                }
+
+                // Fetch usage data from Shopify
+                const response = await fetch(
+                    `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/price_rules/${priceRuleId}/discount_codes/${discountCodeId}.json`,
+                    {
+                        method: 'GET',
+                        headers: {
+                            'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.discount_code) {
+                    const usageCount = data.discount_code.usage_count || 0;
+
+                    // Update usage_count in Supabase
+                    const { error: updateError } = await supabase
+                        .from('influencers')
+                        .update({
+                            usage_count: usageCount,
+                            last_synced_at: new Date().toISOString()
+                        })
+                        .eq('id', influencer.id);
+
+                    if (updateError) {
+                        console.error(`[Shopify Usage Sync] ❌ ${influencer.name} - Error updating: ${updateError.message}`);
+                        failedCount++;
+                    } else {
+                        console.log(`[Shopify Usage Sync] ✅ ${influencer.name} (${influencer.referral_code}) - Usage: ${usageCount}`);
+                        syncedCount++;
+                    }
+                }
+            } catch (error) {
+                console.error(`[Shopify Usage Sync] ❌ ${influencer.name} - Error: ${error.message}`);
+                failedCount++;
+            }
+        }
+
+        console.log(`[Shopify Usage Sync] Completed: ${syncedCount} synced, ${failedCount} failed`);
+
+    } catch (error) {
+        console.error('[Shopify Usage Sync] Fatal error:', error);
+    } finally {
+        isShopifySyncRunning = false;
+    }
+}
+
+// Schedule Shopify usage sync - 4 times daily (6AM, 12PM, 6PM, 12AM IST)
+cron.schedule('0 0,6,12,18 * * *', () => {
+    performShopifyUsageSync();
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata" // IST timezone
+});
+
+// Run initial Shopify usage sync on server startup (after 45 seconds)
+setTimeout(() => {
+    console.log('[Shopify Usage Sync] Running initial sync on startup...');
+    performShopifyUsageSync();
+}, 45000);
+
+console.log('✅ Shopify influencer usage sync scheduled: 4 times daily (6AM, 12PM, 6PM, 12AM IST)');
+
 // ==================== CLOUDINARY CONFIG ====================
 
 let uploadStorage;
@@ -1271,7 +1381,17 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         console.log(`📦 Delhivery Response:`, JSON.stringify(data, null, 2));
 
         // Check for success
-        if (data && data.shipments && data.shipments.length > 0) {
+        if (data && data.packages && data.packages.length > 0) {
+            const pkg = data.packages[0];
+            if (pkg.status === 'Success' && pkg.waybill) {
+                return {
+                    waybill: pkg.waybill,
+                    shipment_id: pkg.refnum || null,
+                    success: true,
+                    data: data
+                };
+            }
+        } else if (data && data.shipments && data.shipments.length > 0) {
             const shipment = data.shipments[0];
             return {
                 waybill: shipment.waybill_code || shipment.awb_code || null,
@@ -1282,7 +1402,7 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         } else if (data.status === 'success' || data.success) {
             // Alternative success response format
             return {
-                waybill: data.waybill_code || data.awb_code || null,
+                waybill: data.waybill_code || data.awb_code || data.waybill || null,
                 shipment_id: data.shipment_id || null,
                 success: true,
                 data: data
@@ -3768,6 +3888,43 @@ app.get('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to get sync status' });
+    }
+});
+
+// Get Shopify usage sync status
+app.get('/api/admin/shopify-sync-status', authenticateAdmin, async (req, res) => {
+    try {
+        res.json({
+            success: true,
+            isRunning: isShopifySyncRunning,
+            lastSync: lastShopifySyncTimestamp,
+            message: isShopifySyncRunning ? 'Shopify sync in progress' : 'Shopify sync completed',
+            schedule: '4 times daily (6AM, 12PM, 6PM, 12AM IST)'
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get Shopify sync status' });
+    }
+});
+
+// Manually trigger Shopify usage sync
+app.post('/api/admin/trigger-shopify-sync', authenticateAdmin, async (req, res) => {
+    try {
+        if (isShopifySyncRunning) {
+            return res.json({
+                success: false,
+                message: 'Shopify sync is already running'
+            });
+        }
+
+        // Run sync in background
+        performShopifyUsageSync();
+
+        res.json({
+            success: true,
+            message: 'Shopify usage sync started'
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to trigger Shopify sync' });
     }
 });
 
