@@ -1212,6 +1212,13 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
             return str.replace(/[&#%;\\]/g, '').trim();
         };
 
+        // Get pickup location nickname from warehouse settings
+        const pickupLocationNickname = warehouseLocation && warehouseLocation.pickup_location
+            ? warehouseLocation.pickup_location
+            : (process.env.DELHIVERY_PICKUP_LOCATION || 'Primary');
+
+        console.log(`📍 Using Delhivery pickup location: ${pickupLocationNickname}`);
+
         // Build payload for Delhivery CMU API
         const payload = {
             shipments: [{
@@ -1233,7 +1240,7 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
                 return_phone: returnPhone
             }],
             pickup_location: {
-                name: process.env.DELHIVERY_PICKUP_LOCATION || 'Primary',
+                name: pickupLocationNickname,
                 add: sanitizeAddress(returnAddress),
                 pin: returnPincode,
                 city: sanitizeAddress(returnCity),
