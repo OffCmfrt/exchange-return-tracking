@@ -669,7 +669,18 @@ async function shopifyAPI(endpoint, options = {}) {
         throw new Error(`Shopify API error: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    
+    // Extract FULL next URL from Link header (not just page_info)
+    const linkHeader = response.headers.get('Link');
+    if (linkHeader) {
+        const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+        if (nextMatch) {
+            data.nextUrl = nextMatch[1]; // Store the full URL
+        }
+    }
+    
+    return data;
 }
 
 // ==================== SHOPIFY DISCOUNT CODE HELPERS ====================
@@ -4363,32 +4374,48 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
             createdAtMax = createdAtMax.toISOString();
         }
 
-        // Paginated Shopify fetch
+        // Paginated Shopify fetch — collects ALL matching orders across all statuses
         let allOrders = [];
-        let hasNextPage = true;
-        const baseQuery = `orders.json?status=paid&limit=250&fields=id,name,total_price,discount_codes,created_at,currency${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
-        let nextUrl = baseQuery;
+        let nextUrl = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,currency,financial_status,fulfillment_status${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
 
-        while (hasNextPage) {
+        console.log(`[Admin Influencer Stats] Starting pagination fetch for influencer stats...`);
+
+        while (nextUrl) {
             const shopifyData = await shopifyAPI(nextUrl);
             const batch = shopifyData.orders || [];
             allOrders = allOrders.concat(batch);
 
-            if (shopifyData.nextUrl && batch.length === 250) {
-                nextUrl = shopifyData.nextUrl;
-            } else {
-                hasNextPage = false;
-            }
+            console.log(`[Admin Influencer Stats] Fetched ${batch.length} orders (total: ${allOrders.length})`);
+
+            // Use the full nextUrl from shopifyAPI response
+            nextUrl = shopifyData.nextUrl || null;
         }
 
+        console.log(`[Admin Influencer Stats] Total orders fetched: ${allOrders.length}`);
+
         // Filter orders by this influencer's discount code
+        // Only count orders that are not cancelled and have actual revenue
         const attributedOrders = allOrders.filter(order => {
+            // Skip cancelled orders
+            if (order.cancelled_at) return false;
+            
+            // Skip orders with no discount codes
             if (!order.discount_codes || order.discount_codes.length === 0) return false;
-            return order.discount_codes.some(dc => dc.code.toUpperCase() === referralCode.toUpperCase());
+            
+            // Check if this order used the influencer's code
+            const usedCode = order.discount_codes.some(dc => dc.code.toUpperCase() === referralCode.toUpperCase());
+            if (!usedCode) return false;
+            
+            // Only count orders that have been paid (not just created)
+            // Include: paid, partially_paid, pending, authorized
+            const paidStatuses = ['paid', 'partially_paid', 'pending', 'authorized'];
+            return paidStatuses.includes(order.financial_status);
         });
 
         // Sort newest first
         attributedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        console.log(`[Admin Influencer Stats] Found ${attributedOrders.length} orders with code ${referralCode}`);
 
         // Calculate Stats
         const totalRevenue = attributedOrders.reduce((sum, order) => sum + parseFloat(order.total_price), 0);
@@ -4520,38 +4547,49 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
             createdAtMax = createdAtMax.toISOString();
         }
 
-        // Paginated Shopify fetch — collects ALL matching orders, not just last 250
+        // Paginated Shopify fetch — collects ALL matching orders across all statuses
         let allOrders = [];
-        let pageInfo = null;
-        let hasNextPage = true;
-        const baseQuery = `orders.json?status=paid&limit=250&fields=id,name,total_price,discount_codes,created_at,currency${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
+        const baseQuery = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,currency,financial_status,fulfillment_status${createdAtMin ? '&created_at_min=' + encodeURIComponent(createdAtMin) : ''}${createdAtMax ? '&created_at_max=' + encodeURIComponent(createdAtMax) : ''}`;
         let nextUrl = baseQuery;
 
-        while (hasNextPage) {
+        console.log(`[Influencer Stats] Starting pagination fetch for ${influencer.name}...`);
+
+        while (nextUrl) {
             const shopifyData = await shopifyAPI(nextUrl);
             const batch = shopifyData.orders || [];
             allOrders = allOrders.concat(batch);
 
-            // Shopify REST pagination via Link header (handled by shopifyAPI if it supports it)
-            // If shopifyAPI returns a nextUrl cursor, use it; otherwise stop after one batch
-            if (shopifyData.nextUrl && batch.length === 250) {
-                nextUrl = shopifyData.nextUrl;
-            } else if (batch.length === 250 && !createdAtMin) {
-                // Try cursor-based: use page_info if available
-                hasNextPage = false; // shopifyAPI does not expose page_info — stop safely
-            } else {
-                hasNextPage = false;
-            }
+            console.log(`[Influencer Stats] Fetched ${batch.length} orders (total: ${allOrders.length})`);
+
+            // Use the full nextUrl from shopifyAPI response
+            nextUrl = shopifyData.nextUrl || null;
         }
 
+        console.log(`[Influencer Stats] Total orders fetched: ${allOrders.length}`);
+
         // Filter orders by this influencer's discount code
+        // Only count orders that are not cancelled and have actual revenue
         const attributedOrders = allOrders.filter(order => {
+            // Skip cancelled orders
+            if (order.cancelled_at) return false;
+            
+            // Skip orders with no discount codes
             if (!order.discount_codes || order.discount_codes.length === 0) return false;
-            return order.discount_codes.some(dc => dc.code.toUpperCase() === referralCode.toUpperCase());
+            
+            // Check if this order used the influencer's code
+            const usedCode = order.discount_codes.some(dc => dc.code.toUpperCase() === referralCode.toUpperCase());
+            if (!usedCode) return false;
+            
+            // Only count orders that have been paid (not just created)
+            // Include: paid, partially_paid, pending, authorized
+            const paidStatuses = ['paid', 'partially_paid', 'pending', 'authorized'];
+            return paidStatuses.includes(order.financial_status);
         });
 
         // Sort newest first
         attributedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        console.log(`[Influencer Stats] Found ${attributedOrders.length} orders with code ${referralCode}`);
 
         // Calculate Stats
         const totalRevenue = attributedOrders.reduce((sum, order) => sum + parseFloat(order.total_price), 0);
