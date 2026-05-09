@@ -427,20 +427,21 @@ async function performShopifyUsageSync() {
             return;
         }
 
-        console.log(`[Shopify Usage Sync] Fetching orders from Shopify (last 60 days)...`);
+        console.log(`[Shopify Usage Sync] Fetching orders from Shopify (last 90 days)...`);
         
-        // Fetch orders from Shopify ONCE for all influencers (last 60 days)
-        const sixtyDaysAgo = new Date();
-        sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+        // Fetch orders from Shopify ONCE for all influencers (last 90 days to capture older orders)
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
         
         let allOrders = [];
-        let nextUrl = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,currency,financial_status&created_at_min=${encodeURIComponent(sixtyDaysAgo.toISOString())}`;
+        let nextUrl = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,currency,financial_status&created_at_min=${encodeURIComponent(ninetyDaysAgo.toISOString())}`;
         let pageCount = 0;
         
         while (nextUrl && pageCount < 20) {
             pageCount++;
             
-            const response = await fetch(`https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/${nextUrl}`, {
+            const fullUrl = nextUrl.startsWith('http') ? nextUrl : `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/${nextUrl}`;
+            const response = await fetch(fullUrl, {
                 headers: {
                     'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
                     'Content-Type': 'application/json'
@@ -453,13 +454,16 @@ async function performShopifyUsageSync() {
             
             console.log(`[Shopify Usage Sync] Page ${pageCount}: ${batch.length} orders (total: ${allOrders.length})`);
             
-            // Extract next URL from Link header
-            const linkHeader = response.headers.get('Link');
+            // Extract next URL from Link header (use lowercase 'link')
+            const linkHeader = response.headers.get('link');
+            nextUrl = null;
+            
             if (linkHeader) {
-                const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-                nextUrl = nextMatch ? nextMatch[1] : null;
-            } else {
-                nextUrl = null;
+                const matches = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+                if (matches) {
+                    nextUrl = matches[1];
+                    console.log(`[Shopify Usage Sync] Found next page URL`);
+                }
             }
         }
         
@@ -502,7 +506,7 @@ async function performShopifyUsageSync() {
                         total_orders: usageCount,
                         estimated_earnings: estimatedEarnings,
                         stats_last_updated: new Date().toISOString(),
-                        stats_date_range: 'last_60_days',
+                        stats_date_range: 'last_90_days',
                         last_synced_at: new Date().toISOString()
                     })
                     .eq('id', influencer.id);
