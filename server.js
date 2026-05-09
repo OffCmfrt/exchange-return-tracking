@@ -655,7 +655,11 @@ async function shopifyAPI(endpoint, options = {}) {
         throw new Error('Not authorized. Please complete OAuth flow first.');
     }
 
-    const response = await fetchWithRetry(`https://${shop}/admin/api/2024-01/${endpoint}`, {
+    // Check if endpoint is already a full URL (from pagination Link header)
+    const isFullUrl = endpoint.startsWith('http');
+    const url = isFullUrl ? endpoint : `https://${shop}/admin/api/2024-01/${endpoint}`;
+
+    const response = await fetchWithRetry(url, {
         ...options,
         headers: {
             'X-Shopify-Access-Token': token,
