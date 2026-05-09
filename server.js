@@ -1212,10 +1212,13 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
             return str.replace(/[&#%;\\]/g, '').trim();
         };
 
-        // Get pickup location nickname from warehouse settings
-        const pickupLocationNickname = warehouseLocation && warehouseLocation.pickup_location
-            ? warehouseLocation.pickup_location
-            : (process.env.DELHIVERY_PICKUP_LOCATION || 'Primary');
+        // Get Delhivery pickup location nickname
+        // Priority: 1. Delhivery-specific setting, 2. Warehouse pickup_location, 3. Env variable, 4. Default
+        const delhiveryPickupLocationSetting = await getSetting('delhivery_pickup_location', null);
+        const pickupLocationNickname = delhiveryPickupLocationSetting 
+            || (warehouseLocation && warehouseLocation.pickup_location)
+            || process.env.DELHIVERY_PICKUP_LOCATION 
+            || 'Primary';
 
         console.log(`📍 Using Delhivery pickup location: ${pickupLocationNickname}`);
 
@@ -3168,6 +3171,7 @@ app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
             allow_exchanges: await getSetting('allow_exchanges', true),
             auto_approve_reasons: await getSetting('auto_approve_reasons', ['size', 'fit']),
             warehouse_location: await getSetting('warehouse_location', null),
+            delhivery_pickup_location: await getSetting('delhivery_pickup_location', null),
             cutoff_date_enabled: await getSetting('cutoff_date_enabled', false),
             cutoff_date: await getSetting('cutoff_date', null),
             carrier_mode: await getSetting('carrier_mode', 'shiprocket_with_fallback')

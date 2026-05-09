@@ -764,6 +764,23 @@
                         background: white;
                         cursor: pointer;
                     }
+
+                    /* Text Input */
+                    .text-input {
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid #d1d5db;
+                        border-radius: 6px;
+                        font-size: 0.95rem;
+                        background: white;
+                        box-sizing: border-box;
+                    }
+
+                    .text-input:focus {
+                        outline: none;
+                        border-color: #667eea;
+                        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+                    }
                     
                     /* Reasons Grid */
                     .reasons-grid {
@@ -1101,6 +1118,14 @@
                         <select id="set-warehouse-location" class="warehouse-select">
                             <option value="">Loading locations...</option>
                         </select>
+                    </div>
+
+                    <!-- Delhivery Pickup Location -->
+                    <div class="settings-section">
+                        <h3><i class="fas fa-truck"></i> Delhivery Pickup Location</h3>
+                        <p class="section-desc">Exact nickname of your registered pickup location in Delhivery (e.g., "Offcomfrt Warehouse")</p>
+                        <input type="text" id="set-delhivery-pickup-location" class="text-input" placeholder="Enter Delhivery pickup location nickname">
+                        <small style="color:#6b7280; font-size:0.75rem;">Leave blank to use Shiprocket location name or .env default</small>
                     </div>
 
                     <!-- Auto-Approve Reasons -->
@@ -2625,6 +2650,12 @@
                         }
                     }
 
+                    // Set Delhivery pickup location
+                    const delhiveryPickupInput = document.getElementById('set-delhivery-pickup-location');
+                    if (delhiveryPickupInput) {
+                        delhiveryPickupInput.value = data.delhivery_pickup_location || '';
+                    }
+
                     // Show the form and hide loading
                     const loadingEl = document.getElementById('settings-loading');
                     const formEl = document.getElementById('settings-form');
@@ -2700,6 +2731,17 @@
             const selectedLocation = window.shiprocketLocationsData.find(loc => loc.pickup_location === locationSelect.value);
             if (selectedLocation) {
                 updates.warehouse_location = selectedLocation;
+            }
+        }
+
+        // Add Delhivery Pickup Location
+        const delhiveryPickupInput = document.getElementById('set-delhivery-pickup-location');
+        if (delhiveryPickupInput) {
+            const delhiveryPickupValue = delhiveryPickupInput.value.trim();
+            if (delhiveryPickupValue) {
+                updates.delhivery_pickup_location = delhiveryPickupValue;
+            } else {
+                updates.delhivery_pickup_location = null;
             }
         }
 
