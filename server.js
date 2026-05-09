@@ -4524,10 +4524,17 @@ app.get('/api/influencer-admin/conversions/:id', authenticateAdmin, async (req, 
         
         req.on('close', () => {
             aborted = true;
+            console.log('[Admin Conversions] Client disconnected, aborting');
         });
         
         while (nextUrl && pageCount < 20 && !aborted) {
             pageCount++;
+            
+            // Check if client disconnected before making request
+            if (aborted) {
+                console.log('[Admin Conversions] Aborted before fetch');
+                return;
+            }
             
             const fullUrl = nextUrl.startsWith('http') ? nextUrl : `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/${nextUrl}`;
             const response = await fetch(fullUrl, {
@@ -4577,6 +4584,18 @@ app.get('/api/influencer-admin/conversions/:id', authenticateAdmin, async (req, 
         
         console.log(`[Admin Conversions] Found ${attributedOrders.length} orders with code ${referralCode}`);
         
+        // Check if client disconnected before sending response
+        if (aborted) {
+            console.log('[Admin Conversions] Client disconnected, not sending response');
+            return;
+        }
+        
+        // Check if response already sent
+        if (res.headersSent) {
+            console.log('[Admin Conversions] Response already sent');
+            return;
+        }
+        
         // Get most recent 20 orders
         const recentOrders = attributedOrders.slice(0, 20);
         
@@ -4603,10 +4622,15 @@ app.get('/api/influencer-admin/conversions/:id', authenticateAdmin, async (req, 
         
     } catch (error) {
         console.error('Admin conversions error:', error);
-        res.status(500).json({ 
-            error: 'Failed to fetch conversions',
-            details: error.message
-        });
+        // Only send response if not already sent
+        if (!res.headersSent) {
+            res.status(500).json({ 
+                error: 'Failed to fetch conversions',
+                details: error.message
+            });
+        } else {
+            console.log('[Admin Conversions] Error occurred but response already sent');
+        }
     }
 });
 
