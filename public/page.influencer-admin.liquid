@@ -234,12 +234,6 @@
   background: var(--bg);
   position: sticky; top: 0;
   z-index: 50;
-  margin-left: 220px;
-  transition: margin-left var(--transition);
-}
-
-.ia-topbar.expanded {
-  margin-left: 0;
 }
 
 .ia-topbar-mobile-toggle {
@@ -329,7 +323,9 @@
 }
 .ia-table-wrap {
   border: 1px solid var(--border);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
 }
 .ia-table {
   width: 100%;
@@ -739,10 +735,12 @@
 @media (max-width: 900px) {
   .ia-sidebar {
     transform: translateX(-100%);
+    box-shadow: none;
   }
   
   .ia-sidebar.open {
     transform: translateX(0);
+    box-shadow: 5px 0 20px rgba(0, 0, 0, 0.5);
   }
   
   .ia-sidebar-toggle {
@@ -750,29 +748,36 @@
   }
   
   .ia-main {
-    margin-left: 0;
+    margin-left: 0 !important;
+    width: 100%;
   }
   
   .ia-topbar {
-    margin-left: 0;
     padding: 1.5rem 1rem;
   }
   
   .ia-topbar-mobile-toggle {
-    display: block;
+    display: flex;
   }
   
   .ia-content {
     padding: 1.5rem 1rem;
+    overflow-x: hidden;
   }
   
-  .ia-table th:nth-child(4), .ia-table td:nth-child(4),
-  .ia-table th:nth-child(5), .ia-table td:nth-child(5) { 
+  /* Hide less important columns on mobile */
+  .ia-table th:nth-child(5), .ia-table td:nth-child(5),
+  .ia-table th:nth-child(6), .ia-table td:nth-child(6) { 
     display: none; 
   }
   
   .ia-stat-strip {
     grid-template-columns: 1fr;
+  }
+  
+  /* Ensure no horizontal overflow */
+  .ia-wrap, .ia-layout, .ia-main {
+    overflow-x: hidden;
   }
 }
 </style>
