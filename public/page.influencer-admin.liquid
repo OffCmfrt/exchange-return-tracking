@@ -115,6 +115,52 @@
   position: fixed; top: 0; left: 0; bottom: 0;
   z-index: 100;
   transition: transform var(--transition);
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+}
+
+.ia-sidebar.collapsed {
+  transform: translateX(-100%);
+}
+
+.ia-sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 1.5rem;
+  left: 1.5rem;
+  z-index: 101;
+  width: 40px;
+  height: 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+
+.ia-sidebar-toggle:hover {
+  background: var(--subtle);
+  border-color: var(--border-hover);
+}
+
+.ia-sidebar-toggle svg {
+  width: 20px;
+  height: 20px;
+  stroke: var(--text);
+}
+
+.ia-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
+  backdrop-filter: blur(2px);
+}
+
+.ia-overlay.active {
+  display: block;
 }
 .ia-sidebar-logo {
   padding: 0 1.5rem 2rem;
@@ -188,6 +234,27 @@
   background: var(--bg);
   position: sticky; top: 0;
   z-index: 50;
+  margin-left: 220px;
+  transition: margin-left var(--transition);
+}
+
+.ia-topbar.expanded {
+  margin-left: 0;
+}
+
+.ia-topbar-mobile-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  margin-right: 1rem;
+}
+
+.ia-topbar-mobile-toggle svg {
+  width: 24px;
+  height: 24px;
+  stroke: var(--text);
 }
 .ia-topbar h1 {
   font-size: 1rem;
@@ -266,6 +333,7 @@
 }
 .ia-table {
   width: 100%;
+  min-width: 1200px;
   border-collapse: collapse;
 }
 .ia-table thead tr {
@@ -669,11 +737,43 @@
 
 /* ── RESPONSIVE ── */
 @media (max-width: 900px) {
-  .ia-sidebar { transform: translateX(-100%); }
-  .ia-main { margin-left: 0; }
-  .ia-stat-strip { grid-template-columns: 1fr; }
+  .ia-sidebar {
+    transform: translateX(-100%);
+  }
+  
+  .ia-sidebar.open {
+    transform: translateX(0);
+  }
+  
+  .ia-sidebar-toggle {
+    display: flex;
+  }
+  
+  .ia-main {
+    margin-left: 0;
+  }
+  
+  .ia-topbar {
+    margin-left: 0;
+    padding: 1.5rem 1rem;
+  }
+  
+  .ia-topbar-mobile-toggle {
+    display: block;
+  }
+  
+  .ia-content {
+    padding: 1.5rem 1rem;
+  }
+  
   .ia-table th:nth-child(4), .ia-table td:nth-child(4),
-  .ia-table th:nth-child(5), .ia-table td:nth-child(5) { display: none; }
+  .ia-table th:nth-child(5), .ia-table td:nth-child(5) { 
+    display: none; 
+  }
+  
+  .ia-stat-strip {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
 </head>
@@ -705,8 +805,11 @@
   <!-- Main Dashboard -->
   <div id="iaDashboard" class="ia-layout hidden">
 
+    <!-- Overlay for mobile -->
+    <div class="ia-overlay" id="iaOverlay" onclick="toggleSidebar()"></div>
+
     <!-- Sidebar -->
-    <aside class="ia-sidebar">
+    <aside class="ia-sidebar" id="iaSidebar">
       <div class="ia-sidebar-logo">
         <span>Offcomfrt</span>
         <strong>Influencer HQ</strong>
@@ -725,7 +828,14 @@
     <!-- Main Area -->
     <main class="ia-main">
       <!-- Top Bar -->
-      <div class="ia-topbar">
+      <div class="ia-topbar" id="iaTopbar">
+        <button class="ia-topbar-mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
         <h1>Influencer Manager</h1>
         <div style="display: flex; gap: 1rem; align-items: center;">
           <button class="ia-btn" onclick="syncShopifyUsage()" id="syncShopifyBtn" title="Sync usage data from Shopify">
@@ -1009,6 +1119,8 @@ async function handleLogin() {
       hide('iaAuth');
       show('iaLoading');
       await loadDashboard();
+      // Initialize sidebar after dashboard loads
+      initSidebar();
     } else {
       errEl.classList.add('show');
     }
@@ -1026,6 +1138,52 @@ function handleLogout() {
   influencersData = [];
   location.reload();
 }
+
+// ─── SIDEBAR TOGGLE ─────────────────────────────────────────────────────────
+function toggleSidebar() {
+  const sidebar = document.getElementById('iaSidebar');
+  const overlay = document.getElementById('iaOverlay');
+  
+  if (!sidebar || !overlay) return;
+  
+  const isOpen = sidebar.classList.contains('open');
+  
+  if (isOpen) {
+    sidebar.classList.remove('open');
+    sidebar.classList.add('collapsed');
+    overlay.classList.remove('active');
+  } else {
+    sidebar.classList.remove('collapsed');
+    sidebar.classList.add('open');
+    overlay.classList.add('active');
+  }
+}
+
+// Close sidebar when clicking outside on desktop
+function initSidebar() {
+  const sidebar = document.getElementById('iaSidebar');
+  if (!sidebar) return;
+  
+  // On desktop, sidebar is always visible
+  if (window.innerWidth > 900) {
+    sidebar.classList.remove('collapsed', 'open');
+  } else {
+    // On mobile, start collapsed
+    sidebar.classList.add('collapsed');
+    sidebar.classList.remove('open');
+  }
+}
+
+// Listen for window resize
+window.addEventListener('resize', () => {
+  const sidebar = document.getElementById('iaSidebar');
+  const overlay = document.getElementById('iaOverlay');
+  
+  if (window.innerWidth > 900) {
+    sidebar?.classList.remove('collapsed', 'open');
+    overlay?.classList.remove('active');
+  }
+});
 
 // ─── DATA ────────────────────────────────────────────────────────────────────
 async function loadDashboard() {
