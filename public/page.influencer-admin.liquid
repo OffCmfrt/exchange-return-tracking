@@ -13,6 +13,13 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body {
+  background: #000000;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
 :root {
   --bg: #000000;
   --surface: #0a0a0a;
@@ -123,13 +130,13 @@
 }
 
 .ia-sidebar-toggle {
-  display: none;
+  display: flex;
   position: fixed;
   top: 1.5rem;
-  left: 1.5rem;
+  left: 230px;
   z-index: 101;
-  width: 40px;
-  height: 40px;
+  width: 28px;
+  height: 28px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 2px;
@@ -139,15 +146,24 @@
   transition: all var(--transition);
 }
 
+.ia-sidebar-toggle.shifted {
+  left: 1rem;
+}
+
 .ia-sidebar-toggle:hover {
   background: var(--subtle);
   border-color: var(--border-hover);
 }
 
 .ia-sidebar-toggle svg {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   stroke: var(--text);
+  transition: transform var(--transition);
+}
+
+.ia-sidebar-toggle.shifted svg {
+  transform: rotate(180deg);
 }
 
 .ia-overlay {
@@ -224,6 +240,11 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  transition: margin-left var(--transition);
+}
+
+.ia-main.expanded {
+  margin-left: 0;
 }
 .ia-topbar {
   display: flex;
@@ -744,7 +765,7 @@
   }
   
   .ia-sidebar-toggle {
-    display: flex;
+    display: none;
   }
   
   .ia-main {
@@ -812,6 +833,13 @@
 
     <!-- Overlay for mobile -->
     <div class="ia-overlay" id="iaOverlay" onclick="toggleSidebar()"></div>
+
+    <!-- Desktop Sidebar Toggle -->
+    <button class="ia-sidebar-toggle" id="iaSidebarToggle" onclick="toggleSidebarDesktop()" aria-label="Toggle sidebar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
 
     <!-- Sidebar -->
     <aside class="ia-sidebar" id="iaSidebar">
@@ -1164,14 +1192,37 @@ function toggleSidebar() {
   }
 }
 
+// Desktop sidebar collapse/expand
+function toggleSidebarDesktop() {
+  const sidebar = document.getElementById('iaSidebar');
+  const main = document.querySelector('.ia-main');
+  const toggle = document.getElementById('iaSidebarToggle');
+  
+  if (!sidebar || !main || !toggle) return;
+  
+  const isCollapsed = sidebar.classList.contains('collapsed');
+  
+  if (isCollapsed) {
+    sidebar.classList.remove('collapsed');
+    main.classList.remove('expanded');
+    toggle.classList.remove('shifted');
+  } else {
+    sidebar.classList.add('collapsed');
+    main.classList.add('expanded');
+    toggle.classList.add('shifted');
+  }
+}
+
 // Close sidebar when clicking outside on desktop
 function initSidebar() {
   const sidebar = document.getElementById('iaSidebar');
   if (!sidebar) return;
   
-  // On desktop, sidebar is always visible
+  // On desktop, sidebar is always visible initially
   if (window.innerWidth > 900) {
     sidebar.classList.remove('collapsed', 'open');
+    document.querySelector('.ia-main')?.classList.remove('expanded');
+    document.getElementById('iaSidebarToggle')?.classList.remove('shifted');
   } else {
     // On mobile, start collapsed
     sidebar.classList.add('collapsed');
@@ -1183,10 +1234,24 @@ function initSidebar() {
 window.addEventListener('resize', () => {
   const sidebar = document.getElementById('iaSidebar');
   const overlay = document.getElementById('iaOverlay');
+  const main = document.querySelector('.ia-main');
+  const toggle = document.getElementById('iaSidebarToggle');
   
   if (window.innerWidth > 900) {
-    sidebar?.classList.remove('collapsed', 'open');
+    sidebar?.classList.remove('open');
     overlay?.classList.remove('active');
+    // Restore desktop state - if it was collapsed, keep it collapsed
+    if (!sidebar?.classList.contains('collapsed')) {
+      main?.classList.remove('expanded');
+      toggle?.classList.remove('shifted');
+    }
+  } else {
+    // On mobile, collapse and reset desktop state
+    if (!sidebar?.classList.contains('open')) {
+      sidebar?.classList.add('collapsed');
+    }
+    main?.classList.remove('expanded');
+    toggle?.classList.remove('shifted');
   }
 });
 
