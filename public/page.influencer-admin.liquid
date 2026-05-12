@@ -283,7 +283,7 @@ html, body {
   letter-spacing: 0.1em;
 }
 
-.ia-content { padding: 2.5rem; flex: 1; }
+.ia-content { padding: 2rem 1.5rem; flex: 1; max-width: 100%; overflow-x: hidden; }
 
 /* ── STAT STRIP ── */
 .ia-stat-strip {
@@ -347,10 +347,27 @@ html, body {
   overflow-x: auto;
   overflow-y: visible;
   -webkit-overflow-scrolling: touch;
+  position: relative;
 }
+
+/* Custom scrollbar for table */
+.ia-table-wrap::-webkit-scrollbar {
+  height: 8px;
+}
+.ia-table-wrap::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+.ia-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 4px;
+}
+.ia-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
 .ia-table {
   width: 100%;
-  min-width: 1200px;
+  min-width: 980px;
   border-collapse: collapse;
 }
 .ia-table thead tr {
@@ -358,9 +375,9 @@ html, body {
   border-bottom: 1px solid var(--border);
 }
 .ia-table th {
-  padding: 1rem 1.25rem;
-  font-size: 0.6rem;
-  letter-spacing: 0.25em;
+  padding: 0.85rem 0.75rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--muted);
   text-align: left;
@@ -368,10 +385,27 @@ html, body {
   white-space: nowrap;
 }
 .ia-table td {
-  padding: 1.1rem 1.25rem;
+  padding: 0.9rem 0.75rem;
   border-bottom: 1px solid var(--border);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   vertical-align: middle;
+}
+
+/* Sticky Actions column - always visible */
+.ia-table th:last-child,
+.ia-table td:last-child {
+  position: sticky;
+  right: 0;
+  background: var(--bg);
+  z-index: 2;
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 8px rgba(0, 0, 0, 0.3);
+}
+.ia-table thead th:last-child {
+  background: var(--surface);
+}
+.ia-table tbody tr:hover td:last-child {
+  background: var(--surface);
 }
 .ia-table tbody tr { transition: background var(--transition); }
 .ia-table tbody tr:hover td { background: var(--surface); }
@@ -409,27 +443,28 @@ html, body {
   font-size: 0.75rem;
 }
 .ia-copy-btn {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  padding: 0.4rem 0.8rem;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.3rem 0.55rem;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--muted);
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
   font-family: inherit;
   transition: all var(--transition);
+  white-space: nowrap;
 }
 .ia-copy-btn:hover { border-color: var(--text); color: var(--text); }
 .ia-copy-btn.copied { border-color: var(--success); color: var(--success); }
 
 /* Row action buttons */
-.ia-row-actions { display: flex; gap: 0.5rem; align-items: center; }
+.ia-row-actions { display: flex; gap: 0.35rem; align-items: center; flex-wrap: nowrap; }
 .ia-action-btn {
-  padding: 0.35rem 0.8rem;
-  font-size: 0.62rem;
-  letter-spacing: 0.15em;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   font-weight: 600;
   font-family: inherit;
@@ -437,6 +472,7 @@ html, body {
   border: 1px solid;
   background: transparent;
   transition: all var(--transition);
+  white-space: nowrap;
 }
 .ia-action-btn.edit { border-color: var(--border); color: var(--muted); }
 .ia-action-btn.edit:hover { border-color: var(--text); color: var(--text); }
@@ -753,10 +789,36 @@ html, body {
 .hidden { display: none !important; }
 
 /* ── RESPONSIVE ── */
+
+/* Medium screens (laptops/tablets 901-1280px) - sidebar collapsed by default for more room */
+@media (min-width: 901px) and (max-width: 1280px) {
+  .ia-content {
+    padding: 1.5rem 1.25rem;
+  }
+  .ia-topbar {
+    padding: 1.25rem 1.5rem;
+  }
+  .ia-table {
+    min-width: 900px;
+  }
+  .ia-table th, .ia-table td {
+    padding: 0.75rem 0.6rem;
+    font-size: 0.75rem;
+  }
+  .ia-stat-cell {
+    padding: 1.25rem 1.5rem;
+  }
+  .ia-stat-value {
+    font-size: 1.8rem;
+  }
+}
+
+/* Mobile / Tablet (≤900px) */
 @media (max-width: 900px) {
   .ia-sidebar {
     transform: translateX(-100%);
     box-shadow: none;
+    width: 260px;
   }
   
   .ia-sidebar.open {
@@ -765,7 +827,7 @@ html, body {
   }
   
   .ia-sidebar-toggle {
-    display: none;
+    display: none !important;
   }
   
   .ia-main {
@@ -774,7 +836,12 @@ html, body {
   }
   
   .ia-topbar {
-    padding: 1.5rem 1rem;
+    padding: 1.25rem 1rem;
+    gap: 0.5rem;
+  }
+  
+  .ia-topbar h1 {
+    font-size: 0.85rem;
   }
   
   .ia-topbar-mobile-toggle {
@@ -782,23 +849,59 @@ html, body {
   }
   
   .ia-content {
-    padding: 1.5rem 1rem;
+    padding: 1.25rem 0.75rem;
     overflow-x: hidden;
-  }
-  
-  /* Hide less important columns on mobile */
-  .ia-table th:nth-child(5), .ia-table td:nth-child(5),
-  .ia-table th:nth-child(6), .ia-table td:nth-child(6) { 
-    display: none; 
   }
   
   .ia-stat-strip {
     grid-template-columns: 1fr;
   }
   
-  /* Ensure no horizontal overflow */
+  .ia-stat-cell {
+    padding: 1.25rem 1.5rem;
+  }
+  
+  .ia-stat-value {
+    font-size: 1.6rem;
+  }
+  
+  /* Keep all columns visible but with scroll on mobile */
+  .ia-table {
+    min-width: 900px;
+  }
+  .ia-table th, .ia-table td {
+    padding: 0.7rem 0.5rem;
+    font-size: 0.72rem;
+  }
+  
+  /* Action buttons more compact on mobile */
+  .ia-action-btn {
+    padding: 0.25rem 0.45rem;
+    font-size: 0.55rem;
+  }
+  
+  /* Ensure no horizontal overflow at page level */
   .ia-wrap, .ia-layout, .ia-main {
     overflow-x: hidden;
+  }
+}
+
+/* Small mobile (≤480px) */
+@media (max-width: 480px) {
+  .ia-topbar h1 {
+    font-size: 0.75rem;
+  }
+  .ia-topbar-meta {
+    display: none;
+  }
+  .ia-content {
+    padding: 1rem 0.5rem;
+  }
+  .ia-stat-cell {
+    padding: 1rem 1.25rem;
+  }
+  .ia-stat-value {
+    font-size: 1.4rem;
   }
 }
 </style>
