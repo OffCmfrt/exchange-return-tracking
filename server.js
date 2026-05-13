@@ -1691,6 +1691,17 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         const data = await response.json();
         console.log(`📦 Delhivery Response:`, JSON.stringify(data, null, 2));
 
+        // Check for error responses first
+        if (data && data.rmk) {
+            console.error(`❌ Delhivery Error: ${data.rmk}`);
+            throw new Error(`Delhivery API Error: ${data.rmk}`);
+        }
+
+        if (data && data.message) {
+            console.error(`❌ Delhivery Message: ${data.message}`);
+            throw new Error(`Delhivery API Error: ${data.message}`);
+        }
+
         // Check for success
         if (data && data.packages && data.packages.length > 0) {
             const pkg = data.packages[0];
@@ -1701,6 +1712,9 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
                     success: true,
                     data: data
                 };
+            } else if (pkg.status && pkg.status !== 'Success') {
+                console.error(`❌ Delhivery package status: ${pkg.status}`);
+                throw new Error(`Delhivery package error: ${pkg.status}`);
             }
         } else if (data && data.shipments && data.shipments.length > 0) {
             const shipment = data.shipments[0];
@@ -1719,8 +1733,8 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
                 data: data
             };
         } else {
-            console.error('❌ Delhivery Error:', JSON.stringify(data));
-            return null;
+            console.error('❌ Delhivery Error: Unexpected response format', JSON.stringify(data));
+            throw new Error(`Delhivery unexpected response: ${JSON.stringify(data).substring(0, 200)}`);
         }
     } catch (error) {
         console.error('❌ Failed to create Delhivery return:', error);
@@ -3910,7 +3924,9 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                             pickupDate = new Date().toISOString();
                             console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
                         } else {
-                            throw new Error('Delhivery did not return waybill data');
+                            const errorMsg = delhiveryData ? 'Delhivery returned incomplete data' : 'Delhivery did not return waybill data';
+                            console.error(`[${requestId}] ❌ ${errorMsg}`, delhiveryData);
+                            throw new Error(errorMsg);
                         }
                     }
                 } catch (primaryError) {
@@ -3958,7 +3974,9 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                                     pickupDate = new Date().toISOString();
                                     console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
                                 } else {
-                                    throw new Error('Delhivery did not return waybill data');
+                                    const errorMsg = delhiveryData ? 'Delhivery fallback returned incomplete data' : 'Delhivery fallback did not return waybill data';
+                                    console.error(`[${requestId}] ❌ ${errorMsg}`, delhiveryData);
+                                    throw new Error(errorMsg);
                                 }
                             }
                         } catch (fallbackError) {
