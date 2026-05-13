@@ -145,6 +145,7 @@ app.post('/api/submit-return', writeLimiter);
 app.post('/api/submit-exchange', writeLimiter);
 app.post('/api/admin/', writeLimiter);
 app.post('/api/admin/*', writeLimiter);
+app.post('/api/influencer/apply', writeLimiter);
 
 // Request timeout protection - abort requests taking longer than 10 seconds
 app.use((req, res, next) => {
@@ -201,7 +202,15 @@ const {
     updateInfluencer,
     deleteInfluencer,
     getInfluencerByToken,
-    getInfluencerById
+    getInfluencerById,
+    listPendingInfluencers,
+    isReferralCodeTaken,
+    isEmailTaken,
+    isPhoneTaken,
+    listPayouts,
+    createPayout,
+    updatePayoutStatus,
+    getPayoutById
 } = require('./config/db-helpers');
 
 async function generateUniqueRequestId() {
@@ -985,6 +994,74 @@ async function disableShopifyDiscountCode(priceRuleId) {
     } catch (error) {
         console.error('❌ Failed to disable Shopify discount code:', error.message);
         // Don't throw - we still want to proceed with deletion even if Shopify fails
+    }
+}
+
+/**
+ * Create a DRAFT Shopify price rule without attaching a discount code.
+ * The code is effectively unusable in Shopify until activateShopifyDiscountCode() is called.
+ * Used by the influencer self-signup flow (hybrid auto-approve).
+ */
+async function createShopifyDiscountDraft(code, percentage, usageLimit, title) {
+    try {
+        const priceRulePayload = {
+            price_rule: {
+                title: title || `Influencer (Pending): ${code}`,
+                target_type: 'line_item',
+                target_selection: 'all',
+                allocation_method: 'across',
+                value_type: 'percentage',
+                value: `-${percentage}`,
+                customer_selection: 'all',
+                starts_at: new Date().toISOString()
+            }
+        };
+
+        const priceRuleResponse = await shopifyAPI('price_rules.json', {
+            method: 'POST',
+            body: JSON.stringify(priceRulePayload)
+        });
+
+        const priceRuleId = priceRuleResponse.price_rule.id;
+
+        if (usageLimit && usageLimit > 0) {
+            await shopifyAPI(`price_rules/${priceRuleId}.json`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    price_rule: { allocation_limit: usageLimit }
+                })
+            });
+        }
+
+        console.log(`📝 Created DRAFT Shopify price rule for ${code} (Price Rule ID: ${priceRuleId}, no discount_code attached)`);
+        return { priceRuleId };
+    } catch (error) {
+        console.error('❌ Failed to create Shopify discount draft:', error.message);
+        throw error;
+    }
+}
+
+/**
+ * Activate a draft price rule by attaching the actual discount_code entry.
+ * Called from the admin Approve action.
+ */
+async function activateShopifyDiscountCode(priceRuleId, code) {
+    try {
+        const discountCodePayload = {
+            discount_code: { code: code.toUpperCase() }
+        };
+
+        const discountCodeResponse = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
+            method: 'POST',
+            body: JSON.stringify(discountCodePayload)
+        });
+
+        const discountCodeId = discountCodeResponse.discount_code.id;
+        console.log(`✅ Activated Shopify discount code ${code} (Discount Code ID: ${discountCodeId})`);
+        return { discountCodeId };
+    } catch (error) {
+        console.error('❌ Failed to activate Shopify discount code:', error.message);
+        throw error;
     }
 }
 
@@ -4145,14 +4222,30 @@ app.post('/api/admin/delete-requests', authenticateAdmin, async (req, res) => {
 
 // Bulk Initiate Pickup (Admin)
 app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) => {
+    // Disable the global 10s timeout for this long-running batch endpoint.
+    // Allow up to 5 minutes to process the batch, AND remove the global
+    // 'timeout' listener that would otherwise still fire 503 after our window
+    // expires (res.setTimeout only changes the duration, not the listeners).
+    res.removeAllListeners('timeout');
+    res.setTimeout(5 * 60 * 1000);
+
+    // Track client disconnect / response close so we stop the loop early
+    // and never attempt to write to an already-closed response.
+    let clientGone = false;
+    const onClose = () => { clientGone = true; };
+    req.on('close', onClose);
+    res.on('close', onClose);
+
     try {
         const { requestIds } = req.body;
         if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
-            return res.status(400).json({ error: 'Invalid or missing request IDs' });
+            if (!res.headersSent) return res.status(400).json({ error: 'Invalid or missing request IDs' });
+            return;
         }
 
         if (!process.env.SHIPROCKET_EMAIL) {
-            return res.status(400).json({ error: 'Shiprocket not configured on server' });
+            if (!res.headersSent) return res.status(400).json({ error: 'Shiprocket not configured on server' });
+            return;
         }
 
         const results = {
@@ -4162,6 +4255,12 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
         };
 
         for (const requestId of requestIds) {
+            // Stop processing if the client disconnected or response already sent (e.g. timeout)
+            if (clientGone || res.headersSent) {
+                console.warn(`[Bulk Pickup] Aborting remaining items: client disconnected or response already sent.`);
+                break;
+            }
+
             try {
                 const requestDetails = await getRequestById(requestId);
                 if (!requestDetails) {
@@ -4218,15 +4317,24 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
             }
         }
 
-        res.json({
-            success: true,
-            results,
-            message: `Processed ${results.total} requests: ${results.successful.length} successful, ${results.failed.length} failed.`
-        });
+        if (!res.headersSent) {
+            res.json({
+                success: true,
+                results,
+                message: `Processed ${results.total} requests: ${results.successful.length} successful, ${results.failed.length} failed.`
+            });
+        } else {
+            console.warn('[Bulk Pickup] Response already sent (likely timeout). Skipping final res.json().');
+        }
 
     } catch (error) {
         console.error('Bulk initiate pickup error:', error);
-        res.status(500).json({ error: 'Internal server error while processing batch' });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Internal server error while processing batch' });
+        }
+    } finally {
+        req.off('close', onClose);
+        res.off('close', onClose);
     }
 });
 
@@ -4316,7 +4424,7 @@ app.get('/', (req, res) => {
 
 // ==================== INFLUENCER ADMIN ENDPOINTS ====================
 
-// List all influencers (Protected by Admin Auth)
+// Include new fields for self-signup applications
 app.get('/api/influencer-admin/list', authenticateAdmin, async (req, res) => {
     try {
         const influencers = await getAllInfluencers();
@@ -4697,6 +4805,164 @@ app.get('/api/influencer-admin/conversions/:id', authenticateAdmin, async (req, 
     }
 });
 
+// ==================== INFLUENCER APPLICATION & PAYOUT ADMIN ENDPOINTS ====================
+
+// Approve a pending influencer application (attaches the Shopify discount code)
+app.post('/api/influencer-admin/approve/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+        if (influencer.status === 'active') {
+            return res.json({ success: true, influencer, message: 'Already active' });
+        }
+
+        let discountCodeId = influencer.shopify_discount_code_id;
+        let shopifyWarning = null;
+
+        // Attach the live discount code in Shopify
+        if (influencer.shopify_price_rule_id) {
+            try {
+                const result = await activateShopifyDiscountCode(influencer.shopify_price_rule_id, influencer.referral_code);
+                discountCodeId = result.discountCodeId ? String(result.discountCodeId) : discountCodeId;
+            } catch (shopifyError) {
+                console.error('Shopify activation failed:', shopifyError.message);
+                shopifyWarning = `Shopify activation failed: ${shopifyError.message}. You may need to attach the discount code manually.`;
+            }
+        } else {
+            // No draft price rule exists (maybe initial draft creation failed). Create a fresh code.
+            try {
+                const discount = parseFloat(influencer.discount_value || influencer.commission_rate || 10);
+                const usage = influencer.usage_limit || null;
+                const shopifyIds = await createShopifyDiscountCode(
+                    influencer.referral_code,
+                    discount,
+                    usage,
+                    `Influencer: ${influencer.name}`
+                );
+                await updateInfluencer(id, {
+                    shopifyPriceRuleId: String(shopifyIds.priceRuleId),
+                    shopifyDiscountCodeId: String(shopifyIds.discountCodeId)
+                });
+                discountCodeId = String(shopifyIds.discountCodeId);
+            } catch (shopifyError) {
+                console.error('Shopify fresh-create failed on approve:', shopifyError.message);
+                shopifyWarning = `Shopify code could not be created: ${shopifyError.message}`;
+            }
+        }
+
+        await updateInfluencer(id, {
+            status: 'active',
+            isActive: true,
+            approvedAt: new Date().toISOString(),
+            shopifyDiscountCodeId: discountCodeId || undefined
+        });
+
+        const updated = await getInfluencerById(id);
+        res.json({ success: true, influencer: updated, warning: shopifyWarning });
+    } catch (error) {
+        console.error('Approve influencer error:', error);
+        res.status(500).json({ error: 'Failed to approve influencer' });
+    }
+});
+
+// Reject a pending influencer application
+app.post('/api/influencer-admin/reject/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        if (influencer.shopify_price_rule_id) {
+            await disableShopifyDiscountCode(influencer.shopify_price_rule_id);
+        }
+
+        await updateInfluencer(id, { status: 'rejected', isActive: false });
+        const updated = await getInfluencerById(id);
+        res.json({ success: true, influencer: updated });
+    } catch (error) {
+        console.error('Reject influencer error:', error);
+        res.status(500).json({ error: 'Failed to reject influencer' });
+    }
+});
+
+// List payouts for an influencer (admin)
+app.get('/api/influencer-admin/payouts/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const payouts = await listPayouts(id);
+        res.json({ success: true, payouts });
+    } catch (error) {
+        console.error('List payouts error:', error);
+        res.status(500).json({ error: 'Failed to fetch payouts', details: error.message });
+    }
+});
+
+// Add a payout entry for an influencer (admin)
+app.post('/api/influencer-admin/payouts/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { periodStart, periodEnd, amount, notes, currency, reference } = req.body;
+
+        if (!periodStart || !periodEnd || amount === undefined || amount === null || amount === '') {
+            return res.status(400).json({ error: 'periodStart, periodEnd, and amount are required' });
+        }
+        if (isNaN(parseFloat(amount)) || parseFloat(amount) < 0) {
+            return res.status(400).json({ error: 'Invalid amount' });
+        }
+        if (new Date(periodStart) > new Date(periodEnd)) {
+            return res.status(400).json({ error: 'periodStart cannot be after periodEnd' });
+        }
+
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        const payout = await createPayout({
+            influencerId: id,
+            periodStart,
+            periodEnd,
+            amount,
+            currency: currency || 'INR',
+            status: 'pending',
+            reference,
+            notes
+        });
+        res.json({ success: true, payout });
+    } catch (error) {
+        console.error('Create payout error:', error);
+        res.status(500).json({ error: 'Failed to create payout', details: error.message });
+    }
+});
+
+// Update payout status (admin: mark paid / cancel)
+app.patch('/api/influencer-admin/payouts/item/:payoutId', authenticateAdmin, async (req, res) => {
+    try {
+        const { payoutId } = req.params;
+        const { status, reference } = req.body;
+
+        if (!['paid', 'pending', 'cancelled'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid status (must be paid, pending, or cancelled)' });
+        }
+
+        const existing = await getPayoutById(payoutId);
+        if (!existing) {
+            return res.status(404).json({ error: 'Payout not found' });
+        }
+
+        const payout = await updatePayoutStatus(payoutId, status, reference);
+        res.json({ success: true, payout });
+    } catch (error) {
+        console.error('Update payout error:', error);
+        res.status(500).json({ error: 'Failed to update payout', details: error.message });
+    }
+});
+
 // ==================== INFLUENCER PORTAL ENDPOINTS ====================
 
 // Verify Influencer Token & Get Profile
@@ -4714,7 +4980,8 @@ app.get('/api/influencer/auth/:token', async (req, res) => {
             influencer: {
                 name: influencer.name,
                 referralCode: influencer.referral_code,
-                hasPhone: !!influencer.phone
+                hasPhone: !!influencer.phone,
+                status: influencer.status || (influencer.is_active ? 'active' : 'suspended')
             }
         });
     } catch (error) {
@@ -4880,6 +5147,196 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
                 details: error.message
             });
         }
+    }
+});
+
+// ==================== INFLUENCER SELF-SIGNUP (PUBLIC) ====================
+
+// Helper: normalize and reserve a unique referral code
+function normalizeReferralCode(raw) {
+    return String(raw || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .slice(0, 20);
+}
+
+// POST /api/influencer/apply - Public self-signup
+app.post('/api/influencer/apply', async (req, res) => {
+    try {
+        const {
+            name,
+            phone,
+            email,
+            instagramHandle,
+            youtubeHandle,
+            followerCount,
+            niche,
+            city,
+            whyJoin,
+            preferredCode,
+            payoutUpi
+        } = req.body || {};
+
+        // ── Validation ──
+        if (!name || !phone || !email || !instagramHandle || !preferredCode) {
+            return res.status(400).json({
+                error: 'Missing required fields',
+                field: !name ? 'name' : !phone ? 'phone' : !email ? 'email' : !instagramHandle ? 'instagramHandle' : 'preferredCode'
+            });
+        }
+
+        const cleanPhone = String(phone).replace(/\D/g, '');
+        if (cleanPhone.length < 10) {
+            return res.status(400).json({ error: 'Phone must be at least 10 digits', field: 'phone' });
+        }
+        const cleanEmail = String(email).trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+            return res.status(400).json({ error: 'Invalid email address', field: 'email' });
+        }
+
+        let finalCode = normalizeReferralCode(preferredCode);
+        if (finalCode.length < 4) {
+            return res.status(400).json({ error: 'Referral code must be at least 4 alphanumeric characters', field: 'preferredCode' });
+        }
+
+        // Duplicate checks
+        if (await isEmailTaken(cleanEmail)) {
+            return res.status(409).json({ error: 'This email is already registered.', field: 'email' });
+        }
+        if (await isPhoneTaken(cleanPhone)) {
+            return res.status(409).json({ error: 'This phone number is already registered.', field: 'phone' });
+        }
+
+        // Referral code: try preferred first, then one suffixed retry
+        if (await isReferralCodeTaken(finalCode)) {
+            const suffix = String(Math.floor(100 + Math.random() * 900));
+            const retryCode = (finalCode + suffix).slice(0, 20);
+            if (await isReferralCodeTaken(retryCode)) {
+                return res.status(409).json({
+                    error: 'That referral code is taken. Please choose a different one.',
+                    field: 'preferredCode'
+                });
+            }
+            finalCode = retryCode;
+        }
+
+        // ── Create influencer (pending) ──
+        const linkToken = crypto.randomBytes(16).toString('hex');
+        const followers = followerCount !== undefined && followerCount !== ''
+            ? parseInt(followerCount) || 0
+            : null;
+
+        const influencer = await createInfluencer({
+            name: String(name).trim(),
+            referralCode: finalCode,
+            linkToken,
+            phone: cleanPhone,
+            commissionRate: 10,
+            discountValue: 10,
+            usageLimit: null,
+            isActive: false,
+            status: 'pending',
+            email: cleanEmail,
+            instagramHandle: String(instagramHandle).trim(),
+            youtubeHandle: youtubeHandle ? String(youtubeHandle).trim() : null,
+            followerCount: followers,
+            niche: niche ? String(niche).trim() : null,
+            city: city ? String(city).trim() : null,
+            whyJoin: whyJoin ? String(whyJoin).trim().slice(0, 1000) : null,
+            payoutUpi: payoutUpi ? String(payoutUpi).trim() : null,
+            appliedAt: new Date().toISOString()
+        });
+
+        // ── Create DRAFT Shopify price rule (no discount_code attached yet) ──
+        let shopifyWarning = null;
+        try {
+            const draft = await createShopifyDiscountDraft(finalCode, 10, null, `Influencer (Pending): ${name}`);
+            await updateInfluencer(influencer.id, {
+                shopifyPriceRuleId: String(draft.priceRuleId)
+            });
+        } catch (shopifyError) {
+            console.error('Shopify draft creation failed (non-blocking):', shopifyError.message);
+            shopifyWarning = 'Your application is received, but our discount system is temporarily unavailable. Our team will create your code manually.';
+        }
+
+        // Build portal URL
+        const storeBase = process.env.SHOPIFY_STORE_DOMAIN
+            ? `https://${process.env.SHOPIFY_STORE_DOMAIN.replace(/^https?:\/\//, '')}`
+            : (process.env.STORE_BASE_URL || '');
+        const portalUrl = `${storeBase}/pages/influencer-portal?token=${linkToken}`;
+
+        return res.json({
+            success: true,
+            status: 'pending',
+            referralCode: finalCode,
+            portalUrl,
+            warning: shopifyWarning,
+            message: 'Application received. Your code will be activated within 24 hours.'
+        });
+    } catch (error) {
+        console.error('Influencer apply error:', error);
+        res.status(500).json({ error: 'Failed to submit application. Please try again later.' });
+    }
+});
+
+// GET /api/influencer/payouts/:token - Influencer-facing payout history
+app.get('/api/influencer/payouts/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid or inactive influencer link' });
+        }
+
+        const payouts = await listPayouts(influencer.id);
+
+        // Summary metrics
+        let totalPaid = 0;
+        let pendingAmount = 0;
+        let paidCount = 0;
+        let pendingCount = 0;
+        let lastPeriodEnd = null;
+        for (const p of payouts) {
+            const amt = parseFloat(p.amount || 0);
+            if (p.status === 'paid') { totalPaid += amt; paidCount += 1; }
+            if (p.status === 'pending') { pendingAmount += amt; pendingCount += 1; }
+            if (p.period_end && (!lastPeriodEnd || p.period_end > lastPeriodEnd)) {
+                lastPeriodEnd = p.period_end;
+            }
+        }
+
+        let nextExpected = null;
+        if (lastPeriodEnd) {
+            const d = new Date(lastPeriodEnd);
+            d.setDate(d.getDate() + 7);
+            nextExpected = d.toISOString().slice(0, 10);
+        }
+
+        res.json({
+            success: true,
+            currency: payouts[0]?.currency || 'INR',
+            summary: {
+                totalPaid: totalPaid.toFixed(2),
+                pendingAmount: pendingAmount.toFixed(2),
+                paidCount,
+                pendingCount,
+                nextExpected
+            },
+            payouts: payouts.map(p => ({
+                id: p.id,
+                period_start: p.period_start,
+                period_end: p.period_end,
+                amount: parseFloat(p.amount).toFixed(2),
+                currency: p.currency || 'INR',
+                status: p.status,
+                paid_at: p.paid_at,
+                reference: p.reference,
+                notes: p.notes
+            }))
+        });
+    } catch (error) {
+        console.error('Influencer payouts fetch error:', error);
+        res.status(500).json({ error: 'Failed to fetch payouts' });
     }
 });
 
