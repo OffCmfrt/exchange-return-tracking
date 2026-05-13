@@ -118,6 +118,10 @@ async function getAllRequests(filters = {}) {
             .lte('created_at', endDate.toISOString());
     }
 
+    if (filters.carrier) {
+        query = query.eq('carrier', filters.carrier);
+    }
+
     if (filters.search) {
         const searchTerm = filters.search;
         // Log search activity without exposing the actual search term (could contain PII)
@@ -170,6 +174,7 @@ async function getRequestStats() {
         const [
             { count: totalCount },
             { count: pendingCount },
+            { count: pickupPendingCount },
             { count: scheduledCount },
             { count: approvedCount },
             { count: rejectedCount },
@@ -179,6 +184,7 @@ async function getRequestStats() {
         ] = await Promise.all([
             supabase.from('requests').select('*', { count: 'exact', head: true }),
             supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+            supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'pickup_pending'),
             supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'scheduled'),
             supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'approved'),
             supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'rejected'),
@@ -225,6 +231,7 @@ async function getRequestStats() {
         return {
             total: totalCount || 0,
             pending: pendingCount || 0,
+            pickupPending: pickupPendingCount || 0,
             scheduled: scheduledCount || 0,
             approved: approvedCount || 0,
             rejected: rejectedCount || 0,

@@ -137,6 +137,7 @@
                                 <option value="">All Statuses</option>
                                 <option value="waiting_payment">Waiting Payment</option>
                                 <option value="pending">Pending Admin</option>
+                                <option value="pickup_pending">Pickup Pending</option>
                                 <option value="scheduled">Pickup Booked</option>
                                 <option value="picked_up">Picked Up</option>
                                 <option value="in_transit">In Transit</option>
@@ -152,6 +153,15 @@
                                 <option value="">All Types</option>
                                 <option value="return">Returns</option>
                                 <option value="exchange">Exchanges</option>
+                            </select>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </div>
+                        
+                        <div style="position: relative; flex: 1;">
+                            <select id="carrierFilter" onchange="loadRequests(true)" style="width: 100%; padding: 0.6rem 2rem 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; background: white; appearance: none; cursor: pointer; color: #374151;">
+                                <option value="">All Carriers</option>
+                                <option value="shiprocket">Shiprocket</option>
+                                <option value="delhivery">Delhivery</option>
                             </select>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af;"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </div>
@@ -181,6 +191,11 @@
                             background-color: #ff6b35 !important;
                             color: #ffffff !important;
                             border: 1px solid #ff5722 !important;
+                        }
+                        .badge-pickup-pending {
+                            background-color: #fed7aa !important;
+                            color: #9a3412 !important;
+                            border: 1px solid #fdba74 !important;
                         }
                         .badge-waiting-payment {
                             background-color: #ffd54f !important;
@@ -1010,47 +1025,130 @@
                     <!-- Carrier Configuration -->
                     <div class="settings-section">
                         <h3><i class="fas fa-shipping-fast"></i> Carrier Configuration</h3>
-                        <p class="section-desc">Select which shipping carrier(s) to use for return pickups</p>
+                        <p class="section-desc">Select which shipping carrier(s) to use for return pickups and dispatch replacements</p>
                         
-                        <div class="carrier-options">
-                            <label class="carrier-option">
-                                <input type="radio" name="carrier-mode" value="shiprocket_only" id="carrier-shiprocket-only">
-                                <div class="carrier-option-content">
-                                    <div class="carrier-icon shiprocket-icon">
-                                        <i class="fas fa-rocket"></i>
+                        <!-- Pickup Carrier Settings -->
+                        <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f0f9ff; border-radius: 8px; border-left: 3px solid #0ea5e9;">
+                            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; color: #0369a1;"><i class="fas fa-truck-pickup" style="margin-right: 0.5rem;"></i>Pickup Carrier (Return Requests)</h4>
+                            <div class="carrier-options" style="margin: 0;">
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-pickup" value="shiprocket_only" id="carrier-pickup-shiprocket-only">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon shiprocket-icon">
+                                            <i class="fas fa-rocket"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Shiprocket Only</div>
+                                            <div class="carrier-desc">Use only Shiprocket for pickups</div>
+                                        </div>
                                     </div>
-                                    <div class="carrier-info">
-                                        <div class="carrier-name">Shiprocket Only</div>
-                                        <div class="carrier-desc">Use only Shiprocket for all shipments</div>
+                                </label>
+                                
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-pickup" value="delhivery_only" id="carrier-pickup-delhivery-only">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon delhivery-icon">
+                                            <i class="fas fa-truck"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Delhivery Only</div>
+                                            <div class="carrier-desc">Use only Delhivery for pickups</div>
+                                        </div>
                                     </div>
-                                </div>
-                            </label>
-                            
-                            <label class="carrier-option">
-                                <input type="radio" name="carrier-mode" value="delhivery_only" id="carrier-delhivery-only">
-                                <div class="carrier-option-content">
-                                    <div class="carrier-icon delhivery-icon">
-                                        <i class="fas fa-truck"></i>
+                                </label>
+                                
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-pickup" value="shiprocket_with_fallback" id="carrier-pickup-shiprocket-fallback" checked>
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon combo-icon">
+                                            <i class="fas fa-layer-group"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Shiprocket + Delhivery Fallback <span class="badge-recommended">Recommended</span></div>
+                                            <div class="carrier-desc">Primary: Shiprocket, Fallback: Delhivery</div>
+                                        </div>
                                     </div>
-                                    <div class="carrier-info">
-                                        <div class="carrier-name">Delhivery Only</div>
-                                        <div class="carrier-desc">Use only Delhivery for all shipments</div>
+                                </label>
+
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-pickup" value="delhivery_with_fallback" id="carrier-pickup-delhivery-fallback">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon combo-icon">
+                                            <i class="fas fa-layer-group"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Delhivery + Shiprocket Fallback</div>
+                                            <div class="carrier-desc">Primary: Delhivery, Fallback: Shiprocket</div>
+                                        </div>
                                     </div>
-                                </div>
-                            </label>
-                            
-                            <label class="carrier-option">
-                                <input type="radio" name="carrier-mode" value="shiprocket_with_fallback" id="carrier-shiprocket-fallback" checked>
-                                <div class="carrier-option-content">
-                                    <div class="carrier-icon combo-icon">
-                                        <i class="fas fa-layer-group"></i>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Dispatch Carrier Settings -->
+                        <div style="padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 3px solid #22c55e;">
+                            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; color: #15803d;"><i class="fas fa-box" style="margin-right: 0.5rem;"></i>Dispatch Carrier (Exchange Replacements)</h4>
+                            <div class="carrier-options" style="margin: 0;">
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-dispatch" value="shiprocket_only" id="carrier-dispatch-shiprocket-only">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon shiprocket-icon">
+                                            <i class="fas fa-rocket"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Shiprocket Only</div>
+                                            <div class="carrier-desc">Use only Shiprocket for dispatches</div>
+                                        </div>
                                     </div>
-                                    <div class="carrier-info">
-                                        <div class="carrier-name">Shiprocket + Delhivery Fallback <span class="badge-recommended">Recommended</span></div>
-                                        <div class="carrier-desc">Primary: Shiprocket, Fallback: Delhivery if Shiprocket fails</div>
+                                </label>
+                                
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-dispatch" value="delhivery_only" id="carrier-dispatch-delhivery-only">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon delhivery-icon">
+                                            <i class="fas fa-truck"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Delhivery Only</div>
+                                            <div class="carrier-desc">Use only Delhivery for dispatches</div>
+                                        </div>
                                     </div>
-                                </div>
-                            </label>
+                                </label>
+                                
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-dispatch" value="shiprocket_with_fallback" id="carrier-dispatch-shiprocket-fallback" checked>
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon combo-icon">
+                                            <i class="fas fa-layer-group"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Shiprocket + Delhivery Fallback <span class="badge-recommended">Recommended</span></div>
+                                            <div class="carrier-desc">Primary: Shiprocket, Fallback: Delhivery</div>
+                                        </div>
+                                    </div>
+                                </label>
+
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-dispatch" value="delhivery_with_fallback" id="carrier-dispatch-delhivery-fallback">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon combo-icon">
+                                            <i class="fas fa-layer-group"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Delhivery + Shiprocket Fallback</div>
+                                            <div class="carrier-desc">Primary: Delhivery, Fallback: Shiprocket</div>
+                                        </div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Backward Compatibility Note -->
+                        <div style="margin-top: 1rem; padding: 0.75rem; background: #fef3c7; border-radius: 6px; border-left: 3px solid #f59e0b;">
+                            <p style="margin: 0; font-size: 0.8rem; color: #92400e;">
+                                <i class="fas fa-info-circle" style="margin-right: 0.5rem;"></i>
+                                <strong>Note:</strong> If you don't set specific pickup/dispatch carriers above, the system will use the legacy global setting.
+                            </p>
                         </div>
                     </div>
 
@@ -1166,6 +1264,20 @@
 
         <div id="modalContent">
             <!-- Content will be populated here -->
+        </div>
+
+        <!-- Carrier Override (only shown when status is 'pending') -->
+        <div id="carrierOverrideSection" class="hidden" style="margin-top: 1.5rem; padding: 1rem; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151; font-size: 0.875rem;">
+                <i class="fas fa-shipping-fast" style="margin-right: 0.5rem;"></i>
+                Carrier Override (Optional)
+            </label>
+            <p style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.75rem;">Choose a specific carrier for this request. Leave as "Default" to use system settings.</p>
+            <select id="carrierOverride" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; background: white; color: #374151;">
+                <option value="">Default (Use System Settings)</option>
+                <option value="shiprocket">Shiprocket Only</option>
+                <option value="delhivery">Delhivery Only</option>
+            </select>
         </div>
 
         <div id="modalActions" class="hidden" style="margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem;">
@@ -1320,6 +1432,7 @@
         const labels = {
             'waiting_payment': 'Waiting for Payment',
             'pending':         'Pending Review',
+            'pickup_pending':  'Pickup Pending — Awaiting Carrier Confirmation',
             'scheduled':       'Pickup Booked — Awaiting Pickup',
             'picked_up':       'Item Picked Up by Courier',
             'in_transit':      'In Transit',
@@ -1342,12 +1455,14 @@
         const statusFilter = document.getElementById('statusFilter').value;
         const typeFilter = document.getElementById('typeFilter').value;
         const dateFilter = document.getElementById('dateFilter').value;
+        const carrierFilter = document.getElementById('carrierFilter').value;
 
         try {
             const params = new URLSearchParams();
             if (statusFilter) params.append('status', statusFilter);
             if (typeFilter) params.append('type', typeFilter);
             if (dateFilter) params.append('date', dateFilter);
+            if (carrierFilter) params.append('carrier', carrierFilter);
             params.append('page', currentPage);
             params.append('limit', currentLimit);
             
@@ -1828,6 +1943,9 @@
 
         // Show/hide action buttons
         const modalActions = document.getElementById('modalActions');
+        // Show/hide carrier override section
+        const carrierOverrideSection = document.getElementById('carrierOverrideSection');
+        
         // We allow approval if status is 'delivered' (standard flow) or 'scheduled'/'picked_up'/'in_transit' if they want to bypass (optional, but let's stick to delivered for now as per request)
         // actually, let's allow it for any non-approved/rejected status to be safe, but add a warning? 
         // User said: "pickup booked -> item delivered -> admin approves". 
@@ -1836,6 +1954,15 @@
         if (['pending', 'scheduled', 'picked_up', 'in_transit', 'delivered'].includes(data.status)) {
             console.log('Action block status matched:', data.status);
             modalActions.classList.remove('hidden');
+            
+            // Show carrier override only when status is 'pending'
+            if (carrierOverrideSection) {
+                if (data.status === 'pending') {
+                    carrierOverrideSection.classList.remove('hidden');
+                } else {
+                    carrierOverrideSection.classList.add('hidden');
+                }
+            }
             
             const approveBtn = modalActions.querySelector('button.btn-primary[onclick="approveRequest()"]');
             const rejectBtn = modalActions.querySelector('button.btn-primary[onclick="rejectRequest()"]');
@@ -2099,6 +2226,7 @@
     async function approveRequest() {
         if (!confirm('Are you sure you want to approve this request?')) return;
         const notes = document.getElementById('adminNotes')?.value || '';
+        const carrierOverride = document.getElementById('carrierOverride')?.value || '';
 
         try {
             const endpoint = currentRequest.type === 'return' ? 'approve-return' : 'approve-exchange';
@@ -2110,7 +2238,8 @@
                 },
                 body: JSON.stringify({
                     requestId: currentRequest.requestId,
-                    notes
+                    notes,
+                    carrierOverride
                 })
             });
 
@@ -2617,13 +2746,21 @@
                         toggleWindowMode(); // Update help text
                     }
                     
-                    // Set carrier mode (default to 'shiprocket_with_fallback')
-                    const carrierMode = data.carrier_mode || 'shiprocket_with_fallback';
-                    // Convert underscore to hyphen for element ID matching
-                    const carrierModeId = `carrier-${carrierMode.replace(/_/g, '-')}`;
-                    const carrierModeEl = document.getElementById(carrierModeId);
-                    if (carrierModeEl) {
-                        carrierModeEl.checked = true;
+                    // Set carrier mode (supports separate pickup/dispatch with backward compatibility)
+                    // Load pickup carrier mode
+                    const pickupCarrierMode = data.carrier_mode_pickup || data.carrier_mode || 'shiprocket_with_fallback';
+                    const pickupCarrierModeId = `carrier-pickup-${pickupCarrierMode.replace(/_/g, '-')}`;
+                    const pickupCarrierModeEl = document.getElementById(pickupCarrierModeId);
+                    if (pickupCarrierModeEl) {
+                        pickupCarrierModeEl.checked = true;
+                    }
+                    
+                    // Load dispatch carrier mode
+                    const dispatchCarrierMode = data.carrier_mode_dispatch || data.carrier_mode || 'shiprocket_with_fallback';
+                    const dispatchCarrierModeId = `carrier-dispatch-${dispatchCarrierMode.replace(/_/g, '-')}`;
+                    const dispatchCarrierModeEl = document.getElementById(dispatchCarrierModeId);
+                    if (dispatchCarrierModeEl) {
+                        dispatchCarrierModeEl.checked = true;
                     }
                     
                     // Set cutoff date
@@ -2710,7 +2847,8 @@
         const approvedReasons = Array.from(document.querySelectorAll('.set-reason-cb:checked')).map(cb => cb.value);
 
         const windowMode = document.querySelector('input[name="window-mode"]:checked')?.value || 'delivery';
-        const carrierMode = document.querySelector('input[name="carrier-mode"]:checked')?.value || 'shiprocket_with_fallback';
+        const pickupCarrierMode = document.querySelector('input[name="carrier-mode-pickup"]:checked')?.value || 'shiprocket_with_fallback';
+        const dispatchCarrierMode = document.querySelector('input[name="carrier-mode-dispatch"]:checked')?.value || 'shiprocket_with_fallback';
         const cutoffEnabled = document.getElementById('set-enable-cutoff').checked;
         const cutoffDate = document.getElementById('set-cutoff-date').value;
         
@@ -2719,7 +2857,8 @@
             allow_exchanges: document.getElementById('set-allow-exchanges').checked,
             return_window_days: parseInt(document.getElementById('set-return-window').value, 10),
             return_window_mode: windowMode,
-            carrier_mode: carrierMode,
+            carrier_mode_pickup: pickupCarrierMode,
+            carrier_mode_dispatch: dispatchCarrierMode,
             cutoff_date_enabled: cutoffEnabled,
             cutoff_date: cutoffEnabled ? cutoffDate : null,
             auto_approve_reasons: approvedReasons
