@@ -16,20 +16,27 @@ const supabase = createClient(
 );
 
 async function getShiprocketToken() {
-  const response = await fetch('https://apiv2.shiprocket.in/v1/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: process.env.SHIPROCKET_EMAIL,
-      password: process.env.SHIPROCKET_PASSWORD
-    })
-  });
-  
-  const data = await response.json();
-  if (!data.token) {
-    throw new Error('Failed to get Shiprocket token');
+  try {
+    const response = await fetch('https://apiv2.shiprocket.in/v1/external/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: process.env.SHIPROCKET_EMAIL,
+        password: process.env.SHIPROCKET_PASSWORD
+      })
+    });
+    
+    const data = await response.json();
+    if (!data.token) {
+      console.error('❌ Shiprocket login failed:', JSON.stringify(data));
+      throw new Error('Failed to get Shiprocket token');
+    }
+    console.log('✅ Shiprocket token obtained successfully');
+    return data.token;
+  } catch (error) {
+    console.error('❌ Error getting Shiprocket token:', error.message);
+    throw error;
   }
-  return data.token;
 }
 
 async function createShiprocketForwardOrder(requestData) {
@@ -101,18 +108,39 @@ async function createShiprocketForwardOrder(requestData) {
       }
     }
 
-    let cleanPhone = String(customerPhone).replace(/\D/g, '');
-    customerPhone = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : '9999999999';
-
-    customerPhone = (customerPhone || '').replace(/\D/g, '');
-    if (customerPhone.length === 12 && customerPhone.startsWith('91')) {
-      customerPhone = customerPhone.substring(2);
+    // Sanitize phone number
+    let cleanPhone = String(customerPhone || '').replace(/\D/g, '');
+    
+    // Remove country code if present
+    if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
+      cleanPhone = cleanPhone.substring(2);
     }
-    if (customerPhone.length > 10) {
-      customerPhone = customerPhone.slice(-10);
+    if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) {
+      cleanPhone = cleanPhone.substring(1);
     }
-    if (customerPhone.length < 10) {
-      customerPhone = '9999999999';
+    
+    // Only use 10-digit numbers
+    if (cleanPhone.length === 10 && /^[6-9]\d{9}$/.test(cleanPhone)) {
+      customerPhone = cleanPhone;
+      console.log(`   ✅ Using phone: ${customerPhone}`);
+    } else {
+      // Try to get from Shopify order if we haven't already
+      if (shopifyOrder && (!requestData.customerPhone || requestData.customerPhone === '9999999999')) {
+        customerPhone = shopifyOrder.shipping_address?.phone || shopifyOrder.customer?.phone || '';
+        cleanPhone = String(customerPhone || '').replace(/\D/g, '');
+        if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
+          cleanPhone = cleanPhone.substring(2);
+        }
+        if (cleanPhone.length === 10 && /^[6-9]\d{9}$/.test(cleanPhone)) {
+          customerPhone = cleanPhone;
+          console.log(`   ✅ Using phone from Shopify: ${customerPhone}`);
+        } else {
+          console.warn(`   ⚠️ Invalid phone number, using: ${cleanPhone || 'will use order phone'}`);
+          customerPhone = cleanPhone || '9999999999';
+        }
+      } else {
+        customerPhone = cleanPhone || '9999999999';
+      }
     }
 
     // Forward Order Items (Replacement Items)
@@ -185,8 +213,12 @@ async function createShiprocketForwardOrder(requestData) {
 }
 
 async function shopifyAPI(endpoint) {
-  const shopifyDomain = process.env.SHOPIFY_SHOP_DOMAIN;
+  const shopifyDomain = process.env.SHOPIFY_STORE_DOMAIN;
   const shopifyToken = process.env.SHOPIFY_ACCESS_TOKEN;
+  
+  if (!shopifyDomain) {
+    throw new Error('SHOPIFY_STORE_DOMAIN not set in .env');
+  }
   
   const url = `https://${shopifyDomain}/admin/api/2024-01/${endpoint}`;
   const response = await fetch(url, {
