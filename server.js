@@ -1514,6 +1514,14 @@ async function createShiprocketForwardOrder(requestData) {
 
         if (data.status_code === 400 || data.status_code === 422 || (data.errors && Object.keys(data.errors).length > 0)) {
             console.error('❌ Shiprocket Validation Error (Forward):', JSON.stringify(data));
+            console.error('❌ Payload that caused error:', JSON.stringify(payload, null, 2));
+            console.error('❌ Items being sent:', JSON.stringify(orderItems, null, 2));
+            return null;
+        }
+
+        if (!response.ok) {
+            console.error(`❌ Shiprocket API Error (HTTP ${response.status}):`, JSON.stringify(data));
+            console.error('❌ Payload that caused error:', JSON.stringify(payload, null, 2));
             return null;
         }
 
@@ -4094,15 +4102,33 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                     updates.forwardShipmentId = String(forwardOrder.shipment_id);
                     updates.forwardAwbNumber = forwardOrder.awb_code || '';
                     updates.forwardStatus = 'scheduled';
+                    // Only mark as approved if forward shipment was successfully created
+                    updates.status = 'approved';
                 } else {
+                    // Forward shipment creation failed - do NOT mark as approved
                     adminNotes += `\nFailed to create replacement shipment in Shiprocket. Check logs.`;
+                    console.error(`[${requestId}] ❌ Forward shipment creation failed. Status will remain as: ${requestDetails.status}`);
+                    // Keep the current status instead of marking as approved
+                    updates.status = requestDetails.status;
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to create forward shipment. Please check logs and try again.',
+                        requestId: requestId
+                    });
                 }
+            } else {
+                // Shiprocket not configured
+                adminNotes += `\nShiprocket not configured. Forward shipment not created.`;
+                console.warn(`[${requestId}] ⚠️ Shiprocket not configured for forward shipment`);
+                updates.status = 'approved'; // Allow approval even without forward shipment if Shiprocket not configured
             }
+        } else {
+            // For non-exchange types or already approved, just mark as approved
+            updates.status = 'approved';
         }
 
         const request = await updateRequestStatus(requestId, {
             ...updates,
-            status: 'approved',
             adminNotes: adminNotes
         });
 
