@@ -1077,14 +1077,18 @@ async function activateShopifyDiscountCode(priceRuleId, code) {
  * @returns {object} - { primary: 'shiprocket'|'delhivery', useFallback: boolean }
  */
 function resolveCarrier(carrierMode, carrierOverride = null, operationType = 'pickup') {
-    // If admin overrides on a per-request basis, use that directly
+    // If admin overrides on a per-request basis, use that as primary but still allow fallback
     if (carrierOverride === 'shiprocket') {
-        console.log(`[${operationType}] Carrier override: Shiprocket (no fallback)`);
-        return { primary: 'shiprocket', useFallback: false };
+        console.log(`[${operationType}] Carrier override: Shiprocket (with fallback if enabled)`);
+        // Check if the carrier mode allows fallback
+        const allowsFallback = carrierMode.includes('with_fallback');
+        return { primary: 'shiprocket', useFallback: allowsFallback };
     }
     if (carrierOverride === 'delhivery') {
-        console.log(`[${operationType}] Carrier override: Delhivery (no fallback)`);
-        return { primary: 'delhivery', useFallback: false };
+        console.log(`[${operationType}] Carrier override: Delhivery (with fallback if enabled)`);
+        // Check if the carrier mode allows fallback
+        const allowsFallback = carrierMode.includes('with_fallback');
+        return { primary: 'delhivery', useFallback: allowsFallback };
     }
 
     // Resolve based on carrier mode setting
@@ -1646,6 +1650,12 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         console.log(`📍 Using Delhivery pickup location: ${pickupLocationNickname}`);
 
         // Build payload for Delhivery CMU API
+        // For forward dispatch (exchange), use 'fws' prefix to avoid duplicate order errors
+        const orderIdPrefix = requestData.type === 'exchange' ? 'fws-' : '';
+        const delhiveryOrderId = `${orderIdPrefix}${requestData.requestId}`;
+        
+        console.log(`📦 Delhivery Order Type: ${requestData.type || 'return'}, Order ID: ${delhiveryOrderId}`);
+        
         const payload = {
             shipments: [{
                 name: sanitizeAddress(customerName),
@@ -1656,7 +1666,7 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
                 country: customerCountry,
                 phone: customerPhone,
                 payment_mode: 'Pickup', // For reverse pickup
-                order: requestData.requestId,
+                order: delhiveryOrderId,
                 cod_amount: 0,
                 return_pin: returnPincode,
                 return_add: sanitizeAddress(returnAddress),
@@ -1693,7 +1703,65 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         const data = await response.json();
         console.log(`📦 Delhivery Response:`, JSON.stringify(data, null, 2));
 
-        // Check for error responses first
+        // First, check if we have packages data - even with errors, packages might contain useful data
+        if (data && data.packages && data.packages.length > 0) {
+            const pkg = data.packages[0];
+            
+            // If we have a waybill but status is Fail with duplicate error, recover it
+            if (pkg.waybill && pkg.status === 'Fail' && pkg.remarks && pkg.remarks.some(r => r.toLowerCase().includes('duplicate'))) {
+                console.warn(`⚠️ Delhivery duplicate order detected for ${requestData.requestId}. Using existing waybill: ${pkg.waybill}`);
+                return {
+                    waybill: pkg.waybill,
+                    shipment_id: pkg.refnum || requestData.requestId,
+                    success: true,
+                    data: { ...data, recovered: true, duplicateOrder: true }
+                };
+            }
+            
+            // Handle duplicate order error without waybill - try to retrieve existing waybill
+            if (pkg.status === 'Fail' && pkg.remarks && pkg.remarks.some(r => r.toLowerCase().includes('duplicate'))) {
+                console.warn(`⚠️ Delhivery duplicate order detected for ${requestData.requestId}. Attempting to retrieve existing waybill...`);
+                
+                // Try to get tracking info using the order reference
+                try {
+                    const trackingData = await delhiveryAPI(`/v1/packages/json/?refnos=${requestData.requestId}`);
+                    if (trackingData && trackingData.packages && trackingData.packages.length > 0) {
+                        const existingPkg = trackingData.packages[0];
+                        if (existingPkg.waybill_code || existingPkg.awb) {
+                            const existingWaybill = existingPkg.waybill_code || existingPkg.awb;
+                            console.log(`✅ Retrieved existing waybill for duplicate order: ${existingWaybill}`);
+                            return {
+                                waybill: existingWaybill,
+                                shipment_id: existingPkg.refnum || requestData.requestId,
+                                success: true,
+                                data: { ...data, recovered: true, existingWaybill }
+                            };
+                        }
+                    }
+                } catch (recoverError) {
+                    console.error(`❌ Failed to recover existing waybill:`, recoverError.message);
+                }
+                
+                // If recovery failed, throw error with specific message
+                throw new Error(`Delhivery duplicate order: ${requestData.requestId} already exists. ${pkg.remarks.join(', ')}`);
+            }
+            
+            // Check for success
+            if (pkg.status === 'Success' && pkg.waybill) {
+                return {
+                    waybill: pkg.waybill,
+                    shipment_id: pkg.refnum || null,
+                    success: true,
+                    data: data
+                };
+            } else if (pkg.status && pkg.status !== 'Success') {
+                console.error(`❌ Delhivery package status: ${pkg.status}`);
+                const errorMsg = pkg.remarks && pkg.remarks.length > 0 ? pkg.remarks.join(', ') : pkg.status;
+                throw new Error(`Delhivery package error: ${errorMsg}`);
+            }
+        }
+
+        // Check for error responses (only if no packages data was processed)
         if (data && data.rmk) {
             console.error(`❌ Delhivery Error: ${data.rmk}`);
             throw new Error(`Delhivery API Error: ${data.rmk}`);
@@ -1704,21 +1772,8 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
             throw new Error(`Delhivery API Error: ${data.message}`);
         }
 
-        // Check for success
-        if (data && data.packages && data.packages.length > 0) {
-            const pkg = data.packages[0];
-            if (pkg.status === 'Success' && pkg.waybill) {
-                return {
-                    waybill: pkg.waybill,
-                    shipment_id: pkg.refnum || null,
-                    success: true,
-                    data: data
-                };
-            } else if (pkg.status && pkg.status !== 'Success') {
-                console.error(`❌ Delhivery package status: ${pkg.status}`);
-                throw new Error(`Delhivery package error: ${pkg.status}`);
-            }
-        } else if (data && data.shipments && data.shipments.length > 0) {
+        // Check alternative response formats
+        if (data && data.shipments && data.shipments.length > 0) {
             const shipment = data.shipments[0];
             return {
                 waybill: shipment.waybill_code || shipment.awb_code || null,
@@ -2633,7 +2688,7 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
 
                 // Update with success data
                 if (carrierUsed) {
-                    updates.status = 'pickup_pending';
+                    updates.status = 'pickup_booked';
                     updates.awbNumber = awbNumber;
                     updates.shipmentId = shipmentId;
                     updates.pickupDate = pickupDate;
@@ -4008,11 +4063,11 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                     if (fallbackReason) {
                         updates.carrierFallbackReason = fallbackReason;
                     }
-                    updates.status = 'pickup_pending';
+                    updates.status = 'pickup_booked';
                     updates.adminNotes = adminNotes + `\nPickup scheduled via ${carrierUsed}: AWB ${awbNumber || 'Pending'}`;
 
                     const request = await updateRequestStatus(requestId, updates);
-                    return res.json({ success: true, message: `Pickup initiated via ${carrierUsed} and status updated to pickup_pending`, request });
+                    return res.json({ success: true, message: `Pickup initiated via ${carrierUsed} and status updated to pickup_booked`, request });
                 } else {
                     throw new Error('No carrier was used');
                 }
@@ -4604,7 +4659,7 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
                         shipmentId,
                         awbNumber,
                         pickupDate,
-                        status: 'pickup_pending',
+                        status: 'pickup_booked',
                         adminNotes,
                         carrier: carrierUsed,
                         carrierShipmentId: shipmentId,
