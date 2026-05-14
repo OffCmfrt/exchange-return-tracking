@@ -272,7 +272,7 @@
 
                     <!-- Right: Primary Actions -->
                     <div style="display: flex; gap: 0.75rem; align-items: center;">
-                        <button onclick="syncStatus()" class="admin-btn" id="syncBtn" style="background: white; border-color: #d1d5db; color: #111827;">
+                        <button onclick="syncStatus()" class="admin-btn" id="syncBtn" style="background: white; border-color: #d1d5db; color: #111827;" title="Manually sync tracking status from carriers (Shiprocket/Delhivery)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                             <span id="syncBtnText">Sync Tracking</span>
                             <span id="syncSpinner" class="spinner hidden" style="width: 14px; height: 14px;"></span>
@@ -1537,8 +1537,11 @@
         btn.disabled = true;
         btnText.classList.add('hidden');
         spinner.classList.remove('hidden');
+        btnText.textContent = 'Syncing...';
+        btnText.classList.remove('hidden');
 
         try {
+            console.log('[Sync] Starting manual sync...');
             const response = await fetch(`${API_URL}/admin/sync-status`, {
                 method: 'POST',
                 headers: {
@@ -1548,19 +1551,22 @@
             });
             const data = await response.json();
 
-            if (response.ok) {
-                alert(`Sync Complete! Updated ${data.updated || 0} requests.`);
-                loadRequests();
+            if (response.ok && data.success) {
+                console.log(`[Sync] Complete! Updated ${data.updated || 0} requests.`);
+                alert(`✅ Sync Complete!\n\nUpdated ${data.updated || 0} requests with latest tracking status from carriers.`);
+                loadRequests(); // Refresh the table
             } else {
-                alert('Sync failed: ' + (data.error || 'Unknown error'));
+                console.error('[Sync] Failed:', data);
+                alert('❌ Sync failed: ' + (data.message || data.error || 'Unknown error'));
             }
         } catch (error) {
-            console.error('Sync error:', error);
-            alert('Failed to sync status');
+            console.error('[Sync] Critical error:', error);
+            alert('❌ Failed to sync status. Check console for details.');
         } finally {
             btn.disabled = false;
-            btnText.classList.remove('hidden');
+            btnText.classList.add('hidden');
             spinner.classList.add('hidden');
+            btnText.textContent = 'Sync Tracking';
         }
     }
 
@@ -1951,14 +1957,27 @@
         // User said: "pickup booked -> item delivered -> admin approves". 
         // So we show buttons if status is 'delivered'.
         
-        if (['pending', 'scheduled', 'picked_up', 'in_transit', 'delivered'].includes(data.status)) {
+        if (['pending', 'pickup_pending', 'scheduled', 'picked_up', 'in_transit', 'delivered'].includes(data.status)) {
             console.log('Action block status matched:', data.status);
             modalActions.classList.remove('hidden');
             
-            // Show carrier override only when status is 'pending'
+            // Show carrier override when status is 'pending' or 'pickup_pending'
             if (carrierOverrideSection) {
-                if (data.status === 'pending') {
+                if (data.status === 'pending' || data.status === 'pickup_pending') {
                     carrierOverrideSection.classList.remove('hidden');
+                    // Add warning text for pickup_pending re-initiation
+                    const warningText = carrierOverrideSection.querySelector('.reinit-warning');
+                    if (data.status === 'pickup_pending') {
+                        if (!warningText) {
+                            const warning = document.createElement('p');
+                            warning.className = 'reinit-warning';
+                            warning.style.cssText = 'font-size: 0.75rem; color: #dc2626; margin-top: 0.5rem; font-weight: 600;';
+                            warning.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Warning: This will create a NEW pickup booking. Previous booking will remain in carrier system.';
+                            carrierOverrideSection.appendChild(warning);
+                        }
+                    } else if (warningText) {
+                        warningText.remove();
+                    }
                 } else {
                     carrierOverrideSection.classList.add('hidden');
                 }
@@ -1975,6 +1994,11 @@
                     approveBtn.classList.remove('hidden');
                     approveBtn.textContent = 'Approve & Initiate Pickup';
                     approveBtn.style.background = '#2563eb'; // Blue
+                } else if (data.status === 'pickup_pending') {
+                    // Show Re-initiate button for pickup_pending
+                    approveBtn.classList.remove('hidden');
+                    approveBtn.textContent = 'Re-initiate Pickup with Selected Carrier';
+                    approveBtn.style.background = '#f59e0b'; // Orange warning color
                 } else if (data.status === 'delivered') {
                     approveBtn.classList.remove('hidden');
                     if (data.type === 'exchange') {
@@ -1994,6 +2018,23 @@
                     manualReceivedBtn.classList.remove('hidden');
                 } else {
                     manualReceivedBtn.classList.add('hidden');
+                }
+            }
+
+            // Add reset button for pickup_pending status
+            let resetBtn = modalActions.querySelector('button[onclick="resetPickupToPending()"]');
+            if (data.status === 'pickup_pending' || data.status === 'scheduled') {
+                if (!resetBtn) {
+                    resetBtn = document.createElement('button');
+                    resetBtn.onclick = () => resetPickupToPending();
+                    resetBtn.textContent = 'Reset to Pending';
+                    resetBtn.style.cssText = 'flex: 1; background: #ef4444; color: white; border: 1px solid #ef4444; min-width: 150px;';
+                    modalActions.appendChild(resetBtn);
+                }
+                resetBtn.classList.remove('hidden');
+            } else {
+                if (resetBtn) {
+                    resetBtn.classList.add('hidden');
                 }
             }
 
@@ -2254,6 +2295,33 @@
         } catch (error) {
             console.error('Approval error:', error);
             alert('An error occurred. Please check console.');
+        }
+    }
+
+    async function resetPickupToPending() {
+        if (!confirm('Reset this request to pending status? This will clear carrier booking info and allow you to re-initiate pickup.')) return;
+        
+        try {
+            const response = await fetch(`${API_URL}/admin/reset-pickup`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ requestId: currentRequest.requestId })
+            });
+            
+            const data = await response.json();
+            if (response.ok) {
+                alert('Request reset to pending. You can now re-initiate pickup.');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('Failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Reset pickup error:', error);
+            alert('Failed to reset pickup');
         }
     }
 

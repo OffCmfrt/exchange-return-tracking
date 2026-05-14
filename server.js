@@ -255,7 +255,7 @@ let lastSyncTimestamp = null;
 async function performBackgroundSync() {
     if (isSyncRunning) {
         console.log('[Background Sync] Sync already running, skipping...');
-        return;
+        return 0;
     }
     
     isSyncRunning = true;
@@ -275,7 +275,7 @@ async function performBackgroundSync() {
         
         if (error || !activeRequests) {
             console.error('[Background Sync] Error fetching requests:', error);
-            return;
+            return 0;
         }
         
         console.log(`[Background Sync] Processing ${activeRequests.length} active requests...`);
@@ -299,8 +299,10 @@ async function performBackgroundSync() {
         
         lastSyncTimestamp = new Date().toISOString();
         console.log(`[Background Sync] Complete: Updated ${updatedCount} requests`);
+        return updatedCount;
     } catch (error) {
         console.error('[Background Sync] Fatal error:', error);
+        return 0;
     } finally {
         isSyncRunning = false;
     }
@@ -309,7 +311,7 @@ async function performBackgroundSync() {
 // Extract sync logic into reusable function
 async function syncSingleRequest(req) {
     // Return shipment sync
-    if (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
+    if (['pending', 'pickup_pending', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
         let trackingData = null;
         
         if (req.awbNumber) {
@@ -3848,8 +3850,14 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
         let newStatus = 'approved';
         let updates = { adminNotes };
 
-        // 1. Initial Approval -> Initiate Pickup
-        if (requestDetails.status === 'pending') {
+        // 1. Initial Approval or Re-initiate -> Initiate Pickup
+        if (requestDetails.status === 'pending' || requestDetails.status === 'pickup_pending') {
+            // If re-initiating pickup_pending, log and add note
+            if (requestDetails.status === 'pickup_pending') {
+                console.log(`[${requestId}] RE-INITIATING pickup (was already pickup_pending). Previous carrier: ${requestDetails.carrier || 'unknown'}`);
+                adminNotes += `\n--- Pickup Re-initiated by Admin (Previous: ${requestDetails.carrier || 'unknown'}) ---`;
+            }
+            
             // Get carrier mode from settings (supports separate pickup/dispatch settings)
             const carrierMode = await getCarrierMode('pickup');
             const carrierResolution = resolveCarrier(carrierMode, carrierOverride, 'pickup');
@@ -4047,6 +4055,45 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
     } catch (error) {
         console.error('Approve request error:', error);
         res.status(500).json({ error: 'Failed to approve request' });
+    }
+});
+
+// Reset pickup to pending (for fixing failed carrier bookings)
+app.post('/api/admin/reset-pickup', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.body;
+        
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        
+        if (requestDetails.status !== 'pickup_pending' && requestDetails.status !== 'scheduled') {
+            return res.status(400).json({ error: 'Can only reset pickup_pending or scheduled requests' });
+        }
+        
+        const adminNotes = (requestDetails.adminNotes || '') + 
+            `\n[SYSTEM] Pickup reset to pending by admin (was: ${requestDetails.carrier || 'unknown'})`;
+        
+        const request = await updateRequestStatus(requestId, {
+            status: 'pending',
+            carrier: null,
+            carrierAwb: null,
+            carrierShipmentId: null,
+            awbNumber: null,
+            shipmentId: null,
+            pickupDate: null,
+            adminNotes
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Request reset to pending status',
+            request
+        });
+    } catch (error) {
+        console.error('Reset pickup error:', error);
+        res.status(500).json({ error: 'Failed to reset pickup' });
     }
 });
 
@@ -4254,6 +4301,32 @@ app.get('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to get sync status' });
+    }
+});
+
+// Manual Sync Trigger - immediately trigger background sync
+app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
+    try {
+        if (isSyncRunning) {
+            return res.json({
+                success: false,
+                message: 'Sync is already running in the background'
+            });
+        }
+
+        console.log('[Manual Sync] Admin triggered manual sync...');
+        
+        // Wait for sync to complete and get the updated count
+        const updatedCount = await performBackgroundSync();
+
+        res.json({
+            success: true,
+            message: `Sync complete! Updated ${updatedCount} requests.`,
+            updated: updatedCount
+        });
+    } catch (error) {
+        console.error('[Manual Sync] Error:', error);
+        res.status(500).json({ error: 'Failed to trigger sync' });
     }
 });
 
