@@ -491,18 +491,33 @@ async function getAllInfluencers() {
  * Create a new influencer
  */
 async function createInfluencer(influencerData) {
+    const insertRow = {
+        name: influencerData.name,
+        referral_code: influencerData.referralCode,
+        link_token: influencerData.linkToken,
+        commission_rate: influencerData.commissionRate ?? 10.00,
+        discount_value: influencerData.discountValue ?? influencerData.commissionRate ?? 10.00,
+        usage_limit: influencerData.usageLimit ?? null,
+        phone: influencerData.phone,
+        is_active: influencerData.isActive !== undefined ? influencerData.isActive : true
+    };
+
+    // ── Application fields (only if provided; safe for legacy schemas) ──
+    if (influencerData.status !== undefined) insertRow.status = influencerData.status;
+    if (influencerData.email !== undefined) insertRow.email = influencerData.email;
+    if (influencerData.instagramHandle !== undefined) insertRow.instagram_handle = influencerData.instagramHandle;
+    if (influencerData.youtubeHandle !== undefined) insertRow.youtube_handle = influencerData.youtubeHandle;
+    if (influencerData.followerCount !== undefined) insertRow.follower_count = influencerData.followerCount;
+    if (influencerData.niche !== undefined) insertRow.niche = influencerData.niche;
+    if (influencerData.city !== undefined) insertRow.city = influencerData.city;
+    if (influencerData.whyJoin !== undefined) insertRow.why_join = influencerData.whyJoin;
+    if (influencerData.payoutUpi !== undefined) insertRow.payout_upi = influencerData.payoutUpi;
+    if (influencerData.payoutNotes !== undefined) insertRow.payout_notes = influencerData.payoutNotes;
+    if (influencerData.appliedAt !== undefined) insertRow.applied_at = influencerData.appliedAt;
+
     const { data, error } = await supabase
         .from('influencers')
-        .insert([{
-            name: influencerData.name,
-            referral_code: influencerData.referralCode,
-            link_token: influencerData.linkToken,
-            commission_rate: influencerData.commissionRate ?? 10.00,
-            discount_value: influencerData.discountValue ?? influencerData.commissionRate ?? 10.00,
-            usage_limit: influencerData.usageLimit ?? null,
-            phone: influencerData.phone,
-            is_active: true
-        }])
+        .insert([insertRow])
         .select()
         .single();
 
@@ -511,7 +526,7 @@ async function createInfluencer(influencerData) {
 }
 
 /**
- * Update an influencer's profile (name, referral code, commission rate)
+ * Update an influencer's profile
  */
 async function updateInfluencer(id, updates) {
     const updateData = { updated_at: new Date().toISOString() };
@@ -524,6 +539,19 @@ async function updateInfluencer(id, updates) {
     if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
     if (updates.shopifyPriceRuleId !== undefined) updateData.shopify_price_rule_id = updates.shopifyPriceRuleId;
     if (updates.shopifyDiscountCodeId !== undefined) updateData.shopify_discount_code_id = updates.shopifyDiscountCodeId;
+
+    // ── Application fields ──
+    if (updates.status !== undefined) updateData.status = updates.status;
+    if (updates.email !== undefined) updateData.email = updates.email;
+    if (updates.instagramHandle !== undefined) updateData.instagram_handle = updates.instagramHandle;
+    if (updates.youtubeHandle !== undefined) updateData.youtube_handle = updates.youtubeHandle;
+    if (updates.followerCount !== undefined) updateData.follower_count = updates.followerCount;
+    if (updates.niche !== undefined) updateData.niche = updates.niche;
+    if (updates.city !== undefined) updateData.city = updates.city;
+    if (updates.whyJoin !== undefined) updateData.why_join = updates.whyJoin;
+    if (updates.payoutUpi !== undefined) updateData.payout_upi = updates.payoutUpi;
+    if (updates.payoutNotes !== undefined) updateData.payout_notes = updates.payoutNotes;
+    if (updates.approvedAt !== undefined) updateData.approved_at = updates.approvedAt;
 
     const { data, error } = await supabase
         .from('influencers')
@@ -550,20 +578,27 @@ async function deleteInfluencer(id) {
 }
 
 /**
- * Get influencer by token (for portal auth)
+ * Get influencer by token (for portal auth).
+ * Allows status='pending' (so applicants can preview their portal) but blocks suspended/rejected.
  */
 async function getInfluencerByToken(token) {
     const { data, error } = await supabase
         .from('influencers')
         .select('*')
         .eq('link_token', token)
-        .eq('is_active', true)
         .single();
 
     if (error) {
         if (error.code === 'PGRST116') return null; // Not found
         throw error;
     }
+    if (!data) return null;
+
+    // If status column exists, block suspended/rejected
+    if (data.status === 'suspended' || data.status === 'rejected') return null;
+    // If legacy schema (no status column), fall back to is_active
+    if (data.status === undefined && data.is_active === false) return null;
+
     return data;
 }
 
@@ -579,6 +614,158 @@ async function getInfluencerById(id) {
 
     if (error) {
         if (error.code === 'PGRST116') return null; // Not found
+        throw error;
+    }
+    return data;
+}
+
+// ── Self-Signup & Duplicate Checks ──
+
+/**
+ * Check if a referral code is already taken (case-insensitive)
+ */
+async function isReferralCodeTaken(code) {
+    if (!code) return false;
+    const { data, error } = await supabase
+        .from('influencers')
+        .select('id')
+        .ilike('referral_code', code)
+        .limit(1);
+    if (error) throw error;
+    return Array.isArray(data) && data.length > 0;
+}
+
+/**
+ * Check if an email is already registered (case-insensitive)
+ */
+async function isEmailTaken(email) {
+    if (!email) return false;
+    const { data, error } = await supabase
+        .from('influencers')
+        .select('id')
+        .ilike('email', email)
+        .limit(1);
+    if (error) {
+        // If 'email' column doesn't exist yet (pre-migration), don't block signup
+        if (error.code === '42703') return false;
+        throw error;
+    }
+    return Array.isArray(data) && data.length > 0;
+}
+
+/**
+ * Check if a phone is already registered
+ */
+async function isPhoneTaken(phone) {
+    if (!phone) return false;
+    const cleaned = String(phone).replace(/\D/g, '');
+    const { data, error } = await supabase
+        .from('influencers')
+        .select('id, phone')
+        .not('phone', 'is', null);
+    if (error) throw error;
+    return Array.isArray(data) && data.some(row => String(row.phone || '').replace(/\D/g, '') === cleaned);
+}
+
+/**
+ * List pending (un-approved) influencer applications
+ */
+async function listPendingInfluencers() {
+    const { data, error } = await supabase
+        .from('influencers')
+        .select('*')
+        .eq('status', 'pending')
+        .order('applied_at', { ascending: false });
+    if (error) {
+        if (error.code === '42703') return []; // status column missing
+        throw error;
+    }
+    return data || [];
+}
+
+// ── Payout Helpers ──
+
+/**
+ * List payouts for an influencer (newest period first)
+ */
+async function listPayouts(influencerId) {
+    const { data, error } = await supabase
+        .from('influencer_payouts')
+        .select('*')
+        .eq('influencer_id', influencerId)
+        .order('period_end', { ascending: false });
+    if (error) {
+        if (error.code === '42P01') return []; // table missing (pre-migration)
+        throw error;
+    }
+    return data || [];
+}
+
+/**
+ * Create a new payout entry
+ */
+async function createPayout(payoutData) {
+    const insertRow = {
+        influencer_id: payoutData.influencerId,
+        period_start: payoutData.periodStart,
+        period_end: payoutData.periodEnd,
+        amount: parseFloat(payoutData.amount) || 0,
+        currency: payoutData.currency || 'INR',
+        status: payoutData.status || 'pending',
+        reference: payoutData.reference || null,
+        notes: payoutData.notes || null
+    };
+    if (insertRow.status === 'paid') {
+        insertRow.paid_at = new Date().toISOString();
+    }
+
+    const { data, error } = await supabase
+        .from('influencer_payouts')
+        .insert([insertRow])
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Update payout status (e.g., mark as paid / cancelled)
+ */
+async function updatePayoutStatus(payoutId, status, reference = null) {
+    const updateRow = {
+        status,
+        updated_at: new Date().toISOString()
+    };
+    if (status === 'paid') {
+        updateRow.paid_at = new Date().toISOString();
+    } else if (status === 'pending') {
+        updateRow.paid_at = null;
+    }
+    if (reference !== null && reference !== undefined) {
+        updateRow.reference = reference;
+    }
+
+    const { data, error } = await supabase
+        .from('influencer_payouts')
+        .update(updateRow)
+        .eq('id', payoutId)
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Get a single payout by ID
+ */
+async function getPayoutById(payoutId) {
+    const { data, error } = await supabase
+        .from('influencer_payouts')
+        .select('*')
+        .eq('id', payoutId)
+        .single();
+    if (error) {
+        if (error.code === 'PGRST116') return null;
         throw error;
     }
     return data;
@@ -603,5 +790,17 @@ module.exports = {
     updateInfluencer,
     deleteInfluencer,
     getInfluencerByToken,
-    getInfluencerById
+    getInfluencerById,
+
+    // Self-Signup & Duplicate Checks
+    isReferralCodeTaken,
+    isEmailTaken,
+    isPhoneTaken,
+    listPendingInfluencers,
+
+    // Payout Helpers
+    listPayouts,
+    createPayout,
+    updatePayoutStatus,
+    getPayoutById
 };

@@ -904,6 +904,271 @@ html, body {
     font-size: 1.4rem;
   }
 }
+
+/* ── SIDEBAR PENDING BADGE ── */
+.ia-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  margin-left: auto;
+  background: var(--warning);
+  color: #000;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  border-radius: 999px;
+}
+.ia-nav-badge.hidden { display: none; }
+
+/* ── STATUS FILTER BAR ── */
+.ia-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.ia-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+  margin-bottom: -1px;
+}
+.ia-filter-btn:hover { color: var(--text); }
+.ia-filter-btn.active {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+.ia-filter-count {
+  display: inline-block;
+  padding: 1px 7px;
+  background: var(--subtle);
+  color: var(--text);
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 999px;
+}
+.ia-filter-btn.active .ia-filter-count {
+  background: var(--text);
+  color: var(--bg);
+}
+
+/* ── STATUS PILLS ── */
+.ia-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 1px solid currentColor;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ia-pill.active { color: var(--success); }
+.ia-pill.pending { color: var(--warning); background: rgba(245, 158, 11, 0.08); }
+.ia-pill.suspended { color: var(--muted); }
+.ia-pill.rejected { color: var(--danger); }
+
+/* ── ACTION BUTTON VARIANTS ── */
+.ia-action-btn.approve { border-color: var(--success); color: var(--success); }
+.ia-action-btn.approve:hover { background: var(--success); color: #000; }
+.ia-action-btn.reject { border-color: var(--danger); color: var(--danger); }
+.ia-action-btn.reject:hover { background: var(--danger); color: #fff; }
+.ia-action-btn.payouts { border-color: var(--border); color: var(--text); }
+.ia-action-btn.payouts:hover { border-color: var(--text); background: var(--text); color: var(--bg); }
+
+/* ── SHARE APPLY BUTTON ── */
+.ia-share-apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--transition);
+  margin-right: 0.75rem;
+}
+.ia-share-apply:hover { border-color: var(--text); background: var(--surface-2); }
+.ia-share-apply.copied { border-color: var(--success); color: var(--success); }
+
+/* ── PAYOUTS DRAWER ── */
+.ia-drawer-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: none;
+  z-index: 200;
+  animation: fadeIn 0.2s ease;
+}
+.ia-drawer-overlay.show { display: flex; justify-content: flex-end; }
+.ia-drawer {
+  width: min(560px, 100vw);
+  height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  animation: slideInRight 0.3s ease;
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.ia-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.5rem 1.75rem;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.ia-drawer-title {
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.ia-drawer-sub {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.ia-drawer-close {
+  width: 32px; height: 32px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.ia-drawer-close:hover { color: var(--text); border-color: var(--text); }
+.ia-drawer-body { padding: 1.5rem 1.75rem; }
+
+.ia-payout-summary {
+  display: grid;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin-bottom: 1.75rem;
+}
+.ia-payout-summary-cell {
+  background: var(--surface);
+  padding: 1rem 1.25rem;
+}
+.ia-payout-summary-cell .lbl {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.ia-payout-summary-cell .val {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.ia-payout-form {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 1.25rem;
+  margin-bottom: 1.75rem;
+}
+.ia-payout-form-title {
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.ia-payout-form .ia-form-group { margin-bottom: 0.75rem; }
+.ia-payout-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.ia-payout-list-header {
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 0.85rem;
+  color: var(--muted);
+}
+.ia-payout-item {
+  border: 1px solid var(--border);
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.6rem;
+  background: var(--surface);
+}
+.ia-payout-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+.ia-payout-item-amt { font-size: 1.05rem; font-weight: 700; }
+.ia-payout-item-meta { font-size: 0.75rem; color: var(--muted); }
+.ia-payout-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.ia-payout-actions button {
+  flex: 1;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: inherit;
+}
+.ia-payout-actions button.pay { border-color: var(--success); color: var(--success); }
+.ia-payout-actions button.pay:hover { background: var(--success); color: #000; }
+.ia-payout-actions button.cancel { border-color: var(--danger); color: var(--danger); }
+.ia-payout-actions button.cancel:hover { background: var(--danger); color: #fff; }
+.ia-payout-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 </style>
 </head>
 <body>
@@ -954,6 +1219,7 @@ html, body {
         <div class="ia-nav-item active">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Ambassadors
+          <span class="ia-nav-badge hidden" id="iaNavPendingBadge">0</span>
         </div>
       </nav>
       <div class="ia-sidebar-footer">
@@ -1004,9 +1270,34 @@ html, body {
         <!-- Table Section -->
         <div class="ia-section-header">
           <span class="ia-section-title">All Ambassadors</span>
-          <button class="ia-btn ia-btn-primary" onclick="openAddModal()">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Ambassador
+          <div style="display: flex; align-items: center;">
+            <button class="ia-share-apply" id="iaCopyApplyBtn" onclick="copyApplyLink()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+              Share Apply Link
+            </button>
+            <button class="ia-btn ia-btn-primary" onclick="openAddModal()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Ambassador
+            </button>
+          </div>
+        </div>
+
+        <!-- Status Filter Bar -->
+        <div class="ia-filter-bar" id="iaFilterBar">
+          <button class="ia-filter-btn active" data-filter="all" onclick="setStatusFilter('all')">
+            All <span class="ia-filter-count" id="fcAll">0</span>
+          </button>
+          <button class="ia-filter-btn" data-filter="pending" onclick="setStatusFilter('pending')">
+            Pending <span class="ia-filter-count" id="fcPending">0</span>
+          </button>
+          <button class="ia-filter-btn" data-filter="active" onclick="setStatusFilter('active')">
+            Active <span class="ia-filter-count" id="fcActive">0</span>
+          </button>
+          <button class="ia-filter-btn" data-filter="suspended" onclick="setStatusFilter('suspended')">
+            Suspended <span class="ia-filter-count" id="fcSuspended">0</span>
+          </button>
+          <button class="ia-filter-btn" data-filter="rejected" onclick="setStatusFilter('rejected')">
+            Rejected <span class="ia-filter-count" id="fcRejected">0</span>
           </button>
         </div>
 
@@ -1015,6 +1306,7 @@ html, body {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Status</th>
                 <th>Phone</th>
                 <th>Referral Code</th>
                 <th>Commission %</th>
@@ -1202,6 +1494,69 @@ html, body {
     </div>
   </div>
 
+  <!-- Payouts Drawer -->
+  <div class="ia-drawer-overlay" id="iaPayoutsDrawer" onclick="handleDrawerOverlay(event)">
+    <aside class="ia-drawer" onclick="event.stopPropagation()">
+      <div class="ia-drawer-head">
+        <div>
+          <div class="ia-drawer-title">Payouts Ledger</div>
+          <div class="ia-drawer-sub"><span id="iaPayoutDrawerName">—</span> · <span id="iaPayoutDrawerCode" style="color:var(--muted);font-weight:500;font-size:0.85rem;">—</span></div>
+        </div>
+        <button class="ia-drawer-close" onclick="closePayoutsDrawer()" aria-label="Close">×</button>
+      </div>
+
+      <div class="ia-drawer-body">
+        <div class="ia-payout-summary" style="grid-template-columns: repeat(2, 1fr);">
+          <div class="ia-payout-summary-cell">
+            <div class="lbl">Total Paid</div>
+            <div class="val" id="iaDrawerTotalPaid">₹0</div>
+          </div>
+          <div class="ia-payout-summary-cell">
+            <div class="lbl">Pending</div>
+            <div class="val" id="iaDrawerPending">₹0</div>
+          </div>
+        </div>
+
+        <div class="ia-payout-form">
+          <div class="ia-payout-form-title">Add Payout</div>
+          <div class="ia-payout-form-row">
+            <div class="ia-form-group">
+              <label for="poStart" style="font-size:0.65rem;">Period Start</label>
+              <input type="date" id="poStart" class="ia-input">
+            </div>
+            <div class="ia-form-group">
+              <label for="poEnd" style="font-size:0.65rem;">Period End</label>
+              <input type="date" id="poEnd" class="ia-input">
+            </div>
+          </div>
+          <div class="ia-payout-form-row">
+            <div class="ia-form-group">
+              <label for="poAmount" style="font-size:0.65rem;">Amount (INR)</label>
+              <input type="number" id="poAmount" class="ia-input" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div class="ia-form-group">
+              <label for="poRef" style="font-size:0.65rem;">Reference (Optional)</label>
+              <input type="text" id="poRef" class="ia-input" placeholder="UPI ref / Txn ID">
+            </div>
+          </div>
+          <div class="ia-form-group">
+            <label for="poNotes" style="font-size:0.65rem;">Notes (Optional)</label>
+            <input type="text" id="poNotes" class="ia-input" placeholder="Internal note">
+          </div>
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <button class="ia-btn ia-btn-primary" id="iaAddPayoutBtn" onclick="submitNewPayout()" style="flex:1;">Record Payout</button>
+            <button class="ia-btn" onclick="clearPayoutForm()" style="flex:0 0 auto;">Reset</button>
+          </div>
+        </div>
+
+        <div class="ia-payout-list-header">History</div>
+        <div id="iaPayoutList">
+          <div class="ia-payout-empty">Loading…</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
   <!-- Toast -->
   <div id="iaToast" class="ia-toast"></div>
 
@@ -1370,7 +1725,7 @@ async function loadDashboard() {
     if (data.success) {
       influencersData = data.influencers || [];
       renderStats(influencersData);
-      renderTable(influencersData);
+      renderTable(filteredInfluencers());
       updateTimestamp();
       hide('iaLoading');
       show('iaDashboard');
@@ -1384,31 +1739,94 @@ async function loadDashboard() {
 }
 
 function renderStats(list) {
-  const active = list.filter(i => i.is_active).length;
+  const active = list.filter(i => (i.status === 'active') || (i.status === undefined && i.is_active)).length;
+  const pending = list.filter(i => i.status === 'pending').length;
+  const suspended = list.filter(i => i.status === 'suspended').length;
+  const rejected = list.filter(i => i.status === 'rejected').length;
   const avgComm = list.length > 0
     ? (list.reduce((s, i) => s + parseFloat(i.commission_rate || 10), 0) / list.length).toFixed(1)
     : 0;
   setText('statTotal', list.length);
   setText('statActive', active);
   setText('statAvgCommission', avgComm + '%');
+
+  // Filter counts
+  setText('fcAll', list.length);
+  setText('fcPending', pending);
+  setText('fcActive', active);
+  setText('fcSuspended', suspended);
+  setText('fcRejected', rejected);
+
+  // Sidebar pending badge
+  const badge = document.getElementById('iaNavPendingBadge');
+  if (badge) {
+    if (pending > 0) {
+      badge.textContent = pending;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+}
+
+// ─── STATUS FILTER ───────────────────────────────────────────────────────────
+let iaStatusFilter = 'all';
+function setStatusFilter(filter) {
+  iaStatusFilter = filter;
+  document.querySelectorAll('.ia-filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === filter);
+  });
+  renderTable(filteredInfluencers());
+}
+function filteredInfluencers() {
+  const list = influencersData || [];
+  if (iaStatusFilter === 'all') return list;
+  return list.filter(i => {
+    const s = i.status || (i.is_active ? 'active' : 'suspended');
+    return s === iaStatusFilter;
+  });
+}
+function statusPill(inf) {
+  const s = inf.status || (inf.is_active ? 'active' : 'suspended');
+  const label = s.charAt(0).toUpperCase() + s.slice(1);
+  return `<span class="ia-pill ${s}">${label}</span>`;
 }
 
 function renderTable(list) {
   const tbody = document.getElementById('iaTableBody');
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10"><div class="ia-empty"><h3>No Ambassadors Yet</h3><p>Click "Add Ambassador" to get started.</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11"><div class="ia-empty"><h3>No Ambassadors${iaStatusFilter !== 'all' ? ' in this view' : ' Yet'}</h3><p>${iaStatusFilter !== 'all' ? 'Try a different filter.' : 'Click "Add Ambassador" or share the apply link to get started.'}</p></div></td></tr>`;
     return;
   }
   tbody.innerHTML = list.map(inf => {
     const portalUrl = `${window.location.origin}/pages/influencer-portal?token=${inf.link_token}`;
     const created = new Date(inf.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-    // Handle discount value (use discount_value if exists, fallback to commission_rate)
     const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 10);
-    // Handle usage limit
     const usageLimit = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : 'Unlimited';
+    const status = inf.status || (inf.is_active ? 'active' : 'suspended');
+
+    let actions;
+    if (status === 'pending') {
+      actions = `
+        <button class="ia-action-btn approve" onclick="approveInfluencer(${inf.id})">Approve</button>
+        <button class="ia-action-btn reject" onclick="rejectInfluencer(${inf.id})">Reject</button>
+        <button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button>`;
+    } else if (status === 'rejected') {
+      actions = `
+        <button class="ia-action-btn approve" onclick="approveInfluencer(${inf.id})">Reactivate</button>
+        <button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Delete</button>`;
+    } else {
+      actions = `
+        <button class="ia-action-btn view" onclick="viewInfluencerStats(${inf.id})">View</button>
+        <button class="ia-action-btn payouts" onclick="openPayoutsDrawer(${inf.id})">Payouts</button>
+        <button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button>
+        <button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Remove</button>`;
+    }
+
     return `
       <tr class="ia-row-enter" id="row-${inf.id}">
         <td class="td-name">${esc(inf.name)}</td>
+        <td>${statusPill(inf)}</td>
         <td class="td-phone" style="font-size:0.75rem;color:var(--muted);">${esc(inf.phone || '—')}</td>
         <td><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced - create manually in Shopify admin">⚠️</span>' : ''}</span></td>
         <td class="td-commission">${parseFloat(inf.commission_rate || 10).toFixed(1)}%</td>
@@ -1423,11 +1841,7 @@ function renderTable(list) {
           </button>
         </td>
         <td>
-          <div class="ia-row-actions">
-            <button class="ia-action-btn view" onclick="viewInfluencerStats(${inf.id})">View</button>
-            <button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button>
-            <button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Remove</button>
-          </div>
+          <div class="ia-row-actions">${actions}</div>
         </td>
       </tr>
     `;
@@ -1589,6 +2003,7 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 function handleOverlayClick(e, id) { if (e.target === e.currentTarget) closeModal(id); }
 
 // ─── TOAST ───────────────────────────────────────────────────────────────────
+// ─── TOAST ───────────────────────────────────────────────────────────────────
 let toastTimer;
 function showToast(msg, isError = false) {
   const t = document.getElementById('iaToast');
@@ -1597,6 +2012,224 @@ function showToast(msg, isError = false) {
   t.className = 'ia-toast' + (isError ? ' error' : '');
   requestAnimationFrame(() => t.classList.add('show'));
   toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─── APPLY LINK SHARING ────────────────────────────────────────────────────────────
+async function copyApplyLink() {
+  const url = `${window.location.origin}/pages/influencer-apply`;
+  const btn = document.getElementById('iaCopyApplyBtn');
+  try {
+    await navigator.clipboard.writeText(url);
+    if (btn) {
+      const original = btn.innerHTML;
+      btn.classList.add('copied');
+      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied';
+      setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 2000);
+    }
+    showToast('Apply link copied ✓');
+  } catch (e) {
+    showToast('Could not copy. Link: ' + url, true);
+  }
+}
+
+// ─── APPROVE / REJECT ──────────────────────────────────────────────────────────────
+async function approveInfluencer(id) {
+  if (!confirm('Approve this ambassador? This will activate their Shopify discount code at checkout.')) return;
+  try {
+    const res = await fetch(`${API}/approve/${id}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.warning ? 'Approved ⚠️ ' + data.warning : 'Ambassador approved ✓');
+      await loadDashboard();
+    } else {
+      showToast(data.error || 'Failed to approve', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
+}
+
+async function rejectInfluencer(id) {
+  if (!confirm('Reject this application? Their Shopify price rule will be disabled.')) return;
+  try {
+    const res = await fetch(`${API}/reject/${id}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Application rejected');
+      await loadDashboard();
+    } else {
+      showToast(data.error || 'Failed to reject', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
+}
+
+// ─── PAYOUTS DRAWER ──────────────────────────────────────────────────────────────
+let currentDrawerInfluencer = null;
+
+function openPayoutsDrawer(id) {
+  const inf = (influencersData || []).find(i => i.id === id);
+  if (!inf) return;
+  currentDrawerInfluencer = inf;
+  setText('iaPayoutDrawerName', inf.name);
+  setText('iaPayoutDrawerCode', inf.referral_code || '—');
+  clearPayoutForm();
+  document.getElementById('iaPayoutsDrawer').classList.add('show');
+  document.body.style.overflow = 'hidden';
+  loadDrawerPayouts(id);
+}
+
+function closePayoutsDrawer() {
+  document.getElementById('iaPayoutsDrawer').classList.remove('show');
+  document.body.style.overflow = '';
+  currentDrawerInfluencer = null;
+}
+
+function handleDrawerOverlay(e) {
+  if (e.target.id === 'iaPayoutsDrawer') closePayoutsDrawer();
+}
+
+function clearPayoutForm() {
+  ['poStart', 'poEnd', 'poAmount', 'poRef', 'poNotes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+async function loadDrawerPayouts(id) {
+  const list = document.getElementById('iaPayoutList');
+  list.innerHTML = '<div class="ia-payout-empty">Loading…</div>';
+  try {
+    const res = await fetch(`${API}/payouts/${id}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (data.success) {
+      const payouts = data.payouts || [];
+      let totalPaid = 0, pending = 0;
+      payouts.forEach(p => {
+        const amt = parseFloat(p.amount || 0);
+        if (p.status === 'paid') totalPaid += amt;
+        if (p.status === 'pending') pending += amt;
+      });
+      setText('iaDrawerTotalPaid', '₹' + totalPaid.toLocaleString('en-IN', { maximumFractionDigits: 2 }));
+      setText('iaDrawerPending', '₹' + pending.toLocaleString('en-IN', { maximumFractionDigits: 2 }));
+      renderPayoutsList(payouts);
+    } else {
+      list.innerHTML = '<div class="ia-payout-empty">Failed to load.</div>';
+    }
+  } catch (err) {
+    console.error(err);
+    list.innerHTML = '<div class="ia-payout-empty">Connection error.</div>';
+  }
+}
+
+function renderPayoutsList(payouts) {
+  const list = document.getElementById('iaPayoutList');
+  if (!payouts.length) {
+    list.innerHTML = '<div class="ia-payout-empty">No payouts recorded yet. Use the form above to add one.</div>';
+    return;
+  }
+  list.innerHTML = payouts.map(p => {
+    const start = new Date(p.period_start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const end = new Date(p.period_end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const paidAt = p.paid_at ? new Date(p.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+    const amount = parseFloat(p.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    const actions = p.status === 'pending'
+      ? `<button class="pay" onclick="updatePayoutStatusAdmin(${p.id}, 'paid')">Mark Paid</button>
+         <button class="cancel" onclick="updatePayoutStatusAdmin(${p.id}, 'cancelled')">Cancel</button>`
+      : p.status === 'paid'
+      ? `<button onclick="updatePayoutStatusAdmin(${p.id}, 'pending')">Revert to Pending</button>`
+      : `<button onclick="updatePayoutStatusAdmin(${p.id}, 'pending')">Restore</button>`;
+    return `
+      <div class="ia-payout-item">
+        <div class="ia-payout-item-top">
+          <div class="ia-payout-item-amt">₹${amount}</div>
+          <span class="ia-pill ${p.status === 'paid' ? 'active' : p.status === 'pending' ? 'pending' : 'rejected'}">${p.status.toUpperCase()}</span>
+        </div>
+        <div class="ia-payout-item-meta">${start} → ${end}${paidAt ? ' · Paid ' + paidAt : ''}${p.reference ? ' · Ref: ' + esc(p.reference) : ''}</div>
+        ${p.notes ? `<div class="ia-payout-item-meta" style="margin-top:0.3rem;">${esc(p.notes)}</div>` : ''}
+        <div class="ia-payout-actions">${actions}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function submitNewPayout() {
+  if (!currentDrawerInfluencer) return;
+  const periodStart = document.getElementById('poStart').value;
+  const periodEnd = document.getElementById('poEnd').value;
+  const amount = document.getElementById('poAmount').value;
+  const reference = document.getElementById('poRef').value.trim();
+  const notes = document.getElementById('poNotes').value.trim();
+
+  if (!periodStart || !periodEnd || !amount) {
+    showToast('Period start, end, and amount are required', true);
+    return;
+  }
+  if (new Date(periodStart) > new Date(periodEnd)) {
+    showToast('Start cannot be after end', true);
+    return;
+  }
+
+  const btn = document.getElementById('iaAddPayoutBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const res = await fetch(`${API}/payouts/${currentDrawerInfluencer.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ periodStart, periodEnd, amount, reference: reference || null, notes: notes || null })
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Payout recorded ✓');
+      clearPayoutForm();
+      await loadDrawerPayouts(currentDrawerInfluencer.id);
+    } else {
+      showToast(data.error || 'Failed to save', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Record Payout';
+  }
+}
+
+async function updatePayoutStatusAdmin(payoutId, status) {
+  if (status === 'cancelled' && !confirm('Cancel this payout? Amount will be removed from pending total.')) return;
+  try {
+    const res = await fetch(`${API}/payouts/item/${payoutId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ status })
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Payout updated ✓');
+      if (currentDrawerInfluencer) await loadDrawerPayouts(currentDrawerInfluencer.id);
+    } else {
+      showToast(data.error || 'Failed to update', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
 }
 
 // ─── VIEW STATS ──────────────────────────────────────────────────────────────

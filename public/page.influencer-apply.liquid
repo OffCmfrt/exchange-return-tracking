@@ -1,0 +1,720 @@
+{% layout none %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Become an Offcomfrt Ambassador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --border: #e8e8e8;
+  --border-strong: #1a1a1a;
+  --text: #0a0a0a;
+  --muted: #6b6b6b;
+  --error: #c0392b;
+  --success: #1a7f3e;
+  --transition: 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 100vh;
+}
+.ia-shell { max-width: 920px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+
+/* ── HERO ── */
+.ia-hero {
+  text-align: center;
+  margin-bottom: 4rem;
+  animation: fadeUp 0.8s ease both;
+}
+.ia-eyebrow {
+  font-size: 0.7rem;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+}
+.ia-hero h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-bottom: 1.5rem;
+}
+.ia-hero h1 em { font-style: italic; font-weight: 500; }
+.ia-hero p {
+  max-width: 580px;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.ia-benefits {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+  margin: 3rem 0 0;
+}
+.ia-benefit {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  text-align: left;
+  transition: all var(--transition);
+}
+.ia-benefit:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+}
+.ia-benefit-num {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.ia-benefit h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.4rem;
+}
+.ia-benefit p {
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ── FORM CARD ── */
+.ia-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: clamp(2rem, 5vw, 3.5rem);
+  animation: fadeUp 0.8s 0.15s ease both;
+}
+
+.ia-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 2.5rem;
+}
+.ia-progress-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.ia-progress-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface);
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+.ia-progress-step.active .ia-progress-circle {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--surface);
+}
+.ia-progress-step.complete .ia-progress-circle {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--surface);
+}
+.ia-progress-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ia-progress-step.active .ia-progress-label,
+.ia-progress-step.complete .ia-progress-label { color: var(--text); }
+.ia-progress-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  transition: background var(--transition);
+}
+.ia-progress-line.complete { background: var(--text); }
+
+.ia-step { display: none; animation: fadeUp 0.5s ease both; }
+.ia-step.active { display: block; }
+
+.ia-step-header { margin-bottom: 2rem; }
+.ia-step-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.ia-step-sub { color: var(--muted); font-size: 0.95rem; }
+
+.ia-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+.ia-grid.single { grid-template-columns: 1fr; }
+
+.ia-field { margin-bottom: 1.5rem; }
+.ia-field.full { grid-column: 1 / -1; }
+.ia-label {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+.ia-label .req { color: var(--error); margin-left: 2px; }
+.ia-label .opt { color: var(--muted); font-weight: 500; letter-spacing: 0.12em; }
+.ia-input, .ia-select, .ia-textarea {
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  transition: all var(--transition);
+}
+.ia-input:focus, .ia-select:focus, .ia-textarea:focus {
+  outline: none;
+  border-color: var(--text);
+  background: var(--surface);
+}
+.ia-input.has-error, .ia-select.has-error, .ia-textarea.has-error { border-color: var(--error); }
+.ia-textarea { min-height: 110px; resize: vertical; }
+.ia-help { font-size: 0.78rem; color: var(--muted); margin-top: 0.5rem; }
+.ia-error { font-size: 0.8rem; color: var(--error); margin-top: 0.5rem; min-height: 1.1em; }
+
+.ia-checkbox-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  font-size: 0.88rem;
+  color: var(--muted);
+  margin-top: 0.5rem;
+}
+.ia-checkbox-row input { margin-top: 3px; flex-shrink: 0; }
+.ia-checkbox-row a { color: var(--text); text-decoration: underline; }
+
+/* ── BUTTONS ── */
+.ia-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+}
+.ia-btn {
+  padding: 1rem 2rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  font-weight: 700;
+  border: 1.5px solid var(--text);
+  background: var(--text);
+  color: var(--surface);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.ia-btn:hover { background: transparent; color: var(--text); }
+.ia-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ia-btn.secondary { background: transparent; color: var(--text); }
+.ia-btn.secondary:hover { background: var(--text); color: var(--surface); }
+
+/* ── SUCCESS SCREEN ── */
+.ia-success { display: none; text-align: center; padding: 2rem 0; animation: fadeUp 0.6s ease both; }
+.ia-success.show { display: block; }
+.ia-success-mark {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 2px solid var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 2rem;
+}
+.ia-success-mark svg { width: 36px; height: 36px; }
+.ia-success h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.4rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.ia-success > p { max-width: 500px; margin: 0 auto 2rem; color: var(--muted); }
+
+.ia-code-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 2rem;
+  max-width: 480px;
+  margin: 0 auto 2rem;
+  text-align: center;
+}
+.ia-code-card-eyebrow {
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+.ia-code-display {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+}
+.ia-code-card-help { font-size: 0.85rem; color: var(--muted); }
+
+.ia-portal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+.ia-portal-eyebrow {
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+.ia-portal-url-row { display: flex; gap: 0.5rem; }
+.ia-portal-url {
+  flex: 1;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-family: 'SFMono-Regular', Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ia-copy-btn {
+  padding: 0.75rem 1rem;
+  border: 1.5px solid var(--text);
+  background: var(--text);
+  color: var(--surface);
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.ia-copy-btn:hover { background: transparent; color: var(--text); }
+.ia-copy-btn.copied { background: var(--success); border-color: var(--success); color: #fff; }
+
+.ia-warning {
+  background: #fef3c7;
+  border-left: 3px solid #d97706;
+  padding: 0.85rem 1rem;
+  font-size: 0.85rem;
+  margin: 1.5rem auto 0;
+  max-width: 600px;
+  text-align: left;
+  color: #78350f;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 720px) {
+  .ia-shell { padding: 2.5rem 1rem 4rem; }
+  .ia-benefits { grid-template-columns: 1fr; }
+  .ia-grid { grid-template-columns: 1fr; }
+  .ia-progress-label { display: none; }
+  .ia-actions { flex-direction: column-reverse; }
+  .ia-btn { width: 100%; }
+}
+</style>
+</head>
+<body>
+<div class="ia-shell">
+
+  <!-- HERO -->
+  <header class="ia-hero">
+    <p class="ia-eyebrow">Offcomfrt · Ambassador Program</p>
+    <h1>Wear it. Share it.<br><em>Earn from it.</em></h1>
+    <p>Apply once. Get your personal discount code. Earn commission on every order placed with it — paid out weekly.</p>
+
+    <div class="ia-benefits">
+      <div class="ia-benefit">
+        <div class="ia-benefit-num">01</div>
+        <h3>10% COMMISSION</h3>
+        <p>On every order placed with your unique code, lifetime.</p>
+      </div>
+      <div class="ia-benefit">
+        <div class="ia-benefit-num">02</div>
+        <h3>10% OFF FOR FANS</h3>
+        <p>Your followers get an exclusive discount they can&apos;t get anywhere else.</p>
+      </div>
+      <div class="ia-benefit">
+        <div class="ia-benefit-num">03</div>
+        <h3>WEEKLY PAYOUTS</h3>
+        <p>Track earnings in real-time on your private dashboard. Paid via UPI.</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- APPLICATION CARD -->
+  <div class="ia-card" id="iaCard">
+
+    <!-- Progress -->
+    <div class="ia-progress" id="iaProgress">
+      <div class="ia-progress-step active" data-step="1">
+        <div class="ia-progress-circle">1</div>
+        <div class="ia-progress-label">About You</div>
+      </div>
+      <div class="ia-progress-line"></div>
+      <div class="ia-progress-step" data-step="2">
+        <div class="ia-progress-circle">2</div>
+        <div class="ia-progress-label">Audience</div>
+      </div>
+      <div class="ia-progress-line"></div>
+      <div class="ia-progress-step" data-step="3">
+        <div class="ia-progress-circle">3</div>
+        <div class="ia-progress-label">Your Code</div>
+      </div>
+    </div>
+
+    <!-- STEP 1 -->
+    <section class="ia-step active" data-step="1">
+      <div class="ia-step-header">
+        <h2 class="ia-step-title">First, the basics</h2>
+        <p class="ia-step-sub">We&apos;ll use these to set up your ambassador account.</p>
+      </div>
+      <div class="ia-grid">
+        <div class="ia-field">
+          <label class="ia-label" for="iaName">Full Name <span class="req">*</span></label>
+          <input class="ia-input" id="iaName" type="text" autocomplete="name" maxlength="80">
+          <div class="ia-error" data-error-for="name"></div>
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaEmail">Email <span class="req">*</span></label>
+          <input class="ia-input" id="iaEmail" type="email" autocomplete="email" maxlength="120">
+          <div class="ia-error" data-error-for="email"></div>
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaPhone">Mobile Number <span class="req">*</span></label>
+          <input class="ia-input" id="iaPhone" type="tel" autocomplete="tel" inputmode="numeric" maxlength="15" placeholder="10-digit number">
+          <div class="ia-error" data-error-for="phone"></div>
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaCity">City <span class="opt">(Optional)</span></label>
+          <input class="ia-input" id="iaCity" type="text" autocomplete="address-level2" maxlength="60">
+        </div>
+      </div>
+      <div class="ia-actions" style="justify-content: flex-end;">
+        <button type="button" class="ia-btn" data-next="2">Continue →</button>
+      </div>
+    </section>
+
+    <!-- STEP 2 -->
+    <section class="ia-step" data-step="2">
+      <div class="ia-step-header">
+        <h2 class="ia-step-title">Tell us about your reach</h2>
+        <p class="ia-step-sub">Helps us tailor commission tiers for top creators.</p>
+      </div>
+      <div class="ia-grid">
+        <div class="ia-field">
+          <label class="ia-label" for="iaInstagram">Instagram Handle <span class="req">*</span></label>
+          <input class="ia-input" id="iaInstagram" type="text" placeholder="@yourname" maxlength="60">
+          <div class="ia-error" data-error-for="instagramHandle"></div>
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaYoutube">YouTube / Other <span class="opt">(Optional)</span></label>
+          <input class="ia-input" id="iaYoutube" type="text" placeholder="@channel or URL" maxlength="120">
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaFollowers">Total Followers <span class="opt">(Optional)</span></label>
+          <input class="ia-input" id="iaFollowers" type="number" min="0" placeholder="e.g. 12000">
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaNiche">Niche <span class="opt">(Optional)</span></label>
+          <select class="ia-select" id="iaNiche">
+            <option value="">Select…</option>
+            <option>Fashion & Style</option>
+            <option>Lifestyle</option>
+            <option>Fitness & Wellness</option>
+            <option>Beauty</option>
+            <option>Travel</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="ia-field full">
+          <label class="ia-label" for="iaWhyJoin">Why Offcomfrt? <span class="opt">(Optional, max 1000 chars)</span></label>
+          <textarea class="ia-textarea" id="iaWhyJoin" maxlength="1000" placeholder="Tell us in a couple of lines why you'd be a great fit."></textarea>
+        </div>
+      </div>
+      <div class="ia-actions">
+        <button type="button" class="ia-btn secondary" data-prev="1">← Back</button>
+        <button type="button" class="ia-btn" data-next="3">Continue →</button>
+      </div>
+    </section>
+
+    <!-- STEP 3 -->
+    <section class="ia-step" data-step="3">
+      <div class="ia-step-header">
+        <h2 class="ia-step-title">Pick your discount code</h2>
+        <p class="ia-step-sub">This is what your audience will use at checkout. Letters &amp; numbers only.</p>
+      </div>
+      <div class="ia-grid">
+        <div class="ia-field full">
+          <label class="ia-label" for="iaPreferredCode">Preferred Code <span class="req">*</span></label>
+          <input class="ia-input" id="iaPreferredCode" type="text" maxlength="20" placeholder="e.g. RIYA10" style="text-transform: uppercase; letter-spacing: 0.05em;">
+          <div class="ia-help">4–20 characters. We&apos;ll auto-suffix if it&apos;s already taken.</div>
+          <div class="ia-error" data-error-for="preferredCode"></div>
+        </div>
+        <div class="ia-field full">
+          <label class="ia-label" for="iaPayoutUpi">Payout UPI <span class="opt">(Optional, can be added later)</span></label>
+          <input class="ia-input" id="iaPayoutUpi" type="text" maxlength="80" placeholder="yourname@upi">
+          <div class="ia-help">We pay weekly to this UPI ID. You can update it anytime.</div>
+        </div>
+        <div class="ia-field full">
+          <label class="ia-checkbox-row">
+            <input type="checkbox" id="iaTerms">
+            <span>I agree to the Offcomfrt ambassador terms — including authentic representation of the brand and adherence to FTC disclosure guidelines on sponsored content.</span>
+          </label>
+          <div class="ia-error" data-error-for="terms"></div>
+        </div>
+      </div>
+      <div class="ia-actions">
+        <button type="button" class="ia-btn secondary" data-prev="2">← Back</button>
+        <button type="button" class="ia-btn" id="iaSubmitBtn">Submit Application</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- SUCCESS SCREEN -->
+  <div class="ia-card ia-success" id="iaSuccess">
+    <div class="ia-success-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <h2>You&apos;re in.</h2>
+    <p>Welcome to the Offcomfrt ambassador family. Your code is reserved and your portal is live. Our team will activate your code at checkout within 24 hours.</p>
+
+    <div class="ia-code-card">
+      <div class="ia-code-card-eyebrow">Your Discount Code</div>
+      <div class="ia-code-display" id="iaResultCode">—</div>
+      <div class="ia-code-card-help">Share this with your followers. They get 10% off, you earn 10% commission.</div>
+    </div>
+
+    <div class="ia-portal-card">
+      <div class="ia-portal-eyebrow">Your Private Dashboard</div>
+      <div class="ia-portal-url-row">
+        <div class="ia-portal-url" id="iaResultUrl">—</div>
+        <button type="button" class="ia-copy-btn" id="iaCopyUrlBtn">Copy</button>
+      </div>
+      <div class="ia-help" style="margin-top: 0.75rem;">Bookmark this link — it&apos;s the only way back into your dashboard.</div>
+    </div>
+
+    <div class="ia-warning hidden" id="iaWarning"></div>
+  </div>
+
+</div>
+
+<script>
+const APPLY_API = 'https://exchange-return-tracking.onrender.com/api/influencer/apply';
+
+let currentStep = 1;
+
+// ── Step navigation ──
+function setStep(n) {
+  currentStep = n;
+  document.querySelectorAll('.ia-step').forEach(s => s.classList.toggle('active', parseInt(s.dataset.step) === n));
+  const stepEls = document.querySelectorAll('.ia-progress-step');
+  const lineEls = document.querySelectorAll('.ia-progress-line');
+  stepEls.forEach(s => {
+    const i = parseInt(s.dataset.step);
+    s.classList.toggle('active', i === n);
+    s.classList.toggle('complete', i < n);
+  });
+  lineEls.forEach((l, idx) => l.classList.toggle('complete', idx + 1 < n));
+  window.scrollTo({ top: document.getElementById('iaCard').offsetTop - 30, behavior: 'smooth' });
+}
+
+document.querySelectorAll('[data-next]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const next = parseInt(btn.dataset.next);
+    if (validateStep(currentStep)) setStep(next);
+  });
+});
+document.querySelectorAll('[data-prev]').forEach(btn => {
+  btn.addEventListener('click', () => setStep(parseInt(btn.dataset.prev)));
+});
+
+// ── Live uppercase + alphanumeric filter on the code field ──
+const codeInput = document.getElementById('iaPreferredCode');
+codeInput.addEventListener('input', () => {
+  const filtered = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (filtered !== codeInput.value) codeInput.value = filtered;
+});
+
+// ── Validation ──
+function setError(field, msg) {
+  const inputId = 'ia' + field.charAt(0).toUpperCase() + field.slice(1);
+  const errEl = document.querySelector(`[data-error-for="${field}"]`);
+  const inp = document.getElementById(inputId);
+  if (errEl) errEl.textContent = msg || '';
+  if (inp) inp.classList.toggle('has-error', !!msg);
+}
+function clearAllErrors() {
+  document.querySelectorAll('[data-error-for]').forEach(e => e.textContent = '');
+  document.querySelectorAll('.has-error').forEach(e => e.classList.remove('has-error'));
+}
+
+function validateStep(step) {
+  clearAllErrors();
+  let ok = true;
+  if (step === 1) {
+    const name = document.getElementById('iaName').value.trim();
+    const email = document.getElementById('iaEmail').value.trim();
+    const phone = document.getElementById('iaPhone').value.replace(/\D/g, '');
+    if (!name) { setError('name', 'Please enter your name'); ok = false; }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('email', 'Please enter a valid email'); ok = false; }
+    if (!phone || phone.length < 10) { setError('phone', 'Please enter a valid 10-digit number'); ok = false; }
+  } else if (step === 2) {
+    const ig = document.getElementById('iaInstagram').value.trim();
+    if (!ig) { setError('instagramHandle', 'Instagram handle is required'); ok = false; }
+  } else if (step === 3) {
+    const code = document.getElementById('iaPreferredCode').value.trim();
+    const terms = document.getElementById('iaTerms').checked;
+    if (!code || code.length < 4) { setError('preferredCode', 'Code must be at least 4 characters'); ok = false; }
+    if (!terms) { setError('terms', 'Please accept the terms to continue'); ok = false; }
+  }
+  return ok;
+}
+
+// ── Map server error fields to form steps ──
+const FIELD_TO_STEP = {
+  name: 1, email: 1, phone: 1,
+  instagramHandle: 2,
+  preferredCode: 3
+};
+
+// ── Submit ──
+document.getElementById('iaSubmitBtn').addEventListener('click', async () => {
+  if (!validateStep(3)) return;
+
+  const submitBtn = document.getElementById('iaSubmitBtn');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Submitting…';
+
+  const payload = {
+    name: document.getElementById('iaName').value.trim(),
+    email: document.getElementById('iaEmail').value.trim(),
+    phone: document.getElementById('iaPhone').value.replace(/\D/g, ''),
+    city: document.getElementById('iaCity').value.trim() || null,
+    instagramHandle: document.getElementById('iaInstagram').value.trim(),
+    youtubeHandle: document.getElementById('iaYoutube').value.trim() || null,
+    followerCount: document.getElementById('iaFollowers').value || null,
+    niche: document.getElementById('iaNiche').value || null,
+    whyJoin: document.getElementById('iaWhyJoin').value.trim() || null,
+    preferredCode: document.getElementById('iaPreferredCode').value.trim(),
+    payoutUpi: document.getElementById('iaPayoutUpi').value.trim() || null
+  };
+
+  try {
+    const res = await fetch(APPLY_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Application';
+      const field = data.field;
+      const msg = data.error || 'Something went wrong. Please try again.';
+      if (field && FIELD_TO_STEP[field]) {
+        setStep(FIELD_TO_STEP[field]);
+        setError(field, msg);
+      } else {
+        alert(msg);
+      }
+      return;
+    }
+
+    // SUCCESS
+    document.getElementById('iaCard').style.display = 'none';
+    document.getElementById('iaResultCode').textContent = data.referralCode || '—';
+    document.getElementById('iaResultUrl').textContent = data.portalUrl || '—';
+    if (data.warning) {
+      const w = document.getElementById('iaWarning');
+      w.textContent = data.warning;
+      w.classList.remove('hidden');
+    }
+    document.getElementById('iaSuccess').classList.add('show');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  } catch (err) {
+    console.error(err);
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Application';
+    alert('Network error. Please check your connection and try again.');
+  }
+});
+
+// ── Copy portal URL ──
+document.getElementById('iaCopyUrlBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('iaCopyUrlBtn');
+  const url = document.getElementById('iaResultUrl').textContent;
+  try {
+    await navigator.clipboard.writeText(url);
+    btn.textContent = 'Copied ✓';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  } catch (e) {
+    alert('Could not copy. Please copy the URL manually.');
+  }
+});
+</script>
+
+</body>
+</html>

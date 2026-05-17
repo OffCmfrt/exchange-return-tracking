@@ -1458,22 +1458,66 @@ async function createShiprocketForwardOrder(requestData) {
 
         // Forward Order Items (Replacement Items)
         const items = Array.isArray(requestData.items) ? requestData.items : [];
-        const orderItems = items.map(item => {
+        console.log(`[${requestData.requestId}] 📦 Processing ${items.length} replacement item(s) for forward order`);
+        
+        const orderItems = [];
+        
+        for (const item of items) {
             const isDifferentProduct = item.replacementProductId && item.replacementProductId !== item.productId;
             const title = item.replacementProductTitle || item.name;
             const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
             const finalName = title + variantStr;
-            const finalVariantId = (item.replacementVariantId && item.replacementVariantId !== 'Same') ? item.replacementVariantId : (item.variantId || item.id);
+            let finalVariantId = (item.replacementVariantId && item.replacementVariantId !== 'Same') ? item.replacementVariantId : (item.variantId || item.id);
 
-            return {
+            console.log(`[${requestData.requestId}] Item: ${title}`);
+            console.log(`  - Original: ${item.name} (Variant: ${item.variant})`);
+            console.log(`  - Replacement: ${finalName}`);
+            console.log(`  - Variant ID: ${finalVariantId}`);
+            console.log(`  - Price: ₹${item.replacementPrice || item.price}`);
+            console.log(`  - Quantity: ${item.quantity}`);
+
+            // Validate variant exists in Shopify if we have a product ID
+            if (item.replacementProductId && finalVariantId && finalVariantId !== 'Same') {
+                try {
+                    console.log(`[${requestData.requestId}] 🔍 Validating variant ${finalVariantId} in Shopify...`);
+                    const variantsData = await shopifyAPI(`products/${item.replacementProductId}/variants.json`);
+                    const variants = variantsData.variants || [];
+                    const variantExists = variants.find(v => v.id.toString() === finalVariantId.toString());
+                    
+                    if (variantExists) {
+                        console.log(`[${requestData.requestId}] ✅ Variant confirmed: ${variantExists.title} (ID: ${variantExists.id})`);
+                        console.log(`[${requestData.requestId}]    Inventory: ${variantExists.inventory_quantity} units`);
+                    } else {
+                        console.warn(`[${requestData.requestId}] ⚠️ Variant ${finalVariantId} NOT FOUND in product ${item.replacementProductId}!`);
+                        console.warn(`[${requestData.requestId}]    Available variants:`, variants.map(v => ({ id: v.id, title: v.title })));
+                        
+                        // Try to find matching variant by title
+                        if (item.replacementVariant) {
+                            const matchingVariant = variants.find(v => 
+                                v.title === item.replacementVariant ||
+                                v.option1 === item.replacementVariant ||
+                                v.option2 === item.replacementVariant
+                            );
+                            if (matchingVariant) {
+                                console.log(`[${requestData.requestId}] ✅ Found matching variant by title: ${matchingVariant.title} (ID: ${matchingVariant.id})`);
+                                finalVariantId = matchingVariant.id;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[${requestData.requestId}] ❌ Failed to validate variant:`, e.message);
+                }
+            }
+
+            orderItems.push({
                 name: finalName,
                 sku: String(finalVariantId) + '-EXCH',
                 units: parseInt(item.quantity) || 1,
                 selling_price: parseFloat(item.replacementPrice || item.price) || 0,
                 discount: 0,
                 tax: 0
-            };
-        });
+            });
+        }
 
         // Fetch dynamic warehouse location settings
         const warehouseLocation = await getSetting('warehouse_location', null);
@@ -1803,6 +1847,167 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         }
     } catch (error) {
         console.error('❌ Failed to create Delhivery return:', error);
+        return null;
+    }
+}
+
+/**
+ * Create Delhivery Forward Order (for exchange/replacement dispatch)
+ * This sends item FROM warehouse TO customer (opposite of return pickup)
+ */
+async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
+    try {
+        console.log(`\n📦 Creating Delhivery Forward Order for ${requestData.requestId}...`);
+        
+        // Fetch Shopify Order if we need customer address
+        if (!shopifyOrder && requestData.orderNumber) {
+            try {
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                }
+
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+            } catch (e) {
+                console.error(`[${requestData.requestId}] Failed to fetch Shopify order:`, e.message);
+            }
+        }
+
+        // Get warehouse location for pickup (FROM warehouse)
+        const warehouseLocation = await getSetting('warehouse_location', null);
+        
+        if (!warehouseLocation) {
+            console.error(`[${requestData.requestId}] ❌ No warehouse location configured`);
+            return null;
+        }
+
+        console.log('✅ Using warehouse from settings:', warehouseLocation.nickname || warehouseLocation.name);
+        console.log('📦 Warehouse Details:');
+        console.log(`   Name: ${warehouseLocation.name}`);
+        console.log(`   Address: ${warehouseLocation.address}`);
+        console.log(`   City: ${warehouseLocation.city}, ${warehouseLocation.state} ${warehouseLocation.pin_code || warehouseLocation.pincode}`);
+        console.log(`   Phone: ${warehouseLocation.phone}`);
+
+        // Customer details (TO customer) - use new_* fields for exchange address
+        let customerName = requestData.newName || requestData.customerName || 'Customer';
+        let customerAddress = requestData.newAddress || '';
+        let customerCity = requestData.newCity || '';
+        let customerState = requestData.newState || '';
+        let customerPincode = requestData.newPincode || '';
+        let customerPhone = requestData.customerPhone || requestData.newPhone || '9999999999';
+
+        // If we don't have exchange address in requestData, try to get from Shopify
+        if (!customerAddress && shopifyOrder) {
+            const address = shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address);
+            if (address) {
+                customerName = `${address.first_name || ''} ${address.last_name || ''}`.trim() || customerName;
+                customerAddress = ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 190);
+                customerCity = address.city || customerCity;
+                customerState = address.province || customerState;
+                customerPincode = address.zip || customerPincode;
+                customerPhone = customerPhone || address.phone || shopifyOrder?.phone || '9999999999';
+            }
+        }
+
+        // Validate phone number
+        let digits = String(customerPhone).replace(/\D/g, '');
+        customerPhone = digits.length >= 10 ? digits.slice(-10) : '9999999999';
+
+        // Sanitize addresses - Delhivery doesn't accept: &, #, %, ;, \
+        const sanitizeAddress = (str) => {
+            if (!str) return '';
+            return str.replace(/[&#%;\\]/g, '').trim();
+        };
+
+        // Build forward order ID with fws- prefix (required by Delhivery for forward shipments)
+        const forwardOrderId = `fws-${requestData.requestId}`;
+
+        // Get Delhivery pickup location nickname
+        const delhiveryPickupLocationSetting = await getSetting('delhivery_pickup_location', null);
+        const pickupLocationNickname = delhiveryPickupLocationSetting 
+            || (warehouseLocation && warehouseLocation.pickup_location)
+            || process.env.DELHIVERY_PICKUP_LOCATION 
+            || 'Primary';
+
+        console.log(`📍 Using Delhivery pickup location: ${pickupLocationNickname}`);
+        console.log(`📦 Forward Order: FROM warehouse TO customer`);
+        console.log(`   Order ID: ${forwardOrderId}`);
+        console.log(`   From: ${warehouseLocation.city}, ${warehouseLocation.state}`);
+        console.log(`   To: ${customerCity}, ${customerState}`);
+
+        // Build payload for Delhivery CMU API - FORWARD direction
+        // pickup_location = warehouse (where we're sending FROM)
+        // customer = shipping address (where we're sending TO)
+        const payload = {
+            shipments: [{
+                order: forwardOrderId,
+                name: sanitizeAddress(customerName),
+                add: sanitizeAddress(customerAddress),
+                pin: customerPincode,
+                city: sanitizeAddress(customerCity),
+                state: sanitizeAddress(customerState),
+                country: "India",
+                phone: customerPhone,
+                payment_mode: "Prepaid",  // Forward shipment is prepaid
+                cod_amount: 0,
+                pickup_location: pickupLocationNickname
+            }],
+            pickup_location: {
+                name: pickupLocationNickname,
+                add: sanitizeAddress(warehouseLocation.address || warehouseLocation.address_line_1),
+                pin: warehouseLocation.pin_code || warehouseLocation.pincode,
+                city: sanitizeAddress(warehouseLocation.city),
+                state: sanitizeAddress(warehouseLocation.state || 'Haryana'),
+                country: 'IN',
+                phone: warehouseLocation.phone
+            }
+        };
+
+        console.log('🚀 Sending to Delhivery CMU API...');
+        console.log('📦 Payload:', JSON.stringify(payload, null, 2));
+
+        const response = await fetch('https://track.delhivery.com/api/cmu/create.json', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Token ${process.env.DELHIVERY_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: `format=json&data=${JSON.stringify(payload)}`
+        });
+
+        const data = await response.json();
+        console.log('📦 Delhivery Response:', JSON.stringify(data, null, 2));
+
+        if (data.error || data.status === "Error") {
+            console.error('❌ Delhivery Error:', data.error || data.message);
+            return null;
+        }
+
+        // Extract waybill and shipment details
+        const waybill = data.packages?.[0]?.waybill;
+        const shipmentId = data.packages?.[0]?.shipment_id || forwardOrderId;
+
+        if (waybill) {
+            console.log(`✅ Delhivery Forward Success!`);
+            console.log(`   Waybill: ${waybill}`);
+            console.log(`   Order ID: ${forwardOrderId}`);
+            
+            return {
+                waybill,
+                shipment_id: shipmentId,
+                order_id: forwardOrderId
+            };
+        } else {
+            console.error('❌ Delhivery did not return waybill');
+            console.error('   Error:', data.rmk || data.error);
+            return null;
+        }
+
+    } catch (error) {
+        console.error(`❌ Error creating Delhivery forward order:`, error.message);
         return null;
     }
 }
@@ -4086,41 +4291,128 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
         }
 
         // 2. Final Approval -> Quality Check Passed -> Process Resolution
-        // Trigger Forward Shipment on Shiprocket only (no Shopify exchange order)
+        // Trigger Forward Shipment based on carrier settings (Shiprocket and/or Delhivery)
         if (requestDetails.type === 'exchange' && requestDetails.status !== 'approved') {
             console.log(`[${requestId}] Finalizing exchange resolution...`);
 
-            // Create Shiprocket forward shipment (Shopify exchange order creation intentionally skipped)
-            if (process.env.SHIPROCKET_EMAIL) {
-                console.log('Creating Forward Shipment for Exchange:', requestId);
-                let items = requestDetails.items;
-                if (typeof items === 'string') { try { items = JSON.parse(items); } catch (e) { items = []; } }
+            // Get carrier mode for dispatch (forward shipment)
+            const carrierMode = await getCarrierModeSetting('dispatch');
+            const carrierResolution = resolveCarrierMode(carrierMode, 'dispatch');
+            
+            console.log(`[${requestId}] 🚀 Creating Forward Shipment for Exchange with carrier: ${carrierResolution.primary}${carrierResolution.useFallback ? ' (with fallback)' : ''}`);
+            
+            let items = requestDetails.items;
+            if (typeof items === 'string') { 
+                try { 
+                    items = JSON.parse(items); 
+                    console.log(`[${requestId}] 📋 Parsed items from JSON string: ${items.length} item(s)`);
+                } catch (e) { 
+                    console.error(`[${requestId}] ❌ Failed to parse items JSON:`, e);
+                    items = []; 
+                } 
+            }
 
-                const forwardOrder = await createShiprocketForwardOrder({ ...requestDetails, items });
-                if (forwardOrder && forwardOrder.shipment_id) {
-                    adminNotes += `\nReplacement Shipment Created (Shiprocket ID: ${forwardOrder.shipment_id})`;
-                    updates.forwardShipmentId = String(forwardOrder.shipment_id);
-                    updates.forwardAwbNumber = forwardOrder.awb_code || '';
-                    updates.forwardStatus = 'scheduled';
-                    // Only mark as approved if forward shipment was successfully created
-                    updates.status = 'approved';
-                } else {
-                    // Forward shipment creation failed - do NOT mark as approved
-                    adminNotes += `\nFailed to create replacement shipment in Shiprocket. Check logs.`;
-                    console.error(`[${requestId}] ❌ Forward shipment creation failed. Status will remain as: ${requestDetails.status}`);
-                    // Keep the current status instead of marking as approved
-                    updates.status = requestDetails.status;
-                    return res.status(500).json({ 
-                        success: false, 
-                        error: 'Failed to create forward shipment. Please check logs and try again.',
-                        requestId: requestId
-                    });
+            // Log item details before creating forward order
+            console.log(`[${requestId}] 📦 Items to be dispatched:`);
+            items.forEach((item, idx) => {
+                console.log(`  ${idx + 1}. ${item.replacementProductTitle || item.name}`);
+                console.log(`     Variant: ${item.replacementVariant || item.variant}`);
+                console.log(`     Variant ID: ${item.replacementVariantId || item.variantId}`);
+                console.log(`     Qty: ${item.quantity}`);
+            });
+
+            // Create forward order based on carrier mode
+            let forwardOrder = null;
+            let carrierUsed = null;
+
+            const primaryCarrier = carrierResolution.primary;
+            const useFallback = carrierResolution.useFallback;
+
+            try {
+                if (primaryCarrier === 'shiprocket') {
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
+                    }
+                    console.log(`[${requestId}] Using Shiprocket for forward dispatch...`);
+                    forwardOrder = await createShiprocketForwardOrder({ ...requestDetails, items });
+                    carrierUsed = 'shiprocket';
+                    
+                    if (!forwardOrder || !forwardOrder.shipment_id) {
+                        throw new Error('Shiprocket returned empty response');
+                    }
+                } else if (primaryCarrier === 'delhivery') {
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    console.log(`[${requestId}] Using Delhivery for forward dispatch...`);
+                    forwardOrder = await createDelhiveryForwardOrder({ ...requestDetails, items });
+                    carrierUsed = 'delhivery';
+                    
+                    if (!forwardOrder || !forwardOrder.waybill) {
+                        throw new Error('Delhivery returned empty response');
+                    }
                 }
+            } catch (primaryError) {
+                console.error(`[${requestId}] ❌ Primary carrier (${primaryCarrier}) failed:`, primaryError.message);
+                
+                // Try fallback if enabled
+                if (useFallback) {
+                    const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
+                    const fallbackEnv = fallbackCarrier === 'shiprocket' ? process.env.SHIPROCKET_EMAIL : process.env.DELHIVERY_API_KEY;
+                    
+                    if (fallbackEnv) {
+                        try {
+                            console.log(`[${requestId}] ⚠️ Falling back to ${fallbackCarrier}...`);
+                            forwardOrder = fallbackCarrier === 'shiprocket'
+                                ? await createShiprocketForwardOrder({ ...requestDetails, items })
+                                : await createDelhiveryForwardOrder({ ...requestDetails, items });
+                            carrierUsed = fallbackCarrier;
+                            
+                            const isValid = fallbackCarrier === 'shiprocket'
+                                ? (forwardOrder && forwardOrder.shipment_id)
+                                : (forwardOrder && forwardOrder.waybill);
+                            
+                            if (!isValid) {
+                                throw new Error(`${fallbackCarrier} also failed to create forward shipment`);
+                            }
+                            
+                            console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success`);
+                        } catch (fallbackError) {
+                            console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
+                            forwardOrder = null;
+                        }
+                    } else {
+                        console.error(`[${requestId}] ❌ ${primaryCarrier} failed and ${fallbackCarrier} not configured`);
+                        forwardOrder = null;
+                    }
+                } else {
+                    console.error(`[${requestId}] ❌ ${primaryCarrier} failed and fallback not enabled`);
+                    forwardOrder = null;
+                }
+            }
+
+            if (forwardOrder && (forwardOrder.shipment_id || forwardOrder.waybill)) {
+                const shipmentInfo = carrierUsed === 'shiprocket' 
+                    ? `Shiprocket ID: ${forwardOrder.shipment_id}` 
+                    : `Delhivery AWB: ${forwardOrder.waybill}`;
+                adminNotes += `\nReplacement Shipment Created (${carrierUsed}: ${shipmentInfo})`;
+                updates.forwardShipmentId = String(forwardOrder.shipment_id || forwardOrder.order_id);
+                updates.forwardAwbNumber = forwardOrder.awb_code || forwardOrder.waybill || '';
+                updates.forwardStatus = 'scheduled';
+                updates.forwardCarrier = carrierUsed;
+                // Only mark as approved if forward shipment was successfully created
+                updates.status = 'approved';
             } else {
-                // Shiprocket not configured
-                adminNotes += `\nShiprocket not configured. Forward shipment not created.`;
-                console.warn(`[${requestId}] ⚠️ Shiprocket not configured for forward shipment`);
-                updates.status = 'approved'; // Allow approval even without forward shipment if Shiprocket not configured
+                // Forward shipment creation failed - do NOT mark as approved
+                adminNotes += `\nFailed to create replacement shipment. Check logs.`;
+                console.error(`[${requestId}] ❌ Forward shipment creation failed. Status will remain as: ${requestDetails.status}`);
+                // Keep the current status instead of marking as approved
+                updates.status = requestDetails.status;
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to create forward shipment. Please check logs and try again.',
+                    requestId: requestId
+                });
             }
         } else {
             // For non-exchange types or already approved, just mark as approved

@@ -43,71 +43,20 @@ async function createShiprocketForwardOrder(requestData) {
   try {
     const token = await getShiprocketToken();
 
-    // Fetch Shopify Order for address/customer data
-    let shopifyOrder = null;
-    const needsAddress = !requestData.newAddress;
-    const needsCustomer = !requestData.customerName || requestData.customerName === 'Customer' || !requestData.customerPhone || requestData.customerPhone === 'null';
+    console.log(`\n📦 Processing ${requestData.requestId}...`);
+    console.log(`   Order #: ${requestData.order_number || requestData.orderNumber}`);
+    console.log(`   Customer: ${requestData.customer_name || requestData.customerName || 'N/A'}`);
+    console.log(`   Phone: ${requestData.customer_phone || requestData.customerPhone || 'N/A'}`);
 
-    if (needsAddress || needsCustomer) {
-      try {
-        let orderName = requestData.orderNumber;
-        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
-
-        if (!shopifyData.orders || shopifyData.orders.length === 0) {
-          const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
-          shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
-        }
-
-        shopifyOrder = shopifyData.orders && shopifyData.orders[0];
-      } catch (e) {
-        console.error('Failed to fetch original order for forward creation:', e);
-      }
+    // Use data directly from database
+    let customerName = requestData.customer_name || requestData.customerName || 'Customer';
+    if (customerName === 'Customer' || customerName === 'null' || !customerName) {
+      customerName = 'Customer';
     }
 
-    // Determine Address
-    let billingAddress = requestData.newAddress;
-    let billingCity = requestData.newCity;
-    let billingPincode = requestData.newPincode;
-    let billingState = '';
-
-    if (!billingAddress) {
-      if (shopifyOrder && shopifyOrder.shipping_address) {
-        billingAddress = shopifyOrder.shipping_address.address1;
-        billingCity = shopifyOrder.shipping_address.city;
-        billingPincode = shopifyOrder.shipping_address.zip;
-        billingState = shopifyOrder.shipping_address.province;
-      } else if (requestData.shippingAddress) {
-        const parts = requestData.shippingAddress.split(',').map(p => p.trim());
-        billingAddress = parts.slice(0, -4).join(', ') || parts[0];
-        billingCity = parts[parts.length - 4] || '';
-        billingState = parts[parts.length - 3] || '';
-        billingPincode = parts[parts.length - 2] || '';
-
-        if (!billingPincode.match(/^\d{6}$/)) {
-          const pinMatch = requestData.shippingAddress.match(/\b\d{6}\b/);
-          if (pinMatch) billingPincode = pinMatch[0];
-        }
-      }
-    }
-
-    // Determine Customer Details
-    let customerName = requestData.customerName;
-    if (!customerName || customerName === 'Customer' || customerName === 'null') {
-      if (shopifyOrder) {
-        customerName = `${shopifyOrder.customer?.first_name || ''} ${shopifyOrder.customer?.last_name || ''}`.trim();
-        if (!customerName) customerName = shopifyOrder.shipping_address?.name || 'Customer';
-      } else {
-        customerName = 'Customer';
-      }
-    }
-
-    let customerPhone = requestData.customerPhone;
-    if (!customerPhone || customerPhone === 'null' || customerPhone === '9999999999') {
-      if (shopifyOrder) {
-        customerPhone = shopifyOrder.shipping_address?.phone || shopifyOrder.customer?.phone || '';
-      }
-    }
-
+    // Get phone from database - this is the critical field
+    let customerPhone = requestData.customer_phone || requestData.customerPhone || '';
+    
     // Sanitize phone number
     let cleanPhone = String(customerPhone || '').replace(/\D/g, '');
     
@@ -119,29 +68,53 @@ async function createShiprocketForwardOrder(requestData) {
       cleanPhone = cleanPhone.substring(1);
     }
     
-    // Only use 10-digit numbers
+    // Validate Indian phone number (10 digits, starts with 6-9)
     if (cleanPhone.length === 10 && /^[6-9]\d{9}$/.test(cleanPhone)) {
       customerPhone = cleanPhone;
-      console.log(`   ✅ Using phone: ${customerPhone}`);
+      console.log(`   ✅ Valid phone: ${customerPhone}`);
     } else {
-      // Try to get from Shopify order if we haven't already
-      if (shopifyOrder && (!requestData.customerPhone || requestData.customerPhone === '9999999999')) {
-        customerPhone = shopifyOrder.shipping_address?.phone || shopifyOrder.customer?.phone || '';
-        cleanPhone = String(customerPhone || '').replace(/\D/g, '');
-        if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
-          cleanPhone = cleanPhone.substring(2);
-        }
-        if (cleanPhone.length === 10 && /^[6-9]\d{9}$/.test(cleanPhone)) {
-          customerPhone = cleanPhone;
-          console.log(`   ✅ Using phone from Shopify: ${customerPhone}`);
-        } else {
-          console.warn(`   ⚠️ Invalid phone number, using: ${cleanPhone || 'will use order phone'}`);
-          customerPhone = cleanPhone || '9999999999';
-        }
-      } else {
-        customerPhone = cleanPhone || '9999999999';
+      console.error(`   ❌ Invalid/missing phone in database: '${customerPhone}' (cleaned: '${cleanPhone}')`);
+      console.error(`   💡 This order needs a valid 10-digit Indian phone number`);
+      return null;
+    }
+
+    // Get address from database
+    let billingAddress = requestData.new_address || requestData.newAddress || 
+                         requestData.shipping_address || requestData.shippingAddress || '';
+    let billingCity = requestData.new_city || requestData.newCity || 
+                      requestData.city || '';
+    let billingPincode = requestData.new_pincode || requestData.newPincode || 
+                         requestData.pincode || '';
+    let billingState = requestData.new_state || requestData.newState || 
+                       requestData.state || '';
+
+    // Parse address if it's in concatenated format
+    if (!billingCity && billingAddress) {
+      const parts = billingAddress.split(',').map(p => p.trim());
+      if (parts.length >= 4) {
+        billingAddress = parts.slice(0, -4).join(', ') || parts[0];
+        billingCity = parts[parts.length - 4] || '';
+        billingState = parts[parts.length - 3] || '';
+        billingPincode = parts[parts.length - 2] || '';
       }
     }
+
+    // Extract pincode from address if not found
+    if (!billingPincode || !billingPincode.match(/^\d{6}$/)) {
+      const pinMatch = billingAddress.match(/\b\d{6}\b/);
+      if (pinMatch) billingPincode = pinMatch[0];
+    }
+
+    // Fallback for missing fields
+    if (!billingAddress) billingAddress = 'Address not available';
+    if (!billingCity) billingCity = 'City';
+    if (!billingPincode || !billingPincode.match(/^\d{6}$/)) {
+      console.warn(`   ⚠️ Invalid pincode: '${billingPincode}', using 110001`);
+      billingPincode = '110001';
+    }
+    if (!billingState) billingState = 'State';
+
+    console.log(`   📍 Address: ${billingAddress}, ${billingCity}, ${billingState} - ${billingPincode}`);
 
     // Forward Order Items (Replacement Items)
     const items = Array.isArray(requestData.items) ? requestData.items : [];
@@ -164,17 +137,17 @@ async function createShiprocketForwardOrder(requestData) {
     const pickupLocationNickname = 'Primary';
 
     const payload = {
-      order_id: requestData.requestId + '-FWD',
+      order_id: requestData.request_id || requestData.requestId + '-FWD',
       order_date: new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0],
       pickup_location: pickupLocationNickname,
       billing_customer_name: customerName,
       billing_last_name: '',
-      billing_address: (billingAddress || 'Address not available').substring(0, 190),
-      billing_city: billingCity || billingState || 'City',
-      billing_pincode: billingPincode || '110001',
-      billing_state: billingState || billingCity || 'State',
+      billing_address: billingAddress.substring(0, 190),
+      billing_city: billingCity,
+      billing_pincode: billingPincode,
+      billing_state: billingState,
       billing_country: 'India',
-      billing_email: requestData.email || '',
+      billing_email: requestData.email || requestData.customer_email || '',
       billing_phone: customerPhone,
       shipping_is_billing: true,
       order_items: orderItems,

@@ -418,10 +418,120 @@ body, html { background: var(--bg); }
 
 .hidden { display: none !important; }
 
+/* ── TAB BAR ── */
+.ip-tab-bar {
+  display: flex; gap: 0;
+  margin-bottom: 2.5rem;
+  border-bottom: 1px solid var(--border);
+  animation: fadeUp 0.6s 0.08s ease both;
+}
+.ip-tab-btn {
+  flex: 1; max-width: 220px;
+  padding: 1rem 1.25rem;
+  background: transparent; border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: inherit; font-size: 0.68rem;
+  letter-spacing: 0.25em; text-transform: uppercase;
+  font-weight: 700; cursor: pointer;
+  transition: all var(--transition);
+  margin-bottom: -1px;
+}
+.ip-tab-btn:hover { color: var(--text); }
+.ip-tab-btn.active { color: var(--text); border-bottom-color: var(--text); }
+
+/* ── PENDING BANNER ── */
+.ip-pending-banner {
+  background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04));
+  border: 1px solid rgba(245,158,11,0.4);
+  border-left: 3px solid #f59e0b;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 2rem;
+  animation: fadeUp 0.6s 0.08s ease both;
+}
+.ip-pending-banner.hidden { display: none; }
+.ip-pending-banner-title {
+  font-size: 0.7rem; letter-spacing: 0.25em;
+  text-transform: uppercase; font-weight: 800;
+  color: #f59e0b; margin-bottom: 0.5rem;
+}
+.ip-pending-banner p { font-size: 0.88rem; color: rgba(245,158,11,0.8); line-height: 1.55; }
+
+/* ── PAYOUTS VIEW ── */
+.ip-payout-summary {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 1px; background: var(--border);
+  border: 1px solid var(--border);
+  margin-bottom: 2rem;
+  animation: fadeUp 0.6s 0.1s ease both;
+}
+.ip-payout-summary-cell {
+  background: var(--surface);
+  padding: 1.25rem 1.5rem;
+}
+.ip-payout-summary-cell .lbl {
+  font-size: 0.6rem; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--muted); font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.ip-payout-summary-cell .val {
+  font-size: 1.4rem; font-weight: 800; color: var(--text);
+}
+
+.ip-ledger {
+  animation: fadeUp 0.6s 0.12s ease both;
+}
+.ip-ledger-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 1rem;
+}
+.ip-ledger-title {
+  font-size: 0.7rem; letter-spacing: 0.25em;
+  text-transform: uppercase; font-weight: 700;
+}
+.ip-ledger-count {
+  font-size: 0.75rem; color: var(--muted);
+}
+.ip-ledger-list { display: flex; flex-direction: column; }
+.ip-ledger-item {
+  border: 1px solid var(--border);
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.5rem;
+  background: var(--surface);
+  display: flex; justify-content: space-between; align-items: center;
+  transition: all var(--transition);
+}
+.ip-ledger-item:hover { border-color: var(--border-hover); }
+.ip-ledger-item .left { flex: 1; }
+.ip-ledger-item .period {
+  font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem;
+}
+.ip-ledger-item .meta {
+  font-size: 0.75rem; color: var(--muted);
+}
+.ip-ledger-item .right { text-align: right; }
+.ip-ledger-item .amt {
+  font-size: 1.05rem; font-weight: 700;
+}
+.ip-ledger-item .badge {
+  display: inline-block; padding: 2px 8px;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; border-radius: 999px; margin-top: 0.3rem;
+}
+.ip-ledger-item .badge.paid { background: rgba(34,197,94,0.15); color: var(--success); }
+.ip-ledger-item .badge.pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.ip-ledger-item .badge.cancelled { background: rgba(255,59,59,0.12); color: var(--danger); }
+.ip-ledger-empty {
+  text-align: center; padding: 3rem 1rem;
+  color: var(--muted);
+}
+.ip-ledger-empty h3 { font-size: 1rem; margin-bottom: 0.5rem; color: var(--text); }
+.ip-ledger-empty p { font-size: 0.85rem; }
+
 @media (max-width: 700px) {
   .ip-stats-grid { grid-template-columns: 1fr 1fr; }
-  .ip-header h1 { font-size: 2rem; }
-  .ip-range-btn { padding: 0.5rem 1rem; }
+  .ip-payout-summary { grid-template-columns: 1fr; }
+  .ip-tab-btn { font-size: 0.6rem; padding: 0.8rem 0.75rem; }
 }
 @media (max-width: 420px) {
   .ip-stats-grid { grid-template-columns: 1fr; }
@@ -471,6 +581,21 @@ body, html { background: var(--bg); }
       <h1>Performance<br>Dashboard</h1>
       <div class="ip-code-badge" id="ipCodeBadge">CODE: ——</div>
     </header>
+
+    <!-- Pending Banner -->
+    <div id="ipPendingBanner" class="ip-pending-banner hidden">
+      <div class="ip-pending-banner-title">Application Under Review</div>
+      <p>Thanks for signing up! Your ambassador application is being reviewed by our team. Your referral code will go live at checkout once approved — usually within 1–2 business days. You can still explore this portal in the meantime.</p>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="ip-tab-bar">
+      <button class="ip-tab-btn active" data-tab="performance" onclick="setTab('performance')">Performance</button>
+      <button class="ip-tab-btn" data-tab="payouts" onclick="setTab('payouts')">Payouts</button>
+    </div>
+
+    <!-- Performance View (stats + feed) -->
+    <div id="ipPerformanceView">
 
     <!-- Date Range Filter -->
     <div class="ip-range-bar">
@@ -536,6 +661,35 @@ body, html { background: var(--bg); }
         </div>
       </div>
     </section>
+    </div>
+
+    <!-- Payouts View -->
+    <div id="ipPayoutsView" style="display:none;">
+      <div class="ip-payout-summary">
+        <div class="ip-payout-summary-cell">
+          <div class="lbl">Total Paid</div>
+          <div class="val" id="ipTotalPaid">₹0</div>
+        </div>
+        <div class="ip-payout-summary-cell">
+          <div class="lbl">Pending Payout</div>
+          <div class="val" id="ipPendingPayout">₹0</div>
+        </div>
+        <div class="ip-payout-summary-cell">
+          <div class="lbl">Next Expected</div>
+          <div class="val" id="ipNextExpected">—</div>
+        </div>
+      </div>
+
+      <div class="ip-ledger">
+        <div class="ip-ledger-header">
+          <span class="ip-ledger-title">Payout History</span>
+          <span class="ip-ledger-count" id="ipPayoutCount"></span>
+        </div>
+        <div class="ip-ledger-list" id="ipPayoutList">
+          <div class="ip-ledger-empty"><span class="ip-stat-loading"></span></div>
+        </div>
+      </div>
+    </div>
 
     <!-- Footer -->
     <footer class="ip-footer">
@@ -574,6 +728,11 @@ async function initPortal() {
     document.getElementById('ipName').textContent = inf.name.toUpperCase();
     document.getElementById('ipCodeBadge').textContent = `CODE: ${inf.referralCode}`;
     document.getElementById('ipAuthWelcome').textContent = `Welcome, ${inf.name.split(' ')[0]}`;
+
+    // Show pending application banner if applicable
+    if (inf.status === 'pending') {
+      document.getElementById('ipPendingBanner').classList.remove('hidden');
+    }
 
     fadeOutLoading();
 
@@ -626,7 +785,72 @@ async function handleLogin() {
 
 async function showDashboard() {
   document.getElementById('ipMain').classList.add('visible');
+  setTab('performance');
   await fetchStats('all');
+}
+
+// ─── TABS ───────────────────────────────────────────────────────────────────
+function setTab(tab) {
+  document.querySelectorAll('.ip-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('ipPerformanceView').style.display = tab === 'performance' ? '' : 'none';
+  document.getElementById('ipPayoutsView').style.display = tab === 'payouts' ? '' : 'none';
+  if (tab === 'payouts') loadPayouts();
+}
+
+async function loadPayouts() {
+  const list = document.getElementById('ipPayoutList');
+  list.innerHTML = '<div class="ip-ledger-empty"><span class="ip-stat-loading"></span></div>';
+  try {
+    const res = await fetch(`${PORTAL_API}/payouts/${token}`);
+    const data = await res.json();
+    if (!data.success) { list.innerHTML = '<div class="ip-ledger-empty"><h3>Unavailable</h3><p>Please try again later.</p></div>'; return; }
+    renderPayoutsSummary(data.summary);
+    renderLedger(data.payouts || []);
+  } catch (err) {
+    console.error(err);
+    list.innerHTML = '<div class="ip-ledger-empty"><h3>Connection Error</h3><p>Check your network.</p></div>';
+  }
+}
+
+function renderPayoutsSummary(summary) {
+  const sym = summary.currency === 'INR' ? '₹' : '₹';
+  animateValue('ipTotalPaid', `${sym}${fmt(summary.totalPaid || 0)}`);
+  animateValue('ipPendingPayout', `${sym}${fmt(summary.pendingAmount || 0)}`);
+  const nextEl = document.getElementById('ipNextExpected');
+  if (summary.nextExpected) {
+    nextEl.textContent = fmtDate(summary.nextExpected);
+  } else {
+    nextEl.textContent = '—';
+  }
+}
+
+function renderLedger(payouts) {
+  const list = document.getElementById('ipPayoutList');
+  const count = document.getElementById('ipPayoutCount');
+  if (!payouts.length) {
+    list.innerHTML = '<div class="ip-ledger-empty"><h3>No Payouts Yet</h3><p>Payouts are recorded by our team as your code generates orders.</p></div>';
+    count.textContent = '';
+    return;
+  }
+  count.textContent = `${payouts.length} entries`;
+  const sym = payouts[0]?.currency === 'INR' ? '₹' : '₹';
+  list.innerHTML = payouts.map(p => {
+    const start = new Date(p.period_start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const end = new Date(p.period_end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const paidAt = p.paid_at ? ' · Paid ' + fmtDate(p.paid_at) : '';
+    return `
+      <div class="ip-ledger-item">
+        <div class="left">
+          <div class="period">${start} → ${end}</div>
+          <div class="meta">${p.reference ? 'Ref: ' + esc(p.reference) + paidAt : paidAt || '—'}</div>
+        </div>
+        <div class="right">
+          <div class="amt">${sym}${fmt(p.amount)}</div>
+          <div class="badge ${p.status}">${p.status}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // ─── DATE RANGE ───────────────────────────────────────────────────────────────
