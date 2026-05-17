@@ -252,14 +252,82 @@ const cron = require('node-cron');
 let isSyncRunning = false;
 let lastSyncTimestamp = null;
 
+// Helper function to sync a single request with retry logic
+async function syncWithRetry(req, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await syncSingleRequest(req);
+            
+            // Update sync tracking fields (if they exist in DB)
+            try {
+                const { createClient } = require('@supabase/supabase-js');
+                const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+                await supabase
+                    .from('requests')
+                    .update({
+                        last_sync_attempt: new Date().toISOString(),
+                        sync_retry_count: 0,
+                        last_sync_error: null
+                    })
+                    .eq('request_id', req.requestId);
+            } catch (dbError) {
+                // Ignore if columns don't exist yet (migration not run)
+            }
+            
+            return { success: true, attempts: attempt };
+        } catch (error) {
+            if (attempt === maxRetries) {
+                // Final failure - log permanently
+                try {
+                    const { createClient } = require('@supabase/supabase-js');
+                    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+                    await supabase
+                        .from('requests')
+                        .update({
+                            last_sync_attempt: new Date().toISOString(),
+                            sync_retry_count: attempt,
+                            last_sync_error: error.message
+                        })
+                        .eq('request_id', req.requestId);
+                } catch (dbError) {
+                    // Ignore if columns don't exist yet
+                }
+                
+                console.error(`[${req.requestId}] Sync failed after ${maxRetries} attempts:`, error.message);
+                return { success: false, attempts: attempt, error: error.message };
+            } else {
+                // Wait before retry (exponential backoff: 2s, 4s, 8s)
+                const waitTime = 1000 * Math.pow(2, attempt);
+                console.warn(`[${req.requestId}] Sync attempt ${attempt} failed, retrying in ${waitTime/1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+}
+
 async function performBackgroundSync() {
     if (isSyncRunning) {
         console.log('[Background Sync] Sync already running, skipping...');
-        return 0;
+        return { success: false, message: 'Sync already running' };
     }
     
     isSyncRunning = true;
+    const syncStartTime = new Date();
     console.log('[Background Sync] Starting automated sync...');
+    
+    // Initialize metrics tracking
+    const syncMetrics = {
+        total: 0,
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        carrierBreakdown: {
+            shiprocket: { success: 0, failed: 0 },
+            delhivery: { success: 0, failed: 0 },
+            unknown: { success: 0, failed: 0 }
+        },
+        errors: []
+    };
     
     try {
         // Import supabase for direct database access
@@ -275,92 +343,223 @@ async function performBackgroundSync() {
         
         if (error || !activeRequests) {
             console.error('[Background Sync] Error fetching requests:', error);
-            return 0;
+            return { success: false, error: error?.message || 'No requests found' };
         }
         
+        syncMetrics.total = activeRequests.length;
         console.log(`[Background Sync] Processing ${activeRequests.length} active requests...`);
         
-        let updatedCount = 0;
-        const BATCH_SIZE = 5; // Process 5 at a time to avoid overwhelming Shiprocket API
+        const BATCH_SIZE = 5; // Process 5 at a time to avoid overwhelming carrier APIs
         
         for (let i = 0; i < activeRequests.length; i += BATCH_SIZE) {
             const batch = activeRequests.slice(i, i + BATCH_SIZE);
             
             // Process batch in parallel
-            await Promise.all(batch.map(async (req) => {
-                try {
-                    await syncSingleRequest(req);
-                    updatedCount++;
-                } catch (err) {
-                    console.error(`[Background Sync] Failed to sync ${req.requestId}:`, err.message);
+            const results = await Promise.allSettled(batch.map(async (req) => {
+                const carrier = req.carrier || detectCarrier(req);
+                const result = await syncWithRetry(req, 3);
+                
+                // Update metrics
+                if (result.success) {
+                    syncMetrics.success++;
+                    if (syncMetrics.carrierBreakdown[carrier]) {
+                        syncMetrics.carrierBreakdown[carrier].success++;
+                    }
+                } else {
+                    syncMetrics.failed++;
+                    if (syncMetrics.carrierBreakdown[carrier]) {
+                        syncMetrics.carrierBreakdown[carrier].failed++;
+                    }
+                    syncMetrics.errors.push({
+                        requestId: req.requestId,
+                        carrier: carrier,
+                        error: result.error
+                    });
                 }
+                
+                return { requestId: req.requestId, ...result };
             }));
+            
+            // Log batch progress
+            const batchSuccess = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+            const batchFailed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.success)).length;
+            console.log(`[Background Sync] Batch ${Math.floor(i/BATCH_SIZE) + 1} complete: ${batchSuccess} success, ${batchFailed} failed`);
         }
         
         lastSyncTimestamp = new Date().toISOString();
-        console.log(`[Background Sync] Complete: Updated ${updatedCount} requests`);
-        return updatedCount;
+        const syncDuration = ((new Date() - syncStartTime) / 1000).toFixed(2);
+        
+        // Log detailed summary
+        console.log(`\n[Background Sync] ========== SYNC SUMMARY ==========`);
+        console.log(`[Background Sync] Duration: ${syncDuration}s`);
+        console.log(`[Background Sync] Total: ${syncMetrics.total}, Success: ${syncMetrics.success}, Failed: ${syncMetrics.failed}, Skipped: ${syncMetrics.skipped}`);
+        console.log(`[Background Sync] Shiprocket: ${syncMetrics.carrierBreakdown.shiprocket.success} success, ${syncMetrics.carrierBreakdown.shiprocket.failed} failed`);
+        console.log(`[Background Sync] Delhivery: ${syncMetrics.carrierBreakdown.delhivery.success} success, ${syncMetrics.carrierBreakdown.delhivery.failed} failed`);
+        
+        if (syncMetrics.errors.length > 0) {
+            console.log(`[Background Sync] Errors:`);
+            syncMetrics.errors.slice(0, 5).forEach(err => {
+                console.log(`  - ${err.requestId} (${err.carrier}): ${err.error}`);
+            });
+            if (syncMetrics.errors.length > 5) {
+                console.log(`  ... and ${syncMetrics.errors.length - 5} more errors`);
+            }
+        }
+        console.log(`[Background Sync] ====================================\n`);
+        
+        return { success: true, metrics: syncMetrics };
     } catch (error) {
         console.error('[Background Sync] Fatal error:', error);
-        return 0;
+        return { success: false, error: error.message, metrics: syncMetrics };
     } finally {
         isSyncRunning = false;
     }
 }
 
+// Helper function to detect carrier based on request data
+function detectCarrier(req) {
+    // Check explicit carrier field first
+    if (req.carrier === 'delhivery' || req.carrier === 'shiprocket') {
+        return req.carrier;
+    }
+    
+    // Check AWB number patterns
+    if (req.awbNumber) {
+        // Delhivery waybills are typically 12+ digits
+        if (/^\d{12,}$/.test(req.awbNumber)) {
+            return 'delhivery';
+        }
+        // Shiprocket shipment IDs start with 'SR'
+        if (req.shipmentId && req.shipmentId.toString().startsWith('SR')) {
+            return 'shiprocket';
+        }
+    }
+    
+    // Check forward carrier
+    if (req.forwardCarrier) {
+        return req.forwardCarrier;
+    }
+    
+    // Default to shiprocket for backward compatibility
+    return 'shiprocket';
+}
+
+// Helper function to map carrier-specific status to internal status enum
+function mapCarrierStatus(carrierStatus, carrier = 'shiprocket') {
+    if (!carrierStatus) return null;
+    
+    const statusUpper = carrierStatus.toUpperCase();
+    
+    // Common status mappings for both carriers
+    if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
+        return { status: 'delivered', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
+        return { status: 'picked_up', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || 
+        statusUpper.includes('OUT FOR DELIVERY') || statusUpper.includes('DISPATCHED')) {
+        return { status: 'in_transit', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('SCHEDULED') || statusUpper.includes('PICKUP SCHEDULED')) {
+        return { status: 'scheduled', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('PICKUP GENERATED') || statusUpper.includes('AWB ASSIGNED') || 
+        statusUpper.includes('PICKUP CREATED') || statusUpper.includes('REGISTERED')) {
+        return { status: 'pickup_pending', shouldUpdate: true };
+    }
+    
+    // Exception statuses - add admin note but don't change status automatically
+    if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || 
+        statusUpper.includes('CANCELLED') || statusUpper.includes('MISROUTED') || 
+        statusUpper.includes('DELAYED')) {
+        return { status: 'exception', shouldUpdate: false, needsNote: true };
+    }
+    
+    // Unknown status - don't update
+    return { status: null, shouldUpdate: false };
+}
+
 // Extract sync logic into reusable function
 async function syncSingleRequest(req) {
+    const carrier = detectCarrier(req);
+    
     // Return shipment sync
     if (['pending', 'pickup_pending', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
         let trackingData = null;
+        let currentStatus = null;
+        let newAwb = null;
         
+        // Fetch tracking based on carrier
         if (req.awbNumber) {
             try {
-                trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
+                if (carrier === 'delhivery') {
+                    console.log(`[${req.requestId}] Fetching Delhivery tracking for AWB: ${req.awbNumber}`);
+                    trackingData = await getDelhiveryTracking(req.awbNumber);
+                    
+                    if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
+                        const shipment = trackingData.shipments[0];
+                        currentStatus = shipment.status || shipment.delivered_status;
+                        newAwb = shipment.waybill_code || req.awbNumber;
+                    }
+                } else {
+                    // Shiprocket
+                    trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
+                    
+                    if (trackingData && trackingData.tracking_data) {
+                        const tracking = trackingData.tracking_data;
+                        currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                        newAwb = tracking.shipment_track?.[0]?.awb_code || tracking.awb_code;
+                    }
+                }
             } catch (e) {
-                console.warn(`[Sync] AWB ${req.awbNumber} (${req.requestId}) fetch failed: ${e.message}`);
+                console.warn(`[Sync] ${carrier} AWB ${req.awbNumber} (${req.requestId}) fetch failed: ${e.message}`);
             }
         }
         
-        if ((!trackingData || !trackingData.tracking_data) && req.shipmentId) {
+        // Fallback to shipment ID for Shiprocket
+        if (!trackingData && carrier === 'shiprocket' && req.shipmentId) {
             try { 
-                trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`); 
-            } catch (e) {}
+                trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`);
+                if (trackingData && trackingData.tracking_data) {
+                    const tracking = trackingData.tracking_data;
+                    currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                }
+            } catch (e) {
+                console.warn(`[Sync] Shiprocket ShipmentID ${req.shipmentId} (${req.requestId}) fetch failed: ${e.message}`);
+            }
         }
         
-        if (trackingData && trackingData.tracking_data) {
-            const tracking = trackingData.tracking_data;
-            const currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+        // Process tracking data
+        if (currentStatus) {
+            const statusMapping = mapCarrierStatus(currentStatus, carrier);
             
-            if (currentStatus) {
-                const newAwb = tracking.shipment_track?.[0]?.awb_code || tracking.awb_code;
-                let newStatus = req.status;
-                const statusUpper = currentStatus.toUpperCase();
+            if (statusMapping && statusMapping.shouldUpdate && statusMapping.status) {
+                let newStatus = statusMapping.status;
                 
-                if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
-                    newStatus = 'delivered';
-                } else if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
-                    newStatus = 'picked_up';
-                } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || statusUpper.includes('OUT FOR DELIVERY')) {
-                    newStatus = 'in_transit';
-                } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('PICKUP SCHEDULED')) {
-                    newStatus = 'scheduled';
-                } else if (statusUpper.includes('GENERATED') || statusUpper.includes('AWB ASSIGNED') || statusUpper.includes('PICKUP GENERATED')) {
-                    newStatus = 'pickup_pending';
-                } else if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || statusUpper.includes('CANCELLED')) {
-                    const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] Shiprocket status: ${currentStatus}`;
-                    if (!req.adminNotes || !req.adminNotes.includes(currentStatus)) {
-                        await updateRequestStatus(req.requestId, { adminNotes: (req.adminNotes || '') + note });
-                    }
-                }
+                // Build update object
+                const updates = { status: newStatus };
+                if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
+                if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
+                if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
+                if (newAwb && newAwb !== req.awbNumber) updates.awbNumber = newAwb;
                 
-                if (newStatus !== req.status || (newAwb && newAwb !== req.awbNumber)) {
-                    const updatesArr = { status: newStatus };
-                    if (newStatus === 'delivered') updatesArr.deliveredAt = new Date().toISOString();
-                    if (newStatus === 'picked_up') updatesArr.pickedUpAt = new Date().toISOString();
-                    if (newStatus === 'in_transit') updatesArr.inTransitAt = new Date().toISOString();
-                    if (newAwb) updatesArr.awbNumber = newAwb;
-                    await updateRequestStatus(req.requestId, updatesArr);
+                await updateRequestStatus(req.requestId, updates);
+                console.log(`[${req.requestId}] Status updated: ${req.status} → ${newStatus} (${carrier})`);
+            }
+            
+            // Add admin note for exception statuses
+            if (statusMapping && statusMapping.needsNote) {
+                const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] ${carrier} status: ${currentStatus}`;
+                if (!req.adminNotes || !req.adminNotes.includes(currentStatus)) {
+                    await updateRequestStatus(req.requestId, { 
+                        adminNotes: (req.adminNotes || '') + note 
+                    });
+                    console.log(`[${req.requestId}] Exception note added: ${currentStatus}`);
                 }
             }
         }
@@ -369,20 +568,48 @@ async function syncSingleRequest(req) {
     // Forward shipment sync for exchanges
     if (req.type === 'exchange' && req.forwardAwbNumber && req.forwardStatus !== 'delivered') {
         try {
-            const forwardTrack = await shiprocketAPI(`/courier/track/awb/${req.forwardAwbNumber}`);
-            if (forwardTrack && forwardTrack.tracking_data) {
-                const tracking = forwardTrack.tracking_data;
-                const currentStatus = (tracking.shipment_track?.[0]?.current_status || tracking.current_status || '').toUpperCase();
+            const forwardCarrier = req.forwardCarrier || carrier;
+            let forwardTrack = null;
+            let forwardCurrentStatus = null;
+            
+            if (forwardCarrier === 'delhivery') {
+                console.log(`[${req.requestId}] Fetching Delhivery forward tracking for AWB: ${req.forwardAwbNumber}`);
+                forwardTrack = await getDelhiveryTracking(req.forwardAwbNumber);
                 
-                let newForwardStatus = req.forwardStatus || 'scheduled';
-                if (currentStatus.includes('DELIVERED')) newForwardStatus = 'delivered';
-                else if (currentStatus.includes('PICKED UP') && !currentStatus.includes('GENERATED')) newForwardStatus = 'picked_up';
-                else if (currentStatus.includes('IN TRANSIT') || currentStatus.includes('SHIPPED') || currentStatus.includes('OUT FOR DELIVERY')) newForwardStatus = 'in_transit';
-                else if (currentStatus.includes('PICKUP GENERATED') || currentStatus.includes('AWB ASSIGNED') || currentStatus.includes('SCHEDULED')) newForwardStatus = 'scheduled';
+                if (forwardTrack && forwardTrack.shipments && forwardTrack.shipments.length > 0) {
+                    const shipment = forwardTrack.shipments[0];
+                    forwardCurrentStatus = shipment.status || shipment.delivered_status;
+                }
+            } else {
+                // Shiprocket
+                forwardTrack = await shiprocketAPI(`/courier/track/awb/${req.forwardAwbNumber}`);
                 
-                if (newForwardStatus !== req.forwardStatus) {
-                    console.log(`[${req.requestId}] Updating Forward Status: ${newForwardStatus}`);
-                    await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
+                if (forwardTrack && forwardTrack.tracking_data) {
+                    const tracking = forwardTrack.tracking_data;
+                    forwardCurrentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                }
+            }
+            
+            if (forwardCurrentStatus) {
+                const forwardStatusMapping = mapCarrierStatus(forwardCurrentStatus, forwardCarrier);
+                
+                if (forwardStatusMapping && forwardStatusMapping.shouldUpdate && forwardStatusMapping.status) {
+                    const newForwardStatus = forwardStatusMapping.status;
+                    
+                    if (newForwardStatus !== req.forwardStatus) {
+                        console.log(`[${req.requestId}] Updating Forward Status: ${req.forwardStatus} → ${newForwardStatus} (${forwardCarrier})`);
+                        await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
+                    }
+                }
+                
+                // Add note for forward exceptions
+                if (forwardStatusMapping && forwardStatusMapping.needsNote) {
+                    const note = `\n[Forward Sync Log ${new Date().toLocaleDateString('en-IN')}] ${forwardCarrier} status: ${forwardCurrentStatus}`;
+                    if (!req.adminNotes || !req.adminNotes.includes(forwardCurrentStatus)) {
+                        await updateRequestStatus(req.requestId, { 
+                            adminNotes: (req.adminNotes || '') + note 
+                        });
+                    }
                 }
             }
         } catch (e) {
@@ -4680,6 +4907,43 @@ app.get('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
 // Manual Sync Trigger - immediately trigger background sync
 app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     try {
+        const { requestId, forceRetry } = req.body;
+        
+        // If requestId is provided, sync only that specific request
+        if (requestId) {
+            console.log(`[Manual Sync] Admin triggered sync for single request: ${requestId}`);
+            
+            const request = await getRequestById(requestId);
+            if (!request) {
+                return res.status(404).json({ 
+                    success: false, 
+                    error: `Request ${requestId} not found` 
+                });
+            }
+            
+            // Use higher retry count for manual sync if forceRetry is true
+            const maxRetries = forceRetry ? 5 : 3;
+            const result = await syncWithRetry(request, maxRetries);
+            
+            if (result.success) {
+                return res.json({
+                    success: true,
+                    message: `Successfully synced ${requestId}`,
+                    requestId: requestId,
+                    attempts: result.attempts
+                });
+            } else {
+                return res.json({
+                    success: false,
+                    message: `Failed to sync ${requestId} after ${result.attempts} attempts`,
+                    requestId: requestId,
+                    error: result.error,
+                    attempts: result.attempts
+                });
+            }
+        }
+        
+        // Full background sync
         if (isSyncRunning) {
             return res.json({
                 success: false,
@@ -4687,19 +4951,32 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
             });
         }
 
-        console.log('[Manual Sync] Admin triggered manual sync...');
+        console.log('[Manual Sync] Admin triggered full background sync...');
         
-        // Wait for sync to complete and get the updated count
-        const updatedCount = await performBackgroundSync();
+        // Wait for sync to complete and get metrics
+        const syncResult = await performBackgroundSync();
 
-        res.json({
-            success: true,
-            message: `Sync complete! Updated ${updatedCount} requests.`,
-            updated: updatedCount
-        });
+        if (syncResult.success) {
+            res.json({
+                success: true,
+                message: `Sync complete! ${syncResult.metrics.success} success, ${syncResult.metrics.failed} failed`,
+                metrics: syncResult.metrics
+            });
+        } else {
+            res.json({
+                success: false,
+                message: 'Sync failed',
+                error: syncResult.error,
+                metrics: syncResult.metrics
+            });
+        }
     } catch (error) {
         console.error('[Manual Sync] Error:', error);
-        res.status(500).json({ error: 'Failed to trigger sync' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to trigger sync',
+            details: error.message 
+        });
     }
 });
 
