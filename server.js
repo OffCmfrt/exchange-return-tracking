@@ -1953,11 +1953,16 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
                 name: sanitizeAddress(productName),
                 quantity: quantity,
                 selling_price: price,
-                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH'
+                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH',
+                hsn_code: '9965'  // Default HSN for apparel/general goods
             });
         }
 
+        // Get GST TIN for Delhivery (mandatory per Delhivery docs)
+        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AANCA1234P1ZN';
+
         console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+        console.log(`🔢 Seller GST: ${sellerGstTin}`);
 
         // Build payload for Delhivery CMU API
         // For forward dispatch (exchange), use 'fws' prefix to avoid duplicate order errors
@@ -1984,6 +1989,7 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
                 return_state: sanitizeAddress(returnState),
                 return_country: returnCountry,
                 return_phone: returnPhone,
+                seller_gst_tin: sellerGstTin,  // Mandatory for GST compliance
                 products: products  // Include product details
             }],
             pickup_location: {
@@ -2218,11 +2224,16 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
                 name: sanitizeAddress(productName),
                 quantity: quantity,
                 selling_price: price,
-                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH'
+                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH',
+                hsn_code: '9965'  // Default HSN for apparel/general goods
             });
         }
 
+        // Get GST TIN for Delhivery (mandatory per Delhivery docs)
+        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AANCA1234P1ZN';
+
         console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+        console.log(`🔢 Seller GST: ${sellerGstTin}`);
 
         // Build payload for Delhivery CMU API - FORWARD direction
         // pickup_location = warehouse (where we're sending FROM)
@@ -2240,6 +2251,7 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
                 payment_mode: "Prepaid",  // Forward shipment is prepaid
                 cod_amount: 0,
                 pickup_location: pickupLocationNickname,
+                seller_gst_tin: sellerGstTin,  // Mandatory for GST compliance
                 products: products  // Include product details
             }],
             pickup_location: {

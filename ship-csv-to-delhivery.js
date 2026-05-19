@@ -247,11 +247,16 @@ async function createDelhiveryOrder(requestData) {
       name: sanitizeAddress(productName),
       quantity: quantity,
       selling_price: price,
-      sku: String(item.replacementVariantId || item.variantId || item.sku || item.id || '') + '-EXCH'
+      sku: String(item.replacementVariantId || item.variantId || item.sku || item.id || '') + '-EXCH',
+      hsn_code: '9965'  // Default HSN for apparel/general goods
     });
   }
 
+  // Get GST TIN for Delhivery (mandatory per Delhivery docs)
+  const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AANCA1234P1ZN';
+
   console.log(`   ✅ Prepared ${products.length} product(s) for Delhivery`);
+  console.log(`   🔢 Seller GST: ${sellerGstTin}`);
 
   const payload = {
     shipments: [{
@@ -271,6 +276,7 @@ async function createDelhiveryOrder(requestData) {
       return_state: sanitizeAddress(warehouseState),
       return_country: 'IN',
       return_phone: warehousePhone,
+      seller_gst_tin: sellerGstTin,  // Mandatory for GST compliance
       products: products  // Include product details
     }],
     pickup_location: {
