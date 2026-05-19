@@ -144,6 +144,8 @@
                                 <option value="delivered">Delivered (Pending Insp.)</option>
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
+                                <option value="cancelled">Cancelled</option>
+                                <option value="failed">Failed</option>
                             </select>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af;"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </div>
@@ -1438,7 +1440,9 @@
             'in_transit':      'In Transit',
             'delivered':       'Received at Warehouse',
             'approved':        'Approved',
-            'rejected':        'Rejected'
+            'rejected':        'Rejected',
+            'cancelled':       'Cancelled',
+            'failed':          'Failed — Requires Re-dispatch'
         };
         return labels[status] || status.replace(/_/g, ' ');
     }
@@ -1957,7 +1961,7 @@
         // User said: "pickup booked -> item delivered -> admin approves". 
         // So we show buttons if status is 'delivered'.
         
-        if (['pending', 'pickup_pending', 'scheduled', 'picked_up', 'in_transit', 'delivered'].includes(data.status)) {
+        if (['pending', 'pickup_pending', 'scheduled', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'failed'].includes(data.status)) {
             console.log('Action block status matched:', data.status);
             modalActions.classList.remove('hidden');
             
@@ -2014,7 +2018,7 @@
 
             // Show manual received button for all active shipment statuses AND pending (as fallback)
             if (manualReceivedBtn) {
-                if (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(data.status)) {
+                if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit'].includes(data.status)) {
                     manualReceivedBtn.classList.remove('hidden');
                 } else {
                     manualReceivedBtn.classList.add('hidden');
@@ -2035,6 +2039,32 @@
             } else {
                 if (resetBtn) {
                     resetBtn.classList.add('hidden');
+                }
+            }
+
+            // Add re-dispatch button for cancelled/failed orders
+            let redispatchBtn = modalActions.querySelector('button[onclick="redispatchOrder()"]');
+            if (data.status === 'cancelled' || data.status === 'failed') {
+                if (!redispatchBtn) {
+                    redispatchBtn = document.createElement('button');
+                    redispatchBtn.onclick = () => redispatchOrder();
+                    redispatchBtn.textContent = data.status === 'cancelled' ? 'Re-dispatch Cancelled Order' : 'Re-dispatch Failed Order';
+                    redispatchBtn.style.cssText = 'flex: 1; background: #f59e0b; color: white; border: 1px solid #f59e0b; min-width: 150px; font-weight: 600;';
+                    modalActions.appendChild(redispatchBtn);
+                }
+                redispatchBtn.classList.remove('hidden');
+                
+                // Show carrier override for re-dispatch
+                if (carrierOverrideSection) {
+                    carrierOverrideSection.classList.remove('hidden');
+                    const warningText = carrierOverrideSection.querySelector('p');
+                    if (warningText) {
+                        warningText.textContent = `This order is ${data.status.toUpperCase()}. Re-dispatching will reset it to pending status and allow you to approve it again with a fresh carrier booking.`;
+                    }
+                }
+            } else {
+                if (redispatchBtn) {
+                    redispatchBtn.classList.add('hidden');
                 }
             }
 
@@ -2347,6 +2377,37 @@
             }
         } catch (error) {
             alert('Error updating status');
+        }
+    }
+
+    async function redispatchOrder() {
+        const statusText = currentRequest.status === 'cancelled' ? 'cancelled' : 'failed';
+        if (!confirm(`Are you sure you want to re-dispatch this ${statusText} order? This will reset it to pending status so you can approve it again with a fresh carrier booking.`)) return;
+
+        try {
+            const response = await fetch(`${API_URL}/admin/redispatch`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ 
+                    requestId: currentRequest.requestId,
+                    carrierOverride: document.getElementById('carrierOverride')?.value || null
+                })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                alert(data.message || 'Order has been reset to pending for re-dispatch');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('Failed to re-dispatch: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Re-dispatch error:', error);
+            alert('Failed to re-dispatch order');
         }
     }
 
