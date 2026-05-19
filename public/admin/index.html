@@ -1795,8 +1795,11 @@
     // View Request Details
     async function viewDetails(requestId) {
         try {
+            console.log('viewDetails called for requestId:', requestId);
             const response = await fetch(`${API_URL}/track-request/${requestId}`);
             const data = await response.json();
+            
+            console.log('viewDetails API response status:', data.status, 'response.ok:', response.ok);
 
             if (response.ok) {
                 currentRequest = data;
@@ -1813,6 +1816,9 @@
         
         // Store request data globally for workflow timeline access
         window.currentRequestData = data;
+        
+        // Debug: Log incoming data status
+        console.log('displayRequestDetails called with status:', data.status, 'full data keys:', Object.keys(data));
 
         modalContent.innerHTML = `
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
@@ -2023,10 +2029,13 @@
 
             // Show manual received button for all active shipment statuses AND pending (as fallback)
             if (manualReceivedBtn) {
+                console.log('Mark as Received - checking status:', data.status, 'is in array:', ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit'].includes(data.status));
                 if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit'].includes(data.status)) {
                     manualReceivedBtn.classList.remove('hidden');
+                    console.log('Mark as Received button SHOWN');
                 } else {
                     manualReceivedBtn.classList.add('hidden');
+                    console.log('Mark as Received button HIDDEN');
                 }
             }
 

@@ -3954,11 +3954,17 @@ app.get('/api/track-request/:identifier', async (req, res) => {
         // Detect: REQ IDs always start with 'REQ-'; everything else treated as an order number
         const isReqId = identifier.toUpperCase().startsWith('REQ-');
 
+        console.log(`[Track Request] identifier=${identifier}, isReqId=${isReqId}`);
+
         if (isReqId) {
             // --- Normal path: single request by REQ ID ---
             const request = await getRequestById(identifier);
             if (!request) return res.status(404).json({ error: 'Request not found' });
+            
+            console.log(`[Track Request] DB status for ${identifier}:`, request.status);
+            
             await enrichWithTracking(request);
+            console.log(`[Track Request] After enrichment, status:`, request.status);
             return res.json(request);
         } else {
             // --- Order number path: may return multiple requests ---
