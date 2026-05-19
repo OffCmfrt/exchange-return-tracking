@@ -473,6 +473,11 @@ function mapCarrierStatus(carrierStatus, carrier = 'shiprocket') {
         return { status: 'pickup_pending', shouldUpdate: true };
     }
     
+    // Delhivery pickup assigned status - pickup is confirmed/booked but not yet picked up
+    if (statusUpper.includes('PICKUP ASSIGNED') || statusUpper.includes('ASSIGNED')) {
+        return { status: 'pickup_booked', shouldUpdate: true };
+    }
+    
     // Exception statuses - add admin note but don't change status automatically
     if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || 
         statusUpper.includes('CANCELLED') || statusUpper.includes('MISROUTED') || 
@@ -4578,8 +4583,8 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
             console.log(`[${requestId}] Finalizing exchange resolution...`);
 
             // Get carrier mode for dispatch (forward shipment)
-            const carrierMode = await getCarrierModeSetting('dispatch');
-            const carrierResolution = resolveCarrierMode(carrierMode, 'dispatch');
+            const carrierMode = await getCarrierMode('dispatch');
+            const carrierResolution = resolveCarrier(carrierMode, null, 'dispatch');
             
             console.log(`[${requestId}] 🚀 Creating Forward Shipment for Exchange with carrier: ${carrierResolution.primary}${carrierResolution.useFallback ? ' (with fallback)' : ''}`);
             
