@@ -3492,6 +3492,20 @@
             card.querySelector('.selected-product-info').style.display = 'block';
             card.querySelector('.selected-product-title').textContent = item.replacementProductTitle;
             card.querySelector('.selected-product-image').src = item.replacementProductImage || item.image || '';
+            
+            // Show and populate variant dropdown
+            if (item.replacementVariantId) {
+                card.querySelector('.variant-selection').style.display = 'block';
+                // Pre-select the correct variant (M) if it exists in the item
+                const variantSelect = card.querySelector('.variant-select');
+                const variantOption = document.createElement('option');
+                variantOption.value = item.replacementVariantId;
+                variantOption.textContent = `${item.replacementVariant} - ₹${item.replacementPrice || item.price} (Selected)`;
+                variantOption.selected = true;
+                variantOption.dataset.title = item.replacementVariant || '';
+                variantOption.dataset.price = item.replacementPrice || item.price || '0';
+                variantSelect.appendChild(variantOption);
+            }
         }
     }
 
