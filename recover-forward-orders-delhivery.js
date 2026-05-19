@@ -133,6 +133,7 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
       products.push({
         name: sanitizeAddress(productName),
         quantity: quantity,
+        price: price,
         selling_price: price,
         sku: String(item.replacementVariantId || item.variantId || item.sku || item.id || '') + '-EXCH',
         hsn_code: '9965'  // Default HSN for apparel/general goods
