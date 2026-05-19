@@ -3444,6 +3444,19 @@
     }
 
     function populateExchangeItemCard(card, item) {
+        // Store original item data (what customer selected)
+        card.querySelector('.original-product-id').value = item.productId || '';
+        card.querySelector('.original-product-title').value = item.name || '';
+        card.querySelector('.original-product-variant').value = item.variant || '';
+        card.querySelector('.original-product-image').value = item.image || '';
+        card.querySelector('.original-price').value = item.price || 0;
+        
+        // Display original item
+        card.querySelector('.original-product-title').textContent = item.name || '';
+        card.querySelector('.original-product-variant').textContent = item.variant ? `Size: ${item.variant}` : '';
+        card.querySelector('.original-product-image').src = item.image || '';
+        
+        // Store and display replacement item data (what will be dispatched)
         card.querySelector('.product-id-input').value = item.replacementProductId || '';
         card.querySelector('.product-title-input').value = item.replacementProductTitle || '';
         card.querySelector('.variant-id-input').value = item.replacementVariantId || '';
@@ -3452,6 +3465,29 @@
         card.querySelector('.quantity-input').value = item.quantity || 1;
         card.querySelector('.price-input').value = item.replacementPrice || item.price || 0;
         
+        // Calculate and display price difference
+        const originalPrice = parseFloat(item.price || 0);
+        const newPrice = parseFloat(item.replacementPrice || item.price || 0);
+        const priceDiff = newPrice - originalPrice;
+        const priceDiffDisplay = card.querySelector('.price-diff-display');
+        if (priceDiff > 0) {
+            priceDiffDisplay.textContent = `+₹${priceDiff}`;
+            priceDiffDisplay.style.background = '#fee2e2';
+            priceDiffDisplay.style.borderColor = '#fca5a5';
+            priceDiffDisplay.style.color = '#991b1b';
+        } else if (priceDiff < 0) {
+            priceDiffDisplay.textContent = `-₹${Math.abs(priceDiff)}`;
+            priceDiffDisplay.style.background = '#dcfce7';
+            priceDiffDisplay.style.borderColor = '#86efac';
+            priceDiffDisplay.style.color = '#166534';
+        } else {
+            priceDiffDisplay.textContent = '₹0';
+            priceDiffDisplay.style.background = '#fef3c7';
+            priceDiffDisplay.style.borderColor = '#fcd34d';
+            priceDiffDisplay.style.color = '#92400e';
+        }
+        
+        // Display selected replacement product info
         if (item.replacementProductTitle) {
             card.querySelector('.selected-product-info').style.display = 'block';
             card.querySelector('.selected-product-title').textContent = item.replacementProductTitle;
@@ -3573,6 +3609,29 @@
             card.querySelector('.variant-id-input').value = selectedOption.value;
             card.querySelector('.variant-title-input').value = selectedOption.dataset.title;
             card.querySelector('.price-input').value = selectedOption.dataset.price;
+            
+            // Recalculate price difference
+            const originalPrice = parseFloat(card.querySelector('.original-price').value) || 0;
+            const newPrice = parseFloat(selectedOption.dataset.price) || 0;
+            const priceDiff = newPrice - originalPrice;
+            const priceDiffDisplay = card.querySelector('.price-diff-display');
+            
+            if (priceDiff > 0) {
+                priceDiffDisplay.textContent = `+₹${priceDiff}`;
+                priceDiffDisplay.style.background = '#fee2e2';
+                priceDiffDisplay.style.borderColor = '#fca5a5';
+                priceDiffDisplay.style.color = '#991b1b';
+            } else if (priceDiff < 0) {
+                priceDiffDisplay.textContent = `-₹${Math.abs(priceDiff)}`;
+                priceDiffDisplay.style.background = '#dcfce7';
+                priceDiffDisplay.style.borderColor = '#86efac';
+                priceDiffDisplay.style.color = '#166534';
+            } else {
+                priceDiffDisplay.textContent = '₹0';
+                priceDiffDisplay.style.background = '#fef3c7';
+                priceDiffDisplay.style.borderColor = '#fcd34d';
+                priceDiffDisplay.style.color = '#92400e';
+            }
         }
     }
 
@@ -3687,39 +3746,83 @@
 <!-- Product Search Template (will be cloned dynamically) -->
 <template id="exchange-item-template">
     <div class="exchange-item-card" style="background: white; border: 2px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; position: relative;">
-        <button onclick="removeExchangeItem(this)" class="remove-item-btn" style="position: absolute; top: 0.75rem; right: 0.75rem; background: #fee2e2; border: none; color: #dc2626; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">×</button>
+        <button onclick="removeExchangeItem(this)" class="remove-item-btn" style="position: absolute; top: 0.75rem; right: 0.75rem; background: #fee2e2; border: none; color: #dc2626; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; z-index: 10;">×</button>
         
-        <div class="form-group">
-            <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Search Product</label>
-            <div style="position: relative;">
-                <input type="text" class="product-search-input form-control" placeholder="Type to search products..." oninput="searchProductsForItem(this)">
-                <div class="product-search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 2px solid #e5e7eb; border-radius: 8px; margin-top: 0.5rem; max-height: 300px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+        <!-- Original Item Section (Customer's Choice) -->
+        <div class="original-item-section" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                <span style="font-weight: 600; color: #991b1b; font-size: 0.875rem;">Original Item (Customer's Choice)</span>
             </div>
-        </div>
-
-        <div class="selected-product-info" style="display: none; padding: 1rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; margin-top: 1rem;">
             <div style="display: flex; gap: 1rem; align-items: center;">
-                <img class="selected-product-image" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;">
+                <img class="original-product-image" src="" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb;">
                 <div style="flex: 1;">
-                    <p style="font-weight: 600; color: #111827; margin: 0;" class="selected-product-title"></p>
-                    <p style="font-size: 0.875rem; color: #6b7280; margin: 0.25rem 0 0 0;">Select a size/variant below:</p>
+                    <p class="original-product-title" style="font-weight: 500; color: #374151; margin: 0; font-size: 0.875rem;"></p>
+                    <p class="original-product-variant" style="font-size: 0.8rem; color: #6b7280; margin: 0.25rem 0 0 0;"></p>
                 </div>
             </div>
         </div>
 
-        <div class="variant-selection" style="display: none; margin-top: 1rem;">
-            <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Size / Variant</label>
-            <select class="variant-select form-control" onchange="onVariantSelect(this)"></select>
+        <!-- Arrow Indicator -->
+        <div style="text-align: center; margin: -0.5rem 0; position: relative; z-index: 5;">
+            <div style="display: inline-block; background: white; padding: 0 1rem;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <polyline points="19 12 12 19 5 12"></polyline>
+                </svg>
+            </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
-            <div class="form-group">
-                <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Quantity</label>
-                <input type="number" class="quantity-input form-control" value="1" min="1" max="10">
+        <!-- New Item Section (What Will Be Dispatched) -->
+        <div class="new-item-section" style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1rem; margin-top: -0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <span style="font-weight: 600; color: #065f46; font-size: 0.875rem;">New Item (To Be Dispatched)</span>
             </div>
-            <div class="form-group">
-                <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Price (₹)</label>
-                <input type="number" class="price-input form-control" readonly style="background: #f9fafb;">
+            
+            <div class="form-group" style="margin-bottom: 0.75rem;">
+                <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">Search New Product</label>
+                <div style="position: relative;">
+                    <input type="text" class="product-search-input form-control" placeholder="Type to search products..." oninput="searchProductsForItem(this)" style="padding: 0.5rem 0.75rem; font-size: 0.875rem;">
+                    <div class="product-search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 2px solid #e5e7eb; border-radius: 8px; margin-top: 0.5rem; max-height: 250px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+                </div>
+            </div>
+
+            <div class="selected-product-info" style="display: none; padding: 0.75rem; background: white; border: 1px solid #86efac; border-radius: 6px; margin-bottom: 0.75rem;">
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <img class="selected-product-image" src="" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb;">
+                    <div style="flex: 1;">
+                        <p class="selected-product-title" style="font-weight: 600; color: #111827; margin: 0; font-size: 0.875rem;"></p>
+                        <p style="font-size: 0.75rem; color: #6b7280; margin: 0.25rem 0 0 0;">Select a size/variant below:</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="variant-selection" style="display: none; margin-bottom: 0.75rem;">
+                <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">New Size / Variant</label>
+                <select class="variant-select form-control" onchange="onVariantSelect(this)" style="padding: 0.5rem 0.75rem; font-size: 0.875rem;"></select>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">Qty</label>
+                    <input type="number" class="quantity-input form-control" value="1" min="1" max="10" style="padding: 0.5rem 0.75rem; font-size: 0.875rem;">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">Price (₹)</label>
+                    <input type="number" class="price-input form-control" readonly style="background: #f9fafb; padding: 0.5rem 0.75rem; font-size: 0.875rem;">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">Price Diff</label>
+                    <div class="price-diff-display" style="padding: 0.5rem 0.75rem; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; font-size: 0.875rem; font-weight: 600; color: #92400e; text-align: center;">₹0</div>
+                </div>
             </div>
         </div>
 
@@ -3729,6 +3832,12 @@
         <input type="hidden" class="variant-id-input">
         <input type="hidden" class="variant-title-input">
         <input type="hidden" class="product-image-input">
+        <!-- Original item data for reference -->
+        <input type="hidden" class="original-product-id">
+        <input type="hidden" class="original-product-title">
+        <input type="hidden" class="original-product-variant">
+        <input type="hidden" class="original-product-image">
+        <input type="hidden" class="original-price">
     </div>
 </template>
 
@@ -3741,7 +3850,7 @@
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                 </svg>
-                Modify Exchange Details
+                Modify Exchange Items & Address
             </h2>
             <button class="modal-close" onclick="closeModifyModal()" style="color: white;">×</button>
         </div>
@@ -3756,13 +3865,14 @@
 
             <!-- Section 1: Exchange Items -->
             <div style="margin-bottom: 2.5rem;">
-                <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
                         <line x1="7" y1="7" x2="7.01" y2="7"></line>
                     </svg>
-                    Exchange Items (Products to Dispatch)
+                    Exchange Items
                 </h3>
+                <p style="font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem;">Change the size/variant or product to be dispatched. Original items shown for reference.</p>
 
                 <div id="modify-items-container">
                     <!-- Items will be populated dynamically -->
