@@ -138,9 +138,10 @@
                                 <option value="waiting_payment">Waiting Payment</option>
                                 <option value="pending">Pending Admin</option>
                                 <option value="pickup_pending">Pickup Pending</option>
-                                <option value="scheduled">Pickup Booked</option>
+                                <option value="pickup_booked">Pickup Booked</option>
                                 <option value="picked_up">Picked Up</option>
                                 <option value="in_transit">In Transit</option>
+                                <option value="out_for_delivery">Out for Delivery</option>
                                 <option value="delivered">Delivered (Pending Insp.)</option>
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
@@ -205,8 +206,10 @@
                             border: 1px solid #ffc107 !important;
                         }
                         .badge-scheduled,
+                        .badge-pickup-booked,
                         .badge-picked-up,
-                        .badge-in-transit {
+                        .badge-in-transit,
+                        .badge-out-for-delivery {
                             background-color: #dbeafe !important;
                             color: #1e40af !important;
                             border: 1px solid #93c5fd !important;
@@ -1436,8 +1439,10 @@
             'pending':         'Pending Review',
             'pickup_pending':  'Pickup Pending — Awaiting Carrier Confirmation',
             'scheduled':       'Pickup Booked — Awaiting Pickup',
+            'pickup_booked':   'Pickup Booked — Awaiting Pickup',
             'picked_up':       'Item Picked Up by Courier',
             'in_transit':      'In Transit',
+            'out_for_delivery':'Out for Delivery',
             'delivered':       'Received at Warehouse',
             'approved':        'Approved',
             'rejected':        'Rejected',
