@@ -2878,7 +2878,9 @@
                     // Set carrier mode (supports separate pickup/dispatch with backward compatibility)
                     // Load pickup carrier mode
                     const pickupCarrierMode = data.carrier_mode_pickup || data.carrier_mode || 'shiprocket_with_fallback';
-                    const pickupCarrierModeId = `carrier-pickup-${pickupCarrierMode.replace(/_/g, '-')}`;
+                    // Map carrier mode values to element IDs (remove '_with' from with_fallback options)
+                    const pickupElementId = pickupCarrierMode.replace('_with_fallback', '-fallback').replace(/_/g, '-');
+                    const pickupCarrierModeId = `carrier-pickup-${pickupElementId}`;
                     const pickupCarrierModeEl = document.getElementById(pickupCarrierModeId);
                     if (pickupCarrierModeEl) {
                         pickupCarrierModeEl.checked = true;
@@ -2886,7 +2888,8 @@
                     
                     // Load dispatch carrier mode
                     const dispatchCarrierMode = data.carrier_mode_dispatch || data.carrier_mode || 'shiprocket_with_fallback';
-                    const dispatchCarrierModeId = `carrier-dispatch-${dispatchCarrierMode.replace(/_/g, '-')}`;
+                    const dispatchElementId = dispatchCarrierMode.replace('_with_fallback', '-fallback').replace(/_/g, '-');
+                    const dispatchCarrierModeId = `carrier-dispatch-${dispatchElementId}`;
                     const dispatchCarrierModeEl = document.getElementById(dispatchCarrierModeId);
                     if (dispatchCarrierModeEl) {
                         dispatchCarrierModeEl.checked = true;

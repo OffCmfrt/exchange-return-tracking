@@ -337,7 +337,7 @@ async function performBackgroundSync() {
         const { data: activeRequests, error } = await supabase
             .from('requests')
             .select('*')
-            .or('status.eq.pending,status.eq.pickup_pending,status.eq.scheduled,status.eq.picked_up,status.eq.in_transit')
+            .or('status.eq.pending,status.eq.pickup_pending,status.eq.pickup_booked,status.eq.scheduled,status.eq.picked_up,status.eq.in_transit')
             .not('awb_number', 'is', null)
             .order('created_at', { ascending: false });
         
@@ -489,7 +489,7 @@ async function syncSingleRequest(req) {
     const carrier = detectCarrier(req);
     
     // Return shipment sync
-    if (['pending', 'pickup_pending', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
+    if (['pending', 'pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
         let trackingData = null;
         let currentStatus = null;
         let newAwb = null;
@@ -4717,6 +4717,54 @@ app.post('/api/admin/mark-delivered', authenticateAdmin, async (req, res) => {
     } catch (error) {
         console.error('Mark delivered error:', error);
         res.status(500).json({ error: 'Failed to update status' });
+    }
+});
+
+// Re-dispatch cancelled or failed orders (admin)
+app.post('/api/admin/redispatch', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, carrierOverride } = req.body;
+        
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        
+        // Only allow re-dispatch for cancelled or failed orders
+        if (requestDetails.status !== 'cancelled' && requestDetails.status !== 'failed') {
+            return res.status(400).json({ 
+                error: 'Can only re-dispatch cancelled or failed orders',
+                currentStatus: requestDetails.status
+            });
+        }
+        
+        console.log(`[${requestId}] RE-DISPATCHING order (was ${requestDetails.status}). Previous carrier: ${requestDetails.carrier || 'none'}`);
+        
+        // Clear previous carrier info and reset to pending for re-processing
+        const adminNotes = (requestDetails.adminNotes || '') + 
+            `\n[SYSTEM] Order re-dispatched by admin from ${requestDetails.status} status (Previous carrier: ${requestDetails.carrier || 'none'})`;
+        
+        const request = await updateRequestStatus(requestId, {
+            status: 'pending',
+            carrier: null,
+            carrierAwb: null,
+            carrierShipmentId: null,
+            awbNumber: null,
+            shipmentId: null,
+            pickupDate: null,
+            forwardAwbNumber: null,
+            forwardShipmentId: null,
+            adminNotes
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Order reset to pending for re-dispatch. You can now approve it again.',
+            request
+        });
+    } catch (error) {
+        console.error('Re-dispatch error:', error);
+        res.status(500).json({ error: 'Failed to re-dispatch order' });
     }
 });
 
