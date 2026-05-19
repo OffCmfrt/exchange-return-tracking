@@ -141,7 +141,7 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
     }
 
     // Get GST TIN for Delhivery (mandatory per Delhivery docs)
-    const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AANCA1234P1ZN';
+    const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AAKFO0351L1Z7';
 
     console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
     console.log(`🔢 Seller GST: ${sellerGstTin}`);

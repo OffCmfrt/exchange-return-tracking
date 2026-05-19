@@ -1967,7 +1967,7 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         }
 
         // Get GST TIN for Delhivery (mandatory per Delhivery docs)
-        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AANCA1234P1ZN';
+        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AAKFO0351L1Z7';
         const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;
         const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 30;
         const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 40;
@@ -2260,7 +2260,7 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         }
 
         // Get GST TIN for Delhivery (mandatory per Delhivery docs)
-        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AANCA1234P1ZN';
+        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AAKFO0351L1Z7';
 
         // Default package dimensions and weight (configurable via env)
         const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;  // grams
