@@ -2029,8 +2029,15 @@
 
             // Show manual received button for all active shipment statuses AND pending (as fallback)
             if (manualReceivedBtn) {
-                console.log('Mark as Received - checking status:', data.status, 'is in array:', ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit'].includes(data.status));
-                if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit'].includes(data.status)) {
+                const statusArr = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit'];
+                const shouldShow = statusArr.includes(data.status);
+                console.log('Mark as Received - checking status:', data.status, 'is in array:', shouldShow);
+                console.log('Mark as Received button element:', manualReceivedBtn);
+                console.log('Mark as Received button classes:', manualReceivedBtn.className);
+                console.log('Mark as Received button computed display:', window.getComputedStyle(manualReceivedBtn).display);
+                console.log('Mark as Received button offsetWidth:', manualReceivedBtn.offsetWidth, 'offsetHeight:', manualReceivedBtn.offsetHeight);
+                
+                if (shouldShow) {
                     manualReceivedBtn.classList.remove('hidden');
                     console.log('Mark as Received button SHOWN');
                 } else {
