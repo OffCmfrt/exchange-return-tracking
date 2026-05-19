@@ -1938,6 +1938,9 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         console.log(`📦 Processing ${items.length} item(s) for Delhivery order`);
         
         const products = [];
+        let totalQuantity = 0;
+        let totalAmount = 0;
+        let productsDesc = [];
         for (const item of items) {
             const title = item.replacementProductTitle || item.name;
             const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
@@ -1948,6 +1951,10 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
             console.log(`  - Product: ${productName}`);
             console.log(`    Quantity: ${quantity}`);
             console.log(`    Price: ₹${price}`);
+            
+            totalQuantity += quantity;
+            totalAmount += (price * quantity);
+            productsDesc.push(productName);
             
             products.push({
                 name: sanitizeAddress(productName),
@@ -1961,8 +1968,13 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
 
         // Get GST TIN for Delhivery (mandatory per Delhivery docs)
         const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AANCA1234P1ZN';
+        const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;
+        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 25;
+        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 20;
+        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 5;
 
         console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+        console.log(`📊 Total Quantity: ${totalQuantity}, Total Amount: ₹${totalAmount}`);
         console.log(`🔢 Seller GST: ${sellerGstTin}`);
 
         // Build payload for Delhivery CMU API
@@ -1984,6 +1996,15 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
                 payment_mode: 'Pickup', // For reverse pickup
                 order: delhiveryOrderId,
                 cod_amount: 0,
+                order_date: new Date().toISOString().split('T')[0],
+                total_amount: totalAmount,
+                quantity: totalQuantity,
+                weight: pkgWeight,
+                shipment_width: pkgWidth,
+                shipment_height: pkgHeight,
+                shipment_length: pkgLength,
+                products_desc: productsDesc.join(', '),
+                hsn_code: '9965',
                 return_pin: returnPincode,
                 return_add: sanitizeAddress(returnAddress),
                 return_city: sanitizeAddress(returnCity),
@@ -2209,6 +2230,9 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         console.log(`📦 Processing ${items.length} item(s) for Delhivery forward order`);
         
         const products = [];
+        let totalQuantity = 0;
+        let totalAmount = 0;
+        let productsDesc = [];
         for (const item of items) {
             const isDifferentProduct = item.replacementProductId && item.replacementProductId !== item.productId;
             const title = item.replacementProductTitle || item.name;
@@ -2220,6 +2244,10 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
             console.log(`  - Product: ${productName}`);
             console.log(`    Quantity: ${quantity}`);
             console.log(`    Price: ₹${price}`);
+            
+            totalQuantity += quantity;
+            totalAmount += (price * quantity);
+            productsDesc.push(productName);
             
             products.push({
                 name: sanitizeAddress(productName),
@@ -2234,7 +2262,15 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         // Get GST TIN for Delhivery (mandatory per Delhivery docs)
         const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AANCA1234P1ZN';
 
+        // Default package dimensions and weight (configurable via env)
+        const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;  // grams
+        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 25;   // cm
+        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 20;     // cm
+        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 5;    // cm
+
         console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+        console.log(`📊 Total Quantity: ${totalQuantity}, Total Amount: ₹${totalAmount}`);
+        console.log(`📦 Package: ${pkgWeight}g, ${pkgLength}x${pkgWidth}x${pkgHeight}cm`);
         console.log(`🔢 Seller GST: ${sellerGstTin}`);
 
         // Build payload for Delhivery CMU API - FORWARD direction
@@ -2252,9 +2288,18 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
                 phone: customerPhone,
                 payment_mode: "Prepaid",  // Forward shipment is prepaid
                 cod_amount: 0,
+                order_date: new Date().toISOString().split('T')[0],
+                total_amount: totalAmount,  // Total order value (shows in dashboard)
+                quantity: totalQuantity,    // Total quantity (shows in dashboard)
+                weight: pkgWeight,          // Weight in grams (shows in dashboard)
+                shipment_width: pkgWidth,
+                shipment_height: pkgHeight,
+                shipment_length: pkgLength,
+                products_desc: productsDesc.join(', '),  // Product description on label
+                hsn_code: '9965',
                 pickup_location: pickupLocationNickname,
                 seller_gst_tin: sellerGstTin,  // Mandatory for GST compliance
-                products: products  // Include product details
+                products: products  // Detailed product list
             }],
             pickup_location: {
                 name: pickupLocationNickname,
