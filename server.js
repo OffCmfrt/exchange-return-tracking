@@ -1928,12 +1928,38 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
 
         console.log(`📍 Using Delhivery pickup location: ${pickupLocationNickname}`);
 
+        // Process items/products for Delhivery
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        console.log(`📦 Processing ${items.length} item(s) for Delhivery order`);
+        
+        const products = [];
+        for (const item of items) {
+            const title = item.replacementProductTitle || item.name;
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const productName = title + variantStr;
+            const quantity = parseInt(item.quantity) || 1;
+            const price = parseFloat(item.replacementPrice || item.price) || 0;
+            
+            console.log(`  - Product: ${productName}`);
+            console.log(`    Quantity: ${quantity}`);
+            console.log(`    Price: ₹${price}`);
+            
+            products.push({
+                name: sanitizeAddress(productName),
+                quantity: quantity,
+                selling_price: price,
+                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH'
+            });
+        }
+
+        console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+
         // Build payload for Delhivery CMU API
         // For forward dispatch (exchange), use 'fws' prefix to avoid duplicate order errors
         const orderIdPrefix = requestData.type === 'exchange' ? 'fws-' : '';
         const delhiveryOrderId = `${orderIdPrefix}${requestData.requestId}`;
         
-        console.log(`📦 Delhivery Order Type: ${requestData.type || 'return'}, Order ID: ${delhiveryOrderId}`);
+        console.log(` Delhivery Order Type: ${requestData.type || 'return'}, Order ID: ${delhiveryOrderId}`);
         
         const payload = {
             shipments: [{
@@ -1952,7 +1978,8 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
                 return_city: sanitizeAddress(returnCity),
                 return_state: sanitizeAddress(returnState),
                 return_country: returnCountry,
-                return_phone: returnPhone
+                return_phone: returnPhone,
+                products: products  // Include product details
             }],
             pickup_location: {
                 name: pickupLocationNickname,
@@ -2159,11 +2186,38 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
             || process.env.DELHIVERY_PICKUP_LOCATION 
             || 'Primary';
 
-        console.log(`📍 Using Delhivery pickup location: ${pickupLocationNickname}`);
+        console.log(` Using Delhivery pickup location: ${pickupLocationNickname}`);
         console.log(`📦 Forward Order: FROM warehouse TO customer`);
         console.log(`   Order ID: ${forwardOrderId}`);
         console.log(`   From: ${warehouseLocation.city}, ${warehouseLocation.state}`);
         console.log(`   To: ${customerCity}, ${customerState}`);
+
+        // Process items/products for Delhivery
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        console.log(`📦 Processing ${items.length} item(s) for Delhivery forward order`);
+        
+        const products = [];
+        for (const item of items) {
+            const isDifferentProduct = item.replacementProductId && item.replacementProductId !== item.productId;
+            const title = item.replacementProductTitle || item.name;
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const productName = title + variantStr;
+            const quantity = parseInt(item.quantity) || 1;
+            const price = parseFloat(item.replacementPrice || item.price) || 0;
+            
+            console.log(`  - Product: ${productName}`);
+            console.log(`    Quantity: ${quantity}`);
+            console.log(`    Price: ₹${price}`);
+            
+            products.push({
+                name: sanitizeAddress(productName),
+                quantity: quantity,
+                selling_price: price,
+                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH'
+            });
+        }
+
+        console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
 
         // Build payload for Delhivery CMU API - FORWARD direction
         // pickup_location = warehouse (where we're sending FROM)
@@ -2180,7 +2234,8 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
                 phone: customerPhone,
                 payment_mode: "Prepaid",  // Forward shipment is prepaid
                 cod_amount: 0,
-                pickup_location: pickupLocationNickname
+                pickup_location: pickupLocationNickname,
+                products: products  // Include product details
             }],
             pickup_location: {
                 name: pickupLocationNickname,

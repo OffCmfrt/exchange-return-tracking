@@ -125,6 +125,28 @@ async function createDelhiveryForwardOrder(requestData, warehouseLocation) {
     console.log(`   📞 Phone: ${customerPhone}`);
     console.log(`   💰 Total Value: ₹${totalValue}`);
 
+    // Build products array for Delhivery
+    console.log(`\n📦 Preparing ${items.length} product(s) for Delhivery...`);
+    const products = items.map(item => {
+      const title = item.replacementProductTitle || item.name || 'Product';
+      const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+      const productName = title + variantStr;
+      const quantity = parseInt(item.quantity) || 1;
+      const price = parseFloat(item.replacementPrice || item.price) || 0;
+      
+      console.log(`  - Product: ${productName}`);
+      console.log(`    Quantity: ${quantity}`);
+      console.log(`    Price: ₹${price}`);
+      
+      return {
+        name: sanitizeAddress(productName),
+        quantity: quantity,
+        selling_price: price,
+        sku: String(item.replacementVariantId || item.variantId || item.sku || 'SKU') + '-EXCH'
+      };
+    });
+    console.log(`✅ Prepared ${products.length} product(s) for Delhivery\n`);
+
     // Build Delhivery payload
     const payload = {
       shipments: [{
@@ -143,7 +165,8 @@ async function createDelhiveryForwardOrder(requestData, warehouseLocation) {
         return_city: sanitizeAddress(warehouseLocation.city),
         return_state: sanitizeAddress(warehouseLocation.state || 'Haryana'),
         return_country: 'IN',
-        return_phone: warehouseLocation.phone
+        return_phone: warehouseLocation.phone,
+        products: products  // Include product details
       }],
       pickup_location: {
         name: process.env.DELHIVERY_PICKUP_LOCATION || warehouseLocation.nickname || warehouseLocation.pickup_location || 'Primary',

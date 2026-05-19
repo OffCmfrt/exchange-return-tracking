@@ -228,6 +228,31 @@ async function createDelhiveryOrder(requestData) {
     throw new Error(`Missing customer address or pincode for ${requestId}`);
   }
 
+  // Process products/items for Delhivery
+  console.log(`   📦 Processing ${items.length} item(s) for Delhivery`);
+  
+  const products = [];
+  for (const item of items) {
+    const title = item.title || item.replacementProductTitle || item.name || 'Product';
+    const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+    const productName = title + variantStr;
+    const quantity = parseInt(item.quantity) || 1;
+    const price = parseFloat(item.replacementPrice || item.price || item.variant_price || 0);
+    
+    console.log(`      - Product: ${productName}`);
+    console.log(`        Quantity: ${quantity}`);
+    console.log(`        Price: ₹${price}`);
+    
+    products.push({
+      name: sanitizeAddress(productName),
+      quantity: quantity,
+      selling_price: price,
+      sku: String(item.replacementVariantId || item.variantId || item.sku || item.id || '') + '-EXCH'
+    });
+  }
+
+  console.log(`   ✅ Prepared ${products.length} product(s) for Delhivery`);
+
   const payload = {
     shipments: [{
       name: sanitizeAddress(customerName),
@@ -245,7 +270,8 @@ async function createDelhiveryOrder(requestData) {
       return_city: sanitizeAddress(warehouseCity),
       return_state: sanitizeAddress(warehouseState),
       return_country: 'IN',
-      return_phone: warehousePhone
+      return_phone: warehousePhone,
+      products: products  // Include product details
     }],
     pickup_location: {
       name: pickupLocationNickname,

@@ -115,6 +115,31 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
     // Build forward order ID with fws_ prefix (required by Delhivery for forward shipments)
     const forwardOrderId = `fws-${requestData.request_id || requestData.requestId}`;
 
+    // Process products/items for Delhivery
+    console.log(`📦 Processing ${items.length} item(s) for Delhivery forward order`);
+    
+    const products = [];
+    for (const item of items) {
+      const title = item.title || item.replacementProductTitle || item.name || 'Product';
+      const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+      const productName = title + variantStr;
+      const quantity = parseInt(item.quantity) || 1;
+      const price = parseFloat(item.replacementPrice || item.price || item.variant_price || 0);
+      
+      console.log(`  - Product: ${productName}`);
+      console.log(`    Quantity: ${quantity}`);
+      console.log(`    Price: ₹${price}`);
+      
+      products.push({
+        name: sanitizeAddress(productName),
+        quantity: quantity,
+        selling_price: price,
+        sku: String(item.replacementVariantId || item.variantId || item.sku || item.id || '') + '-EXCH'
+      });
+    }
+
+    console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+
     // Build payload matching server.js format
     const payload = {
       shipments: [{
@@ -133,7 +158,8 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         return_city: sanitizeAddress(warehouseLocation.city),
         return_state: sanitizeAddress(warehouseLocation.state || 'Haryana'),
         return_country: 'IN',
-        return_phone: warehouseLocation.phone
+        return_phone: warehouseLocation.phone,
+        products: products  // Include product details
       }],
       pickup_location: {
         name: process.env.DELHIVERY_PICKUP_LOCATION || warehouseLocation.nickname || warehouseLocation.pickup_location || 'Primary',
