@@ -1969,9 +1969,9 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         // Get GST TIN for Delhivery (mandatory per Delhivery docs)
         const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AANCA1234P1ZN';
         const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;
-        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 25;
-        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 20;
-        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 5;
+        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 30;
+        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 40;
+        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 2;
 
         console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
         console.log(`📊 Total Quantity: ${totalQuantity}, Total Amount: ₹${totalAmount}`);
@@ -2264,9 +2264,9 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
 
         // Default package dimensions and weight (configurable via env)
         const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;  // grams
-        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 25;   // cm
-        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 20;     // cm
-        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 5;    // cm
+        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 30;   // cm
+        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 40;     // cm
+        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 2;    // cm
 
         console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
         console.log(`📊 Total Quantity: ${totalQuantity}, Total Amount: ₹${totalAmount}`);
