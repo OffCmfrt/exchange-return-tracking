@@ -887,6 +887,185 @@
                         border-color: #111827;
                     }
                 </style>
+
+                <!-- Premium CSS for Modify Exchange Modal -->
+                <style>
+                    /* Modify Exchange Modal Animations */
+                    #modifyModal .modal-content {
+                        animation: slideUp 0.3s ease-out;
+                    }
+
+                    @keyframes slideUp {
+                        from {
+                            opacity: 0;
+                            transform: translateY(20px);
+                        }
+                        to {
+                            opacity: 1;
+                            transform: translateY(0);
+                        }
+                    }
+
+                    /* Exchange Item Cards */
+                    .exchange-item-card {
+                        transition: all 0.3s ease;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+                    }
+
+                    .exchange-item-card:hover {
+                        box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+                        transform: translateY(-2px);
+                        border-color: #f59e0b;
+                    }
+
+                    /* Product Search Results */
+                    .product-search-results {
+                        animation: fadeIn 0.2s ease;
+                    }
+
+                    @keyframes fadeIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+
+                    .product-result-item:hover {
+                        background: linear-gradient(90deg, #f9fafb 0%, #f3f4f6 100%);
+                    }
+
+                    /* Remove Item Button */
+                    .remove-item-btn:hover {
+                        background: #fecaca !important;
+                        transform: scale(1.1);
+                        transition: all 0.2s;
+                    }
+
+                    /* Form Controls */
+                    .form-control {
+                        width: 100%;
+                        padding: 0.75rem 1rem;
+                        border: 2px solid #e5e7eb;
+                        border-radius: 8px;
+                        font-size: 0.875rem;
+                        transition: all 0.2s;
+                        background: white;
+                    }
+
+                    .form-control:focus {
+                        outline: none;
+                        border-color: #f59e0b;
+                        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+                    }
+
+                    .form-control:disabled {
+                        background: #f9fafb;
+                        cursor: not-allowed;
+                    }
+
+                    /* Warning Button Hover Effect */
+                    .btn-warning {
+                        transition: all 0.3s ease;
+                    }
+
+                    .btn-warning:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+                        filter: brightness(1.05);
+                    }
+
+                    .btn-warning:active {
+                        transform: translateY(0);
+                        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+                    }
+
+                    /* Loading Spinner for Save Button */
+                    .save-spinner {
+                        display: inline-block;
+                        width: 16px;
+                        height: 16px;
+                        border: 2px solid rgba(255,255,255,0.3);
+                        border-top-color: white;
+                        border-radius: 50%;
+                        animation: spin 0.8s linear infinite;
+                        margin-right: 0.5rem;
+                    }
+
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+
+                    /* Product Search Dropdown Shadow */
+                    .product-search-results {
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+                    }
+
+                    /* Section Headers */
+                    .section-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        font-weight: 600;
+                        color: #111827;
+                        margin-bottom: 1rem;
+                    }
+
+                    /* Form Group Spacing */
+                    .form-group {
+                        margin-bottom: 1rem;
+                    }
+
+                    /* Primary Button Gradient Enhancement */
+                    .btn-primary {
+                        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+                        border: none;
+                        color: white;
+                        padding: 0.875rem 1.5rem;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+                    }
+
+                    .btn-primary:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+                        filter: brightness(1.05);
+                    }
+
+                    .btn-primary:active {
+                        transform: translateY(0);
+                    }
+
+                    .btn-primary:disabled {
+                        opacity: 0.6;
+                        cursor: not-allowed;
+                        transform: none;
+                    }
+
+                    /* Secondary Button */
+                    .btn-secondary {
+                        background: white;
+                        border: 2px solid #d1d5db;
+                        color: #374151;
+                        padding: 0.875rem 1.5rem;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                    }
+
+                    .btn-secondary:hover {
+                        background: #f9fafb;
+                        border-color: #9ca3af;
+                    }
+
+                    /* Modal Overlay Enhancement */
+                    .modal {
+                        background: rgba(0, 0, 0, 0.5);
+                        backdrop-filter: blur(4px);
+                    }
+                </style>
+
                 <div id="paginationControls" class="premium-pagination">
                     <span id="pageInfo" class="premium-pagination-info">Showing <strong>0</strong> to <strong>0</strong> of <strong>0</strong> requests</span>
                     <div class="premium-pagination-actions">
@@ -1858,6 +2037,16 @@
                 <p style="font-size: 0.9rem;"><strong>Phone:</strong> ${data.customerPhone || 'N/A'}</p>
                 ${data.paymentId ? `<p style="font-size: 0.9rem; margin-top: 0.5rem; color: #166534;"><strong>Payment ID:</strong> ${data.paymentId} (₹${data.paymentAmount})</p>` : ''}
             </div>
+
+            ${data.type === 'exchange' && !['shipped', 'delivered', 'resolved'].includes(data.status) ? `
+            <button onclick="openModifyModal()" class="btn btn-warning" style="margin-top: 1rem; width: 100%; padding: 0.875rem; font-weight: 600; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3); transition: all 0.3s ease;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Modify Exchange Details
+            </button>
+            ` : ''}
 
             <div style="margin-bottom: 1rem;">
                 <p style="font-weight: 500; margin-bottom: 0.75rem;">Items & Exchange Details</p>
@@ -3196,7 +3385,459 @@
         }, { passive: true });
     });
 
+    // ── MODIFY EXCHANGE DETAILS ──────────────────────────────────────────────
+
+    let modifyModalData = null;
+    let productSearchCache = {};
+    let productSearchTimeout = null;
+
+    function openModifyModal() {
+        if (!currentRequest) return;
+        
+        modifyModalData = JSON.parse(JSON.stringify(currentRequest)); // Deep copy
+        
+        // Pre-fill customer information
+        document.getElementById('modify-customerName').value = currentRequest.customerName || '';
+        document.getElementById('modify-customerPhone').value = currentRequest.customerPhone || '';
+        
+        // Pre-fill shipping address
+        document.getElementById('modify-newAddress').value = currentRequest.newAddress || '';
+        document.getElementById('modify-newCity').value = currentRequest.newCity || '';
+        document.getElementById('modify-newState').value = currentRequest.newState || '';
+        document.getElementById('modify-newPincode').value = currentRequest.newPincode || '';
+        
+        // Pre-fill exchange items
+        const itemsContainer = document.getElementById('modify-items-container');
+        itemsContainer.innerHTML = '';
+        
+        const items = Array.isArray(currentRequest.items) 
+            ? currentRequest.items 
+            : (typeof currentRequest.items === 'string' 
+                ? JSON.parse(currentRequest.items) 
+                : []);
+        
+        if (items.length === 0) {
+            addExchangeItem();
+        } else {
+            items.forEach(item => addExchangeItem(item));
+        }
+        
+        document.getElementById('modifyModal').classList.add('active');
+    }
+
+    function closeModifyModal() {
+        document.getElementById('modifyModal').classList.remove('active');
+        modifyModalData = null;
+    }
+
+    function addExchangeItem(existingItem = null) {
+        const template = document.getElementById('exchange-item-template');
+        const clone = template.content.cloneNode(true);
+        const container = document.getElementById('modify-items-container');
+        container.appendChild(clone);
+        
+        // If editing existing item, populate fields
+        if (existingItem) {
+            const card = container.lastElementChild;
+            populateExchangeItemCard(card, existingItem);
+        }
+    }
+
+    function populateExchangeItemCard(card, item) {
+        card.querySelector('.product-id-input').value = item.replacementProductId || '';
+        card.querySelector('.product-title-input').value = item.replacementProductTitle || '';
+        card.querySelector('.variant-id-input').value = item.replacementVariantId || '';
+        card.querySelector('.variant-title-input').value = item.replacementVariant || '';
+        card.querySelector('.product-image-input').value = item.replacementProductImage || '';
+        card.querySelector('.quantity-input').value = item.quantity || 1;
+        card.querySelector('.price-input').value = item.replacementPrice || item.price || 0;
+        
+        if (item.replacementProductTitle) {
+            card.querySelector('.selected-product-info').style.display = 'block';
+            card.querySelector('.selected-product-title').textContent = item.replacementProductTitle;
+            card.querySelector('.selected-product-image').src = item.replacementProductImage || item.image || '';
+        }
+    }
+
+    function removeExchangeItem(btn) {
+        const card = btn.closest('.exchange-item-card');
+        const container = document.getElementById('modify-items-container');
+        if (container.children.length > 1) {
+            card.remove();
+        } else {
+            alert('At least one item is required');
+        }
+    }
+
+    async function searchProductsForItem(input) {
+        const query = input.value.trim();
+        const resultsDiv = input.parentElement.querySelector('.product-search-results');
+        
+        if (productSearchTimeout) clearTimeout(productSearchTimeout);
+        
+        if (query.length < 2) {
+            resultsDiv.style.display = 'none';
+            return;
+        }
+        
+        // Debounce search
+        productSearchTimeout = setTimeout(async () => {
+            try {
+                // Use cache if available
+                if (productSearchCache[query]) {
+                    displayProductSearchResults(resultsDiv, productSearchCache[query], input);
+                    return;
+                }
+                
+                const response = await fetch(`${API_URL}/products/search?q=${encodeURIComponent(query)}`);
+                const products = await response.json();
+                
+                productSearchCache[query] = products;
+                displayProductSearchResults(resultsDiv, products, input);
+            } catch (error) {
+                console.error('Product search failed:', error);
+                resultsDiv.innerHTML = '<div style="padding: 1rem; text-align: center; color: #ef4444;">Search failed. Please try again.</div>';
+                resultsDiv.style.display = 'block';
+            }
+        }, 300);
+    }
+
+    function displayProductSearchResults(resultsDiv, products, input) {
+        if (!products || products.length === 0) {
+            resultsDiv.innerHTML = '<div style="padding: 1rem; text-align: center; color: #6b7280;">No products found</div>';
+            resultsDiv.style.display = 'block';
+            return;
+        }
+        
+        resultsDiv.innerHTML = products.map(product => `
+            <div class="product-result-item" onclick="selectProductForItem(this)" 
+                 data-product-id="${product.id}" 
+                 data-product-title="${product.title}"
+                 data-product-image="${product.image || ''}"
+                 data-variants='${JSON.stringify(product.variants)}'
+                 style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; cursor: pointer; display: flex; gap: 0.75rem; align-items: center; transition: background 0.2s;"
+                 onmouseover="this.style.background='#f9fafb'" 
+                 onmouseout="this.style.background='white'">
+                <img src="${product.image || 'https://via.placeholder.com/50'}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px;">
+                <div style="flex: 1;">
+                    <p style="font-weight: 600; color: #111827; margin: 0; font-size: 0.875rem;">${product.title}</p>
+                    <p style="font-size: 0.75rem; color: #6b7280; margin: 0.25rem 0 0 0;">${product.variants.length} variant(s) available</p>
+                </div>
+            </div>
+        `).join('');
+        
+        resultsDiv.style.display = 'block';
+    }
+
+    function selectProductForItem(element) {
+        const card = element.closest('.exchange-item-card');
+        const productId = element.dataset.productId;
+        const productTitle = element.dataset.productTitle;
+        const productImage = element.dataset.productImage;
+        const variants = JSON.parse(element.dataset.variants);
+        
+        // Hide search results
+        element.closest('.product-search-results').style.display = 'none';
+        
+        // Update hidden fields
+        card.querySelector('.product-id-input').value = productId;
+        card.querySelector('.product-title-input').value = productTitle;
+        card.querySelector('.product-image-input').value = productImage;
+        
+        // Show selected product info
+        card.querySelector('.selected-product-info').style.display = 'block';
+        card.querySelector('.selected-product-title').textContent = productTitle;
+        card.querySelector('.selected-product-image').src = productImage;
+        
+        // Populate variant dropdown
+        const variantSelect = card.querySelector('.variant-select');
+        variantSelect.innerHTML = '<option value="">Select Size / Variant</option>' + 
+            variants.map(v => `
+                <option value="${v.id}" 
+                        data-title="${v.title}" 
+                        data-price="${v.price}"
+                        data-inventory="${v.inventory_quantity || 0}"
+                        ${v.inventory_quantity === 0 ? 'disabled' : ''}>
+                    ${v.title} - ₹${v.price} ${v.inventory_quantity === 0 ? '(Out of Stock)' : `(${v.inventory_quantity} available)`}
+                </option>
+            `).join('');
+        
+        card.querySelector('.variant-selection').style.display = 'block';
+    }
+
+    function onVariantSelect(select) {
+        const card = select.closest('.exchange-item-card');
+        const selectedOption = select.options[select.selectedIndex];
+        
+        if (selectedOption.value) {
+            card.querySelector('.variant-id-input').value = selectedOption.value;
+            card.querySelector('.variant-title-input').value = selectedOption.dataset.title;
+            card.querySelector('.price-input').value = selectedOption.dataset.price;
+        }
+    }
+
+    async function saveExchangeModifications() {
+        const saveBtn = document.getElementById('saveModifyBtn');
+        const originalText = saveBtn.textContent;
+        
+        try {
+            // Validate phone number
+            const customerPhone = document.getElementById('modify-customerPhone').value.trim();
+            if (!customerPhone || !/^[0-9]{10}$/.test(customerPhone)) {
+                alert('Please enter a valid 10-digit phone number');
+                return;
+            }
+            
+            // Validate address
+            const newAddress = document.getElementById('modify-newAddress').value.trim();
+            const newCity = document.getElementById('modify-newCity').value.trim();
+            const newState = document.getElementById('modify-newState').value.trim();
+            const newPincode = document.getElementById('modify-newPincode').value.trim();
+            
+            if (!newAddress || !newCity || !newState || !/^[0-9]{6}$/.test(newPincode)) {
+                alert('Please fill in all address fields correctly');
+                return;
+            }
+            
+            // Collect exchange items
+            const itemCards = document.querySelectorAll('.exchange-item-card');
+            const items = [];
+            
+            for (const card of itemCards) {
+                const productId = card.querySelector('.product-id-input').value;
+                const variantId = card.querySelector('.variant-id-input').value;
+                
+                if (!productId || !variantId) {
+                    alert('Please select a product and variant for all items');
+                    return;
+                }
+                
+                items.push({
+                    replacementProductId: productId,
+                    replacementVariantId: variantId,
+                    replacementProductTitle: card.querySelector('.product-title-input').value,
+                    replacementVariant: card.querySelector('.variant-title-input').value,
+                    replacementProductImage: card.querySelector('.product-image-input').value,
+                    replacementPrice: parseFloat(card.querySelector('.price-input').value),
+                    quantity: parseInt(card.querySelector('.quantity-input').value) || 1,
+                    name: card.querySelector('.product-title-input').value,
+                    variant: card.querySelector('.variant-title-input').value,
+                    price: parseFloat(card.querySelector('.price-input').value)
+                });
+            }
+            
+            if (items.length === 0) {
+                alert('Please add at least one exchange item');
+                return;
+            }
+            
+            // Show loading state
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="save-spinner"></span>Saving...';
+            
+            // Send update request
+            const response = await fetch(`${API_URL}/api/admin/update-request/${modifyModalData.requestId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    items,
+                    customerPhone,
+                    newAddress,
+                    newCity,
+                    newState,
+                    newPincode,
+                    customerName: document.getElementById('modify-customerName').value.trim()
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                // Update local currentRequest
+                currentRequest = data.data;
+                
+                // Close modal
+                closeModifyModal();
+                
+                // Refresh modal display
+                displayRequestDetails(currentRequest);
+                
+                // Show success message
+                alert('✅ Exchange details updated successfully!');
+                
+                // Refresh the requests table
+                loadRequests();
+            } else {
+                throw new Error(data.error || 'Failed to update request');
+            }
+        } catch (error) {
+            console.error('Save modifications error:', error);
+            alert('❌ Failed to save changes: ' + error.message);
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalText;
+        }
+    }
+
 </script>
+
+<!-- Product Search Template (will be cloned dynamically) -->
+<template id="exchange-item-template">
+    <div class="exchange-item-card" style="background: white; border: 2px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; position: relative;">
+        <button onclick="removeExchangeItem(this)" class="remove-item-btn" style="position: absolute; top: 0.75rem; right: 0.75rem; background: #fee2e2; border: none; color: #dc2626; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">×</button>
+        
+        <div class="form-group">
+            <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Search Product</label>
+            <div style="position: relative;">
+                <input type="text" class="product-search-input form-control" placeholder="Type to search products..." oninput="searchProductsForItem(this)">
+                <div class="product-search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 2px solid #e5e7eb; border-radius: 8px; margin-top: 0.5rem; max-height: 300px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+            </div>
+        </div>
+
+        <div class="selected-product-info" style="display: none; padding: 1rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; margin-top: 1rem;">
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <img class="selected-product-image" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;">
+                <div style="flex: 1;">
+                    <p style="font-weight: 600; color: #111827; margin: 0;" class="selected-product-title"></p>
+                    <p style="font-size: 0.875rem; color: #6b7280; margin: 0.25rem 0 0 0;">Select a size/variant below:</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="variant-selection" style="display: none; margin-top: 1rem;">
+            <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Size / Variant</label>
+            <select class="variant-select form-control" onchange="onVariantSelect(this)"></select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+            <div class="form-group">
+                <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Quantity</label>
+                <input type="number" class="quantity-input form-control" value="1" min="1" max="10">
+            </div>
+            <div class="form-group">
+                <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Price (₹)</label>
+                <input type="number" class="price-input form-control" readonly style="background: #f9fafb;">
+            </div>
+        </div>
+
+        <!-- Hidden fields for storing selected data -->
+        <input type="hidden" class="product-id-input">
+        <input type="hidden" class="product-title-input">
+        <input type="hidden" class="variant-id-input">
+        <input type="hidden" class="variant-title-input">
+        <input type="hidden" class="product-image-input">
+    </div>
+</template>
+
+<!-- Modify Exchange Details Modal -->
+<div id="modifyModal" class="modal">
+    <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 1.5rem; border-radius: 12px 12px 0 0;">
+            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 0.75rem;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Modify Exchange Details
+            </h2>
+            <button class="modal-close" onclick="closeModifyModal()" style="color: white;">×</button>
+        </div>
+
+        <div style="padding: 2rem;">
+            <!-- Warning Banner -->
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 8px; margin-bottom: 2rem;">
+                <p style="font-size: 0.875rem; color: #92400e; margin: 0; font-weight: 500;">
+                    ⚠️ <strong>Important:</strong> These changes will affect the upcoming shipment. Please verify all details carefully before saving.
+                </p>
+            </div>
+
+            <!-- Section 1: Exchange Items -->
+            <div style="margin-bottom: 2.5rem;">
+                <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                        <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                    </svg>
+                    Exchange Items (Products to Dispatch)
+                </h3>
+
+                <div id="modify-items-container">
+                    <!-- Items will be populated dynamically -->
+                </div>
+
+                <button onclick="addExchangeItem()" class="btn btn-secondary" style="margin-top: 1rem; padding: 0.75rem 1.5rem; border: 2px dashed #d1d5db; background: #f9fafb; color: #6b7280; border-radius: 8px; cursor: pointer; font-weight: 500; width: 100%; transition: all 0.2s;">
+                    + Add Another Item
+                </button>
+            </div>
+
+            <!-- Section 2: Customer Contact Information -->
+            <div style="margin-bottom: 2.5rem; padding: 1.5rem; background: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb;">
+                <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    Customer Contact Information
+                </h3>
+
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Customer Name</label>
+                    <input type="text" id="modify-customerName" class="form-control" placeholder="Full Name">
+                </div>
+
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Phone Number <span style="color: #ef4444;">*</span></label>
+                    <input type="tel" id="modify-customerPhone" class="form-control" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10">
+                    <p style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">Carrier will use this to contact customer for pickup/delivery</p>
+                </div>
+            </div>
+
+            <!-- Section 3: Shipping Address -->
+            <div style="margin-bottom: 2.5rem; padding: 1.5rem; background: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb;">
+                <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    Shipping Address (Delivery Location)
+                </h3>
+
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Address Line 1 <span style="color: #ef4444;">*</span></label>
+                    <textarea id="modify-newAddress" class="form-control" rows="3" placeholder="House No., Street, Locality"></textarea>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                    <div class="form-group">
+                        <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">City <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="modify-newCity" class="form-control" placeholder="City">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">State <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="modify-newState" class="form-control" placeholder="State">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Pincode <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="modify-newPincode" class="form-control" placeholder="6-digit pincode" pattern="[0-9]{6}" maxlength="6">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div style="display: flex; gap: 1rem; padding-top: 1.5rem; border-top: 2px solid #e5e7eb;">
+                <button onclick="closeModifyModal()" class="btn btn-secondary" style="flex: 1; padding: 0.875rem; font-weight: 600; border: 2px solid #d1d5db; background: white; color: #374151; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                    Cancel
+                </button>
+                <button onclick="saveExchangeModifications()" id="saveModifyBtn" class="btn btn-primary" style="flex: 2; padding: 0.875rem; font-weight: 600; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); transition: all 0.3s ease;">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>

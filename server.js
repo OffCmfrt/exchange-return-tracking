@@ -4893,6 +4893,92 @@ app.post('/api/admin/redispatch', authenticateAdmin, async (req, res) => {
     }
 });
 
+// ── Admin: Update exchange details (items, phone, address) ──
+app.put('/api/admin/update-request/:requestId', authenticateAdmin, async (req, res) => {
+    const requestId = req.params.requestId;
+    const { items, customerPhone, newAddress, newCity, newPincode, newState, customerName } = req.body;
+    
+    console.log(`[ADMIN UPDATE] ${requestId} — Exchange details modification started`);
+    
+    try {
+        // Validate request exists
+        const existingRequest = await getRequestById(requestId);
+        if (!existingRequest) {
+            console.log(`[ADMIN UPDATE] ${requestId} — Request not found`);
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        
+        // Only allow modifications for requests that haven't been shipped yet
+        const blockedStatuses = ['shipped', 'delivered', 'resolved'];
+        if (blockedStatuses.includes(existingRequest.status)) {
+            console.log(`[ADMIN UPDATE] ${requestId} — Cannot modify request with status: ${existingRequest.status}`);
+            return res.status(400).json({ 
+                error: 'Cannot modify request after shipment has been initiated' 
+            });
+        }
+        
+        const updateData = {};
+        
+        // Update items if provided
+        if (items && Array.isArray(items) && items.length > 0) {
+            // Validate each item has required fields
+            for (const item of items) {
+                if (!item.replacementVariantId || !item.replacementProductTitle) {
+                    console.log(`[ADMIN UPDATE] ${requestId} — Invalid item data: missing replacementVariantId or replacementProductTitle`);
+                    return res.status(400).json({ 
+                        error: 'Each item must have replacementVariantId and replacementProductTitle' 
+                    });
+                }
+            }
+            updateData.items = JSON.stringify(items);
+            console.log(`[ADMIN UPDATE] ${requestId} — Updating ${items.length} item(s)`);
+        }
+        
+        // Update customer phone if provided
+        if (customerPhone !== undefined) {
+            updateData.customer_phone = customerPhone;
+            console.log(`[ADMIN UPDATE] ${requestId} — Updating customer phone`);
+        }
+        
+        // Update shipping address fields if provided
+        if (newAddress !== undefined) updateData.new_address = newAddress;
+        if (newCity !== undefined) updateData.new_city = newCity;
+        if (newPincode !== undefined) updateData.new_pincode = newPincode;
+        if (newState !== undefined) updateData.new_state = newState;
+        if (customerName !== undefined) updateData.customer_name = customerName;
+        
+        // Add audit trail
+        const timestamp = new Date().toISOString();
+        updateData.admin_notes = `[${timestamp}] Exchange details modified by admin\n` + 
+            (existingRequest.admin_notes || '');
+        updateData.updated_at = timestamp;
+        
+        // Perform update
+        const { data, error } = await supabase
+            .from('requests')
+            .update(updateData)
+            .eq('request_id', requestId)
+            .select()
+            .single();
+        
+        if (error) {
+            console.error(`[ADMIN UPDATE] ${requestId} — Database update error:`, error);
+            return res.status(500).json({ error: 'Failed to update request' });
+        }
+        
+        console.log(`[ADMIN UPDATE] ${requestId} — ✅ Successfully updated`);
+        
+        res.json({ 
+            success: true, 
+            message: 'Request updated successfully',
+            data: convertFromSnakeCase(data)
+        });
+    } catch (error) {
+        console.error(`[ADMIN UPDATE] ${requestId} — Error:`, error);
+        res.status(500).json({ error: 'Failed to update request' });
+    }
+});
+
 // ── Admin: Manually create a request (bypasses eligibility + duplicate checks) ──
 app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
     const requestId = await generateUniqueRequestId();
