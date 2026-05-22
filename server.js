@@ -1121,9 +1121,15 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
                 value_type: finalValueType,
                 value: finalValue,
                 customer_selection: 'all',
+                once_per_customer: finalValueType === 'fixed_amount' ? true : false,
                 starts_at: new Date().toISOString()
             }
         };
+
+        // Set usage_limit on price_rule itself (total uses across all customers)
+        if (finalUsageLimit && finalUsageLimit > 0) {
+            priceRulePayload.price_rule.usage_limit = finalUsageLimit;
+        }
 
         const priceRuleResponse = await shopifyAPI('price_rules.json', {
             method: 'POST',
@@ -1139,18 +1145,6 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
             }
         };
 
-        // If usage limit is set, update the price rule with allocation_limit
-        if (finalUsageLimit && finalUsageLimit > 0) {
-            await shopifyAPI(`price_rules/${priceRuleId}.json`, {
-                method: 'PUT',
-                body: JSON.stringify({
-                    price_rule: {
-                        allocation_limit: finalUsageLimit
-                    }
-                })
-            });
-        }
-
         const discountCodeResponse = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
             method: 'POST',
             body: JSON.stringify(discountCodePayload)
@@ -1158,9 +1152,9 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
 
         const discountCodeId = discountCodeResponse.discount_code.id;
 
-        console.log(`✅ Created Shopify discount code: ${code} (Price Rule ID: ${priceRuleId}, Discount Code ID: ${discountCodeId})`);
+        console.log(`✅ Created Shopify discount code: ${code.toUpperCase()} | type=${finalValueType} value=${finalValue} usage_limit=${finalUsageLimit || 'unlimited'} (Price Rule ID: ${priceRuleId}, Discount Code ID: ${discountCodeId})`);
 
-        return { priceRuleId, discountCodeId };
+        return { priceRuleId, discountCodeId, code: code.toUpperCase() };
     } catch (error) {
         console.error('❌ Failed to create Shopify discount code:', error.message);
         throw error;
@@ -3078,19 +3072,23 @@ app.post('/api/get-variants', async (req, res) => {
 
 // ==================== WHATSAPP BOT INTEGRATION ====================
 
-async function sendWhatsAppNotification(phone, message, type, requestId) {
+async function sendWhatsAppNotification(phone, message, type, requestId, templateData = null) {
     if (!phone || !message) return;
 
     // Use environment variable or default to localhost:3000 (standard for local dev)
     const botUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:3000';
+    const internalToken = process.env.WHATSAPP_INTERNAL_TOKEN || '';
 
     try {
         console.log(`[${requestId}] 📤 Sending WhatsApp notification to ${phone}`);
         // Ensure fetch is available (Node 18+)
         const response = await fetch(`${botUrl}/api/internal/send-notification`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone, message, type, requestId })
+            headers: { 
+                'Content-Type': 'application/json',
+                'x-internal-token': internalToken
+            },
+            body: JSON.stringify({ phone, message, type, requestId, templateData })
         });
 
         const data = await response.json();
@@ -4876,7 +4874,15 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
                     phoneToSend,
                     message,
                     'return_approved_with_discount',
-                    requestId
+                    requestId,
+                    {
+                        templateName: 'return_approved_discount',
+                        customerName: customerName,
+                        orderNumber: requestDetails.orderNumber,
+                        discountCode: discountCodeGenerated,
+                        value: valueTypeLabel,
+                        usage: usageLimit ? `${usageLimit} time(s)` : 'Unlimited'
+                    }
                 );
             }
         }
