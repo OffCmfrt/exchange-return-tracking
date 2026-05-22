@@ -1092,17 +1092,34 @@ async function shopifyAPI(endpoint, options = {}) {
 
 // ==================== SHOPIFY DISCOUNT CODE HELPERS ====================
 
-async function createShopifyDiscountCode(code, percentage, usageLimit, title) {
+async function createShopifyDiscountCode(code, value, valueType, usageLimit, title) {
     try {
+        // Backward compatibility: if valueType is a number, shift arguments
+        let finalValueType, finalUsageLimit, finalTitle, finalValue;
+        
+        if (typeof valueType === 'number') {
+            // Old signature: createShopifyDiscountCode(code, percentage, usageLimit, title)
+            finalValueType = 'percentage';
+            finalUsageLimit = valueType;
+            finalTitle = usageLimit;
+            finalValue = `-${value}`;
+        } else {
+            // New signature: createShopifyDiscountCode(code, value, valueType, usageLimit, title)
+            finalValueType = valueType || 'percentage';
+            finalUsageLimit = usageLimit;
+            finalTitle = title;
+            finalValue = typeof value === 'string' ? value : `-${value}`;
+        }
+        
         // Step 1: Create Price Rule
         const priceRulePayload = {
             price_rule: {
-                title: title || `Influencer: ${code}`,
+                title: finalTitle || `Influencer: ${code}`,
                 target_type: 'line_item',
                 target_selection: 'all',
                 allocation_method: 'across',
-                value_type: 'percentage',
-                value: `-${percentage}`,
+                value_type: finalValueType,
+                value: finalValue,
                 customer_selection: 'all',
                 starts_at: new Date().toISOString()
             }
@@ -1123,12 +1140,12 @@ async function createShopifyDiscountCode(code, percentage, usageLimit, title) {
         };
 
         // If usage limit is set, update the price rule with allocation_limit
-        if (usageLimit && usageLimit > 0) {
+        if (finalUsageLimit && finalUsageLimit > 0) {
             await shopifyAPI(`price_rules/${priceRuleId}.json`, {
                 method: 'PUT',
                 body: JSON.stringify({
                     price_rule: {
-                        allocation_limit: usageLimit
+                        allocation_limit: finalUsageLimit
                     }
                 })
             });
@@ -4780,6 +4797,101 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
     } catch (error) {
         console.error('Approve request error:', error);
         res.status(500).json({ error: 'Failed to approve request' });
+    }
+});
+
+// Approve return with discount code creation (admin)
+app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (req, res) => {
+    try {
+        const { 
+            requestId, 
+            notes, 
+            discountCode,      // e.g., "RETURN10" or "REFUND500"
+            discountValue,     // e.g., 10 (for 10%) or 500 (for ₹500)
+            discountType,      // 'percentage' or 'fixed'
+            usageLimit,        // optional, null = unlimited
+            sendWhatsApp,      // boolean: send via WhatsApp?
+            whatsappPhone      // optional: edited phone number
+        } = req.body;
+
+        // 1. Validate request exists and is in 'delivered' status
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        if (requestDetails.status !== 'delivered') {
+            return res.status(400).json({ 
+                error: 'Can only approve with discount for delivered returns' 
+            });
+        }
+        if (requestDetails.type !== 'return') {
+            return res.status(400).json({ error: 'Only for return requests' });
+        }
+
+        // 2. Create Shopify discount code (auto-generate if not provided)
+        let shopifyResult = null;
+        let discountCodeGenerated = null;
+        
+        if (discountValue) {
+            const finalCode = discountCode || `RETURN${requestId.slice(-6).toUpperCase()}`;
+            const valueType = discountType === 'fixed' ? 'fixed_amount' : 'percentage';
+            const title = `Return Compensation: ${requestDetails.orderNumber}`;
+            
+            shopifyResult = await createShopifyDiscountCode(
+                finalCode,
+                discountValue,
+                valueType,
+                usageLimit || null,
+                title
+            );
+            
+            discountCodeGenerated = finalCode.toUpperCase();
+            console.log(`[${requestId}] ✅ Shopify discount created: ${discountCodeGenerated}`);
+        }
+
+        // 3. Update request status to 'approved' with discount info
+        let adminNotes = notes || '';
+        if (discountCodeGenerated) {
+            adminNotes += `\n--- Discount Code Issued ---\nCode: ${discountCodeGenerated}\nValue: ${discountType === 'fixed' ? '₹' + discountValue : discountValue + '%'}\nUsage Limit: ${usageLimit || 'Unlimited'}`;
+        }
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'approved',
+            adminNotes,
+            discountCode: discountCodeGenerated || null,
+            discountValue: discountValue || null,
+            discountType: discountType || null,
+            approvedAt: new Date().toISOString()
+        });
+
+        // 4. Send WhatsApp notification if requested
+        if (sendWhatsApp && discountCodeGenerated) {
+            const phoneToSend = whatsappPhone || requestDetails.customerPhone;
+            if (phoneToSend) {
+                const valueTypeLabel = discountType === 'fixed' ? `₹${discountValue}` : `${discountValue}%`;
+                const customerName = requestDetails.customerName || 'Valued Customer';
+                const message = `Hi ${customerName}! 👋\n\nGreat news! Your return for order *${requestDetails.orderNumber}* has been approved and processed successfully. ✅\n\n🎁 *Your Exclusive Compensation:*\n━━━━━━━━━━━━━━━━━\n💰 Discount Code: *${discountCodeGenerated}*\n💎 Value: ${valueTypeLabel}\n📝 Usage: ${usageLimit ? usageLimit + ' time(s)' : 'Unlimited'}\n━━━━━━━━━━━━━━━━━\n\nSimply apply this code at checkout on any product in our store!\n\nThank you for your patience and trust in us. We look forward to serving you again! 🙏\n\nNeed help? Reply to this message.`;
+                
+                await sendWhatsAppNotification(
+                    phoneToSend,
+                    message,
+                    'return_approved_with_discount',
+                    requestId
+                );
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'Return approved with discount code',
+            discountCode: discountCodeGenerated,
+            request 
+        });
+    } catch (error) {
+        console.error('Approve return with discount error:', error);
+        res.status(500).json({ 
+            error: 'Failed to approve return with discount: ' + error.message 
+        });
     }
 });
 

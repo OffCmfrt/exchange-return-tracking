@@ -1464,6 +1464,125 @@
             </select>
         </div>
 
+        <!-- Premium Discount Code Creation Panel (only for delivered returns) -->
+        <div id="discountCodeSection" class="hidden" style="margin-top: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <!-- Header -->
+            <div style="background: rgba(255,255,255,0.1); padding: 1rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.2);">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 40px; height: 40px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-gift" style="color: #667eea; font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; color: white; font-size: 1rem; font-weight: 600;">Create Compensation Discount</h3>
+                        <p style="margin: 0; color: rgba(255,255,255,0.8); font-size: 0.75rem;">Reward customer with exclusive discount code</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Body -->
+            <div style="padding: 1.25rem; background: white;">
+                <!-- Quick Presets -->
+                <div style="margin-bottom: 1rem;">
+                    <label style="font-size: 0.7rem; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">Quick Presets</label>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button type="button" onclick="applyDiscountPreset(10, 'percentage')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            10% Off
+                        </button>
+                        <button type="button" onclick="applyDiscountPreset(15, 'percentage')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            15% Off
+                        </button>
+                        <button type="button" onclick="applyDiscountPreset(20, 'percentage')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            20% Off
+                        </button>
+                        <button type="button" onclick="applyDiscountPreset(200, 'fixed')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            ₹200 Off
+                        </button>
+                        <button type="button" onclick="applyDiscountPreset(500, 'fixed')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            ₹500 Off
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Custom Discount Fields -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.4rem;">
+                            <i class="fas fa-ticket-alt" style="margin-right: 0.3rem; color: #667eea;"></i>
+                            Discount Code *
+                        </label>
+                        <input id="discountCode" type="text" placeholder="Auto-generated if empty" 
+                            style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; text-transform: uppercase; font-weight: 500;" />
+                    </div>
+                    <div>
+                        <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.4rem;">
+                            <i class="fas fa-percentage" style="margin-right: 0.3rem; color: #667eea;"></i>
+                            Discount Type *
+                        </label>
+                        <select id="discountType" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; background: white;">
+                            <option value="percentage">Percentage (%)</option>
+                            <option value="fixed">Fixed Amount (₹)</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.4rem;">
+                            <i class="fas fa-coins" style="margin-right: 0.3rem; color: #667eea;"></i>
+                            Discount Value *
+                        </label>
+                        <input id="discountValue" type="number" placeholder="e.g., 10 or 500" min="1"
+                            style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; font-weight: 500;" />
+                    </div>
+                    <div>
+                        <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.4rem;">
+                            <i class="fas fa-layer-group" style="margin-right: 0.3rem; color: #667eea;"></i>
+                            Usage Limit
+                        </label>
+                        <input id="discountUsageLimit" type="number" placeholder="Empty = Unlimited" min="1"
+                            style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem;" />
+                    </div>
+                </div>
+                
+                <!-- Customer Phone for WhatsApp -->
+                <div style="background: #f9fafb; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid #e5e7eb;">
+                    <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.5rem;">
+                        <i class="fab fa-whatsapp" style="margin-right: 0.3rem; color: #25d366;"></i>
+                        WhatsApp Delivery
+                    </label>
+                    <div style="display: flex; gap: 0.75rem; align-items: center;">
+                        <div style="flex: 1;">
+                            <input id="whatsappPhone" type="tel" placeholder="Customer phone number" 
+                                style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem;" />
+                            <p style="font-size: 0.7rem; color: #9ca3af; margin-top: 0.3rem;">Editable - defaults to order phone</p>
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; white-space: nowrap; padding: 0.6rem 1rem; background: #25d366; color: white; border-radius: 6px; font-size: 0.85rem; font-weight: 500;">
+                            <input id="sendWhatsAppDiscount" type="checkbox" checked style="width: 16px; height: 16px; accent-color: white;" />
+                            <i class="fab fa-whatsapp"></i>
+                            Send
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Message Preview -->
+                <div id="whatsappPreview" style="background: #e8f5e9; padding: 1rem; border-radius: 8px; border-left: 4px solid #25d366; display: none;">
+                    <label style="font-size: 0.7rem; color: #2e7d32; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">
+                        <i class="fas fa-eye" style="margin-right: 0.3rem;"></i>
+                        WhatsApp Message Preview
+                    </label>
+                    <div id="whatsappMessagePreview" style="font-size: 0.8rem; color: #1b5e20; line-height: 1.6; font-family: monospace; white-space: pre-wrap;"></div>
+                </div>
+                
+                <!-- Helper Text -->
+                <div style="margin-top: 1rem; padding: 0.75rem; background: #fef3c7; border-radius: 6px; border-left: 3px solid #f59e0b;">
+                    <p style="margin: 0; font-size: 0.75rem; color: #92400e;">
+                        <i class="fas fa-info-circle" style="margin-right: 0.3rem;"></i>
+                        <strong>Tip:</strong> Discount code will be created in Shopify instantly. Customer can apply it at checkout on any product.
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <div id="modalActions" class="hidden" style="margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem;">
             <button onclick="approveRequest()" class="btn btn-primary" style="flex: 1; background: #111827; min-width: 150px; border: 1px solid #111827;">
                 Approve
@@ -2216,6 +2335,25 @@
                 }
             }
 
+            // Show discount code section for delivered returns
+            const discountSection = document.getElementById('discountCodeSection');
+            if (discountSection) {
+                if (data.status === 'delivered' && data.type === 'return') {
+                    discountSection.classList.remove('hidden');
+                    
+                    // Populate WhatsApp phone with customer's phone
+                    const whatsappPhoneInput = document.getElementById('whatsappPhone');
+                    if (whatsappPhoneInput && data.customerPhone) {
+                        whatsappPhoneInput.value = data.customerPhone;
+                    }
+                    
+                    // Set up real-time preview
+                    setupWhatsAppPreview();
+                } else {
+                    discountSection.classList.add('hidden');
+                }
+            }
+
             // Show manual received button for all active shipment statuses AND pending (as fallback)
             if (manualReceivedBtn) {
                 const statusArr = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit'];
@@ -2504,37 +2642,175 @@
         return html;
     }
 
+    // Apply quick preset discount
+    function applyDiscountPreset(value, type) {
+        document.getElementById('discountValue').value = value;
+        document.getElementById('discountType').value = type;
+        
+        // Auto-generate code if empty
+        const codeInput = document.getElementById('discountCode');
+        if (!codeInput.value.trim()) {
+            const timestamp = Date.now().toString().slice(-4);
+            codeInput.value = type === 'percentage' ? `RETURN${value}${timestamp}` : `FLAT${value}${timestamp}`;
+        }
+        
+        // Visual feedback
+        event.target.style.background = '#667eea';
+        event.target.style.color = 'white';
+        setTimeout(() => {
+            event.target.style.background = '#f3f4f6';
+            event.target.style.color = 'inherit';
+        }, 300);
+        
+        // Update preview
+        setupWhatsAppPreview();
+    }
+
+    // Setup real-time WhatsApp message preview
+    function setupWhatsAppPreview() {
+        const checkbox = document.getElementById('sendWhatsAppDiscount');
+        const preview = document.getElementById('whatsappPreview');
+        const previewContent = document.getElementById('whatsappMessagePreview');
+        
+        const updatePreview = () => {
+            const code = document.getElementById('discountCode').value || 'RETURN123';
+            const value = document.getElementById('discountValue').value || '10';
+            const type = document.getElementById('discountType').value;
+            const usage = document.getElementById('discountUsageLimit').value;
+            const orderNumber = currentRequest?.orderNumber || '#1234';
+            const customerName = currentRequest?.customerName || 'Valued Customer';
+            
+            const valueTypeLabel = type === 'fixed' ? `₹${value}` : `${value}%`;
+            const usageText = usage ? `${usage} time(s)` : 'Unlimited';
+            
+            const message = `Hi ${customerName}! 👋\n\nGreat news! Your return for order *${orderNumber}* has been approved and processed successfully. ✅\n\n🎁 *Your Exclusive Compensation:*\n━━━━━━━━━━━━━━━━━\n💰 Discount Code: *${code.toUpperCase()}*\n💎 Value: ${valueTypeLabel}\n📝 Usage: ${usageText}\n━━━━━━━━━━━━━━━━━\n\nSimply apply this code at checkout on any product in our store!\n\nThank you for your patience and trust in us. We look forward to serving you again! 🙏\n\nNeed help? Reply to this message.`;
+            
+            if (previewContent) {
+                previewContent.textContent = message;
+            }
+        };
+        
+        // Show/hide preview based on checkbox
+        if (checkbox && preview) {
+            checkbox.addEventListener('change', () => {
+                preview.style.display = checkbox.checked ? 'block' : 'none';
+            });
+            
+            // Initial state
+            preview.style.display = checkbox.checked ? 'block' : 'none';
+        }
+        
+        // Add listeners to all discount fields
+        ['discountCode', 'discountValue', 'discountType', 'discountUsageLimit'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('input', updatePreview);
+                element.addEventListener('change', updatePreview);
+            }
+        });
+        
+        // Initial preview
+        updatePreview();
+    }
+
     async function approveRequest() {
-        if (!confirm('Are you sure you want to approve this request?')) return;
         const notes = document.getElementById('adminNotes')?.value || '';
         const carrierOverride = document.getElementById('carrierOverride')?.value || '';
-
-        try {
-            const endpoint = currentRequest.type === 'return' ? 'approve-return' : 'approve-exchange';
-            const response = await fetch(`${API_URL}/admin/${endpoint}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
-                },
-                body: JSON.stringify({
-                    requestId: currentRequest.requestId,
-                    notes,
-                    carrierOverride
-                })
-            });
-
-            const data = await response.json();
-            if (response.ok) {
-                alert(data.message || 'Action completed successfully');
-                closeModal();
-                loadRequests();
-            } else {
-                alert(data.error || 'Failed to process request');
+        
+        // Check if discount code section is visible
+        const discountSection = document.getElementById('discountCodeSection');
+        const isDiscountVisible = discountSection && !discountSection.classList.contains('hidden');
+        
+        const discountCode = document.getElementById('discountCode')?.value?.trim() || '';
+        const discountValue = document.getElementById('discountValue')?.value || '';
+        const discountType = document.getElementById('discountType')?.value || 'percentage';
+        const discountUsageLimit = document.getElementById('discountUsageLimit')?.value || null;
+        const sendWhatsApp = document.getElementById('sendWhatsAppDiscount')?.checked || false;
+        const whatsappPhone = document.getElementById('whatsappPhone')?.value?.trim() || '';
+        
+        // If discount section is visible and value is provided
+        const hasDiscount = discountValue && parseFloat(discountValue) > 0;
+        
+        if (isDiscountVisible && hasDiscount) {
+            // Validate phone if WhatsApp is enabled
+            if (sendWhatsApp && !whatsappPhone) {
+                alert('Please provide a phone number to send WhatsApp message, or uncheck the send option.');
+                return;
             }
-        } catch (error) {
-            console.error('Approval error:', error);
-            alert('An error occurred. Please check console.');
+            
+            const codeText = discountCode || '(Auto-generated)';
+            const valueText = discountType === 'fixed' ? `₹${discountValue}` : `${discountValue}%`;
+            
+            if (!confirm(`Approve this return and create discount code?\n\nCode: ${codeText}\nValue: ${valueText}\nUsage: ${discountUsageLimit || 'Unlimited'}\nWhatsApp: ${sendWhatsApp ? 'Yes (' + whatsappPhone + ')' : 'No'}`)) return;
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/approve-return-with-discount`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        requestId: currentRequest.requestId,
+                        notes,
+                        discountCode: discountCode || null,
+                        discountValue: parseFloat(discountValue),
+                        discountType,
+                        usageLimit: discountUsageLimit ? parseInt(discountUsageLimit) : null,
+                        sendWhatsApp,
+                        whatsappPhone: sendWhatsApp ? whatsappPhone : null
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    let successMsg = '✅ Return approved successfully!\n\n';
+                    if (data.discountCode) {
+                        successMsg += `Discount Code Created: ${data.discountCode}\n`;
+                        successMsg += `WhatsApp Sent: ${sendWhatsApp ? 'Yes ✓' : 'No'}\n\n`;
+                        successMsg += `Customer can now use this code at checkout.`;
+                    }
+                    alert(successMsg);
+                    closeModal();
+                    loadRequests();
+                } else {
+                    alert('❌ ' + (data.error || 'Failed to process request'));
+                }
+            } catch (error) {
+                console.error('Approval with discount error:', error);
+                alert('❌ An error occurred. Please check console.');
+            }
+        } else {
+            // Use existing approve endpoint (no discount)
+            if (!confirm('Are you sure you want to approve this request without creating a discount code?')) return;
+            
+            try {
+                const endpoint = currentRequest.type === 'return' ? 'approve-return' : 'approve-exchange';
+                const response = await fetch(`${API_URL}/admin/${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        requestId: currentRequest.requestId,
+                        notes,
+                        carrierOverride
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    alert('✅ Action completed successfully');
+                    closeModal();
+                    loadRequests();
+                } else {
+                    alert('❌ ' + (data.error || 'Failed to process request'));
+                }
+            } catch (error) {
+                console.error('Approval error:', error);
+                alert('❌ An error occurred. Please check console.');
+            }
         }
     }
 
