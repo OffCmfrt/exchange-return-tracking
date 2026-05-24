@@ -4880,7 +4880,8 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
                         customerName: customerName,
                         orderNumber: requestDetails.orderNumber,
                         discountCode: discountCodeGenerated,
-                        value: valueTypeLabel,
+                        value: discountValue,
+                        valueType: discountType === 'fixed' ? 'fixed_amount' : 'percentage',
                         usage: usageLimit ? `${usageLimit} time(s)` : 'Unlimited'
                     }
                 );
