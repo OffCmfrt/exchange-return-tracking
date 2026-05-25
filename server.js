@@ -4897,9 +4897,22 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
                     whatsappSent = true;
                     whatsappMessageId = whatsappResult?.messageId || null;
                     console.log(`[${requestId}] ✅ WhatsApp template sent successfully. Message ID: ${whatsappMessageId}`);
+                    
+                    // Update database with WhatsApp status
+                    await updateRequestStatus(requestId, {
+                        whatsappSent: true,
+                        whatsappMessageId: whatsappMessageId,
+                        whatsappSentAt: new Date().toISOString()
+                    });
                 } catch (error) {
                     whatsappError = error.message;
                     console.error(`[${requestId}] ❌ WhatsApp send failed:`, error.message);
+                    
+                    // Update database with error
+                    await updateRequestStatus(requestId, {
+                        whatsappSent: false,
+                        whatsappError: error.message
+                    });
                 }
             }
         }
