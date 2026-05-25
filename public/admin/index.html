@@ -2766,9 +2766,20 @@
                 if (response.ok) {
                     let successMsg = '✅ Return approved successfully!\n\n';
                     if (data.discountCode) {
-                        successMsg += `Discount Code Created: ${data.discountCode}\n`;
-                        successMsg += `WhatsApp Sent: ${sendWhatsApp ? 'Yes ✓' : 'No'}\n\n`;
-                        successMsg += `Customer can now use this code at checkout.`;
+                        successMsg += `Discount Code: ${data.discountCode}\n`;
+                        
+                        // Show WhatsApp template status
+                        if (data.whatsappSent) {
+                            successMsg += `WhatsApp Template: ✅ Sent Successfully\n`;
+                            successMsg += `Message ID: ${data.whatsappMessageId || 'N/A'}\n`;
+                        } else if (data.whatsappError) {
+                            successMsg += `WhatsApp Template: ❌ Failed\n`;
+                            successMsg += `Error: ${data.whatsappError}\n`;
+                        } else if (sendWhatsApp) {
+                            successMsg += `WhatsApp Template: ⚠️ Not Sent (No Phone)\n`;
+                        }
+                        
+                        successMsg += `\nCustomer can now use this code at checkout.`;
                     }
                     alert(successMsg);
                     closeModal();

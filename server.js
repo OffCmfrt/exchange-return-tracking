@@ -3073,7 +3073,7 @@ app.post('/api/get-variants', async (req, res) => {
 // ==================== WHATSAPP BOT INTEGRATION ====================
 
 async function sendWhatsAppNotification(phone, message, type, requestId, templateData = null) {
-    if (!phone || !message) return;
+    if (!phone || !message) return null;
 
     // Use environment variable or default to localhost:3000 (standard for local dev)
     const botUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:3000';
@@ -3094,11 +3094,14 @@ async function sendWhatsAppNotification(phone, message, type, requestId, templat
         const data = await response.json();
         if (data.success) {
             console.log(`[${requestId}] ✅ WhatsApp notification sent: ${data.messageId}`);
+            return { success: true, messageId: data.messageId, fallback: data.fallback };
         } else {
             console.warn(`[${requestId}] ⚠️ WhatsApp notification failed: ${data.error}`);
+            throw new Error(data.error || 'WhatsApp send failed');
         }
     } catch (error) {
         console.error(`[${requestId}] ❌ WhatsApp notification error:`, error.message);
+        throw error;
     }
 }
 
@@ -4863,6 +4866,10 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
         });
 
         // 4. Send WhatsApp notification if requested
+        let whatsappSent = false;
+        let whatsappMessageId = null;
+        let whatsappError = null;
+        
         if (sendWhatsApp && discountCodeGenerated) {
             const phoneToSend = whatsappPhone || requestDetails.customerPhone;
             if (phoneToSend) {
@@ -4870,21 +4877,30 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
                 const customerName = requestDetails.customerName || 'Valued Customer';
                 const message = `Hi ${customerName}! 👋\n\nGreat news! Your return for order *${requestDetails.orderNumber}* has been approved and processed successfully. ✅\n\n🎁 *Your Exclusive Compensation:*\n━━━━━━━━━━━━━━━━━\n💰 Discount Code: *${discountCodeGenerated}*\n💎 Value: ${valueTypeLabel}\n📝 Usage: ${usageLimit ? usageLimit + ' time(s)' : 'Unlimited'}\n━━━━━━━━━━━━━━━━━\n\nSimply apply this code at checkout on any product in our store!\n\nThank you for your patience and trust in us. We look forward to serving you again! 🙏\n\nNeed help? Reply to this message.`;
                 
-                await sendWhatsAppNotification(
-                    phoneToSend,
-                    message,
-                    'return_approved_with_discount',
-                    requestId,
-                    {
-                        templateName: 'return_approved_discount',
-                        customerName: customerName,
-                        orderNumber: requestDetails.orderNumber,
-                        discountCode: discountCodeGenerated,
-                        value: discountValue,
-                        valueType: discountType === 'fixed' ? 'fixed_amount' : 'percentage',
-                        usage: usageLimit ? `${usageLimit} time(s)` : 'Unlimited'
-                    }
-                );
+                try {
+                    const whatsappResult = await sendWhatsAppNotification(
+                        phoneToSend,
+                        message,
+                        'return_approved_with_discount',
+                        requestId,
+                        {
+                            templateName: 'return_approved_discount',
+                            customerName: customerName,
+                            orderNumber: requestDetails.orderNumber,
+                            discountCode: discountCodeGenerated,
+                            value: discountValue,
+                            valueType: discountType === 'fixed' ? 'fixed_amount' : 'percentage',
+                            usage: usageLimit ? `${usageLimit} time(s)` : 'Unlimited'
+                        }
+                    );
+                    
+                    whatsappSent = true;
+                    whatsappMessageId = whatsappResult?.messageId || null;
+                    console.log(`[${requestId}] ✅ WhatsApp template sent successfully. Message ID: ${whatsappMessageId}`);
+                } catch (error) {
+                    whatsappError = error.message;
+                    console.error(`[${requestId}] ❌ WhatsApp send failed:`, error.message);
+                }
             }
         }
 
@@ -4892,6 +4908,9 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
             success: true, 
             message: 'Return approved with discount code',
             discountCode: discountCodeGenerated,
+            whatsappSent,
+            whatsappMessageId,
+            whatsappError,
             request 
         });
     } catch (error) {
