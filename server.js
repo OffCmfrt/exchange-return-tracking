@@ -829,7 +829,7 @@ async function performShopifyUsageSync() {
 
                 const usageCount = (orderRows || []).length;
                 const totalRevenue = (orderRows || []).reduce((s, r) => s + parseFloat(r.total_price || 0), 0);
-                const commissionRate = parseFloat(influencer.commission_rate || 10);
+                const commissionRate = parseFloat(influencer.commission_rate || 7);
                 const estimatedEarnings = totalRevenue * (commissionRate / 100);
 
                 // Cache top 20 recent conversions as JSONB for zero-query admin rendering
@@ -5813,7 +5813,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
         const linkToken = crypto.randomBytes(16).toString('hex');
 
         // Parse values
-        const commission = commissionRate !== undefined ? parseFloat(commissionRate) : 10.00;
+        const commission = commissionRate !== undefined ? parseFloat(commissionRate) : 7.00;
         const discount = discountValue !== undefined ? parseFloat(discountValue) : commission;
         const usage = usageLimit !== undefined && usageLimit !== '' ? parseInt(usageLimit) : null;
 
@@ -5889,7 +5889,7 @@ app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res
 
         // Sync with Shopify if discount code details changed
         const codeChanged = referralCode && referralCode !== existingInfluencer.referral_code;
-        const discountChanged = discountValue !== undefined && parseFloat(discountValue) !== parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 10);
+        const discountChanged = discountValue !== undefined && parseFloat(discountValue) !== parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 7);
         const usageChanged = usageLimit !== undefined && (usageLimit === '' ? null : parseInt(usageLimit)) !== existingInfluencer.usage_limit;
 
         if (codeChanged || discountChanged || usageChanged) {
@@ -5919,7 +5919,7 @@ app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res
                 // Backfill: create new Shopify discount for older influencers
                 try {
                     const finalCode = referralCode || existingInfluencer.referral_code;
-                    const finalDiscount = discountValue !== undefined ? parseFloat(discountValue) : parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 10);
+                    const finalDiscount = discountValue !== undefined ? parseFloat(discountValue) : parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 7);
                     const finalUsage = usageLimit !== undefined ? (usageLimit === '' ? null : parseInt(usageLimit)) : existingInfluencer.usage_limit;
 
                     const shopifyIds = await createShopifyDiscountCode(
@@ -5987,7 +5987,7 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
         }
 
         const referralCode = influencer.referral_code;
-        const commissionRate = parseFloat(influencer.commission_rate || 10);
+        const commissionRate = parseFloat(influencer.commission_rate || 7);
         console.log(`[Admin Influencer Stats] Fetching cached stats for ${influencer.name} (Code: ${referralCode})`);
 
         // FAST: Read pre-calculated stats from Supabase (no Shopify API calls!)
@@ -6200,7 +6200,7 @@ app.post('/api/influencer-admin/approve/:id', authenticateAdmin, async (req, res
         } else {
             // No draft price rule exists (maybe initial draft creation failed). Create a fresh code.
             try {
-                const discount = parseFloat(influencer.discount_value || influencer.commission_rate || 10);
+                const discount = parseFloat(influencer.discount_value || influencer.commission_rate || 7);
                 const usage = influencer.usage_limit || null;
                 const shopifyIds = await createShopifyDiscountCode(
                     influencer.referral_code,
@@ -6393,7 +6393,7 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
         }
 
         const referralCode = influencer.referral_code;
-        const commissionRate = parseFloat(influencer.commission_rate || 10);
+        const commissionRate = parseFloat(influencer.commission_rate || 7);
         console.log(`[Influencer Stats] Fetching cached stats for ${influencer.name} (Code: ${referralCode}, Range: ${range || 'all'})`);
 
         // Determine date range
@@ -6597,7 +6597,7 @@ app.post('/api/influencer/apply', async (req, res) => {
             referralCode: finalCode,
             linkToken,
             phone: cleanPhone,
-            commissionRate: 10,
+            commissionRate: 7,
             discountValue: 10,
             usageLimit: null,
             isActive: false,
@@ -6616,7 +6616,7 @@ app.post('/api/influencer/apply', async (req, res) => {
         // ── Create DRAFT Shopify price rule (no discount_code attached yet) ──
         let shopifyWarning = null;
         try {
-            const draft = await createShopifyDiscountDraft(finalCode, 10, null, `Influencer (Pending): ${name}`);
+            const draft = await createShopifyDiscountDraft(finalCode, 7, null, `Influencer (Pending): ${name}`);
             await updateInfluencer(influencer.id, {
                 shopifyPriceRuleId: String(draft.priceRuleId)
             });
