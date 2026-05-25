@@ -813,6 +813,49 @@ html, body {
   }
 }
 
+/* Tablet range (769-900px) - compact horizontal table */
+@media (min-width: 769px) and (max-width: 900px) {
+  .ia-content {
+    padding: 1.25rem 1rem;
+  }
+  .ia-table {
+    min-width: 750px;
+  }
+  .ia-table th, .ia-table td {
+    padding: 0.7rem 0.55rem;
+    font-size: 0.72rem;
+  }
+  .ia-table th {
+    font-size: 0.55rem;
+  }
+  .ia-action-btn {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.55rem;
+  }
+  
+  /* Subtle scroll hint */
+  .ia-table-wrap::after {
+    content: '→ Scroll for more';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: linear-gradient(to left, var(--bg) 20%, transparent);
+    padding: 0.5rem 1rem 0.5rem 2rem;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    pointer-events: none;
+    animation: scrollHint 2s ease-in-out infinite;
+  }
+  
+  @keyframes scrollHint {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+}
+
 /* Mobile / Tablet (≤900px) */
 @media (max-width: 900px) {
   .ia-sidebar {
@@ -850,7 +893,7 @@ html, body {
   
   .ia-content {
     padding: 1.25rem 0.75rem;
-    overflow-x: hidden;
+    overflow-x: visible;
   }
   
   .ia-stat-strip {
@@ -865,19 +908,96 @@ html, body {
     font-size: 1.6rem;
   }
   
-  /* Keep all columns visible but with scroll on mobile */
-  .ia-table {
-    min-width: 900px;
+  /* Premium responsive table - card layout on mobile */
+  .ia-table-wrap {
+    overflow-x: visible;
+    border: none;
   }
-  .ia-table th, .ia-table td {
-    padding: 0.7rem 0.5rem;
-    font-size: 0.72rem;
+  
+  .ia-table {
+    min-width: 100%;
+  }
+  
+  /* Hide table header on mobile */
+  .ia-table thead {
+    display: none;
+  }
+  
+  /* Transform rows into premium cards */
+  .ia-table tbody tr {
+    display: block;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: all var(--transition);
+  }
+  
+  .ia-table tbody tr:hover {
+    border-color: var(--border-hover);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transform: translateY(-2px);
+  }
+  
+  .ia-table tbody td {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    vertical-align: middle;
+  }
+  
+  .ia-table tbody td:last-child {
+    border-bottom: none;
+    border-left: none;
+    box-shadow: none;
+    background: transparent;
+    position: static;
+    grid-column: 1 / -1;
+    padding-top: 1rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+  
+  /* Add labels before each cell content */
+  .ia-table tbody td::before {
+    content: attr(data-label);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  
+  /* Name field - special styling */
+  .ia-table tbody td:nth-child(1) {
+    background: var(--surface-2);
+    padding: 1rem;
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+  
+  .ia-table tbody td:nth-child(1)::before {
+    content: 'Ambassador';
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+  }
+  
+  .ia-table .td-name {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
   }
   
   /* Action buttons more compact on mobile */
   .ia-action-btn {
-    padding: 0.25rem 0.45rem;
-    font-size: 0.55rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.6rem;
   }
   
   /* Ensure no horizontal overflow at page level */
@@ -902,6 +1022,26 @@ html, body {
   }
   .ia-stat-value {
     font-size: 1.4rem;
+  }
+  
+  /* Even more compact cards on small screens */
+  .ia-table tbody td {
+    grid-template-columns: 100px 1fr;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.75rem;
+  }
+  
+  .ia-table tbody td:nth-child(1) {
+    padding: 0.85rem;
+  }
+  
+  .ia-table .td-name {
+    font-size: 0.9rem;
+  }
+  
+  .ia-action-btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.55rem;
   }
 }
 
@@ -1350,8 +1490,8 @@ html, body {
         </div>
         <div class="ia-form-group">
           <label for="addCommission">Commission Rate (%)</label>
-          <input type="number" id="addCommission" class="ia-input" placeholder="10" min="0" max="100" step="0.5" value="10">
-          <p class="ia-form-hint">Default: 10%</p>
+          <input type="number" id="addCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5" value="7">
+          <p class="ia-form-hint">Default: 7%</p>
         </div>
       </div>
       <div class="ia-form-row">
@@ -1397,7 +1537,7 @@ html, body {
         </div>
         <div class="ia-form-group">
           <label for="editCommission">Commission Rate (%)</label>
-          <input type="number" id="editCommission" class="ia-input" placeholder="10" min="0" max="100" step="0.5">
+          <input type="number" id="editCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5">
         </div>
       </div>
       <div class="ia-form-row">
@@ -1744,7 +1884,7 @@ function renderStats(list) {
   const suspended = list.filter(i => i.status === 'suspended').length;
   const rejected = list.filter(i => i.status === 'rejected').length;
   const avgComm = list.length > 0
-    ? (list.reduce((s, i) => s + parseFloat(i.commission_rate || 10), 0) / list.length).toFixed(1)
+    ? (list.reduce((s, i) => s + parseFloat(i.commission_rate || 7), 0) / list.length).toFixed(1)
     : 0;
   setText('statTotal', list.length);
   setText('statActive', active);
@@ -1801,7 +1941,7 @@ function renderTable(list) {
   tbody.innerHTML = list.map(inf => {
     const portalUrl = `${window.location.origin}/pages/influencer-portal?token=${inf.link_token}`;
     const created = new Date(inf.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-    const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 10);
+    const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 7);
     const usageLimit = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : 'Unlimited';
     const status = inf.status || (inf.is_active ? 'active' : 'suspended');
 
@@ -1825,22 +1965,22 @@ function renderTable(list) {
 
     return `
       <tr class="ia-row-enter" id="row-${inf.id}">
-        <td class="td-name">${esc(inf.name)}</td>
-        <td>${statusPill(inf)}</td>
-        <td class="td-phone" style="font-size:0.75rem;color:var(--muted);">${esc(inf.phone || '—')}</td>
-        <td><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced - create manually in Shopify admin">⚠️</span>' : ''}</span></td>
-        <td class="td-commission">${parseFloat(inf.commission_rate || 10).toFixed(1)}%</td>
-        <td class="td-discount">${parseFloat(discountVal).toFixed(1)}%</td>
-        <td class="td-usage">${usageLimit}</td>
-        <td class="td-orders" style="font-weight: 600; color: ${inf.usage_count > 0 ? 'var(--success)' : 'var(--muted)'};">${inf.usage_count !== undefined && inf.usage_count !== null ? inf.usage_count : '—'}</td>
-        <td class="td-date">${created}</td>
-        <td>
+        <td class="td-name" data-label="Name">${esc(inf.name)}</td>
+        <td data-label="Status">${statusPill(inf)}</td>
+        <td class="td-phone" style="font-size:0.75rem;color:var(--muted);" data-label="Phone">${esc(inf.phone || '—')}</td>
+        <td data-label="Code"><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced - create manually in Shopify admin">️</span>' : ''}</span></td>
+        <td class="td-commission" data-label="Commission">${parseFloat(inf.commission_rate || 7).toFixed(1)}%</td>
+        <td class="td-discount" data-label="Discount">${parseFloat(discountVal).toFixed(1)}%</td>
+        <td class="td-usage" data-label="Usage Limit">${usageLimit}</td>
+        <td class="td-orders" style="font-weight: 600; color: ${inf.usage_count > 0 ? 'var(--success)' : 'var(--muted)'};" data-label="Orders">${inf.usage_count !== undefined && inf.usage_count !== null ? inf.usage_count : '—'}</td>
+        <td class="td-date" data-label="Created">${created}</td>
+        <td data-label="Portal">
           <button class="ia-copy-btn" id="copyBtn-${inf.id}" onclick="copyLink('${portalUrl}', ${inf.id})">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             Copy Link
           </button>
         </td>
-        <td>
+        <td data-label="Actions">
           <div class="ia-row-actions">${actions}</div>
         </td>
       </tr>
@@ -1853,8 +1993,8 @@ function openAddModal() {
   document.getElementById('addName').value = '';
   document.getElementById('addPhone').value = '';
   document.getElementById('addCode').value = '';
-  document.getElementById('addCommission').value = '10';
-  document.getElementById('addDiscountValue').value = '10';
+  document.getElementById('addCommission').value = '7';
+  document.getElementById('addDiscountValue').value = '7';
   document.getElementById('addUsageLimit').value = '';
   document.getElementById('addError').classList.remove('show');
   openModal('iaAddModal');
@@ -1866,7 +2006,7 @@ async function submitAdd() {
   const name = document.getElementById('addName').value.trim();
   const phone = document.getElementById('addPhone').value.trim();
   const referralCode = document.getElementById('addCode').value.trim().toUpperCase();
-  const commissionRate = parseFloat(document.getElementById('addCommission').value) || 10;
+  const commissionRate = parseFloat(document.getElementById('addCommission').value) || 7;
   const discountValue = document.getElementById('addDiscountValue').value ? parseFloat(document.getElementById('addDiscountValue').value) : commissionRate;
   const usageLimit = document.getElementById('addUsageLimit').value.trim();
 
@@ -1912,9 +2052,9 @@ function openEditModal(id) {
   document.getElementById('editName').value = inf.name;
   document.getElementById('editPhone').value = inf.phone || '';
   document.getElementById('editCode').value = inf.referral_code;
-  document.getElementById('editCommission').value = parseFloat(inf.commission_rate || 10).toFixed(1);
+  document.getElementById('editCommission').value = parseFloat(inf.commission_rate || 7).toFixed(1);
   // Handle discount_value (use discount_value if exists, fallback to commission_rate)
-  const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 10);
+  const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 7);
   document.getElementById('editDiscountValue').value = parseFloat(discountVal).toFixed(1);
   // Handle usage_limit (show empty if null/unlimited)
   document.getElementById('editUsageLimit').value = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : '';
