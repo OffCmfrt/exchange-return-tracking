@@ -2262,6 +2262,24 @@
                 </div>
             ` : ''}
 
+            ${data.discountCode ? `
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; color: white;">
+                    <p style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fas fa-gift"></i>
+                        Compensation Discount Code
+                    </p>
+                    <div style="background: rgba(255,255,255,0.2); padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem;">
+                        <p style="font-size: 1.1rem; font-weight: 700; letter-spacing: 1px; margin: 0;">${data.discountCode}</p>
+                    </div>
+                    <div style="display: flex; gap: 1rem; font-size: 0.85rem;">
+                        <p style="margin: 0;"><strong>Value:</strong> ${data.discountType === 'fixed' ? '₹' : ''}${data.discountValue}${data.discountType === 'percentage' ? '%' : ''}</p>
+                        <p style="margin: 0;"><strong>Type:</strong> ${data.discountType === 'fixed' ? 'Fixed Amount' : 'Percentage'}</p>
+                    </div>
+                    ${data.discountUsageLimit ? `<p style="font-size: 0.85rem; margin: 0.5rem 0 0 0;"><strong>Usage Limit:</strong> ${data.discountUsageLimit} time(s)</p>` : '<p style="font-size: 0.85rem; margin: 0.5rem 0 0 0;"><strong>Usage:</strong> Unlimited</p>'}
+                    ${data.approvedAt ? `<p style="font-size: 0.8rem; margin: 0.5rem 0 0 0; opacity: 0.9;"><strong>Approved:</strong> ${formatDateIST(data.approvedAt)}</p>` : ''}
+                </div>
+            ` : ''}
+
             ${data.status === 'delivered' || data.status === 'pending' ? `
                 <div style="margin-top: 1.5rem;">
                     <label for="adminNotes" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Admin Notes</label>
