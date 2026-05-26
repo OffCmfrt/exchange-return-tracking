@@ -3,7 +3,7 @@
 
 -- Add discount_value column (what percentage off the customer gets)
 ALTER TABLE influencers
-ADD COLUMN IF NOT EXISTS discount_value NUMERIC DEFAULT 10.00;
+ADD COLUMN IF NOT EXISTS discount_value NUMERIC DEFAULT 7.00;
 
 -- Add usage_limit column (max number of uses, null = unlimited)
 ALTER TABLE influencers

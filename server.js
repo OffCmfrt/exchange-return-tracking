@@ -6801,7 +6801,7 @@ app.post('/api/influencer/apply', async (req, res) => {
             linkToken,
             phone: cleanPhone,
             commissionRate: 7,
-            discountValue: 10,
+            discountValue: 7,
             usageLimit: null,
             isActive: false,
             status: 'pending',
