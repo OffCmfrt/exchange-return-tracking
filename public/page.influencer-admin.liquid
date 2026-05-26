@@ -17,7 +17,7 @@ html, body {
   background: #000000;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 :root {
@@ -283,7 +283,7 @@ html, body {
   letter-spacing: 0.1em;
 }
 
-.ia-content { padding: 2rem 1.5rem; flex: 1; max-width: 100%; overflow-x: hidden; }
+.ia-content { padding: 2rem 1.5rem; flex: 1; max-width: 100%; overflow-x: auto; }
 
 /* ── STAT STRIP ── */
 .ia-stat-strip {
@@ -811,6 +811,51 @@ html, body {
   .ia-stat-value {
     font-size: 1.8rem;
   }
+  
+  /* Ensure table can scroll horizontally */
+  .ia-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Action buttons stay visible and wrap properly */
+  .ia-table th:last-child,
+  .ia-table td:last-child {
+    min-width: 180px;
+    white-space: nowrap;
+  }
+  
+  .ia-row-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
+    justify-content: flex-start;
+  }
+  
+  .ia-action-btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.6rem;
+  }
+}
+
+/* Smaller laptops (1024-1100px) - extra space for actions */
+@media (min-width: 1024px) and (max-width: 1100px) {
+  .ia-table th:last-child,
+  .ia-table td:last-child {
+    min-width: 200px;
+    padding-right: 1rem;
+  }
+  
+  .ia-table-wrap::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 30px;
+    background: linear-gradient(to left, var(--bg), transparent);
+    pointer-events: none;
+  }
 }
 
 /* Tablet range (769-900px) - compact horizontal table */
@@ -1002,7 +1047,88 @@ html, body {
   
   /* Ensure no horizontal overflow at page level */
   .ia-wrap, .ia-layout, .ia-main {
-    overflow-x: hidden;
+    overflow-x: auto;
+  }
+  
+  /* Premium responsive table - card layout on mobile */
+  .ia-table-wrap {
+    overflow-x: auto;
+    border: none;
+  }
+  
+  /* Card layout for table rows */
+  .ia-table {
+    min-width: 100%;
+  }
+  
+  .ia-table thead {
+    display: none;
+  }
+  
+  .ia-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .ia-table tbody tr {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    position: relative;
+  }
+  
+  .ia-table tbody td {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    align-items: center;
+    padding: 0.4rem 0;
+    border: none;
+    text-align: left;
+  }
+  
+  .ia-table tbody td::before {
+    content: attr(data-label);
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-right: 1rem;
+  }
+  
+  .ia-table tbody td.td-name {
+    grid-column: 1 / -1;
+    font-size: 0.95rem;
+    font-weight: 700;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.5rem;
+  }
+  
+  .ia-table tbody td.td-name::before {
+    display: none;
+  }
+  
+  /* Actions row at bottom of card */
+  .ia-table tbody td:last-child {
+    grid-column: 1 / -1;
+    padding-top: 0.75rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+  
+  .ia-row-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .ia-action-btn {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.65rem;
   }
 }
 

@@ -495,8 +495,8 @@ async function createInfluencer(influencerData) {
         name: influencerData.name,
         referral_code: influencerData.referralCode,
         link_token: influencerData.linkToken,
-        commission_rate: influencerData.commissionRate ?? 10.00,
-        discount_value: influencerData.discountValue ?? influencerData.commissionRate ?? 10.00,
+        commission_rate: influencerData.commissionRate ?? 7.00,
+        discount_value: influencerData.discountValue ?? influencerData.commissionRate ?? 7.00,
         usage_limit: influencerData.usageLimit ?? null,
         phone: influencerData.phone,
         is_active: influencerData.isActive !== undefined ? influencerData.isActive : true

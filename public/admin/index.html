@@ -65,6 +65,10 @@
                 <h1 style="font-size: 1.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #111827; margin: 0;">
                     Returns & Exchanges Dashboard</h1>
                 <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <button onclick="openAnalyticsPage()" class="btn" style="background: white; border: 1px solid #e5e7eb; color: #111827; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                        Analytics
+                    </button>
                     <button onclick="openSettingsModal()" class="btn" style="background: white; border: 1px solid #e5e7eb; color: #111827; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         Settings
@@ -4140,6 +4144,652 @@
         }
     }
 
+    // ============================================================
+    // PREMIUM ANALYTICS PAGE FUNCTIONS
+    // ============================================================
+
+    // Chart instances for analytics page
+    let timeTrendChartInstance = null;
+    let returnExchangeTrendInstance = null;
+    let statusStackedChartInstance = null;
+    let statusBarChartInstance = null;
+    let statusPieChartInstance = null;
+    let reasonsBreakdownInstance = null;
+    let carrierComparisonInstance = null;
+
+    let currentAnalyticsRange = '30d';
+    let currentAnalyticsData = null;
+
+    function openAnalyticsPage() {
+        console.log('Opening analytics page...');
+        document.getElementById('analyticsModal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+        
+        // Reset state
+        document.getElementById('analyticsLoading').classList.remove('hidden');
+        document.getElementById('analyticsContent').classList.add('hidden');
+        
+        // Load data
+        loadDetailedAnalytics(currentAnalyticsRange);
+    }
+
+    function closeAnalyticsPage() {
+        console.log('Closing analytics page...');
+        document.getElementById('analyticsModal').classList.remove('active');
+        document.body.style.overflow = '';
+        
+        // Destroy all chart instances to free memory
+        if (timeTrendChartInstance) timeTrendChartInstance.destroy();
+        if (returnExchangeTrendInstance) returnExchangeTrendInstance.destroy();
+        if (statusStackedChartInstance) statusStackedChartInstance.destroy();
+        if (statusBarChartInstance) statusBarChartInstance.destroy();
+        if (statusPieChartInstance) statusPieChartInstance.destroy();
+        if (reasonsBreakdownInstance) reasonsBreakdownInstance.destroy();
+        if (carrierComparisonInstance) carrierComparisonInstance.destroy();
+    }
+
+    function updateDateRange(range) {
+        console.log('Updating date range to:', range);
+        currentAnalyticsRange = range;
+        
+        // Update button styles
+        document.querySelectorAll('.date-range-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.dataset.range === range) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // Update date range label
+        const labels = {
+            '7d': 'Last 7 Days',
+            '30d': 'Last 30 Days',
+            '90d': 'Last 90 Days'
+        };
+        document.getElementById('analyticsDateRange').textContent = labels[range] || 'Last 30 Days';
+        
+        // Reload data
+        loadDetailedAnalytics(range);
+    }
+
+    async function loadDetailedAnalytics(dateRange) {
+        try {
+            console.log('Loading detailed analytics for range:', dateRange);
+            
+            // Show loading
+            document.getElementById('analyticsLoading').classList.remove('hidden');
+            document.getElementById('analyticsContent').classList.add('hidden');
+            
+            // Fetch analytics data
+            const response = await fetch(`${API_URL}/admin/analytics/detailed?dateRange=${dateRange}`, {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch analytics data');
+            }
+            
+            const data = await response.json();
+            console.log('Analytics data received:', data);
+            
+            currentAnalyticsData = data;
+            
+            // Update UI
+            updateAnalyticsKPIs(data);
+            renderAllCharts(data);
+            updateInsightsTable(data);
+            
+            // Show content
+            document.getElementById('analyticsLoading').classList.add('hidden');
+            document.getElementById('analyticsContent').classList.remove('hidden');
+            
+        } catch (error) {
+            console.error('Error loading analytics:', error);
+            document.getElementById('analyticsLoading').innerHTML = `
+                <div style="text-align: center; padding: 2rem;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="margin: 0 auto 1rem auto;">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <p style="color: #6b7280; font-size: 1rem; margin-bottom: 1rem;">Failed to load analytics data</p>
+                    <button onclick="loadDetailedAnalytics('${dateRange}')" style="background: #111827; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                        Retry
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    function updateAnalyticsKPIs(data) {
+        const stats = data.stats || {};
+        const comparison = data.comparison || {};
+        
+        // Total Requests
+        animateValue('kpiTotalRequests', 0, stats.total || 0, 1000);
+        const totalChange = comparison.totalChange || 0;
+        const totalChangeEl = document.getElementById('kpiTotalChange');
+        totalChangeEl.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange}%`;
+        totalChangeEl.style.background = totalChange >= 0 ? '#dcfce7' : '#fee2e2';
+        totalChangeEl.style.color = totalChange >= 0 ? '#166534' : '#991b1b';
+        document.getElementById('kpiTotalPrevious').textContent = comparison.previousTotal || 0;
+        
+        // Pending Requests
+        animateValue('kpiPendingRequests', 0, stats.pending || 0, 1000);
+        const pendingPercent = stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0;
+        document.getElementById('kpiPendingPercent').textContent = `${pendingPercent}%`;
+        document.getElementById('kpiWaitingPayment').textContent = stats.waitingPayment || 0;
+        
+        // Approval Rate
+        const approved = stats.approved || 0;
+        const rejected = stats.rejected || 0;
+        const totalResolved = approved + rejected;
+        const approvalRate = totalResolved > 0 ? Math.round((approved / totalResolved) * 100) : 0;
+        animateValue('kpiApprovedRequests', 0, approved, 1000);
+        document.getElementById('kpiApprovalRate').textContent = `${approvalRate}%`;
+        document.getElementById('kpiRejectedRequests').textContent = rejected;
+        
+        // Return vs Exchange
+        const returns = stats.returns || 0;
+        const exchanges = stats.exchanges || 0;
+        document.getElementById('kpiReturnExchange').textContent = `${returns} / ${exchanges}`;
+        document.getElementById('kpiReturnRatio').textContent = `${returns}:${exchanges}`;
+        
+        // Total Value
+        const totalValue = stats.totalRevenue || 0;
+        const formattedValue = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(totalValue);
+        document.getElementById('kpiTotalValue').textContent = formattedValue;
+        const valueChange = comparison.valueChange || 0;
+        const valueChangeEl = document.getElementById('kpiValueChange');
+        valueChangeEl.textContent = `${valueChange >= 0 ? '+' : ''}${valueChange}%`;
+        
+        // Average Processing Time
+        const avgTime = data.avgProcessingTime || 0;
+        const avgDays = Math.round(avgTime);
+        document.getElementById('kpiAvgTime').textContent = `${avgDays}d`;
+    }
+
+    function renderAllCharts(data) {
+        renderTimeTrendChart(data.timeSeries || []);
+        renderReturnExchangeTrend(data.timeSeries || []);
+        renderStatusBarChart(data.statusDistribution || {});
+        renderStatusPieChart(data.statusDistribution || {});
+        renderReasonsBreakdownChart(data.reasons || {});
+        renderCarrierComparisonChart(data.carrierStats || {});
+    }
+
+    function renderTimeTrendChart(timeSeries) {
+        const ctx = document.getElementById('timeTrendChart').getContext('2d');
+        if (timeTrendChartInstance) timeTrendChartInstance.destroy();
+        
+        const labels = timeSeries.map(d => d.date);
+        const totalData = timeSeries.map(d => d.total);
+        
+        let gradient = ctx.createLinearGradient(0, 0, 0, 300);
+        gradient.addColorStop(0, 'rgba(17, 24, 39, 0.3)');
+        gradient.addColorStop(1, 'rgba(17, 24, 39, 0.01)');
+        
+        timeTrendChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Total Requests',
+                    data: totalData,
+                    borderColor: '#111827',
+                    backgroundColor: gradient,
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderReturnExchangeTrend(timeSeries) {
+        const ctx = document.getElementById('returnExchangeTrendChart').getContext('2d');
+        if (returnExchangeTrendInstance) returnExchangeTrendInstance.destroy();
+        
+        const labels = timeSeries.map(d => d.date);
+        const returnsData = timeSeries.map(d => d.returns || 0);
+        const exchangesData = timeSeries.map(d => d.exchanges || 0);
+        
+        returnExchangeTrendInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Returns',
+                        data: returnsData,
+                        borderColor: '#111827',
+                        backgroundColor: 'rgba(17, 24, 39, 0.1)',
+                        tension: 0.4,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Exchanges',
+                        data: exchangesData,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { usePointStyle: true, padding: 20 }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderStatusBarChart(statusDistribution) {
+        const ctx = document.getElementById('statusBarChart').getContext('2d');
+        if (statusBarChartInstance) statusBarChartInstance.destroy();
+        
+        const statusLabels = {
+            'pending': 'Pending Admin',
+            'waiting_payment': 'Waiting Payment',
+            'pickup_pending': 'Pickup Pending',
+            'pickup_booked': 'Pickup Booked',
+            'picked_up': 'Picked Up',
+            'in_transit': 'In Transit',
+            'out_for_delivery': 'Out for Delivery',
+            'delivered': 'Delivered',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'cancelled': 'Cancelled',
+            'failed': 'Failed'
+        };
+        
+        const statusColors = {
+            'pending': '#ff6b35',
+            'waiting_payment': '#ffd54f',
+            'pickup_pending': '#fed7aa',
+            'pickup_booked': '#3b82f6',
+            'picked_up': '#6366f1',
+            'in_transit': '#6366f1',
+            'out_for_delivery': '#f59e0b',
+            'delivered': '#10b981',
+            'approved': '#10b981',
+            'rejected': '#ef4444',
+            'cancelled': '#9ca3af',
+            'failed': '#f97316'
+        };
+        
+        const sortedStatuses = Object.entries(statusDistribution)
+            .sort((a, b) => b[1] - a[1])
+            .filter(([_, count]) => count > 0);
+        
+        const labels = sortedStatuses.map(([status]) => statusLabels[status] || status);
+        const data = sortedStatuses.map(([_, count]) => count);
+        const colors = sortedStatuses.map(([status]) => statusColors[status] || '#9ca3af');
+        
+        statusBarChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Requests',
+                    data: data,
+                    backgroundColor: colors,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    y: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderStatusPieChart(statusDistribution) {
+        const ctx = document.getElementById('statusPieChart').getContext('2d');
+        if (statusPieChartInstance) statusPieChartInstance.destroy();
+        
+        const statusLabels = {
+            'pending': 'Pending Admin',
+            'waiting_payment': 'Waiting Payment',
+            'pickup_pending': 'Pickup Pending',
+            'pickup_booked': 'Pickup Booked',
+            'picked_up': 'Picked Up',
+            'in_transit': 'In Transit',
+            'out_for_delivery': 'Out for Delivery',
+            'delivered': 'Delivered',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'cancelled': 'Cancelled',
+            'failed': 'Failed'
+        };
+        
+        const statusColors = {
+            'pending': '#ff6b35',
+            'waiting_payment': '#ffd54f',
+            'pickup_pending': '#fed7aa',
+            'pickup_booked': '#3b82f6',
+            'picked_up': '#6366f1',
+            'in_transit': '#6366f1',
+            'out_for_delivery': '#f59e0b',
+            'delivered': '#10b981',
+            'approved': '#10b981',
+            'rejected': '#ef4444',
+            'cancelled': '#9ca3af',
+            'failed': '#f97316'
+        };
+        
+        const filteredStatuses = Object.entries(statusDistribution)
+            .filter(([_, count]) => count > 0);
+        
+        const labels = filteredStatuses.map(([status]) => statusLabels[status] || status);
+        const data = filteredStatuses.map(([_, count]) => count);
+        const colors = filteredStatuses.map(([status]) => statusColors[status] || '#9ca3af');
+        
+        statusPieChartInstance = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '65%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 15,
+                            font: { size: 11 }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                }
+            }
+        });
+    }
+
+    function renderReasonsBreakdownChart(reasons) {
+        const ctx = document.getElementById('reasonsBreakdownChart').getContext('2d');
+        if (reasonsBreakdownInstance) reasonsBreakdownInstance.destroy();
+        
+        const reasonLabels = {
+            'size': 'Wrong Size',
+            'fit': 'Fit Issue',
+            'color': 'Color Preference',
+            'changed_mind': 'Changed Mind',
+            'defective': 'Defective',
+            'wrong_item': 'Wrong Item',
+            'other': 'Other'
+        };
+        
+        const sortedReasons = Object.entries(reasons)
+            .sort((a, b) => b[1] - a[1]);
+        
+        const labels = sortedReasons.map(([reason]) => reasonLabels[reason] || reason);
+        const data = sortedReasons.map(([_, count]) => count);
+        
+        let gradient = ctx.createLinearGradient(0, 0, 0, 300);
+        gradient.addColorStop(0, '#8b5cf6');
+        gradient.addColorStop(1, '#a78bfa');
+        
+        reasonsBreakdownInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Requests',
+                    data: data,
+                    backgroundColor: gradient,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderCarrierComparisonChart(carrierStats) {
+        const ctx = document.getElementById('carrierComparisonChart').getContext('2d');
+        if (carrierComparisonInstance) carrierComparisonInstance.destroy();
+        
+        const carriers = Object.keys(carrierStats);
+        const totalData = carriers.map(c => carrierStats[c].total || 0);
+        const successData = carriers.map(c => carrierStats[c].success || 0);
+        
+        carrierComparisonInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: carriers.map(c => c === 'shiprocket' ? 'Shiprocket' : c === 'delhivery' ? 'Delhivery' : c),
+                datasets: [
+                    {
+                        label: 'Total Requests',
+                        data: totalData,
+                        backgroundColor: '#111827',
+                        borderRadius: 6
+                    },
+                    {
+                        label: 'Successful',
+                        data: successData,
+                        backgroundColor: '#10b981',
+                        borderRadius: 6
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { usePointStyle: true, padding: 20 }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateInsightsTable(data) {
+        const stats = data.stats || {};
+        const insights = data.insights || {};
+        
+        const tbody = document.getElementById('insightsTableBody');
+        
+        const rows = [
+            {
+                metric: 'Most Common Return Reason',
+                value: insights.topReason || 'N/A',
+                details: insights.topReasonCount ? `${insights.topReasonCount} requests` : ''
+            },
+            {
+                metric: 'Peak Request Day',
+                value: insights.peakDay || 'N/A',
+                details: insights.peakDayCount ? `${insights.peakDayCount} requests` : ''
+            },
+            {
+                metric: 'Average Processing Time',
+                value: `${Math.round(data.avgProcessingTime || 0)} days`,
+                details: 'From request to completion'
+            },
+            {
+                metric: 'Approval Rate',
+                value: `${stats.total > 0 ? Math.round(((stats.approved || 0) / stats.total) * 100) : 0}%`,
+                details: `${stats.approved || 0} approved out of ${stats.total || 0} total`
+            },
+            {
+                metric: 'Carrier Success Rate',
+                value: insights.carrierSuccessRate || 'N/A',
+                details: 'Based on successful deliveries'
+            },
+            {
+                metric: 'Return vs Exchange Ratio',
+                value: `${stats.returns || 0}:${stats.exchanges || 0}`,
+                details: `Returns: ${stats.returns || 0}, Exchanges: ${stats.exchanges || 0}`
+            }
+        ];
+        
+        tbody.innerHTML = rows.map(row => `
+            <tr>
+                <td style="padding: 1rem; font-weight: 500; color: #111827;">${row.metric}</td>
+                <td style="padding: 1rem; font-weight: 600; color: #111827;">${row.value}</td>
+                <td style="padding: 1rem; color: #6b7280;">${row.details}</td>
+            </tr>
+        `).join('');
+    }
+
+    function exportAnalytics() {
+        if (!currentAnalyticsData) {
+            alert('No analytics data to export');
+            return;
+        }
+        
+        const data = currentAnalyticsData;
+        const stats = data.stats || {};
+        
+        // Create CSV content
+        let csv = 'Metric,Value\n';
+        csv += `Total Requests,${stats.total || 0}\n`;
+        csv += `Pending Requests,${stats.pending || 0}\n`;
+        csv += `Approved Requests,${stats.approved || 0}\n`;
+        csv += `Rejected Requests,${stats.rejected || 0}\n`;
+        csv += `Returns,${stats.returns || 0}\n`;
+        csv += `Exchanges,${stats.exchanges || 0}\n`;
+        csv += `Total Revenue,${stats.totalRevenue || 0}\n`;
+        csv += `Average Processing Time (days),${Math.round(data.avgProcessingTime || 0)}\n`;
+        csv += '\n';
+        
+        // Add status distribution
+        csv += 'Status Distribution\n';
+        csv += 'Status,Count\n';
+        Object.entries(data.statusDistribution || {}).forEach(([status, count]) => {
+            csv += `${status},${count}\n`;
+        });
+        csv += '\n';
+        
+        // Add reasons
+        csv += 'Return Reasons\n';
+        csv += 'Reason,Count\n';
+        Object.entries(data.reasons || {}).forEach(([reason, count]) => {
+            csv += `${reason},${count}\n`;
+        });
+        
+        // Download CSV
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `analytics-${currentAnalyticsRange}-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        
+        alert('✅ Analytics exported successfully!');
+    }
+
 </script>
 
 <!-- Product Search Template (will be cloned dynamically) -->
@@ -4343,6 +4993,191 @@
                 <button onclick="saveExchangeModifications()" id="saveModifyBtn" class="btn btn-primary" style="flex: 2; padding: 0.875rem; font-weight: 600; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); transition: all 0.3s ease;">
                     Save Changes
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<!-- Premium Analytics Full Page Modal -->
+<div id="analyticsModal" class="modal" style="z-index: 10001;">
+    <div class="analytics-full-page" style="width: 100%; height: 100%; background: #f9fafb; overflow-y: auto;">
+        <!-- Analytics Header -->
+        <div style="background: white; border-bottom: 1px solid #e5e7eb; padding: 1.5rem 2rem; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1600px; margin: 0 auto;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <button onclick="closeAnalyticsPage()" style="background: white; border: 1px solid #e5e7eb; padding: 0.5rem; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='white'">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    </button>
+                    <div>
+                        <h2 style="font-size: 1.5rem; font-weight: 600; margin: 0; color: #111827;">Detailed Analytics Dashboard</h2>
+                        <p style="font-size: 0.85rem; color: #6b7280; margin: 0.25rem 0 0 0;" id="analyticsDateRange">Last 30 Days</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <!-- Date Range Selector -->
+                    <div style="display: flex; gap: 0.5rem; background: #f3f4f6; padding: 0.25rem; border-radius: 8px;">
+                        <button onclick="updateDateRange('7d')" class="date-range-btn" data-range="7d" style="padding: 0.5rem 1rem; border: none; background: white; border-radius: 6px; font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">7 Days</button>
+                        <button onclick="updateDateRange('30d')" class="date-range-btn" data-range="30d" style="padding: 0.5rem 1rem; border: none; background: transparent; border-radius: 6px; font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s;">30 Days</button>
+                        <button onclick="updateDateRange('90d')" class="date-range-btn" data-range="90d" style="padding: 0.5rem 1rem; border: none; background: transparent; border-radius: 6px; font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s;">90 Days</button>
+                    </div>
+                    
+                    <!-- Export Button -->
+                    <button onclick="exportAnalytics()" style="background: #111827; color: white; border: none; padding: 0.6rem 1.25rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        Export
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Content -->
+        <div style="max-width: 1600px; margin: 0 auto; padding: 2rem;">
+            <!-- Loading State -->
+            <div id="analyticsLoading" style="text-align: center; padding: 4rem;">
+                <div class="spinner" style="width: 48px; height: 48px; border-width: 3px; margin: 0 auto 1rem auto;"></div>
+                <p style="color: #6b7280; font-size: 1rem;">Loading analytics data...</p>
+            </div>
+
+            <!-- Analytics Content (Hidden until loaded) -->
+            <div id="analyticsContent" class="hidden">
+                <!-- KPI Cards -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #111827; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Total Requests</p>
+                            <span id="kpiTotalChange" style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #dcfce7; color: #166534;">+0%</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiTotalRequests">0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">vs <span id="kpiTotalPrevious">0</span> previous period</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #3b82f6; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Pending Action</p>
+                            <span style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #fef3c7; color: #92400e;" id="kpiPendingPercent">0%</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiPendingRequests">0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;"><span id="kpiWaitingPayment">0</span> waiting payment</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #10b981; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Approval Rate</p>
+                            <span style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #dcfce7; color: #166534;" id="kpiApprovalRate">0%</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiApprovedRequests">0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;"><span id="kpiRejectedRequests">0</span> rejected</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #8b5cf6; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Return vs Exchange</p>
+                            <span style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #ede9fe; color: #5b21b6;" id="kpiReturnRatio">0:0</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiReturnExchange">0 / 0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Returns / Exchanges</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #f59e0b; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Total Order Value</p>
+                            <span style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #fef3c7; color: #92400e;" id="kpiValueChange">+0%</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiTotalValue">₹0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Processed value</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: linear-gradient(135deg, #111827 0%, #374151 100%); color: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #9ca3af; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Avg Processing Time</p>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; line-height: 1; margin: 0;" id="kpiAvgTime">0d</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Average completion time</p>
+                    </div>
+                </div>
+
+                <!-- Time-Based Trends Section -->
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0 0 1rem 0; text-transform: uppercase; letter-spacing: 0.5px;">Time-Based Trends</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Requests Over Time</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="timeTrendChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Returns vs Exchanges Trend</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="returnExchangeTrendChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Distribution Section -->
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0 0 1rem 0; text-transform: uppercase; letter-spacing: 0.5px;">Status Distribution</h3>
+                    <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 1.5rem;">
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Requests by Status</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="statusBarChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Status Breakdown</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="statusPieChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed Breakdowns Section -->
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0 0 1rem 0; text-transform: uppercase; letter-spacing: 0.5px;">Detailed Breakdowns</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Return Reasons</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="reasonsBreakdownChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Carrier Performance</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="carrierComparisonChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top Insights Table -->
+                <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0 0 1rem 0; text-transform: uppercase; letter-spacing: 0.5px;">Top Insights</h3>
+                    <div style="overflow-x: auto;">
+                        <table class="analytics-insights-table" style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid #e5e7eb;">
+                                    <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">Metric</th>
+                                    <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">Value</th>
+                                    <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="insightsTableBody">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -4473,6 +4473,176 @@ app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
     }
 });
 
+// Get detailed analytics (new premium endpoint)
+app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => {
+    try {
+        const { dateRange } = req.query;
+        
+        // Calculate date range
+        const now = new Date();
+        let startDate;
+        let previousStartDate;
+        
+        switch (dateRange) {
+            case '7d':
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                previousStartDate = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+                break;
+            case '90d':
+                startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                previousStartDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+                break;
+            case '30d':
+            default:
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                previousStartDate = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+                break;
+        }
+        
+        // Fetch current period data
+        const { data: currentRequests, error: currentError } = await supabase
+            .from('return_exchange_requests')
+            .select('*')
+            .gte('created_at', startDate.toISOString());
+        
+        if (currentError) throw currentError;
+        
+        // Fetch previous period data for comparison
+        const { data: previousRequests, error: previousError } = await supabase
+            .from('return_exchange_requests')
+            .select('*')
+            .gte('created_at', previousStartDate.toISOString())
+            .lt('created_at', startDate.toISOString());
+        
+        if (previousError) throw previousError;
+        
+        // Calculate stats for current period
+        const stats = {
+            total: currentRequests.length,
+            pending: currentRequests.filter(r => r.status === 'pending').length,
+            waitingPayment: currentRequests.filter(r => r.status === 'waiting_payment').length,
+            approved: currentRequests.filter(r => r.status === 'approved').length,
+            rejected: currentRequests.filter(r => r.status === 'rejected').length,
+            returns: currentRequests.filter(r => r.type === 'return').length,
+            exchanges: currentRequests.filter(r => r.type === 'exchange').length,
+            totalRevenue: currentRequests.reduce((sum, r) => sum + (r.total_amount || 0), 0)
+        };
+        
+        // Calculate stats for previous period
+        const previousStats = {
+            total: previousRequests.length,
+            totalRevenue: previousRequests.reduce((sum, r) => sum + (r.total_amount || 0), 0)
+        };
+        
+        // Calculate comparisons
+        const totalChange = previousStats.total > 0 
+            ? Math.round(((stats.total - previousStats.total) / previousStats.total) * 100) 
+            : 0;
+        
+        const valueChange = previousStats.totalRevenue > 0 
+            ? Math.round(((stats.totalRevenue - previousStats.totalRevenue) / previousStats.totalRevenue) * 100) 
+            : 0;
+        
+        // Status distribution
+        const statusDistribution = {};
+        currentRequests.forEach(r => {
+            statusDistribution[r.status] = (statusDistribution[r.status] || 0) + 1;
+        });
+        
+        // Return reasons breakdown
+        const reasons = {};
+        currentRequests.forEach(r => {
+            if (r.reason) {
+                reasons[r.reason] = (reasons[r.reason] || 0) + 1;
+            }
+        });
+        
+        // Carrier statistics
+        const carrierStats = {};
+        currentRequests.forEach(r => {
+            if (r.carrier) {
+                if (!carrierStats[r.carrier]) {
+                    carrierStats[r.carrier] = { total: 0, success: 0 };
+                }
+                carrierStats[r.carrier].total++;
+                if (['delivered', 'approved'].includes(r.status)) {
+                    carrierStats[r.carrier].success++;
+                }
+            }
+        });
+        
+        // Time series data
+        const timeSeries = [];
+        const days = dateRange === '7d' ? 7 : dateRange === '90d' ? 90 : 30;
+        
+        for (let i = days - 1; i >= 0; i--) {
+            const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+            const dateStr = date.toISOString().split('T')[0];
+            const nextDate = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+            
+            const dayRequests = currentRequests.filter(r => {
+                const reqDate = new Date(r.created_at);
+                return reqDate >= date && reqDate < nextDate;
+            });
+            
+            timeSeries.push({
+                date: dateStr,
+                total: dayRequests.length,
+                returns: dayRequests.filter(r => r.type === 'return').length,
+                exchanges: dayRequests.filter(r => r.type === 'exchange').length
+            });
+        }
+        
+        // Calculate average processing time
+        const completedRequests = currentRequests.filter(r => 
+            ['approved', 'rejected', 'delivered'].includes(r.status) && r.updated_at
+        );
+        
+        let avgProcessingTime = 0;
+        if (completedRequests.length > 0) {
+            const totalTime = completedRequests.reduce((sum, r) => {
+                const created = new Date(r.created_at);
+                const updated = new Date(r.updated_at);
+                return sum + (updated - created);
+            }, 0);
+            avgProcessingTime = totalTime / completedRequests.length / (1000 * 60 * 60 * 24); // Convert to days
+        }
+        
+        // Insights
+        const insights = {
+            topReason: Object.entries(reasons).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A',
+            topReasonCount: Object.entries(reasons).sort((a, b) => b[1] - a[1])[0]?.[1] || 0,
+            peakDay: timeSeries.sort((a, b) => b.total - a.total)[0]?.date || 'N/A',
+            peakDayCount: timeSeries.sort((a, b) => b.total - a.total)[0]?.total || 0,
+            carrierSuccessRate: Object.keys(carrierStats).length > 0 
+                ? Math.round(
+                    (Object.values(carrierStats).reduce((sum, c) => sum + c.success, 0) / 
+                     Object.values(carrierStats).reduce((sum, c) => sum + c.total, 0)) * 100
+                  ) + '%'
+                : 'N/A'
+        };
+        
+        res.json({
+            stats,
+            comparison: {
+                totalChange,
+                valueChange,
+                previousTotal: previousStats.total
+            },
+            statusDistribution,
+            reasons,
+            carrierStats,
+            timeSeries,
+            avgProcessingTime,
+            insights
+        });
+        
+    } catch (error) {
+        console.error('Get detailed analytics error:', error);
+        res.status(500).json({ error: 'Failed to fetch detailed analytics' });
+    }
+});
+
 // Approve request (admin) - supports legacy endpoints
 app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve-exchange'], authenticateAdmin, async (req, res) => {
     try {
