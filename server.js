@@ -5451,6 +5451,40 @@ app.post(['/api/admin/reject', '/api/admin/reject-return', '/api/admin/reject-ex
     }
 });
 
+// Undo rejection (admin) - restore rejected request to pending status
+app.post('/api/admin/undo-rejection', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.body;
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        if (requestDetails.status !== 'rejected') {
+            return res.status(400).json({ error: 'Can only undo rejected requests' });
+        }
+
+        const adminNotes = (requestDetails.adminNotes || '') + 
+            `\n[SYSTEM] Rejection undone by admin on ${new Date().toLocaleString('en-IN')}`;
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'pending',
+            adminNotes
+        });
+
+        res.json({ 
+            success: true, 
+            message: 'Request restored to pending status',
+            request 
+        });
+
+    } catch (error) {
+        console.error('Undo rejection error:', error);
+        res.status(500).json({ error: 'Failed to undo rejection' });
+    }
+});
+
 // Delete requests (admin)
 app.post('/api/admin/delete-requests', authenticateAdmin, async (req, res) => {
     try {

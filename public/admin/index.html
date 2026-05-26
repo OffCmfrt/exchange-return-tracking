@@ -2318,7 +2318,7 @@
         // User said: "pickup booked -> item delivered -> admin approves". 
         // So we show buttons if status is 'delivered'.
         
-        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'failed'].includes(data.status)) {
+        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'failed', 'rejected'].includes(data.status)) {
             console.log('Action block status matched:', data.status);
             modalActions.classList.remove('hidden');
             
@@ -2456,6 +2456,34 @@
 
             if (rejectBtn) {
                 rejectBtn.classList.remove('hidden');
+            }
+
+            // Add undo rejection button for rejected requests
+            let undoBtn = modalActions.querySelector('button[onclick="undoRejection()"]');
+            if (data.status === 'rejected') {
+                if (!undoBtn) {
+                    undoBtn = document.createElement('button');
+                    undoBtn.onclick = () => undoRejection();
+                    undoBtn.textContent = '↩ Undo Rejection';
+                    undoBtn.style.cssText = 'flex: 1; background: #3b82f6; color: white; border: 1px solid #3b82f6; min-width: 150px; font-weight: 600;';
+                    modalActions.appendChild(undoBtn);
+                }
+                undoBtn.classList.remove('hidden');
+                
+                // Hide reject button for already rejected items
+                if (rejectBtn) {
+                    rejectBtn.classList.add('hidden');
+                }
+                if (approveBtn) {
+                    approveBtn.classList.add('hidden');
+                }
+                if (manualReceivedBtn) {
+                    manualReceivedBtn.classList.add('hidden');
+                }
+            } else {
+                if (undoBtn) {
+                    undoBtn.classList.add('hidden');
+                }
             }
         } else {
             modalActions.classList.add('hidden');
@@ -2973,6 +3001,38 @@
             }
         } catch (error) {
             alert('Failed to reject request');
+        }
+    }
+
+    async function undoRejection() {
+        if (!confirm('Are you sure you want to undo the rejection? This will restore the request to pending status.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_URL}/admin/undo-rejection`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    requestId: currentRequest.requestId
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                alert('✅ Request restored to pending status successfully!');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('Failed to undo rejection: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Undo rejection error:', error);
+            alert('Failed to undo rejection');
         }
     }
 
