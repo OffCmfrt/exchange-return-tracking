@@ -5832,7 +5832,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
         let shopifyIds = { priceRuleId: null, discountCodeId: null };
         let shopifyWarning = null;
         try {
-            shopifyIds = await createShopifyDiscountCode(referralCode, discount, usage, `Influencer: ${name}`);
+            shopifyIds = await createShopifyDiscountCode(referralCode, discount, 'percentage', usage, `Influencer: ${name}`);
             
             // Update influencer with Shopify IDs
             await updateInfluencer(influencer.id, {
@@ -6205,6 +6205,7 @@ app.post('/api/influencer-admin/approve/:id', authenticateAdmin, async (req, res
                 const shopifyIds = await createShopifyDiscountCode(
                     influencer.referral_code,
                     discount,
+                    'percentage',
                     usage,
                     `Influencer: ${influencer.name}`
                 );
