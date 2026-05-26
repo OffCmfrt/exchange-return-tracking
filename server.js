@@ -331,9 +331,6 @@ async function performBackgroundSync() {
     };
     
     try {
-        // Import supabase for direct database access
-        const supabase = require('./config/supabase');
-        
         // Fetch only active requests (not all requests)
         const { data: activeRequests, error } = await supabase
             .from('requests')
