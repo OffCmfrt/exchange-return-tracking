@@ -4499,7 +4499,7 @@ app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => 
         
         // Fetch current period data
         const { data: currentRequests, error: currentError } = await supabase
-            .from('return_exchange_requests')
+            .from('requests')
             .select('*')
             .gte('created_at', startDate.toISOString());
         
@@ -4507,7 +4507,7 @@ app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => 
         
         // Fetch previous period data for comparison
         const { data: previousRequests, error: previousError } = await supabase
-            .from('return_exchange_requests')
+            .from('requests')
             .select('*')
             .gte('created_at', previousStartDate.toISOString())
             .lt('created_at', startDate.toISOString());
