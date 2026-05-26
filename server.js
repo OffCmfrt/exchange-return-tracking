@@ -212,6 +212,7 @@ const {
     updatePayoutStatus,
     getPayoutById
 } = require('./config/db-helpers');
+const supabase = require('./config/supabase');
 
 async function generateUniqueRequestId() {
     let isUnique = false;
