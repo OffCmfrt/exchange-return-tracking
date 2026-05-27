@@ -6404,6 +6404,146 @@ app.get('/api/influencer-admin/conversions/:id', authenticateAdmin, async (req, 
 
 // ==================== INFLUENCER APPLICATION & PAYOUT ADMIN ENDPOINTS ====================
 
+// Bulk approve multiple influencer applications
+app.post('/api/influencer-admin/bulk-approve', authenticateAdmin, async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Array of influencer IDs is required' });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        for (const id of ids) {
+            try {
+                const influencer = await getInfluencerById(id);
+                if (!influencer) {
+                    results.failed.push({ id, error: 'Influencer not found' });
+                    continue;
+                }
+
+                if (influencer.status === 'active') {
+                    results.success.push({ id, message: 'Already active' });
+                    continue;
+                }
+
+                let discountCodeId = influencer.shopify_discount_code_id;
+                let shopifyWarning = null;
+
+                // Attach the live discount code in Shopify
+                if (influencer.shopify_price_rule_id) {
+                    try {
+                        const result = await activateShopifyDiscountCode(influencer.shopify_price_rule_id, influencer.referral_code);
+                        discountCodeId = result.discountCodeId ? String(result.discountCodeId) : discountCodeId;
+                    } catch (shopifyError) {
+                        console.error(`Shopify activation failed for ${id}:`, shopifyError.message);
+                        shopifyWarning = `Shopify activation failed: ${shopifyError.message}`;
+                    }
+                } else {
+                    // No draft price rule exists. Create a fresh code.
+                    try {
+                        const discount = parseFloat(influencer.discount_value || influencer.commission_rate || 7);
+                        const usage = influencer.usage_limit || null;
+                        const shopifyIds = await createShopifyDiscountCode(
+                            influencer.referral_code,
+                            discount,
+                            'percentage',
+                            usage,
+                            `Influencer: ${influencer.name}`
+                        );
+                        await updateInfluencer(id, {
+                            shopifyPriceRuleId: String(shopifyIds.priceRuleId),
+                            shopifyDiscountCodeId: String(shopifyIds.discountCodeId)
+                        });
+                        discountCodeId = String(shopifyIds.discountCodeId);
+                    } catch (shopifyError) {
+                        console.error(`Shopify fresh-create failed for ${id}:`, shopifyError.message);
+                        shopifyWarning = `Shopify code could not be created: ${shopifyError.message}`;
+                    }
+                }
+
+                await updateInfluencer(id, {
+                    status: 'active',
+                    isActive: true,
+                    approvedAt: new Date().toISOString(),
+                    shopifyDiscountCodeId: discountCodeId || undefined
+                });
+
+                results.success.push({ id, warning: shopifyWarning });
+            } catch (error) {
+                console.error(`Bulk approve failed for ${id}:`, error);
+                results.failed.push({ id, error: error.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            results,
+            summary: {
+                total: ids.length,
+                succeeded: results.success.length,
+                failed: results.failed.length
+            }
+        });
+    } catch (error) {
+        console.error('Bulk approve error:', error);
+        res.status(500).json({ error: 'Failed to bulk approve influencers' });
+    }
+});
+
+// Bulk reject multiple influencer applications
+app.post('/api/influencer-admin/bulk-reject', authenticateAdmin, async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Array of influencer IDs is required' });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        for (const id of ids) {
+            try {
+                const influencer = await getInfluencerById(id);
+                if (!influencer) {
+                    results.failed.push({ id, error: 'Influencer not found' });
+                    continue;
+                }
+
+                if (influencer.shopify_price_rule_id) {
+                    await disableShopifyDiscountCode(influencer.shopify_price_rule_id);
+                }
+
+                await updateInfluencer(id, { status: 'rejected', isActive: false });
+                results.success.push({ id });
+            } catch (error) {
+                console.error(`Bulk reject failed for ${id}:`, error);
+                results.failed.push({ id, error: error.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            results,
+            summary: {
+                total: ids.length,
+                succeeded: results.success.length,
+                failed: results.failed.length
+            }
+        });
+    } catch (error) {
+        console.error('Bulk reject error:', error);
+        res.status(500).json({ error: 'Failed to bulk reject influencers' });
+    }
+});
+
 // Approve a pending influencer application (attaches the Shopify discount code)
 app.post('/api/influencer-admin/approve/:id', authenticateAdmin, async (req, res) => {
     try {

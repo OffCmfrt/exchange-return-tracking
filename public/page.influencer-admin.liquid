@@ -1252,6 +1252,269 @@ html, body {
 .ia-pill.suspended { color: var(--muted); }
 .ia-pill.rejected { color: var(--danger); }
 
+/* ── ADVANCED SEARCH ── */
+.ia-search-panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  transition: all var(--transition);
+}
+.ia-search-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition);
+}
+.ia-search-header:hover {
+  background: var(--surface-2);
+}
+.ia-search-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.ia-search-icon {
+  width: 18px;
+  height: 18px;
+  stroke: var(--muted);
+  transition: stroke var(--transition);
+}
+.ia-search-header:hover .ia-search-icon {
+  stroke: var(--text);
+}
+.ia-search-toggle-icon {
+  width: 16px;
+  height: 16px;
+  stroke: var(--muted);
+  transition: transform var(--transition);
+}
+.ia-search-panel.open .ia-search-toggle-icon {
+  transform: rotate(180deg);
+}
+.ia-search-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ia-search-panel.open .ia-search-body {
+  max-height: 400px;
+}
+.ia-search-content {
+  padding: 0 1.25rem 1.25rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+.ia-search-field label {
+  display: block;
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+.ia-search-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0.7rem 0.9rem;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  transition: border-color var(--transition);
+  outline: none;
+}
+.ia-search-input:focus {
+  border-color: var(--text);
+}
+.ia-search-input::placeholder {
+  color: var(--muted);
+}
+.ia-search-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+.ia-search-btn {
+  padding: 0.7rem 1.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  transition: all var(--transition);
+}
+.ia-search-btn:hover {
+  border-color: var(--text);
+  color: var(--text);
+}
+.ia-search-btn.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.ia-search-btn-reset {
+  padding: 0.7rem 1.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  transition: all var(--transition);
+}
+.ia-search-btn-reset:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.ia-search-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+}
+.ia-filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text);
+  border-radius: 2px;
+}
+.ia-filter-tag-remove {
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--muted);
+  transition: color var(--transition);
+}
+.ia-filter-tag-remove:hover {
+  color: var(--danger);
+}
+
+/* ── BULK ACTION BAR ── */
+.ia-bulk-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  margin-bottom: 1rem;
+  animation: fadeUp 0.3s ease;
+}
+.ia-bulk-bar.show {
+  display: flex;
+}
+.ia-bulk-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.ia-bulk-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.ia-bulk-count span {
+  color: var(--success);
+  font-size: 0.9rem;
+}
+.ia-bulk-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.ia-bulk-btn {
+  padding: 0.6rem 1.2rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  transition: all var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ia-bulk-btn:hover {
+  border-color: var(--success);
+  color: var(--success);
+}
+.ia-bulk-btn.approve-all:hover {
+  background: var(--success);
+  color: #000;
+}
+.ia-bulk-btn.reject-all {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.ia-bulk-btn.reject-all:hover {
+  background: var(--danger);
+  color: #fff;
+}
+.ia-bulk-btn.deselect {
+  color: var(--muted);
+}
+.ia-bulk-btn.deselect:hover {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+/* ── TABLE CHECKBOX ── */
+.ia-checkbox-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ia-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--success);
+  border: 2px solid var(--border);
+  transition: all var(--transition);
+}
+.ia-checkbox:hover {
+  border-color: var(--text);
+}
+.ia-checkbox:checked {
+  border-color: var(--success);
+}
+.ia-table th:first-child,
+.ia-table td:first-child {
+  width: 50px;
+  text-align: center;
+}
+
 /* ── ACTION BUTTON VARIANTS ── */
 .ia-action-btn.approve { border-color: var(--success); color: var(--success); }
 .ia-action-btn.approve:hover { background: var(--success); color: #000; }
@@ -1567,10 +1830,94 @@ html, body {
           </button>
         </div>
 
+        <!-- Advanced Search Panel -->
+        <div class="ia-search-panel" id="iaSearchPanel">
+          <div class="ia-search-header" onclick="toggleSearchPanel()">
+            <div class="ia-search-title">
+              <svg class="ia-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
+              Advanced Search
+            </div>
+            <svg class="ia-search-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div class="ia-search-body">
+            <div class="ia-search-content">
+              <div class="ia-search-field">
+                <label for="searchName">Name</label>
+                <input type="text" id="searchName" class="ia-search-input" placeholder="Search by name...">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchCode">Referral Code</label>
+                <input type="text" id="searchCode" class="ia-search-input" placeholder="Search by code..." style="text-transform:uppercase;">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchPhone">Phone</label>
+                <input type="text" id="searchPhone" class="ia-search-input" placeholder="Search by phone...">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchEmail">Email</label>
+                <input type="text" id="searchEmail" class="ia-search-input" placeholder="Search by email...">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchMinOrders">Min Orders</label>
+                <input type="number" id="searchMinOrders" class="ia-search-input" placeholder="Minimum orders" min="0">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchMaxOrders">Max Orders</label>
+                <input type="number" id="searchMaxOrders" class="ia-search-input" placeholder="Maximum orders" min="0">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchDateFrom">Created From</label>
+                <input type="date" id="searchDateFrom" class="ia-search-input">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchDateTo">Created To</label>
+                <input type="date" id="searchDateTo" class="ia-search-input">
+              </div>
+              <div class="ia-search-actions">
+                <button class="ia-search-btn-reset" onclick="resetSearch()">Reset</button>
+                <button class="ia-search-btn active" onclick="applySearch()">Apply Search</button>
+              </div>
+            </div>
+            <div class="ia-search-active-filters" id="iaActiveFilters" style="display: none;">
+              <!-- Active filter tags will be injected here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Bulk Action Bar -->
+        <div class="ia-bulk-bar" id="iaBulkBar">
+          <div class="ia-bulk-info">
+            <span class="ia-bulk-count"><span id="iaSelectedCount">0</span> selected</span>
+          </div>
+          <div class="ia-bulk-actions">
+            <button class="ia-bulk-btn approve-all" onclick="bulkApprove()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Approve Selected
+            </button>
+            <button class="ia-bulk-btn reject-all" onclick="bulkReject()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Reject Selected
+            </button>
+            <button class="ia-bulk-btn deselect" onclick="clearSelection()">
+              Clear Selection
+            </button>
+          </div>
+        </div>
+
         <div class="ia-table-wrap">
           <table class="ia-table">
             <thead>
               <tr>
+                <th>
+                  <div class="ia-checkbox-wrap">
+                    <input type="checkbox" class="ia-checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                  </div>
+                </th>
                 <th>Name</th>
                 <th>Status</th>
                 <th>Phone</th>
@@ -1832,6 +2179,17 @@ html, body {
 const API = 'https://exchange-return-tracking.onrender.com/api/influencer-admin';
 let authToken = null; // JWT stored in memory only (not localStorage)
 let influencersData = [];
+let selectedInfluencers = new Set();
+let searchFilters = {
+  name: '',
+  code: '',
+  phone: '',
+  email: '',
+  minOrders: null,
+  maxOrders: null,
+  dateFrom: null,
+  dateTo: null
+};
 
 // ─── BOOT ───────────────────────────────────────────────────────────────────
 // Note: With JWT, we don't persist tokens in localStorage for security
@@ -2045,12 +2403,59 @@ function setStatusFilter(filter) {
   renderTable(filteredInfluencers());
 }
 function filteredInfluencers() {
-  const list = influencersData || [];
-  if (iaStatusFilter === 'all') return list;
-  return list.filter(i => {
-    const s = i.status || (i.is_active ? 'active' : 'suspended');
-    return s === iaStatusFilter;
-  });
+  let list = influencersData || [];
+  
+  // Apply status filter
+  if (iaStatusFilter !== 'all') {
+    list = list.filter(i => {
+      const s = i.status || (i.is_active ? 'active' : 'suspended');
+      return s === iaStatusFilter;
+    });
+  }
+  
+  // Apply search filters
+  if (searchFilters.name) {
+    list = list.filter(i => 
+      (i.name || '').toLowerCase().includes(searchFilters.name.toLowerCase())
+    );
+  }
+  if (searchFilters.code) {
+    list = list.filter(i => 
+      (i.referral_code || '').toLowerCase().includes(searchFilters.code.toLowerCase())
+    );
+  }
+  if (searchFilters.phone) {
+    list = list.filter(i => 
+      (i.phone || '').includes(searchFilters.phone)
+    );
+  }
+  if (searchFilters.email) {
+    list = list.filter(i => 
+      (i.email || '').toLowerCase().includes(searchFilters.email.toLowerCase())
+    );
+  }
+  if (searchFilters.minOrders !== null) {
+    list = list.filter(i => 
+      (i.usage_count || 0) >= searchFilters.minOrders
+    );
+  }
+  if (searchFilters.maxOrders !== null) {
+    list = list.filter(i => 
+      (i.usage_count || 0) <= searchFilters.maxOrders
+    );
+  }
+  if (searchFilters.dateFrom) {
+    list = list.filter(i => 
+      new Date(i.created_at) >= new Date(searchFilters.dateFrom)
+    );
+  }
+  if (searchFilters.dateTo) {
+    list = list.filter(i => 
+      new Date(i.created_at) <= new Date(searchFilters.dateTo + 'T23:59:59')
+    );
+  }
+  
+  return list;
 }
 function statusPill(inf) {
   const s = inf.status || (inf.is_active ? 'active' : 'suspended');
@@ -2061,7 +2466,7 @@ function statusPill(inf) {
 function renderTable(list) {
   const tbody = document.getElementById('iaTableBody');
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="11"><div class="ia-empty"><h3>No Ambassadors${iaStatusFilter !== 'all' ? ' in this view' : ' Yet'}</h3><p>${iaStatusFilter !== 'all' ? 'Try a different filter.' : 'Click "Add Ambassador" or share the apply link to get started.'}</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12"><div class="ia-empty"><h3>No Ambassadors${iaStatusFilter !== 'all' ? ' in this view' : ' Yet'}</h3><p>${iaStatusFilter !== 'all' ? 'Try a different filter.' : 'Click "Add Ambassador" or share the apply link to get started.'}</p></div></td></tr>`;
     return;
   }
   tbody.innerHTML = list.map(inf => {
@@ -2070,6 +2475,7 @@ function renderTable(list) {
     const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 7);
     const usageLimit = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : 'Unlimited';
     const status = inf.status || (inf.is_active ? 'active' : 'suspended');
+    const isSelected = selectedInfluencers.has(inf.id);
 
     let actions;
     if (status === 'pending') {
@@ -2091,6 +2497,11 @@ function renderTable(list) {
 
     return `
       <tr class="ia-row-enter" id="row-${inf.id}">
+        <td data-label="Select">
+          <div class="ia-checkbox-wrap">
+            <input type="checkbox" class="ia-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleSelect(${inf.id})">
+          </div>
+        </td>
         <td class="td-name" data-label="Name">${esc(inf.name)}</td>
         <td data-label="Status">${statusPill(inf)}</td>
         <td class="td-phone" style="font-size:0.75rem;color:var(--muted);" data-label="Phone">${esc(inf.phone || '—')}</td>
@@ -2112,6 +2523,9 @@ function renderTable(list) {
       </tr>
     `;
   }).join('');
+  
+  // Update select all checkbox state
+  updateSelectAllCheckbox();
 }
 
 // ─── ADD ─────────────────────────────────────────────────────────────────────
@@ -2682,6 +3096,277 @@ function fmt(num) {
 
 function fmtDate(d) {
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// ─── ADVANCED SEARCH ─────────────────────────────────────────────────────────
+function toggleSearchPanel() {
+  const panel = document.getElementById('iaSearchPanel');
+  panel.classList.toggle('open');
+}
+
+function applySearch() {
+  searchFilters.name = document.getElementById('searchName').value.trim();
+  searchFilters.code = document.getElementById('searchCode').value.trim();
+  searchFilters.phone = document.getElementById('searchPhone').value.trim();
+  searchFilters.email = document.getElementById('searchEmail').value.trim();
+  
+  const minOrders = document.getElementById('searchMinOrders').value;
+  searchFilters.minOrders = minOrders ? parseInt(minOrders) : null;
+  
+  const maxOrders = document.getElementById('searchMaxOrders').value;
+  searchFilters.maxOrders = maxOrders ? parseInt(maxOrders) : null;
+  
+  searchFilters.dateFrom = document.getElementById('searchDateFrom').value || null;
+  searchFilters.dateTo = document.getElementById('searchDateTo').value || null;
+  
+  renderTable(filteredInfluencers());
+  renderActiveFilters();
+  showToast('Search applied ✓');
+}
+
+function resetSearch() {
+  searchFilters = {
+    name: '',
+    code: '',
+    phone: '',
+    email: '',
+    minOrders: null,
+    maxOrders: null,
+    dateFrom: null,
+    dateTo: null
+  };
+  
+  document.getElementById('searchName').value = '';
+  document.getElementById('searchCode').value = '';
+  document.getElementById('searchPhone').value = '';
+  document.getElementById('searchEmail').value = '';
+  document.getElementById('searchMinOrders').value = '';
+  document.getElementById('searchMaxOrders').value = '';
+  document.getElementById('searchDateFrom').value = '';
+  document.getElementById('searchDateTo').value = '';
+  
+  renderTable(filteredInfluencers());
+  renderActiveFilters();
+  showToast('Search reset');
+}
+
+function renderActiveFilters() {
+  const container = document.getElementById('iaActiveFilters');
+  const filters = [];
+  
+  if (searchFilters.name) filters.push({ label: `Name: ${searchFilters.name}`, key: 'name' });
+  if (searchFilters.code) filters.push({ label: `Code: ${searchFilters.code}`, key: 'code' });
+  if (searchFilters.phone) filters.push({ label: `Phone: ${searchFilters.phone}`, key: 'phone' });
+  if (searchFilters.email) filters.push({ label: `Email: ${searchFilters.email}`, key: 'email' });
+  if (searchFilters.minOrders !== null) filters.push({ label: `Min Orders: ${searchFilters.minOrders}`, key: 'minOrders' });
+  if (searchFilters.maxOrders !== null) filters.push({ label: `Max Orders: ${searchFilters.maxOrders}`, key: 'maxOrders' });
+  if (searchFilters.dateFrom) filters.push({ label: `From: ${searchFilters.dateFrom}`, key: 'dateFrom' });
+  if (searchFilters.dateTo) filters.push({ label: `To: ${searchFilters.dateTo}`, key: 'dateTo' });
+  
+  if (filters.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  
+  container.style.display = 'flex';
+  container.innerHTML = filters.map(f => `
+    <div class="ia-filter-tag">
+      ${f.label}
+      <span class="ia-filter-tag-remove" onclick="removeFilter('${f.key}')">&times;</span>
+    </div>
+  `).join('');
+}
+
+function removeFilter(key) {
+  searchFilters[key] = key.includes('Orders') ? null : '';
+  
+  if (key === 'name') document.getElementById('searchName').value = '';
+  if (key === 'code') document.getElementById('searchCode').value = '';
+  if (key === 'phone') document.getElementById('searchPhone').value = '';
+  if (key === 'email') document.getElementById('searchEmail').value = '';
+  if (key === 'minOrders') document.getElementById('searchMinOrders').value = '';
+  if (key === 'maxOrders') document.getElementById('searchMaxOrders').value = '';
+  if (key === 'dateFrom') document.getElementById('searchDateFrom').value = '';
+  if (key === 'dateTo') document.getElementById('searchDateTo').value = '';
+  
+  renderTable(filteredInfluencers());
+  renderActiveFilters();
+}
+
+// ─── BULK SELECTION ──────────────────────────────────────────────────────────
+function toggleSelect(id) {
+  if (selectedInfluencers.has(id)) {
+    selectedInfluencers.delete(id);
+  } else {
+    selectedInfluencers.add(id);
+  }
+  updateBulkBar();
+  updateSelectAllCheckbox();
+}
+
+function toggleSelectAll() {
+  const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+  const currentList = filteredInfluencers();
+  
+  if (selectAllCheckbox.checked) {
+    currentList.forEach(inf => selectedInfluencers.add(inf.id));
+  } else {
+    selectedInfluencers.clear();
+  }
+  
+  renderTable(currentList);
+  updateBulkBar();
+}
+
+function updateSelectAllCheckbox() {
+  const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+  const currentList = filteredInfluencers();
+  
+  if (currentList.length === 0) {
+    selectAllCheckbox.checked = false;
+    selectAllCheckbox.indeterminate = false;
+    return;
+  }
+  
+  const selectedCount = currentList.filter(inf => selectedInfluencers.has(inf.id)).length;
+  
+  if (selectedCount === 0) {
+    selectAllCheckbox.checked = false;
+    selectAllCheckbox.indeterminate = false;
+  } else if (selectedCount === currentList.length) {
+    selectAllCheckbox.checked = true;
+    selectAllCheckbox.indeterminate = false;
+  } else {
+    selectAllCheckbox.checked = false;
+    selectAllCheckbox.indeterminate = true;
+  }
+}
+
+function updateBulkBar() {
+  const bulkBar = document.getElementById('iaBulkBar');
+  const selectedCount = selectedInfluencers.size;
+  
+  document.getElementById('iaSelectedCount').textContent = selectedCount;
+  
+  if (selectedCount > 0) {
+    bulkBar.classList.add('show');
+  } else {
+    bulkBar.classList.remove('show');
+  }
+}
+
+function clearSelection() {
+  selectedInfluencers.clear();
+  renderTable(filteredInfluencers());
+  updateBulkBar();
+  showToast('Selection cleared');
+}
+
+// ─── BULK ACTIONS ────────────────────────────────────────────────────────────
+async function bulkApprove() {
+  const selectedIds = Array.from(selectedInfluencers);
+  
+  if (selectedIds.length === 0) {
+    showToast('No influencers selected', true);
+    return;
+  }
+  
+  const pendingIds = selectedIds.filter(id => {
+    const inf = influencersData.find(i => i.id === id);
+    return inf && (inf.status === 'pending' || inf.status === 'rejected');
+  });
+  
+  if (pendingIds.length === 0) {
+    showToast('No pending applications in selection', true);
+    return;
+  }
+  
+  if (!confirm(`Approve ${pendingIds.length} ambassador(s)? This will activate their Shopify discount codes.`)) return;
+  
+  try {
+    const res = await fetch(`${API}/bulk-approve`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}` 
+      },
+      body: JSON.stringify({ ids: pendingIds })
+    });
+    
+    if (res.status === 401) { handleLogout(); return; }
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      const { summary } = data;
+      clearSelection();
+      await loadDashboard();
+      
+      if (summary.failed === 0) {
+        showToast(`${summary.succeeded} ambassador(s) approved ✓`);
+      } else {
+        showToast(`${summary.succeeded} approved, ${summary.failed} failed`, true);
+      }
+    } else {
+      showToast(data.error || 'Bulk approval failed', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
+}
+
+async function bulkReject() {
+  const selectedIds = Array.from(selectedInfluencers);
+  
+  if (selectedIds.length === 0) {
+    showToast('No influencers selected', true);
+    return;
+  }
+  
+  const pendingIds = selectedIds.filter(id => {
+    const inf = influencersData.find(i => i.id === id);
+    return inf && inf.status === 'pending';
+  });
+  
+  if (pendingIds.length === 0) {
+    showToast('No pending applications in selection', true);
+    return;
+  }
+  
+  if (!confirm(`Reject ${pendingIds.length} application(s)? Their Shopify price rules will be disabled.`)) return;
+  
+  try {
+    const res = await fetch(`${API}/bulk-reject`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}` 
+      },
+      body: JSON.stringify({ ids: pendingIds })
+    });
+    
+    if (res.status === 401) { handleLogout(); return; }
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      const { summary } = data;
+      clearSelection();
+      await loadDashboard();
+      
+      if (summary.failed === 0) {
+        showToast(`${summary.succeeded} application(s) rejected`);
+      } else {
+        showToast(`${summary.succeeded} rejected, ${summary.failed} failed`, true);
+      }
+    } else {
+      showToast(data.error || 'Bulk rejection failed', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
