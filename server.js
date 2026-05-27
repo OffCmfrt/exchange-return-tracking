@@ -4523,13 +4523,39 @@ app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => 
             rejected: currentRequests.filter(r => r.status === 'rejected').length,
             returns: currentRequests.filter(r => r.type === 'return').length,
             exchanges: currentRequests.filter(r => r.type === 'exchange').length,
-            totalRevenue: currentRequests.reduce((sum, r) => sum + (r.total_amount || 0), 0)
+            totalRevenue: currentRequests.reduce((sum, r) => {
+                // Try total_amount first, then calculate from items
+                if (r.total_amount) return sum + r.total_amount;
+                // Calculate from items array
+                if (r.items && Array.isArray(r.items)) {
+                    const itemsTotal = r.items.reduce((itemSum, item) => {
+                        const price = parseFloat(item.price) || 0;
+                        const quantity = parseInt(item.quantity) || 1;
+                        return itemSum + (price * quantity);
+                    }, 0);
+                    return sum + itemsTotal;
+                }
+                return sum;
+            }, 0)
         };
         
         // Calculate stats for previous period
         const previousStats = {
             total: previousRequests.length,
-            totalRevenue: previousRequests.reduce((sum, r) => sum + (r.total_amount || 0), 0)
+            totalRevenue: previousRequests.reduce((sum, r) => {
+                // Try total_amount first, then calculate from items
+                if (r.total_amount) return sum + r.total_amount;
+                // Calculate from items array
+                if (r.items && Array.isArray(r.items)) {
+                    const itemsTotal = r.items.reduce((itemSum, item) => {
+                        const price = parseFloat(item.price) || 0;
+                        const quantity = parseInt(item.quantity) || 1;
+                        return itemSum + (price * quantity);
+                    }, 0);
+                    return sum + itemsTotal;
+                }
+                return sum;
+            }, 0)
         };
         
         // Calculate comparisons
