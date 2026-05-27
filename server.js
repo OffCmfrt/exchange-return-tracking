@@ -4569,12 +4569,12 @@ app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => 
             }
         });
         
-        // Time series data
+        // Time series data (chronological order: oldest to newest)
         const timeSeries = [];
         const days = dateRange === '7d' ? 7 : dateRange === '90d' ? 90 : 30;
         
-        for (let i = days - 1; i >= 0; i--) {
-            const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        for (let i = 0; i < days; i++) {
+            const date = new Date(now.getTime() - (days - 1 - i) * 24 * 60 * 60 * 1000);
             const dateStr = date.toISOString().split('T')[0];
             const nextDate = new Date(date.getTime() + 24 * 60 * 60 * 1000);
             
