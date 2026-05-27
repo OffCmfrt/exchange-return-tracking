@@ -4324,8 +4324,10 @@
         const ctx = document.getElementById('timeTrendChart').getContext('2d');
         if (timeTrendChartInstance) timeTrendChartInstance.destroy();
         
-        const labels = timeSeries.map(d => d.date);
-        const totalData = timeSeries.map(d => d.total);
+        // Ensure chronological order (oldest to newest)
+        const sortedSeries = [...timeSeries].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const labels = sortedSeries.map(d => d.date);
+        const totalData = sortedSeries.map(d => d.total);
         
         let gradient = ctx.createLinearGradient(0, 0, 0, 300);
         gradient.addColorStop(0, 'rgba(17, 24, 39, 0.3)');
@@ -4375,9 +4377,11 @@
         const ctx = document.getElementById('returnExchangeTrendChart').getContext('2d');
         if (returnExchangeTrendInstance) returnExchangeTrendInstance.destroy();
         
-        const labels = timeSeries.map(d => d.date);
-        const returnsData = timeSeries.map(d => d.returns || 0);
-        const exchangesData = timeSeries.map(d => d.exchanges || 0);
+        // Ensure chronological order (oldest to newest)
+        const sortedSeries = [...timeSeries].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const labels = sortedSeries.map(d => d.date);
+        const returnsData = sortedSeries.map(d => d.returns || 0);
+        const exchangesData = sortedSeries.map(d => d.exchanges || 0);
         
         returnExchangeTrendInstance = new Chart(ctx, {
             type: 'line',
