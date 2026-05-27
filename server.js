@@ -4591,6 +4591,9 @@ app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => 
             });
         }
         
+        // Sort chronologically (oldest to newest)
+        timeSeries.sort((a, b) => new Date(a.date) - new Date(b.date));
+        
         // Calculate average processing time
         const completedRequests = currentRequests.filter(r => 
             ['approved', 'rejected', 'delivered'].includes(r.status) && r.updated_at
