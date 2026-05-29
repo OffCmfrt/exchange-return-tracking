@@ -217,7 +217,14 @@ const {
     deleteShipment,
     getShipmentById,
     listPayoutsByInfluencer,
-    upsertPayout
+    upsertPayout,
+    createReelTarget,
+    getReelTargetsByInfluencer,
+    getReelTargetProgress,
+    createProductRequest,
+    getProductRequests,
+    updateProductRequest,
+    getProductRequestById
 } = require('./config/db-helpers');
 const supabase = require('./config/supabase');
 
@@ -7523,6 +7530,342 @@ app.get('/api/influencer/payouts/:token', async (req, res) => {
     } catch (error) {
         console.error('Influencer payouts error:', error);
         res.status(500).json({ error: 'Failed to fetch payouts' });
+    }
+});
+
+// ==================== REEL TARGETS & PRODUCT REQUESTS ====================
+
+// Admin: Set monthly reel target
+app.post('/api/influencer-admin/reel-targets/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const { month, year, targetCount, notes } = req.body;
+        
+        if (!month || !year || !targetCount) {
+            return res.status(400).json({ error: 'month, year, and targetCount are required' });
+        }
+        
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) return res.status(404).json({ error: 'Influencer not found' });
+        
+        const target = await createReelTarget({ influencerId, month, year, targetCount, notes });
+        const progress = await getReelTargetProgress(influencerId, month, year);
+        
+        res.json({ success: true, target: { ...target, ...progress } });
+    } catch (error) {
+        console.error('Create reel target error:', error);
+        res.status(500).json({ error: 'Failed to create reel target' });
+    }
+});
+
+// Admin: Get reel targets for influencer
+app.get('/api/influencer-admin/reel-targets/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const { month, year, limit } = req.query;
+        
+        const filters = {};
+        if (month) filters.month = parseInt(month);
+        if (year) filters.year = parseInt(year);
+        if (limit) filters.limit = parseInt(limit);
+        
+        const targets = await getReelTargetsByInfluencer(influencerId, filters);
+        res.json({ success: true, targets });
+    } catch (error) {
+        console.error('Get reel targets error:', error);
+        res.status(500).json({ error: 'Failed to fetch reel targets' });
+    }
+});
+
+// Admin: Get all reel targets for dashboard
+app.get('/api/influencer-admin/reel-targets', authenticateAdmin, async (req, res) => {
+    try {
+        const { month, year } = req.query;
+        
+        if (!month || !year) {
+            return res.status(400).json({ error: 'month and year are required' });
+        }
+        
+        const influencers = await getAllInfluencers();
+        const activeInfluencers = influencers.filter(i => i.is_active !== false);
+        
+        const targets = await Promise.all(
+            activeInfluencers.map(async (influencer) => {
+                const progress = await getReelTargetProgress(influencer.id, parseInt(month), parseInt(year));
+                return {
+                    influencerId: influencer.id,
+                    influencerName: influencer.name,
+                    referralCode: influencer.referral_code,
+                    ...progress
+                };
+            })
+        );
+        
+        const summary = {
+            totalInfluencers: targets.length,
+            onTrack: targets.filter(t => t.completionPercentage >= 50 && t.completionPercentage < 100).length,
+            behind: targets.filter(t => t.completionPercentage < 50).length,
+            completed: targets.filter(t => t.completionPercentage >= 100).length,
+            averageCompletion: targets.length > 0 
+                ? (targets.reduce((sum, t) => sum + t.completionPercentage, 0) / targets.length).toFixed(2)
+                : 0
+        };
+        
+        res.json({ success: true, summary, targets });
+    } catch (error) {
+        console.error('Get all reel targets error:', error);
+        res.status(500).json({ error: 'Failed to fetch reel targets' });
+    }
+});
+
+// Admin: Browse Shopify products
+app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req, res) => {
+    try {
+        const { search, limit = 20, page = 1 } = req.query;
+        
+        let endpoint = `products.json?limit=${Math.min(parseInt(limit), 50)}&page=${parseInt(page)}`;
+        if (search) {
+            endpoint += `&title=${encodeURIComponent(search)}`;
+        }
+        
+        const shopifyData = await shopifyAPI(endpoint);
+        
+        const products = (shopifyData.products || []).map(p => ({
+            id: p.id,
+            shopifyId: p.id,
+            title: p.title,
+            handle: p.handle,
+            description: p.body_html ? p.body_html.replace(/<[^>]*>/g, '').substring(0, 200) : '',
+            images: (p.images || []).slice(0, 3).map(img => ({
+                src: img.src,
+                alt: img.alt || p.title
+            })),
+            variants: (p.variants || []).map(v => ({
+                id: v.id,
+                title: v.title,
+                price: v.price,
+                sku: v.sku,
+                inventoryQuantity: v.inventory_quantity || 0,
+                available: v.available || true
+            })),
+            productType: p.product_type,
+            vendor: p.vendor,
+            tags: p.tags || []
+        }));
+        
+        res.json({
+            success: true,
+            products,
+            pagination: {
+                currentPage: parseInt(page),
+                hasNextPage: products.length >= parseInt(limit),
+                totalProducts: shopifyData.products?.length || 0
+            }
+        });
+    } catch (error) {
+        console.error('Shopify products fetch error:', error);
+        res.status(502).json({ error: 'Failed to fetch Shopify products' });
+    }
+});
+
+// Admin: List product requests
+app.get('/api/influencer-admin/product-requests', authenticateAdmin, async (req, res) => {
+    try {
+        const { status, influencerId, search, limit, page } = req.query;
+        
+        const filters = {};
+        if (status) filters.status = status;
+        if (influencerId) filters.influencerId = influencerId;
+        if (search) filters.search = search;
+        if (limit) filters.limit = limit;
+        if (page) filters.page = page;
+        
+        const result = await getProductRequests(filters);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Get product requests error:', error);
+        res.status(500).json({ error: 'Failed to fetch product requests' });
+    }
+});
+
+// Admin: Approve product request with auto-ship
+app.post('/api/influencer-admin/product-requests/:requestId/approve', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { adminNotes, autoShip = true } = req.body;
+        
+        const request = await getProductRequestById(requestId);
+        if (!request) return res.status(404).json({ error: 'Product request not found' });
+        if (request.status !== 'pending') {
+            return res.status(400).json({ error: 'Request is not in pending status' });
+        }
+        
+        let delhiveryResult = null;
+        
+        if (autoShip) {
+            // Create Delhivery shipment
+            const shipmentData = {
+                requestId: `INF-${requestId.substring(0, 8)}`,
+                customerName: request.shipping_full_name,
+                customerAddress: request.shipping_address_line1 + (request.shipping_address_line2 ? ' ' + request.shipping_address_line2 : ''),
+                customerCity: request.shipping_city,
+                customerState: request.shipping_state,
+                customerPincode: request.shipping_pincode,
+                customerPhone: request.shipping_phone,
+                items: [{
+                    name: request.product_title,
+                    quantity: 1,
+                    price: 0 // Influencer product is free
+                }]
+            };
+            
+            try {
+                delhiveryResult = await createDelhiveryForwardOrder(shipmentData, null);
+            } catch (delhiveryError) {
+                console.error('Delhivery booking failed, but request approved:', delhiveryError);
+                // Continue with approval even if Delhivery fails
+            }
+        }
+        
+        const updates = {
+            status: 'approved',
+            approvedAt: new Date().toISOString(),
+            adminNotes: adminNotes || null
+        };
+        
+        if (delhiveryResult) {
+            updates.delhiveryAwb = delhiveryResult.waybill;
+            updates.delhiveryShipmentId = delhiveryResult.shipment_id;
+        }
+        
+        const updated = await updateProductRequest(requestId, updates);
+        
+        res.json({
+            success: true,
+            request: updated,
+            shipment: delhiveryResult ? {
+                awb: delhiveryResult.waybill,
+                shipmentId: delhiveryResult.shipment_id,
+                trackingUrl: `https://www.delhivery.com/track?wb=${delhiveryResult.waybill}`
+            } : null
+        });
+    } catch (error) {
+        console.error('Approve product request error:', error);
+        res.status(500).json({ error: 'Failed to approve product request' });
+    }
+});
+
+// Admin: Reject product request
+app.post('/api/influencer-admin/product-requests/:requestId/reject', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { rejectionReason, adminNotes } = req.body;
+        
+        if (!rejectionReason || rejectionReason.length < 10) {
+            return res.status(400).json({ error: 'rejectionReason must be at least 10 characters' });
+        }
+        
+        const request = await getProductRequestById(requestId);
+        if (!request) return res.status(404).json({ error: 'Product request not found' });
+        if (request.status !== 'pending') {
+            return res.status(400).json({ error: 'Request is not in pending status' });
+        }
+        
+        const updated = await updateProductRequest(requestId, {
+            status: 'rejected',
+            rejectedAt: new Date().toISOString(),
+            rejectionReason,
+            adminNotes: adminNotes || null
+        });
+        
+        res.json({ success: true, request: updated });
+    } catch (error) {
+        console.error('Reject product request error:', error);
+        res.status(500).json({ error: 'Failed to reject product request' });
+    }
+});
+
+// Influencer: Submit product request
+app.post('/api/influencer/product-requests/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { 
+            productTitle, productImageUrl, shopifyProductId, shopifyVariantId,
+            reason, shippingFullName, shippingAddressLine1, shippingAddressLine2,
+            shippingCity, shippingState, shippingPincode, shippingPhone 
+        } = req.body;
+        
+        if (!productTitle || productTitle.length < 3) {
+            return res.status(400).json({ error: 'productTitle must be at least 3 characters' });
+        }
+        if (!reason || reason.length < 10) {
+            return res.status(400).json({ error: 'reason must be at least 10 characters' });
+        }
+        if (!shippingPincode || shippingPincode.length !== 6) {
+            return res.status(400).json({ error: 'Invalid pincode (must be 6 digits)' });
+        }
+        if (!shippingPhone || shippingPhone.length !== 10) {
+            return res.status(400).json({ error: 'Invalid phone number (must be 10 digits)' });
+        }
+        
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        
+        const request = await createProductRequest({
+            influencerId: influencer.id,
+            productTitle,
+            productImageUrl: productImageUrl || null,
+            shopifyProductId: shopifyProductId || null,
+            shopifyVariantId: shopifyVariantId || null,
+            reason,
+            shippingFullName,
+            shippingAddressLine1,
+            shippingAddressLine2: shippingAddressLine2 || null,
+            shippingCity,
+            shippingState,
+            shippingPincode,
+            shippingPhone
+        });
+        
+        res.status(201).json({ success: true, request });
+    } catch (error) {
+        console.error('Submit product request error:', error);
+        res.status(500).json({ error: 'Failed to submit product request' });
+    }
+});
+
+// Influencer: List my product requests
+app.get('/api/influencer/product-requests/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { status, limit = 20 } = req.query;
+        
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        
+        const filters = { influencerId: influencer.id, limit };
+        if (status) filters.status = status;
+        
+        const result = await getProductRequests(filters);
+        
+        // Remove sensitive admin fields from response
+        const sanitizedRequests = result.requests.map(r => ({
+            id: r.id,
+            productTitle: r.product_title,
+            productImageUrl: r.product_image_url,
+            reason: r.reason,
+            status: r.status,
+            delhiveryAwb: r.delhivery_awb,
+            trackingUrl: r.delhivery_tracking_url,
+            shippedAt: r.shipped_at,
+            createdAt: r.created_at,
+            rejectionReason: r.rejection_reason
+        }));
+        
+        res.json({ success: true, requests: sanitizedRequests });
+    } catch (error) {
+        console.error('Get influencer product requests error:', error);
+        res.status(500).json({ error: 'Failed to fetch product requests' });
     }
 });
 

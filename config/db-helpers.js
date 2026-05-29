@@ -815,7 +815,18 @@ module.exports = {
 
     // Influencer Monthly Payouts (Analytics)
     listPayoutsByInfluencer,
-    upsertPayout
+    upsertPayout,
+    
+    // Reel Target Helpers
+    createReelTarget,
+    getReelTargetsByInfluencer,
+    getReelTargetProgress,
+    
+    // Product Request Helpers
+    createProductRequest,
+    getProductRequests,
+    updateProductRequest,
+    getProductRequestById
 };
 
 // ── Influencer Product Shipments ──
@@ -931,4 +942,240 @@ async function upsertPayout(data) {
         .single();
     if (error) throw error;
     return row;
+}
+
+// ── Reel Target Helpers ──
+
+/**
+ * Create or update monthly reel target for an influencer
+ */
+async function createReelTarget(data) {
+    const supabase = require('./supabase');
+    const { data: row, error } = await supabase
+        .from('influencer_reel_targets')
+        .upsert({
+            influencer_id: data.influencerId,
+            month: data.month,
+            year: data.year,
+            target_count: data.targetCount,
+            notes: data.notes || null,
+            updated_at: new Date().toISOString()
+        }, {
+            onConflict: 'influencer_id,month,year'
+        })
+        .select()
+        .single();
+    
+    if (error) throw error;
+    return row;
+}
+
+/**
+ * Get reel targets for a specific influencer with progress data
+ */
+async function getReelTargetsByInfluencer(influencerId, filters = {}) {
+    const supabase = require('./supabase');
+    let query = supabase
+        .from('influencer_reel_targets')
+        .select('*')
+        .eq('influencer_id', influencerId)
+        .order('year', { ascending: false })
+        .order('month', { ascending: false });
+    
+    if (filters.month) query = query.eq('month', filters.month);
+    if (filters.year) query = query.eq('year', filters.year);
+    if (filters.limit) query = query.limit(filters.limit);
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    
+    // Enrich each target with progress data
+    const enriched = await Promise.all((data || []).map(async (target) => {
+        const progress = await getReelTargetProgress(influencerId, target.month, target.year);
+        return { ...target, ...progress };
+    }));
+    
+    return enriched;
+}
+
+/**
+ * Calculate progress for a specific monthly target
+ */
+async function getReelTargetProgress(influencerId, month, year) {
+    const supabase = require('./supabase');
+    // Calculate date range for the month
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00Z`;
+    const endDate = new Date(startDate);
+    endDate.setMonth(endDate.getMonth() + 1);
+    
+    const { data: shipments, error } = await supabase
+        .from('influencer_product_shipments')
+        .select('reel_status, reel_due_date')
+        .eq('influencer_id', influencerId)
+        .eq('is_monthly_target', true)
+        .gte('created_at', startDate)
+        .lt('created_at', endDate.toISOString());
+    
+    if (error) throw error;
+    
+    const submittedCount = (shipments || []).filter(s => s.reel_status === 'received').length;
+    const pendingCount = (shipments || []).filter(s => s.reel_status === 'pending').length;
+    const now = new Date().toISOString().split('T')[0];
+    const overdueCount = (shipments || []).filter(s => s.reel_status === 'pending' && s.reel_due_date < now).length;
+    
+    // Get target count
+    const { data: target } = await supabase
+        .from('influencer_reel_targets')
+        .select('target_count')
+        .eq('influencer_id', influencerId)
+        .eq('month', month)
+        .eq('year', year)
+        .single();
+    
+    const targetCount = target?.target_count || 0;
+    const completionPercentage = targetCount > 0 ? (submittedCount / targetCount) * 100 : 0;
+    
+    return {
+        targetCount,
+        submittedCount,
+        pendingCount,
+        overdueCount,
+        completionPercentage: Math.round(completionPercentage * 100) / 100
+    };
+}
+
+// ── Product Request Helpers ──
+
+/**
+ * Create a new product request from influencer
+ */
+async function createProductRequest(data) {
+    const supabase = require('./supabase');
+    const { data: row, error } = await supabase
+        .from('influencer_product_requests')
+        .insert([{
+            influencer_id: data.influencerId,
+            product_title: data.productTitle,
+            product_image_url: data.productImageUrl || null,
+            shopify_product_id: data.shopifyProductId || null,
+            shopify_variant_id: data.shopifyVariantId || null,
+            reason: data.reason,
+            shipping_full_name: data.shippingFullName,
+            shipping_address_line1: data.shippingAddressLine1,
+            shipping_address_line2: data.shippingAddressLine2 || null,
+            shipping_city: data.shippingCity,
+            shipping_state: data.shippingState,
+            shipping_pincode: data.shippingPincode,
+            shipping_phone: data.shippingPhone,
+            status: 'pending'
+        }])
+        .select()
+        .single();
+    
+    if (error) throw error;
+    return row;
+}
+
+/**
+ * Get product requests with filtering and pagination
+ */
+async function getProductRequests(filters = {}) {
+    const supabase = require('./supabase');
+    let query = supabase
+        .from('influencer_product_requests')
+        .select(`
+            *,
+            influencers (
+                id, name, referral_code
+            )
+        `);
+    
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.influencerId) query = query.eq('influencer_id', filters.influencerId);
+    if (filters.search) {
+        query = query.or(`product_title.ilike.%${filters.search}%,influencers.name.ilike.%${filters.search}%`);
+    }
+    
+    query = query.order('created_at', { ascending: false });
+    
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 50;
+    const offset = (page - 1) * limit;
+    
+    const { data, count, error } = await query.range(offset, offset + limit - 1);
+    if (error) throw error;
+    
+    // Get summary counts
+    const { data: allRequests } = await supabase
+        .from('influencer_product_requests')
+        .select('status');
+    
+    const summary = { pending: 0, approved: 0, rejected: 0, shipped: 0, delivered: 0 };
+    (allRequests || []).forEach(r => {
+        if (summary[r.status] !== undefined) summary[r.status]++;
+    });
+    
+    return {
+        requests: data || [],
+        pagination: {
+            currentPage: page,
+            totalRequests: count || 0,
+            totalPages: Math.ceil((count || 0) / limit),
+            hasNextPage: offset + limit < (count || 0)
+        },
+        summary
+    };
+}
+
+/**
+ * Update product request status and fields
+ */
+async function updateProductRequest(requestId, updates) {
+    const supabase = require('./supabase');
+    const updateData = {
+        updated_at: new Date().toISOString()
+    };
+    
+    if (updates.status) updateData.status = updates.status;
+    if (updates.delhiveryAwb) updateData.delhivery_awb = updates.delhiveryAwb;
+    if (updates.delhiveryShipmentId) updateData.delhivery_shipment_id = updates.delhiveryShipmentId;
+    if (updates.adminNotes) updateData.admin_notes = updates.adminNotes;
+    if (updates.rejectionReason) updateData.rejection_reason = updates.rejectionReason;
+    if (updates.approvedAt) updateData.approved_at = updates.approvedAt;
+    if (updates.rejectedAt) updateData.rejected_at = updates.rejectedAt;
+    if (updates.shippedAt) updateData.shipped_at = updates.shippedAt;
+    if (updates.deliveredAt) updateData.delivered_at = updates.deliveredAt;
+    
+    const { data, error } = await supabase
+        .from('influencer_product_requests')
+        .update(updateData)
+        .eq('id', requestId)
+        .select()
+        .single();
+    
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Get single product request by ID
+ */
+async function getProductRequestById(requestId) {
+    const supabase = require('./supabase');
+    const { data, error } = await supabase
+        .from('influencer_product_requests')
+        .select(`
+            *,
+            influencers (
+                id, name, referral_code
+            )
+        `)
+        .eq('id', requestId)
+        .single();
+    
+    if (error) {
+        if (error.code === 'PGRST116') return null;
+        throw error;
+    }
+    return data;
 }

@@ -603,10 +603,12 @@ body, html { background: var(--bg); }
 @media (max-width: 700px) {
   .ip-stats-grid { grid-template-columns: 1fr 1fr; }
   .ip-payout-summary { grid-template-columns: 1fr; }
-  .ip-tab-btn { font-size: 0.6rem; padding: 0.8rem 0.75rem; }
+  .ip-tab-btn { font-size: 0.55rem; padding: 0.75rem 0.5rem; letter-spacing: 0.15em; }
 }
 @media (max-width: 420px) {
   .ip-stats-grid { grid-template-columns: 1fr; }
+  .ip-tab-btn { font-size: 0.5rem; padding: 0.65rem 0.4rem; letter-spacing: 0.1em; }
+}
 </style>
 </head>
 <body>
@@ -664,6 +666,8 @@ body, html { background: var(--bg); }
     <div class="ip-tab-bar">
       <button class="ip-tab-btn active" data-tab="performance" onclick="setTab('performance')">Performance</button>
       <button class="ip-tab-btn" data-tab="payouts" onclick="setTab('payouts')">Payouts</button>
+      <button class="ip-tab-btn" data-tab="shipments" onclick="setTab('shipments')">Shipments & Reels</button>
+      <button class="ip-tab-btn" data-tab="leaderboard" onclick="setTab('leaderboard')">Leaderboard</button>
     </div>
 
     <!-- Performance View (stats + feed) -->
@@ -763,41 +767,111 @@ body, html { background: var(--bg); }
       </div>
     </div>
 
-    <!-- My Shipments & Reels -->
-    <section class="ip-section">
-      <div class="ip-section-header">
-        <h3>My Shipments & Reels</h3>
-      </div>
-      <div class="ip-ship-list" id="ipShipmentsList">
-        <div class="ip-empty">Loading...</div>
-      </div>
-    </section>
+    <!-- Shipments & Reels View -->
+    <div id="ipShipmentsView" style="display:none;">
+      
+      <!-- Section 1: Monthly Target Banner -->
+      <section class="ip-section" style="margin-bottom: 2rem;">
+        <div class="ip-section-header">
+          <h3>Monthly Reel Target</h3>
+          <span style="font-size: 0.7rem; color: var(--muted);" id="ipTargetPeriod">May 2026</span>
+        </div>
+        <div style="padding: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div>
+              <div style="font-size: 0.75rem; color: var(--muted); margin-bottom: 0.3rem;">Progress</div>
+              <div style="font-size: 1.8rem; font-weight: 900;" id="ipTargetProgress">0/0</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 0.75rem; color: var(--muted); margin-bottom: 0.3rem;">Completion</div>
+              <div style="font-size: 1.8rem; font-weight: 900; color: var(--success);" id="ipTargetPercentage">0%</div>
+            </div>
+          </div>
+          <div style="height: 8px; background: var(--subtle); position: relative; overflow: hidden; margin-bottom: 0.75rem;">
+            <div id="ipTargetProgressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--success), #4ade80); transition: width 0.6s ease;"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--muted);">
+            <span>Submitted: <strong id="ipSubmittedCount">0</strong></span>
+            <span>Pending: <strong id="ipPendingCount">0</strong></span>
+            <span>Overdue: <strong id="ipOverdueCount" style="color: var(--danger);">0</strong></span>
+          </div>
+        </div>
+      </section>
 
-    <!-- My Payouts -->
-    <section class="ip-section">
-      <div class="ip-section-header">
-        <h3>My Payouts</h3>
-      </div>
-      <div style="overflow-x: auto;">
-        <table class="ip-payout-table">
-          <thead><tr><th>Month</th><th>Orders</th><th>Revenue</th><th>Commission</th><th>Amount Due</th><th>Status</th></tr></thead>
-          <tbody id="ipPayoutsBody"><tr><td colspan="6" class="ip-empty">Loading...</td></tr></tbody>
-        </table>
-      </div>
-    </section>
+      <!-- Section 2: Assigned Reels -->
+      <section class="ip-section" style="margin-bottom: 2rem;">
+        <div class="ip-section-header">
+          <h3>Assigned Reels</h3>
+          <span style="font-size: 0.7rem; color: var(--muted);" id="ipReelsCount">0 reels</span>
+        </div>
+        <div class="ip-ship-list" id="ipAssignedReelsList">
+          <div class="ip-empty">Loading assigned reels...</div>
+        </div>
+      </section>
 
-    <!-- Leaderboard -->
-    <section class="ip-section">
-      <div class="ip-section-header">
-        <h3>Leaderboard</h3>
-      </div>
-      <div style="overflow-x: auto;">
-        <table class="ip-lb-table">
-          <thead><tr><th>Rank</th><th>Name</th><th>Code</th><th>Revenue</th><th>Orders</th></tr></thead>
-          <tbody id="ipLeaderboardBody"><tr><td colspan="5" class="ip-empty">Loading...</td></tr></tbody>
-        </table>
-      </div>
-    </section>
+      <!-- Section 3: Request Product -->
+      <section class="ip-section" style="margin-bottom: 2rem;">
+        <div class="ip-section-header">
+          <h3>Request Product</h3>
+        </div>
+        <div style="padding: 1.5rem;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+            <button class="ip-auth-btn" onclick="openProductRequestModal()" style="background: var(--text); color: var(--bg);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              Request Product
+            </button>
+            <button class="ip-auth-btn" onclick="browseInventory()" style="background: transparent; border: 1px solid var(--border); color: var(--text);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+              Browse Inventory
+            </button>
+          </div>
+          <p style="font-size: 0.7rem; color: var(--muted); line-height: 1.5;">Need a product for your next reel? Submit a request with your reason and shipping details. Admin will review and ship via Delhivery upon approval.</p>
+        </div>
+      </section>
+
+      <!-- Section 4: My Product Requests -->
+      <section class="ip-section">
+        <div class="ip-section-header">
+          <h3>My Product Requests</h3>
+          <span style="font-size: 0.7rem; color: var(--muted);" id="ipRequestsCount">0 requests</span>
+        </div>
+        <div class="ip-ship-list" id="ipMyRequestsList">
+          <div class="ip-empty">Loading requests...</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Leaderboard View -->
+    <div id="ipLeaderboardView" style="display:none;">
+      <section class="ip-section">
+        <div class="ip-section-header">
+          <h3>Leaderboard</h3>
+        </div>
+        <!-- Leaderboard Date Range Filter -->
+        <div class="ip-range-bar" style="margin: 1rem 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; flex-wrap: wrap;">
+          <button class="ip-range-btn" data-lb-range="month:4" onclick="setLeaderboardRange('month:4')">April</button>
+          <button class="ip-range-btn" data-lb-range="month:5" onclick="setLeaderboardRange('month:5')">May</button>
+          <button class="ip-range-btn" data-lb-range="month:6" onclick="setLeaderboardRange('month:6')">June</button>
+          <button class="ip-range-btn" data-lb-range="month:7" onclick="setLeaderboardRange('month:7')">July</button>
+          <button class="ip-range-btn" data-lb-range="month:8" onclick="setLeaderboardRange('month:8')">August</button>
+          <button class="ip-range-btn" data-lb-range="month:9" onclick="setLeaderboardRange('month:9')">September</button>
+          <button class="ip-range-btn" data-lb-range="month:10" onclick="setLeaderboardRange('month:10')">October</button>
+          <button class="ip-range-btn" data-lb-range="month:11" onclick="setLeaderboardRange('month:11')">November</button>
+          <button class="ip-range-btn" data-lb-range="month:12" onclick="setLeaderboardRange('month:12')">December</button>
+          <button class="ip-range-btn" data-lb-range="month:1" onclick="setLeaderboardRange('month:1')">January</button>
+          <button class="ip-range-btn" data-lb-range="month:2" onclick="setLeaderboardRange('month:2')">February</button>
+          <button class="ip-range-btn" data-lb-range="month:3" onclick="setLeaderboardRange('month:3')">March</button>
+          <button class="ip-range-btn" data-lb-range="30d" onclick="setLeaderboardRange('30d')">Last 30 Days</button>
+          <button class="ip-range-btn active" data-lb-range="all" onclick="setLeaderboardRange('all')">All Time</button>
+        </div>
+        <div style="overflow-x: auto; padding: 0 1.5rem 1.5rem;">
+          <table class="ip-lb-table">
+            <thead><tr><th>Rank</th><th>Name</th><th>Code</th></tr></thead>
+            <tbody id="ipLeaderboardBody"><tr><td colspan="3" class="ip-empty">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
 
     <!-- Footer -->
     <footer class="ip-footer">
@@ -812,6 +886,7 @@ const PORTAL_API = 'https://exchange-return-tracking.onrender.com/api/influencer
 const params = new URLSearchParams(window.location.search);
 const token = params.get('token');
 let currentRange = 'all';
+let leaderboardRange = 'all';
 let commissionRate = 7;
 let displayedCommissionRate = 7;
 let currency = 'INR';
@@ -903,7 +978,11 @@ function setTab(tab) {
   document.querySelectorAll('.ip-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('ipPerformanceView').style.display = tab === 'performance' ? '' : 'none';
   document.getElementById('ipPayoutsView').style.display = tab === 'payouts' ? '' : 'none';
+  document.getElementById('ipShipmentsView').style.display = tab === 'shipments' ? '' : 'none';
+  document.getElementById('ipLeaderboardView').style.display = tab === 'leaderboard' ? '' : 'none';
   if (tab === 'payouts') loadPayouts();
+  if (tab === 'shipments') loadPortalShipments();
+  if (tab === 'leaderboard') loadPortalLeaderboard();
 }
 
 async function loadPayouts() {
@@ -1038,7 +1117,7 @@ async function fetchStats(range, startDate = null, endDate = null) {
 
     currency = data.stats.currency || 'INR';
     commissionRate = data.stats.commissionRate || commissionRate;
-    displayedCommissionRate = data.stats.displayedCommissionRate || data.influencer.displayedCommissionRate || commissionRate;
+    displayedCommissionRate = data.stats.displayedCommissionRate || commissionRate;
 
     renderStats(data.stats);
     renderFeed(data.recentConversions || []);
@@ -1138,13 +1217,6 @@ function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// Global safety fix for "Cannot read properties of null (reading 'find')"
-// Some theme scripts expect this function to exist; we provide a safe mock.
-window.initializeSelections = function() {
-  console.log('Safety: initializeSelections mock called.');
-  return;
-};
-
 // ─── PORTAL SECTIONS ─────────────────────────────────────────────────────────
 function portalEsc(str) { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function portalFmt(n) { return parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -1203,35 +1275,33 @@ async function submitReelUrl(shipmentId) {
   } catch (e) { alert('Network error'); }
 }
 
-async function loadPortalPayouts() {
-  try {
-    const res = await fetch(`${PORTAL_API}/payouts/${token}`);
-    const data = await res.json();
-    if (!data.success || !data.payouts || data.payouts.length === 0) {
-      document.getElementById('ipPayoutsBody').innerHTML = '<tr><td colspan="6" class="ip-empty">No payouts yet</td></tr>';
-      return;
-    }
-    document.getElementById('ipPayoutsBody').innerHTML = data.payouts.map(p => `
-      <tr>
-        <td>${p.month}</td>
-        <td>${p.orders_count || 0}</td>
-        <td>₹${portalFmt(parseFloat(p.revenue_amount || 0))}</td>
-        <td>${p.displayed_commission_rate || data.influencer.displayed_commission_rate || p.commission_rate}%</td>
-        <td style="font-weight: 700;">₹${portalFmt(parseFloat(p.amount_due || 0))}</td>
-        <td><span class="ip-badge ${p.status === 'paid' ? 'paid' : 'unpaid'}">${p.status}</span></td>
-      </tr>
-    `).join('');
-  } catch (e) {
-    document.getElementById('ipPayoutsBody').innerHTML = '<tr><td colspan="6" class="ip-empty">Failed to load</td></tr>';
-  }
-}
-
 async function loadPortalLeaderboard() {
   try {
-    const res = await fetch(`${PORTAL_API}/leaderboard/${token}?range=all&limit=10`);
+    let qp = `?range=${leaderboardRange}&limit=10`;
+    
+    // Handle monthly ranges
+    if (leaderboardRange.startsWith('month:')) {
+      const month = leaderboardRange.split(':')[1];
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+      
+      // Calculate the year for the selected month
+      let year = currentYear;
+      if (parseInt(month) > currentMonth) {
+        year = currentYear - 1;
+      }
+      
+      const startDate = `${year}-${month.padStart(2, '0')}-01`;
+      const endDate = `${year}-${month.padStart(2, '0')}-31`;
+      
+      qp = `?range=custom&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&limit=10`;
+    }
+    
+    const res = await fetch(`${PORTAL_API}/leaderboard/${token}${qp}`);
     const data = await res.json();
     if (!data.success || !data.leaderboard || data.leaderboard.length === 0) {
-      document.getElementById('ipLeaderboardBody').innerHTML = '<tr><td colspan="5" class="ip-empty">No data</td></tr>';
+      document.getElementById('ipLeaderboardBody').innerHTML = '<tr><td colspan="3" class="ip-empty">No data</td></tr>';
       return;
     }
     document.getElementById('ipLeaderboardBody').innerHTML = data.leaderboard.map(r => `
@@ -1239,25 +1309,358 @@ async function loadPortalLeaderboard() {
         <td><span class="ip-lb-rank ${r.rank === 1 ? 'top1' : ''}">${r.rank}</span></td>
         <td style="font-weight: 600;">${portalEsc(r.name)} ${r.current_user ? '(You)' : ''}</td>
         <td style="color: var(--muted); font-size: 0.7rem;">${portalEsc(r.referral_code)}</td>
-        <td style="font-weight: 700;">₹${portalFmt(r.revenue)}</td>
-        <td>${r.orders}</td>
       </tr>
     `).join('');
   } catch (e) {
-    document.getElementById('ipLeaderboardBody').innerHTML = '<tr><td colspan="5" class="ip-empty">Failed to load</td></tr>';
+    document.getElementById('ipLeaderboardBody').innerHTML = '<tr><td colspan="3" class="ip-empty">Failed to load</td></tr>';
   }
 }
 
-// Hook into boot
-const origShowPortal = showPortal;
-if (typeof showPortal === 'function') {
-  window.showPortal = function(...args) {
-    origShowPortal(...args);
-    loadPortalShipments();
-    loadPortalPayouts();
-    loadPortalLeaderboard();
-  };
+function setLeaderboardRange(range) {
+  leaderboardRange = range;
+  
+  // Update active button
+  document.querySelectorAll('[data-lb-range]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lbRange === range);
+  });
+  
+  // Reload leaderboard with new range
+  loadPortalLeaderboard();
 }
+
+// ==================== ENHANCED SHIPMENTS & REELS FUNCTIONS ====================
+
+// Load monthly reel target
+async function loadMonthlyReelTarget() {
+  try {
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    
+    // Calculate target progress from shipments
+    const res = await fetch(`${PORTAL_API}/shipments/${token}`);
+    const data = await res.json();
+    
+    if (!data.success) return;
+    
+    // Filter shipments for current month that are monthly targets
+    const monthlyShipments = (data.shipments || []).filter(s => {
+      const shipDate = new Date(s.created_at || s.sent_at);
+      return shipDate.getMonth() + 1 === month && shipDate.getFullYear() === year && s.is_monthly_target;
+    });
+    
+    const submittedCount = monthlyShipments.filter(s => s.reel_status === 'received').length;
+    const pendingCount = monthlyShipments.filter(s => s.reel_status === 'pending').length;
+    const nowStr = new Date().toISOString().split('T')[0];
+    const overdueCount = monthlyShipments.filter(s => s.reel_status === 'pending' && s.reel_due_date < nowStr).length;
+    
+    // Default target (will be replaced when admin sets it)
+    const targetCount = 3; // Default
+    const completionPercentage = targetCount > 0 ? Math.round((submittedCount / targetCount) * 100) : 0;
+    
+    // Update UI
+    document.getElementById('ipTargetPeriod').textContent = `${getMonthName(month)} ${year}`;
+    document.getElementById('ipTargetProgress').textContent = `${submittedCount}/${targetCount}`;
+    document.getElementById('ipTargetPercentage').textContent = `${completionPercentage}%`;
+    document.getElementById('ipTargetProgressBar').style.width = `${Math.min(completionPercentage, 100)}%`;
+    document.getElementById('ipSubmittedCount').textContent = submittedCount;
+    document.getElementById('ipPendingCount').textContent = pendingCount;
+    document.getElementById('ipOverdueCount').textContent = overdueCount;
+    
+    // Color code percentage
+    const pctEl = document.getElementById('ipTargetPercentage');
+    if (completionPercentage >= 100) pctEl.style.color = 'var(--success)';
+    else if (completionPercentage >= 50) pctEl.style.color = 'var(--warning)';
+    else pctEl.style.color = 'var(--danger)';
+  } catch (e) {
+    console.error('Load monthly target error:', e);
+  }
+}
+
+// Load assigned reels (enhanced version)
+async function loadAssignedReels() {
+  try {
+    const res = await fetch(`${PORTAL_API}/shipments/${token}`);
+    const data = await res.json();
+    
+    if (!data.success || !data.shipments || data.shipments.length === 0) {
+      document.getElementById('ipAssignedReelsList').innerHTML = '<div class="ip-empty">No reels assigned yet</div>';
+      document.getElementById('ipReelsCount').textContent = '0 reels';
+      return;
+    }
+    
+    const list = document.getElementById('ipAssignedReelsList');
+    document.getElementById('ipReelsCount').textContent = `${data.shipments.length} reels`;
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    list.innerHTML = data.shipments.map(s => {
+      const sent = new Date(s.sent_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      const due = new Date(s.reel_due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      
+      // Calculate days remaining
+      const dueDate = new Date(s.reel_due_date);
+      const todayDate = new Date(today);
+      const daysRemaining = Math.ceil((dueDate - todayDate) / (1000 * 60 * 60 * 24));
+      
+      let statusBadge = '';
+      let actionHtml = '';
+      
+      if (s.reel_status === 'received') {
+        statusBadge = '<span class="ip-badge received">Submitted ✓</span>';
+        actionHtml = s.reel_url ? `<a href="${portalEsc(s.reel_url)}" target="_blank" style="color: var(--text); font-size: 0.75rem;">View Reel →</a>` : '';
+      } else if (s.reel_status === 'pending') {
+        if (daysRemaining < 0) {
+          statusBadge = '<span class="ip-badge overdue">Overdue</span>';
+        } else {
+          statusBadge = '<span class="ip-badge pending">Pending</span>';
+        }
+        actionHtml = `
+          <input type="text" class="ip-ship-input" id="reel-${s.id}" placeholder="Paste Instagram Reel URL">
+          <button class="ip-ship-submit" onclick="submitReelUrl(${s.id})">Submit</button>
+        `;
+      }
+      
+      const daysText = daysRemaining < 0 ? `${Math.abs(daysRemaining)} days overdue` : daysRemaining === 0 ? 'Due today' : `${daysRemaining} days remaining`;
+      const daysColor = daysRemaining < 0 ? 'var(--danger)' : daysRemaining <= 3 ? 'var(--warning)' : 'var(--muted)';
+      
+      return `
+        <div class="ip-ship-item" style="flex-direction: column; align-items: flex-start; gap: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div class="ip-ship-info">
+              <div class="ip-ship-product">${portalEsc(s.product_title)}</div>
+              <div class="ip-ship-dates">Sent: ${sent} · Due: ${due}</div>
+            </div>
+            ${statusBadge}
+          </div>
+          <div style="font-size: 0.7rem; color: ${daysColor}; font-weight: 600;">${daysText}</div>
+          ${actionHtml ? `<div class="ip-ship-actions" style="width: 100%;">${actionHtml}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    document.getElementById('ipAssignedReelsList').innerHTML = '<div class="ip-empty">Failed to load</div>';
+  }
+}
+
+// Open product request modal
+function openProductRequestModal() {
+  const modal = document.createElement('div');
+  modal.id = 'ipProductRequestModal';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+  
+  modal.innerHTML = `
+    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+      <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1.5rem;">Request Product</h3>
+      
+      <div class="ip-auth-group">
+        <label for="prProductTitle">Product Title *</label>
+        <input type="text" id="prProductTitle" class="ip-auth-input" placeholder="e.g. Classic Black T-Shirt" required>
+      </div>
+      
+      <div class="ip-auth-group">
+        <label for="prProductImage">Product Image URL (optional)</label>
+        <input type="text" id="prProductImage" class="ip-auth-input" placeholder="https://...">
+      </div>
+      
+      <div class="ip-auth-group">
+        <label for="prReason">Why do you need this product? * (min 10 characters)</label>
+        <textarea id="prReason" class="ip-auth-input" rows="4" placeholder="I need this product for my upcoming reel about..." required style="resize: vertical;"></textarea>
+      </div>
+      
+      <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+        <p style="font-size: 0.7rem; color: var(--muted); margin-bottom: 1rem;">Shipping Address</p>
+        
+        <div class="ip-auth-group">
+          <label for="prFullName">Full Name *</label>
+          <input type="text" id="prFullName" class="ip-auth-input" placeholder="Rahul Sharma" required>
+        </div>
+        
+        <div class="ip-auth-group">
+          <label for="prAddress1">Address Line 1 *</label>
+          <input type="text" id="prAddress1" class="ip-auth-input" placeholder="123 Main Street" required>
+        </div>
+        
+        <div class="ip-auth-group">
+          <label for="prAddress2">Address Line 2 (optional)</label>
+          <input type="text" id="prAddress2" class="ip-auth-input" placeholder="Apt 4B">
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="ip-auth-group">
+            <label for="prCity">City *</label>
+            <input type="text" id="prCity" class="ip-auth-input" placeholder="Mumbai" required>
+          </div>
+          <div class="ip-auth-group">
+            <label for="prState">State *</label>
+            <input type="text" id="prState" class="ip-auth-input" placeholder="Maharashtra" required>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="ip-auth-group">
+            <label for="prPincode">Pincode * (6 digits)</label>
+            <input type="text" id="prPincode" class="ip-auth-input" placeholder="400001" maxlength="6" required>
+          </div>
+          <div class="ip-auth-group">
+            <label for="prPhone">Phone * (10 digits)</label>
+            <input type="text" id="prPhone" class="ip-auth-input" placeholder="9876543210" maxlength="10" required>
+          </div>
+        </div>
+      </div>
+      
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button onclick="closeProductRequestModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
+        <button onclick="submitProductRequest()" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Submit Request</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+}
+
+function closeProductRequestModal() {
+  const modal = document.getElementById('ipProductRequestModal');
+  if (modal) modal.remove();
+}
+
+// Submit product request
+async function submitProductRequest() {
+  const productTitle = document.getElementById('prProductTitle').value.trim();
+  const productImageUrl = document.getElementById('prProductImage').value.trim();
+  const reason = document.getElementById('prReason').value.trim();
+  const shippingFullName = document.getElementById('prFullName').value.trim();
+  const shippingAddressLine1 = document.getElementById('prAddress1').value.trim();
+  const shippingAddressLine2 = document.getElementById('prAddress2').value.trim();
+  const shippingCity = document.getElementById('prCity').value.trim();
+  const shippingState = document.getElementById('prState').value.trim();
+  const shippingPincode = document.getElementById('prPincode').value.trim();
+  const shippingPhone = document.getElementById('prPhone').value.trim();
+  
+  // Validation
+  if (!productTitle || productTitle.length < 3) {
+    alert('Product title must be at least 3 characters');
+    return;
+  }
+  if (!reason || reason.length < 10) {
+    alert('Please provide a detailed reason (min 10 characters)');
+    return;
+  }
+  if (!shippingPincode || shippingPincode.length !== 6) {
+    alert('Invalid pincode (must be 6 digits)');
+    return;
+  }
+  if (!shippingPhone || shippingPhone.length !== 10) {
+    alert('Invalid phone number (must be 10 digits)');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${PORTAL_API}/product-requests/${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        productTitle,
+        productImageUrl: productImageUrl || null,
+        reason,
+        shippingFullName,
+        shippingAddressLine1,
+        shippingAddressLine2: shippingAddressLine2 || null,
+        shippingCity,
+        shippingState,
+        shippingPincode,
+        shippingPhone
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      alert('Product request submitted successfully! Admin will review and approve.');
+      closeProductRequestModal();
+      loadMyProductRequests();
+    } else {
+      alert(data.error || 'Failed to submit request');
+    }
+  } catch (e) {
+    alert('Network error. Please try again.');
+  }
+}
+
+// Load my product requests
+async function loadMyProductRequests() {
+  try {
+    const res = await fetch(`${PORTAL_API}/product-requests/${token}`);
+    const data = await res.json();
+    
+    if (!data.success || !data.requests || data.requests.length === 0) {
+      document.getElementById('ipMyRequestsList').innerHTML = '<div class="ip-empty">No product requests yet</div>';
+      document.getElementById('ipRequestsCount').textContent = '0 requests';
+      return;
+    }
+    
+    const list = document.getElementById('ipMyRequestsList');
+    document.getElementById('ipRequestsCount').textContent = `${data.requests.length} requests`;
+    
+    const statusColors = {
+      pending: '#f59e0b',
+      approved: 'var(--success)',
+      rejected: 'var(--danger)',
+      shipped: '#4facfe',
+      delivered: 'var(--success)'
+    };
+    
+    list.innerHTML = data.requests.map(r => {
+      const color = statusColors[r.status] || 'var(--muted)';
+      const created = new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      
+      let statusInfo = '';
+      if (r.status === 'rejected') {
+        statusInfo = `<div style="font-size: 0.7rem; color: var(--danger); margin-top: 0.5rem;">Reason: ${r.rejectionReason || 'Not specified'}</div>`;
+      } else if (r.status === 'shipped' || r.status === 'delivered') {
+        statusInfo = r.trackingUrl ? `<a href="${r.trackingUrl}" target="_blank" style="font-size: 0.7rem; color: #4facfe; margin-top: 0.5rem; display: inline-block;">Track Shipment →</a>` : '';
+      }
+      
+      return `
+        <div class="ip-ship-item" style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div class="ip-ship-info">
+              <div class="ip-ship-product">${portalEsc(r.productTitle)}</div>
+              <div class="ip-ship-dates">Requested: ${created}</div>
+            </div>
+            <span style="display: inline-block; padding: 0.2rem 0.6rem; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; background: ${color}20; color: ${color}; border: 1px solid ${color};">${r.status}</span>
+          </div>
+          <div style="font-size: 0.75rem; color: var(--muted); line-height: 1.4;">${portalEsc(r.reason)}</div>
+          ${statusInfo}
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    document.getElementById('ipMyRequestsList').innerHTML = '<div class="ip-empty">Failed to load</div>';
+  }
+}
+
+// Browse inventory (placeholder)
+function browseInventory() {
+  alert('Inventory browsing feature coming soon! For now, manually enter product details in the request form.');
+}
+
+// Helper: Get month name
+function getMonthName(monthNum) {
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return months[parseInt(monthNum) - 1];
+}
+
+// Override setTab to load enhanced shipments data
+const originalSetTab = setTab;
+setTab = function(tab) {
+  originalSetTab(tab);
+  if (tab === 'shipments') {
+    loadMonthlyReelTarget();
+    loadAssignedReels();
+    loadMyProductRequests();
+  }
+};
 </script>
 </body>
 </html>

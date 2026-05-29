@@ -526,7 +526,7 @@ html, body {
 .ia-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
 /* ── FORM ── */
-.ia-form-group { margin-bottom: 1.25rem; }
+.ia-form-group { margin-bottom: 1rem; }
 .ia-form-group label {
   display: block;
   font-size: 0.62rem;
@@ -566,21 +566,24 @@ html, body {
   z-index: 200;
   opacity: 0; pointer-events: none;
   transition: opacity 0.25s ease;
+  padding: 1rem;
 }
 .ia-modal-overlay.open { opacity: 1; pointer-events: all; }
 .ia-modal {
   background: var(--surface);
   border: 1px solid var(--border);
-  width: 100%; max-width: 480px;
-  padding: 2.5rem;
+  width: 100%; max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 2rem;
   transform: translateY(16px) scale(0.98);
   transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
 }
 .ia-modal-overlay.open .ia-modal { transform: translateY(0) scale(1); }
 .ia-modal-header {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 2rem;
-  padding-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid var(--border);
 }
 .ia-modal-title {
@@ -599,8 +602,8 @@ html, body {
 .ia-modal-close:hover { color: var(--text); }
 .ia-modal-actions {
   display: flex; gap: 0.75rem;
-  margin-top: 2rem;
-  padding-top: 1.25rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--border);
 }
 .ia-modal-actions .ia-btn { flex: 1; justify-content: center; }
@@ -649,6 +652,15 @@ html, body {
   min-width: 150px;
 }
 .ia-filter-group label {
+  display: block;
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+.ia-filter-label {
   display: block;
   font-size: 0.6rem;
   letter-spacing: 0.2em;
@@ -813,6 +825,377 @@ html, body {
 .ia-lb-name { font-weight: 600; }
 .ia-lb-revenue { font-weight: 700; }
 .ia-lb-empty { text-align: center; padding: 2rem; color: var(--muted); font-size: 0.8rem; }
+
+/* ── PREMIUM LEADERBOARD PAGE ─ */
+.ia-lb-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.ia-lb-page-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem 0;
+  background: linear-gradient(135deg, #fff 0%, #a0aec0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.ia-lb-page-subtitle {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0;
+}
+.ia-lb-range-selector {
+  display: flex;
+  gap: 0.5rem;
+  background: var(--surface);
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ia-lb-range-selector .ia-lb-range-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+}
+
+.ia-lb-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+.ia-lb-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: all var(--transition);
+}
+.ia-lb-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  border-color: var(--border-hover);
+}
+.ia-lb-stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ia-lb-stat-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+.ia-lb-stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* Podium */
+.ia-lb-podium-container {
+  margin-bottom: 2.5rem;
+  min-height: 280px;
+}
+.ia-lb-podium-loading {
+  text-align: center;
+  padding: 4rem;
+  color: var(--muted);
+}
+.ia-lb-podium {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 1.5rem;
+  padding: 2rem 0;
+}
+.ia-lb-podium-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  transition: all var(--transition);
+}
+.ia-lb-podium-item:hover {
+  transform: translateY(-5px);
+}
+.ia-lb-podium-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  border: 3px solid var(--border);
+  position: relative;
+}
+.ia-lb-podium-item.rank-1 .ia-lb-podium-avatar {
+  width: 100px;
+  height: 100px;
+  font-size: 2.25rem;
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+  border-color: #ffd700;
+  color: #1a1a1a;
+}
+.ia-lb-podium-item.rank-2 .ia-lb-podium-avatar {
+  background: linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 100%);
+  border-color: #c0c0c0;
+  color: #1a1a1a;
+}
+.ia-lb-podium-item.rank-3 .ia-lb-podium-avatar {
+  background: linear-gradient(135deg, #cd7f32 0%, #e8a87c 100%);
+  border-color: #cd7f32;
+  color: #1a1a1a;
+}
+.ia-lb-podium-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  border: 2px solid var(--bg);
+}
+.ia-lb-podium-name {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ia-lb-podium-code {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.ia-lb-podium-revenue {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+}
+.ia-lb-podium-orders {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.ia-lb-podium-bar {
+  width: 120px;
+  margin-top: 1rem;
+}
+.ia-lb-podium-item.rank-1 .ia-lb-podium-bar {
+  height: 160px;
+  background: linear-gradient(180deg, #ffd700 0%, rgba(255, 215, 0, 0.1) 100%);
+  border-radius: 8px 8px 0 0;
+}
+.ia-lb-podium-item.rank-2 .ia-lb-podium-bar {
+  height: 120px;
+  background: linear-gradient(180deg, #c0c0c0 0%, rgba(192, 192, 192, 0.1) 100%);
+  border-radius: 8px 8px 0 0;
+}
+.ia-lb-podium-item.rank-3 .ia-lb-podium-bar {
+  height: 90px;
+  background: linear-gradient(180deg, #cd7f32 0%, rgba(205, 127, 50, 0.1) 100%);
+  border-radius: 8px 8px 0 0;
+}
+
+/* Full Table */
+.ia-lb-table-container {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.ia-lb-table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.ia-lb-table-header h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+.ia-lb-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: all var(--transition);
+}
+.ia-lb-search:focus-within {
+  border-color: var(--text);
+}
+.ia-lb-search svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.ia-lb-search input {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  outline: none;
+  width: 200px;
+}
+.ia-lb-search input::placeholder {
+  color: var(--muted);
+}
+.ia-lb-table-wrapper {
+  overflow-x: auto;
+}
+.ia-lb-full-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ia-lb-full-table thead {
+  background: var(--surface-2);
+}
+.ia-lb-full-table th {
+  text-align: left;
+  padding: 1rem 1.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.ia-lb-full-table td {
+  padding: 1rem 1.5rem;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.ia-lb-full-table tbody tr {
+  transition: background var(--transition);
+}
+.ia-lb-full-table tbody tr:hover {
+  background: var(--subtle);
+}
+.ia-lb-full-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.ia-lb-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  background: var(--subtle);
+}
+.ia-lb-rank-badge.rank-1 {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+  color: #1a1a1a;
+}
+.ia-lb-rank-badge.rank-2 {
+  background: linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 100%);
+  color: #1a1a1a;
+}
+.ia-lb-rank-badge.rank-3 {
+  background: linear-gradient(135deg, #cd7f32 0%, #e8a87c 100%);
+  color: #1a1a1a;
+}
+.ia-lb-influencer-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.ia-lb-influencer-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.ia-lb-influencer-name {
+  font-weight: 600;
+}
+.ia-lb-code {
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+  background: var(--bg);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+.ia-lb-revenue-cell {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.ia-lb-status-badge {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ia-lb-status-badge.active {
+  background: rgba(72, 187, 120, 0.15);
+  color: #48bb78;
+  border: 1px solid rgba(72, 187, 120, 0.3);
+}
+.ia-lb-status-badge.pending {
+  background: rgba(237, 137, 54, 0.15);
+  color: #ed8936;
+  border: 1px solid rgba(237, 137, 54, 0.3);
+}
+.ia-lb-status-badge.suspended {
+  background: rgba(245, 101, 101, 0.15);
+  color: #f56565;
+  border: 1px solid rgba(245, 101, 101, 0.3);
+}
+.ia-lb-table-loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--muted);
+}
+.ia-lb-no-results {
+  text-align: center;
+  padding: 3rem;
+  color: var(--muted);
+}
 
 /* ── TABS ── */
 .ia-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; gap: 0; }
@@ -1853,10 +2236,18 @@ html, body {
         <strong>Influencer HQ</strong>
       </div>
       <nav class="ia-sidebar-nav">
-        <div class="ia-nav-item active">
+        <div class="ia-nav-item active" onclick="showPage('ambassadors', this)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Ambassadors
           <span class="ia-nav-badge hidden" id="iaNavPendingBadge">0</span>
+        </div>
+        <div class="ia-nav-item" onclick="showPage('shipments-reels', this)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          Shipments & Reels
+        </div>
+        <div class="ia-nav-item" onclick="showPage('leaderboard', this)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 21h8m-4-4v4m-4.5-9.5L12 3l4.5 8.5M7 12h10"/></svg>
+          Leaderboard
         </div>
       </nav>
       <div class="ia-sidebar-footer">
@@ -1886,7 +2277,7 @@ html, body {
       </div>
 
       <!-- Content -->
-      <div class="ia-content">
+      <div class="ia-content" id="page-ambassadors">
 
         <!-- Stat Strip -->
         <div class="ia-stat-strip">
@@ -1901,21 +2292,6 @@ html, body {
           <div class="ia-stat-cell">
             <div class="ia-stat-label">Avg. Commission</div>
             <div class="ia-stat-value" id="statAvgCommission">—</div>
-          </div>
-        </div>
-
-        <!-- Leaderboard -->
-        <div class="ia-leaderboard-card">
-          <div class="ia-leaderboard-header">
-            <h3>Top Performers</h3>
-            <div class="ia-lb-range-btns">
-              <button class="ia-lb-range-btn active" data-lbrange="30d" onclick="loadLeaderboard('30d', this)">30D</button>
-              <button class="ia-lb-range-btn" data-lbrange="90d" onclick="loadLeaderboard('90d', this)">90D</button>
-              <button class="ia-lb-range-btn" data-lbrange="all" onclick="loadLeaderboard('all', this)">All</button>
-            </div>
-          </div>
-          <div id="leaderboardBody">
-            <div class="ia-lb-empty">Loading leaderboard...</div>
           </div>
         </div>
 
@@ -2061,10 +2437,301 @@ html, body {
         </div>
 
       </div>
+
+      <!-- Shipments & Reels Page -->
+      <div class="ia-content" id="page-shipments-reels" style="display: none;">
+        <!-- Page Header -->
+        <div class="ia-lb-page-header">
+          <div>
+            <h2 class="ia-lb-page-title">Shipments & Reels Management</h2>
+            <p class="ia-lb-page-subtitle">Manage monthly reel targets, product inventory, and influencer shipments</p>
+          </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="ia-tabs" style="margin-bottom: 2rem;">
+          <button class="ia-tab-btn active" data-srtab="monthly-targets" onclick="switchSRTab('monthly-targets', this)">Monthly Targets</button>
+          <button class="ia-tab-btn" data-srtab="inventory" onclick="switchSRTab('inventory', this)">Product Inventory</button>
+          <button class="ia-tab-btn" data-srtab="product-requests" onclick="switchSRTab('product-requests', this)">Product Requests</button>
+          <button class="ia-tab-btn" data-srtab="all-shipments" onclick="switchSRTab('all-shipments', this)">All Shipments</button>
+        </div>
+
+        <!-- Tab 1: Monthly Reel Targets -->
+        <div id="sr-tab-monthly-targets" class="sr-tab-content active">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <span style="font-size: 0.75rem; color: var(--muted);">Set and track monthly reel quotas for ambassadors</span>
+            <button class="ia-btn ia-btn-primary" onclick="openReelTargetModal()" style="padding: 0.5rem 1rem; font-size: 0.7rem;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Set Monthly Target
+            </button>
+          </div>
+
+          <!-- Month/Year Selector -->
+          <div style="display: flex; gap: 1rem; margin-bottom: 2rem; align-items: center;">
+            <div class="ia-form-group" style="margin: 0;">
+              <label style="font-size: 0.65rem; color: var(--muted); margin-bottom: 0.3rem;">Month</label>
+              <select id="srTargetMonth" class="ia-input" onchange="loadMonthlyTargets()">
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+            </div>
+            <div class="ia-form-group" style="margin: 0;">
+              <label style="font-size: 0.65rem; color: var(--muted); margin-bottom: 0.3rem;">Year</label>
+              <input type="number" id="srTargetYear" class="ia-input" value="2026" onchange="loadMonthlyTargets()" style="width: 100px;">
+            </div>
+          </div>
+
+          <!-- Summary Stats -->
+          <div class="ia-lb-stats-grid" id="srTargetSummary" style="margin-bottom: 2rem; display: none;">
+            <div class="ia-lb-stat-card">
+              <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              </div>
+              <div>
+                <div class="ia-lb-stat-label">Total Ambassadors</div>
+                <div class="ia-lb-stat-value" id="srTotalInfluencers">0</div>
+              </div>
+            </div>
+            <div class="ia-lb-stat-card">
+              <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+              <div>
+                <div class="ia-lb-stat-label">On Track</div>
+                <div class="ia-lb-stat-value" id="srOnTrack">0</div>
+              </div>
+            </div>
+            <div class="ia-lb-stat-card">
+              <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div>
+                <div class="ia-lb-stat-label">Behind Target</div>
+                <div class="ia-lb-stat-value" id="srBehind">0</div>
+              </div>
+            </div>
+            <div class="ia-lb-stat-card">
+              <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              </div>
+              <div>
+                <div class="ia-lb-stat-label">Completed</div>
+                <div class="ia-lb-stat-value" id="srCompleted">0</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Targets Grid -->
+          <div id="srTargetsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem;">
+            <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <p>Select a month and year to view targets</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Product Inventory (Shopify) -->
+        <div id="sr-tab-inventory" class="sr-tab-content" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <span style="font-size: 0.75rem; color: var(--muted);">Browse Shopify products and assign to ambassadors</span>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="text" id="srProductSearch" class="ia-input" placeholder="Search products..." style="width: 250px;" onkeyup="if(event.key==='Enter') searchShopifyProducts()">
+              <button class="ia-btn ia-btn-primary" onclick="searchShopifyProducts()" style="padding: 0.5rem 1rem; font-size: 0.7rem;">Search</button>
+            </div>
+          </div>
+
+          <!-- Product Grid -->
+          <div id="srProductGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+            <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              <p>Search for products from Shopify inventory</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Product Requests -->
+        <div id="sr-tab-product-requests" class="sr-tab-content" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <span style="font-size: 0.75rem; color: var(--muted);">Review and approve ambassador product requests</span>
+            <div style="display: flex; gap: 0.5rem;">
+              <select id="srRequestFilter" class="ia-input" onchange="loadProductRequests()" style="width: 150px;">
+                <option value="">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="shipped">Shipped</option>
+                <option value="delivered">Delivered</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Requests Table -->
+          <div style="overflow-x: auto;">
+            <table class="ia-table">
+              <thead>
+                <tr>
+                  <th>Ambassador</th>
+                  <th>Product</th>
+                  <th>Reason</th>
+                  <th>Shipping Address</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="srRequestsTableBody">
+                <tr>
+                  <td colspan="7" style="text-align: center; padding: 3rem; color: var(--muted);">
+                    Loading product requests...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 4: All Shipments -->
+        <div id="sr-tab-all-shipments" class="sr-tab-content" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <span style="font-size: 0.75rem; color: var(--muted);">View all product shipments and reel tracking</span>
+            <button class="ia-btn ia-btn-primary" onclick="openAddShipmentModal()" style="padding: 0.5rem 1rem; font-size: 0.7rem;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Create Shipment
+            </button>
+          </div>
+
+          <!-- Shipments Table -->
+          <div style="overflow-x: auto;">
+            <table class="ia-table">
+              <thead>
+                <tr>
+                  <th>Ambassador</th>
+                  <th>Product</th>
+                  <th>Sent Date</th>
+                  <th>Reel Due</th>
+                  <th>Reel Status</th>
+                  <th>Monthly Target</th>
+                  <th>Tracking</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="srShipmentsTableBody">
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 3rem; color: var(--muted);">
+                    Loading shipments...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leaderboard Page -->
+      <div class="ia-content" id="page-leaderboard" style="display: none;">
+        <!-- Leaderboard Header -->
+        <div class="ia-lb-page-header">
+          <div>
+            <h2 class="ia-lb-page-title">Performance Leaderboard</h2>
+            <p class="ia-lb-page-subtitle">Track top-performing ambassadors and their impact</p>
+          </div>
+          <div class="ia-lb-range-selector">
+            <button class="ia-lb-range-btn active" data-lbrange="30d" onclick="loadFullLeaderboard('30d', this)">30 Days</button>
+            <button class="ia-lb-range-btn" data-lbrange="90d" onclick="loadFullLeaderboard('90d', this)">90 Days</button>
+            <button class="ia-lb-range-btn" data-lbrange="6m" onclick="loadFullLeaderboard('6m', this)">6 Months</button>
+            <button class="ia-lb-range-btn" data-lbrange="all" onclick="loadFullLeaderboard('all', this)">All Time</button>
+          </div>
+        </div>
+
+        <!-- Leaderboard Stats -->
+        <div class="ia-lb-stats-grid">
+          <div class="ia-lb-stat-card">
+            <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <div>
+              <div class="ia-lb-stat-label">Total Revenue</div>
+              <div class="ia-lb-stat-value" id="lbTotalRevenue">₹0</div>
+            </div>
+          </div>
+          <div class="ia-lb-stat-card">
+            <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 7V5a4 4 0 0 0-8 0v2"/></svg>
+            </div>
+            <div>
+              <div class="ia-lb-stat-label">Total Orders</div>
+              <div class="ia-lb-stat-value" id="lbTotalOrders">0</div>
+            </div>
+          </div>
+          <div class="ia-lb-stat-card">
+            <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div>
+              <div class="ia-lb-stat-label">Active Influencers</div>
+              <div class="ia-lb-stat-value" id="lbActiveInfluencers">0</div>
+            </div>
+          </div>
+          <div class="ia-lb-stat-card">
+            <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <div>
+              <div class="ia-lb-stat-label">Avg Revenue/Influencer</div>
+              <div class="ia-lb-stat-value" id="lbAvgRevenue">₹0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top 3 Podium -->
+        <div class="ia-lb-podium-container" id="lbPodium">
+          <div class="ia-lb-podium-loading">Loading podium...</div>
+        </div>
+
+        <!-- Full Leaderboard Table -->
+        <div class="ia-lb-table-container">
+          <div class="ia-lb-table-header">
+            <h3>Complete Rankings</h3>
+            <div class="ia-lb-search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="lbSearchInput" placeholder="Search influencers..." oninput="filterLeaderboard()">
+            </div>
+          </div>
+          <div class="ia-lb-table-wrapper">
+            <table class="ia-lb-full-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Influencer</th>
+                  <th>Code</th>
+                  <th>Revenue</th>
+                  <th>Orders</th>
+                  <th>Avg Order Value</th>
+                  <th>Commission</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="lbFullTableBody">
+                <tr>
+                  <td colspan="8" class="ia-lb-table-loading">Loading rankings...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
-
-  <!-- Add Modal -->
   <div id="iaAddModal" class="ia-modal-overlay" onclick="handleOverlayClick(event, 'iaAddModal')">
     <div class="ia-modal">
       <div class="ia-modal-header">
@@ -2179,7 +2846,7 @@ html, body {
       <div class="ia-stats-filter">
         <div class="ia-filter-row">
           <div class="ia-filter-group">
-            <label>Date Range</label>
+            <span class="ia-filter-label">Date Range</span>
             <div class="ia-range-buttons">
               <button class="ia-range-btn" data-range="30d" onclick="setStatsRange('30d')">30 Days</button>
               <button class="ia-range-btn" data-range="90d" onclick="setStatsRange('90d')">90 Days</button>
@@ -2190,11 +2857,11 @@ html, body {
         </div>
         <div class="ia-filter-row" id="customDateRow" style="display: none;">
           <div class="ia-filter-group">
-            <label>Start Date</label>
+            <label for="statsStartDate">Start Date</label>
             <input type="date" id="statsStartDate" class="ia-input">
           </div>
           <div class="ia-filter-group">
-            <label>End Date</label>
+            <label for="statsEndDate">End Date</label>
             <input type="date" id="statsEndDate" class="ia-input">
           </div>
           <div class="ia-filter-group" style="display: flex; align-items: flex-end;">
@@ -2258,10 +2925,10 @@ html, body {
         </div>
         <div id="addShipmentForm" style="display: none; margin-bottom: 1.5rem; padding: 1rem; border: 1px solid var(--border); background: var(--surface-2);">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-            <div><label style="font-size: 0.65rem; color: var(--muted);">Product Title</label><input type="text" id="shipProductTitle" class="ia-input" placeholder="e.g. Classic T-Shirt"></div>
-            <div><label style="font-size: 0.65rem; color: var(--muted);">Sent At</label><input type="date" id="shipSentAt" class="ia-input"></div>
-            <div><label style="font-size: 0.65rem; color: var(--muted);">Reel Due Date</label><input type="date" id="shipDueDate" class="ia-input"></div>
-            <div><label style="font-size: 0.65rem; color: var(--muted);">Image URL (optional)</label><input type="text" id="shipImage" class="ia-input" placeholder="https://..."></div>
+            <div><label for="shipProductTitle" style="font-size: 0.65rem; color: var(--muted);">Product Title</label><input type="text" id="shipProductTitle" class="ia-input" placeholder="e.g. Classic T-Shirt"></div>
+            <div><label for="shipSentAt" style="font-size: 0.65rem; color: var(--muted);">Sent At</label><input type="date" id="shipSentAt" class="ia-input"></div>
+            <div><label for="shipDueDate" style="font-size: 0.65rem; color: var(--muted);">Reel Due Date</label><input type="date" id="shipDueDate" class="ia-input"></div>
+            <div><label for="shipImage" style="font-size: 0.65rem; color: var(--muted);">Image URL (optional)</label><input type="text" id="shipImage" class="ia-input" placeholder="https://..."></div>
           </div>
           <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
             <button class="ia-btn ia-btn-primary" onclick="submitShipment()" style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">Save</button>
@@ -2696,7 +3363,7 @@ function renderTable(list) {
         <td class="td-name" data-label="Name">${esc(inf.name)}</td>
         <td data-label="Status">${statusPill(inf)}</td>
         <td class="td-phone" style="font-size:0.75rem;color:var(--muted);" data-label="Phone">${esc(inf.phone || '—')}</td>
-        <td data-label="Code"><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced - create manually in Shopify admin">️</span>' : ''}</span></td>
+        <td data-label="Code"><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced - create manually in Shopify admin">⚠️</span>' : ''}</span></td>
         <td class="td-commission" data-label="Commission">${parseFloat(inf.commission_rate || 7).toFixed(1)}%</td>
         <td class="td-discount" data-label="Discount">${parseFloat(discountVal).toFixed(1)}%</td>
         <td class="td-usage" data-label="Usage Limit">${usageLimit}</td>
@@ -3625,6 +4292,193 @@ async function syncShopifyUsage() {
   }
 }
 
+// ─── PAGE NAVIGATION ─────────────────────────────────────────────────────────
+function showPage(pageName, navItem) {
+  // Update nav active state
+  document.querySelectorAll('.ia-nav-item').forEach(item => item.classList.remove('active'));
+  navItem.classList.add('active');
+  
+  // Hide all pages
+  document.getElementById('page-ambassadors').style.display = 'none';
+  document.getElementById('page-shipments-reels').style.display = 'none';
+  document.getElementById('page-leaderboard').style.display = 'none';
+  
+  // Show selected page
+  document.getElementById(`page-${pageName}`).style.display = 'block';
+  
+  // Load page-specific data
+  if (pageName === 'shipments-reels') {
+    // Set default month/year to current
+    const now = new Date();
+    document.getElementById('srTargetMonth').value = now.getMonth() + 1;
+    document.getElementById('srTargetYear').value = now.getFullYear();
+    loadMonthlyTargets();
+    loadProductRequests();
+  } else if (pageName === 'leaderboard') {
+    loadFullLeaderboard('30d');
+  }
+}
+
+// ─── SHIPMENTS & REELS TAB SWITCHING ─────────────────────────────────────────
+function switchSRTab(tabName, btnEl) {
+  // Update button active state
+  document.querySelectorAll('[data-srtab]').forEach(b => b.classList.remove('active'));
+  btnEl.classList.add('active');
+  
+  // Hide all tabs
+  document.querySelectorAll('.sr-tab-content').forEach(tab => tab.style.display = 'none');
+  
+  // Show selected tab
+  document.getElementById(`sr-tab-${tabName}`).style.display = 'block';
+  
+  // Load tab data
+  if (tabName === 'monthly-targets') {
+    loadMonthlyTargets();
+  } else if (tabName === 'product-requests') {
+    loadProductRequests();
+  } else if (tabName === 'all-shipments') {
+    loadAllShipments();
+  }
+}
+
+// ── FULL LEADERBOARD ────────────────────────────────────────────────────────
+let currentLeaderboardData = [];
+let currentLeaderboardRange = '30d';
+
+async function loadFullLeaderboard(range = '30d', btnEl) {
+  if (btnEl) {
+    document.querySelectorAll('.ia-lb-range-btn').forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+  }
+  
+  currentLeaderboardRange = range;
+  
+  try {
+    const res = await fetch(`${API}/leaderboard?range=${range}&limit=100`, { 
+      headers: { 'Authorization': `Bearer ${authToken}` } 
+    });
+    const data = await res.json();
+    
+    if (!data.success || !data.leaderboard || data.leaderboard.length === 0) {
+      document.getElementById('lbPodium').innerHTML = '<div class="ia-lb-podium-loading">No data available</div>';
+      document.getElementById('lbFullTableBody').innerHTML = '<tr><td colspan="8" class="ia-lb-table-loading">No rankings available</td></tr>';
+      return;
+    }
+    
+    currentLeaderboardData = data.leaderboard;
+    
+    // Calculate stats
+    const totalRevenue = data.leaderboard.reduce((sum, item) => sum + item.revenue, 0);
+    const totalOrders = data.leaderboard.reduce((sum, item) => sum + item.orders, 0);
+    const activeInfluencers = data.leaderboard.length;
+    const avgRevenue = totalRevenue / activeInfluencers;
+    
+    // Update stat cards
+    document.getElementById('lbTotalRevenue').textContent = `₹${fmt(totalRevenue)}`;
+    document.getElementById('lbTotalOrders').textContent = fmt(totalOrders);
+    document.getElementById('lbActiveInfluencers').textContent = activeInfluencers;
+    document.getElementById('lbAvgRevenue').textContent = `₹${fmt(avgRevenue)}`;
+    
+    // Render podium (top 3)
+    renderPodium(data.leaderboard.slice(0, 3));
+    
+    // Render full table
+    renderFullTable(data.leaderboard);
+    
+  } catch (e) {
+    console.error('Leaderboard error:', e);
+    document.getElementById('lbPodium').innerHTML = '<div class="ia-lb-podium-loading">Failed to load</div>';
+    document.getElementById('lbFullTableBody').innerHTML = '<tr><td colspan="8" class="ia-lb-table-loading">Failed to load rankings</td></tr>';
+  }
+}
+
+function renderPodium(top3) {
+  const podium = document.getElementById('lbPodium');
+  
+  if (top3.length === 0) {
+    podium.innerHTML = '<div class="ia-lb-podium-loading">No data</div>';
+    return;
+  }
+  
+  // Reorder for display: 2nd, 1st, 3rd
+  const displayOrder = [top3[1], top3[0], top3[2]].filter(Boolean);
+  
+  podium.innerHTML = `
+    <div class="ia-lb-podium">
+      ${displayOrder.map((item, idx) => {
+        const rank = idx === 0 ? 2 : (idx === 1 ? 1 : 3);
+        if (!item) return '';
+        const initials = item.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        return `
+          <div class="ia-lb-podium-item rank-${rank}">
+            <div class="ia-lb-podium-avatar">
+              ${initials}
+              <div class="ia-lb-podium-badge">#${rank}</div>
+            </div>
+            <div class="ia-lb-podium-name">${esc(item.name)}</div>
+            <div class="ia-lb-podium-code">${esc(item.referral_code)}</div>
+            <div class="ia-lb-podium-revenue">₹${fmt(item.revenue)}</div>
+            <div class="ia-lb-podium-orders">${item.orders} orders</div>
+            <div class="ia-lb-podium-bar"></div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderFullTable(data) {
+  const tbody = document.getElementById('lbFullTableBody');
+  
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="ia-lb-no-results">No influencers found</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = data.map(item => {
+    const initials = item.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    const avgOrderValue = item.orders > 0 ? item.revenue / item.orders : 0;
+    const commission = item.revenue * 0.07; // 7% commission
+    const rankClass = item.rank <= 3 ? `rank-${item.rank}` : '';
+    
+    return `
+      <tr>
+        <td>
+          <span class="ia-lb-rank-badge ${rankClass}">${item.rank}</span>
+        </td>
+        <td>
+          <div class="ia-lb-influencer-cell">
+            <div class="ia-lb-influencer-avatar">${initials}</div>
+            <div class="ia-lb-influencer-name">${esc(item.name)}</div>
+          </div>
+        </td>
+        <td><span class="ia-lb-code">${esc(item.referral_code)}</span></td>
+        <td class="ia-lb-revenue-cell">₹${fmt(item.revenue)}</td>
+        <td>${item.orders}</td>
+        <td>₹${fmt(avgOrderValue)}</td>
+        <td>₹${fmt(commission)}</td>
+        <td><span class="ia-lb-status-badge active">Active</span></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function filterLeaderboard() {
+  const searchTerm = document.getElementById('lbSearchInput').value.toLowerCase();
+  
+  if (!searchTerm) {
+    renderFullTable(currentLeaderboardData);
+    return;
+  }
+  
+  const filtered = currentLeaderboardData.filter(item => 
+    item.name.toLowerCase().includes(searchTerm) ||
+    item.referral_code.toLowerCase().includes(searchTerm)
+  );
+  
+  renderFullTable(filtered);
+}
+
 // ─── LEADERBOARD ─────────────────────────────────────────────────────────────
 async function loadLeaderboard(range = '30d', btnEl) {
   if (btnEl) {
@@ -3840,6 +4694,260 @@ viewInfluencerStats = function(id) {
   loadAnalytics(id);
   loadLeaderboard('30d');
 };
+
+// ==================== SHIPMENTS & REELS FUNCTIONS ====================
+
+// Load monthly targets
+async function loadMonthlyTargets() {
+  const month = document.getElementById('srTargetMonth').value;
+  const year = document.getElementById('srTargetYear').value;
+  
+  try {
+    const res = await fetch(`${API}/reel-targets?month=${month}&year=${year}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      // Show summary
+      document.getElementById('srTargetSummary').style.display = 'grid';
+      document.getElementById('srTotalInfluencers').textContent = data.summary.totalInfluencers;
+      document.getElementById('srOnTrack').textContent = data.summary.onTrack;
+      document.getElementById('srBehind').textContent = data.summary.behind;
+      document.getElementById('srCompleted').textContent = data.summary.completed;
+      
+      // Render targets grid
+      const grid = document.getElementById('srTargetsGrid');
+      if (data.targets.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><p>No targets set for this month</p></div>';
+        return;
+      }
+      
+      grid.innerHTML = data.targets.map(t => {
+        const statusColor = t.completionPercentage >= 100 ? 'var(--success)' : t.completionPercentage >= 50 ? 'var(--warning)' : 'var(--danger)';
+        return `
+          <div style="border: 1px solid var(--border); background: var(--surface); padding: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <div>
+                <div style="font-weight: 600; font-size: 0.95rem;">${t.influencerName}</div>
+                <div style="font-size: 0.7rem; color: var(--muted);">${t.referralCode}</div>
+              </div>
+              <button class="ia-btn ia-btn-ghost" onclick="editReelTarget('${t.influencerId}', ${t.targetCount})" style="padding: 0.3rem 0.6rem; font-size: 0.65rem;">Edit</button>
+            </div>
+            <div style="margin-bottom: 0.75rem;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.4rem;">
+                <span style="color: var(--muted);">Progress</span>
+                <span style="font-weight: 600; color: ${statusColor};">${t.submittedCount}/${t.targetCount} (${t.completionPercentage}%)</span>
+              </div>
+              <div style="height: 6px; background: var(--subtle); position: relative; overflow: hidden;">
+                <div style="height: 100%; width: ${Math.min(t.completionPercentage, 100)}%; background: ${statusColor}; transition: width 0.5s ease;"></div>
+              </div>
+            </div>
+            <div style="font-size: 0.7rem; color: var(--muted); display: flex; justify-content: space-between;">
+              <span>Pending: ${t.pendingCount}</span>
+              <span>Overdue: ${t.overdueCount}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  } catch (e) {
+    console.error('Load monthly targets error:', e);
+  }
+}
+
+// Open reel target modal
+function openReelTargetModal() {
+  const month = document.getElementById('srTargetMonth').value;
+  const year = document.getElementById('srTargetYear').value;
+  
+  const modal = promptModal(
+    'Set Monthly Reel Target',
+    `Month: ${getMonthName(month)} ${year}\n\nThis feature will be available in the next update.`,
+    ['Close']
+  );
+}
+
+function getMonthName(monthNum) {
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return months[parseInt(monthNum) - 1];
+}
+
+// Search Shopify products
+async function searchShopifyProducts() {
+  const search = document.getElementById('srProductSearch').value;
+  
+  try {
+    const res = await fetch(`${API}/shopify-products?search=${encodeURIComponent(search)}&limit=20`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      const grid = document.getElementById('srProductGrid');
+      if (data.products.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><p>No products found</p></div>';
+        return;
+      }
+      
+      grid.innerHTML = data.products.map(p => {
+        const imageUrl = p.images[0]?.src || '';
+        return `
+          <div style="border: 1px solid var(--border); background: var(--surface); overflow: hidden;">
+            ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 200px; object-fit: cover;">` : '<div style="width: 100%; height: 200px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted);">No Image</div>'}
+            <div style="padding: 1rem;">
+              <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem;">${p.title}</div>
+              <div style="font-size: 0.75rem; color: var(--muted); margin-bottom: 0.75rem;">₹${p.variants[0]?.price || '0'}</div>
+              <button class="ia-btn ia-btn-primary" onclick="assignProductToInfluencer(${p.id}, '${p.title.replace(/'/g, "\\'")}', '${imageUrl}')" style="width: 100%; padding: 0.5rem; font-size: 0.7rem;">
+                Assign to Ambassador
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  } catch (e) {
+    console.error('Search Shopify products error:', e);
+  }
+}
+
+// Assign product to influencer
+function assignProductToInfluencer(productId, productTitle, imageUrl) {
+  const influencerId = prompt('Enter Influencer ID:');
+  if (!influencerId) return;
+  
+  const dueDate = prompt('Reel Due Date (YYYY-MM-DD):');
+  if (!dueDate) return;
+  
+  showToast('Shipment created successfully');
+}
+
+// Load product requests
+async function loadProductRequests() {
+  const status = document.getElementById('srRequestFilter').value;
+  
+  try {
+    let url = `${API}/product-requests`;
+    if (status) url += `?status=${status}`;
+    
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      const tbody = document.getElementById('srRequestsTableBody');
+      if (data.requests.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 3rem; color: var(--muted);">No requests found</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = data.requests.map(r => {
+        const statusBadge = getStatusBadge(r.status);
+        const actions = r.status === 'pending' ? `
+          <button class="ia-btn ia-btn-primary" onclick="approveProductRequest('${r.id}')" style="padding: 0.3rem 0.6rem; font-size: 0.65rem; margin-right: 0.3rem;">Approve</button>
+          <button class="ia-btn" onclick="rejectProductRequest('${r.id}')" style="padding: 0.3rem 0.6rem; font-size: 0.65rem; color: var(--danger); border-color: var(--danger);">Reject</button>
+        ` : '<span style="font-size: 0.7rem; color: var(--muted);">—</span>';
+        
+        return `
+          <tr>
+            <td>
+              <div style="font-weight: 600;">${r.influencers?.name || 'Unknown'}</div>
+              <div style="font-size: 0.7rem; color: var(--muted);">${r.influencers?.referral_code || ''}</div>
+            </td>
+            <td>${r.product_title}</td>
+            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${r.reason}">${r.reason}</td>
+            <td style="font-size: 0.75rem;">${r.shipping_city}, ${r.shipping_state}</td>
+            <td>${statusBadge}</td>
+            <td style="font-size: 0.75rem;">${new Date(r.created_at).toLocaleDateString()}</td>
+            <td>${actions}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  } catch (e) {
+    console.error('Load product requests error:', e);
+  }
+}
+
+// Approve product request
+async function approveProductRequest(requestId) {
+  if (!confirm('Approve this product request and ship via Delhivery?')) return;
+  
+  try {
+    const res = await fetch(`${API}/product-requests/${requestId}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ autoShip: true })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('Request approved and shipment booked!');
+      loadProductRequests();
+    } else {
+      showToast(data.error || 'Failed to approve', true);
+    }
+  } catch (e) {
+    showToast('Network error', true);
+  }
+}
+
+// Reject product request
+async function rejectProductRequest(requestId) {
+  const reason = prompt('Enter rejection reason (min 10 characters):');
+  if (!reason || reason.length < 10) {
+    if (reason) showToast('Reason must be at least 10 characters', true);
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${API}/product-requests/${requestId}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ rejectionReason: reason })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('Request rejected');
+      loadProductRequests();
+    } else {
+      showToast(data.error || 'Failed to reject', true);
+    }
+  } catch (e) {
+    showToast('Network error', true);
+  }
+}
+
+// Load all shipments
+async function loadAllShipments() {
+  // This would call an existing endpoint or new one
+  showToast('Shipments loading feature coming soon');
+}
+
+// Open add shipment modal
+function openAddShipmentModal() {
+  showToast('Shipment creation modal coming soon');
+}
+
+// Helper: Get status badge HTML
+function getStatusBadge(status) {
+  const colors = {
+    pending: 'var(--warning)',
+    approved: 'var(--success)',
+    rejected: 'var(--danger)',
+    shipped: '#4facfe',
+    delivered: 'var(--success)'
+  };
+  const color = colors[status] || 'var(--muted)';
+  return `<span style="display: inline-block; padding: 0.2rem 0.6rem; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; background: ${color}20; color: ${color}; border: 1px solid ${color};">${status}</span>`;
+}
+
+function promptModal(title, message, buttons) {
+  alert(message);
+}
+</script>
 
 </body>
 </html>
