@@ -813,6 +813,7 @@ const params = new URLSearchParams(window.location.search);
 const token = params.get('token');
 let currentRange = 'all';
 let commissionRate = 7;
+let displayedCommissionRate = 7;
 let currency = 'INR';
 
 // ─── BOOT ───────────────────────────────────────────────────────────────────
@@ -1037,6 +1038,7 @@ async function fetchStats(range, startDate = null, endDate = null) {
 
     currency = data.stats.currency || 'INR';
     commissionRate = data.stats.commissionRate || commissionRate;
+    displayedCommissionRate = data.stats.displayedCommissionRate || data.influencer.displayedCommissionRate || commissionRate;
 
     renderStats(data.stats);
     renderFeed(data.recentConversions || []);
@@ -1064,9 +1066,9 @@ function renderStats(stats) {
 
   const earningsVal = stats.estimatedEarnings !== undefined
     ? parseFloat(stats.estimatedEarnings)
-    : parseFloat(stats.totalRevenue) * (commissionRate / 100);
+    : parseFloat(stats.totalRevenue) * (displayedCommissionRate / 100);
   animateValue('ipEarnings', `${sym}${fmt(earningsVal)}`);
-  document.getElementById('ipEarningsSub').textContent = `${stats.commissionRate || commissionRate}% commission`;
+  document.getElementById('ipEarningsSub').textContent = `${stats.displayedCommissionRate || displayedCommissionRate}% commission`;
 }
 
 function renderFeed(conversions) {
@@ -1214,7 +1216,7 @@ async function loadPortalPayouts() {
         <td>${p.month}</td>
         <td>${p.orders_count || 0}</td>
         <td>₹${portalFmt(parseFloat(p.revenue_amount || 0))}</td>
-        <td>${p.commission_rate}%</td>
+        <td>${p.displayed_commission_rate || data.influencer.displayed_commission_rate || p.commission_rate}%</td>
         <td style="font-weight: 700;">₹${portalFmt(parseFloat(p.amount_due || 0))}</td>
         <td><span class="ip-badge ${p.status === 'paid' ? 'paid' : 'unpaid'}">${p.status}</span></td>
       </tr>

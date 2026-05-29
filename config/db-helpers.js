@@ -497,6 +497,7 @@ async function createInfluencer(influencerData) {
         link_token: influencerData.linkToken,
         commission_rate: influencerData.commissionRate ?? 7.00,
         discount_value: influencerData.discountValue ?? influencerData.commissionRate ?? 7.00,
+        displayed_commission_rate: influencerData.displayedCommissionRate ?? influencerData.commissionRate ?? 7.00,
         usage_limit: influencerData.usageLimit ?? null,
         phone: influencerData.phone,
         is_active: influencerData.isActive !== undefined ? influencerData.isActive : true
@@ -534,6 +535,7 @@ async function updateInfluencer(id, updates) {
     if (updates.referralCode !== undefined) updateData.referral_code = updates.referralCode;
     if (updates.commissionRate !== undefined) updateData.commission_rate = parseFloat(updates.commissionRate);
     if (updates.discountValue !== undefined) updateData.discount_value = parseFloat(updates.discountValue);
+    if (updates.displayedCommissionRate !== undefined) updateData.displayed_commission_rate = parseFloat(updates.displayedCommissionRate);
     if (updates.usageLimit !== undefined) updateData.usage_limit = updates.usageLimit === '' ? null : parseInt(updates.usageLimit);
     if (updates.phone !== undefined) updateData.phone = updates.phone;
     if (updates.isActive !== undefined) updateData.is_active = updates.isActive;

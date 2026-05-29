@@ -6042,7 +6042,7 @@ app.get('/api/influencer-admin/list', authenticateAdmin, async (req, res) => {
 // Add new influencer (Protected by Admin Auth)
 app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
     try {
-        const { name, referralCode, commissionRate, discountValue, usageLimit, phone } = req.body;
+        const { name, referralCode, commissionRate, discountValue, displayedCommissionRate, usageLimit, phone } = req.body;
         if (!name || !referralCode) {
             return res.status(400).json({ error: 'Name and referral code are required' });
         }
@@ -6053,6 +6053,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
         // Parse values
         const commission = commissionRate !== undefined ? parseFloat(commissionRate) : 7.00;
         const discount = discountValue !== undefined ? parseFloat(discountValue) : commission;
+        const displayedCommission = displayedCommissionRate !== undefined ? parseFloat(displayedCommissionRate) : commission;
         const usage = usageLimit !== undefined && usageLimit !== '' ? parseInt(usageLimit) : null;
 
         // First create the influencer in Supabase
@@ -6063,6 +6064,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
             phone,
             commissionRate: commission,
             discountValue: discount,
+            displayedCommissionRate: displayedCommission,
             usageLimit: usage
         });
 
@@ -6107,7 +6109,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
 app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, referralCode, commissionRate, discountValue, usageLimit, phone } = req.body;
+        const { name, referralCode, commissionRate, discountValue, displayedCommissionRate, usageLimit, phone } = req.body;
 
         // Get existing influencer to check for Shopify sync
         const existingInfluencer = await getInfluencerById(id);
@@ -6121,6 +6123,7 @@ app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res
             referralCode,
             commissionRate,
             discountValue,
+            displayedCommissionRate,
             usageLimit,
             phone
         });
@@ -6226,6 +6229,7 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
 
         const referralCode = influencer.referral_code;
         const commissionRate = parseFloat(influencer.commission_rate || 7);
+        const displayedCommissionRate = parseFloat(influencer.displayed_commission_rate || commissionRate);
         console.log(`[Admin Influencer Stats] Fetching cached stats for ${influencer.name} (Code: ${referralCode})`);
 
         // FAST: Read pre-calculated stats from Supabase (no Shopify API calls!)
@@ -6279,6 +6283,7 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
                 name: influencer.name,
                 referralCode: influencer.referral_code,
                 commissionRate: commissionRate,
+                displayedCommissionRate: displayedCommissionRate,
                 phone: influencer.phone
             },
             stats: {
@@ -6287,6 +6292,7 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
                 aov: aov.toFixed(2),
                 estimatedEarnings: estimatedEarnings.toFixed(2),
                 commissionRate,
+                displayedCommissionRate: displayedCommissionRate,
                 currency: 'INR',
                 dateRange: {
                     from: influencerData.stats_date_range || 'last_60_days',
@@ -7254,8 +7260,9 @@ async function getAnalyticsForInfluencer(influencer, range = 'all') {
 
     const totalRevenue = orders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
     const commissionRate = parseFloat(influencer.commission_rate || 10);
+    const displayedCommissionRate = parseFloat(influencer.displayed_commission_rate || commissionRate);
     const aov = orderCount > 0 ? totalRevenue / orderCount : 0;
-    const estimatedEarnings = (totalRevenue * commissionRate) / 100;
+    const estimatedEarnings = (totalRevenue * displayedCommissionRate) / 100;
 
     // Monthly aggregation
     const monthlyMap = {};
@@ -7297,14 +7304,15 @@ async function getAnalyticsForInfluencer(influencer, range = 'all') {
             id: influencer.id,
             name: influencer.name,
             referral_code: influencer.referral_code,
-            commission_rate: commissionRate
+            commission_rate: commissionRate,
+            displayed_commission_rate: displayedCommissionRate
         },
         summary: {
             totalRevenue: parseFloat(totalRevenue.toFixed(2)),
             totalOrders: orderCount || 0,
             aov: parseFloat(aov.toFixed(2)),
             estimatedEarnings: parseFloat(estimatedEarnings.toFixed(2)),
-            commissionRate
+            commissionRate: displayedCommissionRate
         },
         monthly,
         shipments: {

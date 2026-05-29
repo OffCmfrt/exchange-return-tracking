@@ -2087,7 +2087,12 @@ html, body {
         <div class="ia-form-group">
           <label for="addCommission">Commission Rate (%)</label>
           <input type="number" id="addCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5" value="7">
-          <p class="ia-form-hint">Default: 7%</p>
+          <p class="ia-form-hint">What they actually earn (admin only)</p>
+        </div>
+        <div class="ia-form-group">
+          <label for="addDisplayedCommission">Displayed Commission (%)</label>
+          <input type="number" id="addDisplayedCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5" value="7">
+          <p class="ia-form-hint">What influencers see in their portal</p>
         </div>
       </div>
       <div class="ia-form-row">
@@ -2132,8 +2137,14 @@ html, body {
           <input type="text" id="editCode" class="ia-input" placeholder="e.g. RAHUL10" style="text-transform:uppercase;">
         </div>
         <div class="ia-form-group">
-          <label for="editCommission">Commission Rate (%)</label>
+          <label for="editCommission">Actual Commission Rate (%)</label>
           <input type="number" id="editCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5">
+          <p class="ia-form-hint">What they actually earn (admin only)</p>
+        </div>
+        <div class="ia-form-group">
+          <label for="editDisplayedCommission">Displayed Commission (%)</label>
+          <input type="number" id="editDisplayedCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5">
+          <p class="ia-form-hint">What influencers see in their portal</p>
         </div>
       </div>
       <div class="ia-form-row">
@@ -2727,6 +2738,7 @@ async function submitAdd() {
   const phone = document.getElementById('addPhone').value.trim();
   const referralCode = document.getElementById('addCode').value.trim().toUpperCase();
   const commissionRate = parseFloat(document.getElementById('addCommission').value) || 7;
+  const displayedCommissionRate = parseFloat(document.getElementById('addDisplayedCommission').value) || commissionRate;
   const discountValue = document.getElementById('addDiscountValue').value ? parseFloat(document.getElementById('addDiscountValue').value) : commissionRate;
   const usageLimit = document.getElementById('addUsageLimit').value.trim();
 
@@ -2739,7 +2751,7 @@ async function submitAdd() {
     const res = await fetch(`${API}/add`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-      body: JSON.stringify({ name, referralCode, commissionRate, discountValue, usageLimit, phone })
+      body: JSON.stringify({ name, referralCode, commissionRate, displayedCommissionRate, discountValue, usageLimit, phone })
     });
     if (res.ok) {
       const d = await res.json();
@@ -2773,6 +2785,9 @@ function openEditModal(id) {
   document.getElementById('editPhone').value = inf.phone || '';
   document.getElementById('editCode').value = inf.referral_code;
   document.getElementById('editCommission').value = parseFloat(inf.commission_rate || 7).toFixed(1);
+  // Handle displayed_commission_rate (use displayed_commission_rate if exists, fallback to commission_rate)
+  const displayedCommission = inf.displayed_commission_rate !== undefined && inf.displayed_commission_rate !== null ? inf.displayed_commission_rate : (inf.commission_rate || 7);
+  document.getElementById('editDisplayedCommission').value = parseFloat(displayedCommission).toFixed(1);
   // Handle discount_value (use discount_value if exists, fallback to commission_rate)
   const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 7);
   document.getElementById('editDiscountValue').value = parseFloat(discountVal).toFixed(1);
@@ -2790,6 +2805,7 @@ async function submitEdit() {
   const phone = document.getElementById('editPhone').value.trim();
   const referralCode = document.getElementById('editCode').value.trim().toUpperCase();
   const commissionRate = parseFloat(document.getElementById('editCommission').value);
+  const displayedCommissionRate = parseFloat(document.getElementById('editDisplayedCommission').value) || commissionRate;
   const discountValue = document.getElementById('editDiscountValue').value ? parseFloat(document.getElementById('editDiscountValue').value) : commissionRate;
   const usageLimit = document.getElementById('editUsageLimit').value.trim();
 
@@ -2802,7 +2818,7 @@ async function submitEdit() {
     const res = await fetch(`${API}/update/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-      body: JSON.stringify({ name, referralCode, commissionRate, discountValue, usageLimit, phone })
+      body: JSON.stringify({ name, referralCode, commissionRate, displayedCommissionRate, discountValue, usageLimit, phone })
     });
     if (res.ok) {
       closeModal('iaEditModal');
