@@ -507,6 +507,16 @@ header {
     color: #991b1b;
 }
 
+.badge-cancelled {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.badge-failed {
+    background: #ffedd5;
+    color: #c2410c;
+}
+
 /* Alert messages */
 .alert {
     padding: 0.75rem 1rem;
@@ -1009,5 +1019,114 @@ header {
 
     .route-arrow {
         transform: rotate(90deg);
+    }
+}
+
+/* ============================================================
+   PREMIUM ANALYTICS PAGE STYLES
+   ============================================================ */
+
+/* Analytics Full Page Modal */
+#analyticsModal .analytics-full-page {
+    animation: slideInRight 0.4s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* KPI Cards */
+.analytics-kpi-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+
+/* Chart Cards */
+.analytics-chart-card {
+    transition: all 0.3s ease;
+}
+
+.analytics-chart-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+/* Date Range Buttons */
+.date-range-btn.active {
+    background: #111827 !important;
+    color: white !important;
+    box-shadow: 0 2px 8px rgba(17, 24, 39, 0.3) !important;
+}
+
+.date-range-btn:not(.active):hover {
+    background: #e5e7eb !important;
+}
+
+/* Insights Table */
+.analytics-insights-table tbody tr {
+    border-bottom: 1px solid #f3f4f6;
+    transition: background 0.2s;
+}
+
+.analytics-insights-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+.analytics-insights-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+/* Loading Animation */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+#analyticsLoading {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* Responsive Analytics */
+@media (max-width: 1024px) {
+    .analytics-full-page .grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .analytics-header-controls {
+        flex-direction: column;
+        gap: 1rem !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .analytics-kpi-card {
+        padding: 1rem !important;
+    }
+    
+    .analytics-kpi-card p[style*="font-size: 2.5rem"] {
+        font-size: 2rem !important;
+    }
+    
+    .analytics-chart-card {
+        padding: 1rem !important;
+        min-height: 300px !important;
+    }
+    
+    .analytics-header {
+        padding: 1rem !important;
+    }
+    
+    .analytics-content {
+        padding: 1rem !important;
     }
 }

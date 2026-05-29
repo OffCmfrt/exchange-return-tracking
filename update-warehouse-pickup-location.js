@@ -51,13 +51,14 @@ async function updateWarehousePickupLocation() {
         const oldPickupLocation = currentSetting.value.pickup_location;
         console.log(`Current pickup_location: "${oldPickupLocation}"`);
 
-        // Update the pickup_location to match Delhivery
+        // Update the pickup_location to match Shiprocket's valid locations
+        // Shiprocket has: "Home" and "warehouse" (case-sensitive)
         const updatedValue = {
             ...currentSetting.value,
-            pickup_location: 'Offcomfrt Warehouse'
+            pickup_location: 'warehouse'  // Changed from 'Offcomfrt Warehouse' to 'warehouse'
         };
 
-        console.log(`\n📝 Updating pickup_location to: "Offcomfrt Warehouse"`);
+        console.log(`\n📝 Updating pickup_location to: "warehouse"`);
 
         const { error: updateError } = await supabase
             .from('store_settings')
@@ -72,8 +73,9 @@ async function updateWarehousePickupLocation() {
         console.log('\n✅ Successfully updated warehouse location!');
         console.log('\n📋 Updated warehouse location:');
         console.log(JSON.stringify(updatedValue, null, 2));
-        console.log('\n💡 Now both Shiprocket and Delhivery will use "Offcomfrt Warehouse"');
-        console.log('   No need to configure the new Delhivery pickup location field.');
+        console.log('\n💡 Shiprocket will now use "warehouse" as the pickup location');
+        console.log('   This matches one of your valid Shiprocket pickup locations.');
+        console.log('   Delhivery will continue to use its own pickup location setting.\n');
 
     } catch (error) {
         console.error('❌ Error:', error.message);

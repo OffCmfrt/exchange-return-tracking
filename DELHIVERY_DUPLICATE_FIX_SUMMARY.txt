@@ -1,0 +1,71 @@
+
+## Monitoring
+
+Check logs for these indicators:
+
+**Successful Recovery**:
+```
+⚠️ Delhivery duplicate order detected for REQ-XXXXX. Using existing waybill: 54716210000711
+```
+
+**Fallback Activation**:
+```
+[pickup] Carrier override: Delhivery (with fallback if enabled)
+⚠️ delhivery failed, falling back to shiprocket: <error message>
+✅ Shiprocket fallback success: ShipmentID XXXXX, AWB XXXXX
+```
+
+**Failed Recovery**:
+```
+❌ Failed to recover existing waybill: <error>
+❌ Delhivery duplicate order: REQ-XXXXX already exists. Duplicate order id
+```
+
+## Prevention
+
+To avoid duplicate orders in the future:
+
+1. **Check Status Before Approval**: Verify request status before approving
+2. **Avoid Re-approving**: Don't approve requests that are already in `pickup_pending` status
+3. **Use Recovery Scripts**: If duplicate occurs, use the recovery script instead of re-approving
+4. **Monitor Logs**: Watch for duplicate order warnings in logs
+
+## Files Modified
+
+### Core Fixes:
+1. `server.js` (lines 1697-1770) - Critical error handling order fix
+2. `server.js` (lines 1079-1092) - Carrier override fallback fix
+3. `public/admin/index.html` (lines 1276-1280) - UI label updates
+
+### Recovery Scripts Created:
+4. `recover-duplicate-delhivery.js` - Single order recovery
+5. `batch-recover-delhivery-orders.js` - Batch recovery for all orders
+6. `dry-run-delhivery-check.js` - Dry-run to check before recovery
+7. `manual-fix-req76588.js` - Manual fix for REQ-76588
+8. `test-duplicate-fix.js` - Test script for duplicate recovery
+
+### Documentation:
+9. `DELHIVERY_DUPLICATE_FIX.md` - This documentation
+
+## Rollback Plan
+
+If issues arise, revert these changes:
+
+```bash
+git checkout HEAD -- server.js public/admin/index.html
+rm recover-duplicate-delhivery.js batch-recover-delhivery-orders.js dry-run-delhivery-check.js manual-fix-req76588.js test-duplicate-fix.js
+```
+
+Then restart the application.
+
+## Summary
+
+✅ **All issues resolved!**
+
+- REQ-76588 successfully recovered with AWB: 54716210000711
+- Duplicate order detection now works automatically
+- Carrier fallback respects system settings even with overrides
+- Recovery tools available for future use
+- Comprehensive documentation created
+
+**The system is now production-ready and will handle duplicate orders automatically.**

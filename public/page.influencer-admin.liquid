@@ -17,7 +17,7 @@ html, body {
   background: #000000;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 :root {
@@ -283,7 +283,7 @@ html, body {
   letter-spacing: 0.1em;
 }
 
-.ia-content { padding: 2rem 1.5rem; flex: 1; max-width: 100%; overflow-x: hidden; }
+.ia-content { padding: 2rem 1.5rem; flex: 1; max-width: 100%; overflow-x: auto; }
 
 /* ── STAT STRIP ── */
 .ia-stat-strip {
@@ -919,6 +919,94 @@ html, body {
   .ia-stat-value {
     font-size: 1.8rem;
   }
+  
+  /* Ensure table can scroll horizontally */
+  .ia-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Action buttons stay visible and wrap properly */
+  .ia-table th:last-child,
+  .ia-table td:last-child {
+    min-width: 180px;
+    white-space: nowrap;
+  }
+  
+  .ia-row-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
+    justify-content: flex-start;
+  }
+  
+  .ia-action-btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.6rem;
+  }
+}
+
+/* Smaller laptops (1024-1100px) - extra space for actions */
+@media (min-width: 1024px) and (max-width: 1100px) {
+  .ia-table th:last-child,
+  .ia-table td:last-child {
+    min-width: 200px;
+    padding-right: 1rem;
+  }
+  
+  .ia-table-wrap::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 30px;
+    background: linear-gradient(to left, var(--bg), transparent);
+    pointer-events: none;
+  }
+}
+
+/* Tablet range (769-900px) - compact horizontal table */
+@media (min-width: 769px) and (max-width: 900px) {
+  .ia-content {
+    padding: 1.25rem 1rem;
+  }
+  .ia-table {
+    min-width: 750px;
+  }
+  .ia-table th, .ia-table td {
+    padding: 0.7rem 0.55rem;
+    font-size: 0.72rem;
+  }
+  .ia-table th {
+    font-size: 0.55rem;
+  }
+  .ia-action-btn {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.55rem;
+  }
+  
+  /* Subtle scroll hint */
+  .ia-table-wrap::after {
+    content: '→ Scroll for more';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: linear-gradient(to left, var(--bg) 20%, transparent);
+    padding: 0.5rem 1rem 0.5rem 2rem;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    pointer-events: none;
+    animation: scrollHint 2s ease-in-out infinite;
+  }
+  
+  @keyframes scrollHint {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
 }
 
 /* Mobile / Tablet (≤900px) */
@@ -958,7 +1046,7 @@ html, body {
   
   .ia-content {
     padding: 1.25rem 0.75rem;
-    overflow-x: hidden;
+    overflow-x: visible;
   }
   
   .ia-stat-strip {
@@ -973,24 +1061,182 @@ html, body {
     font-size: 1.6rem;
   }
   
-  /* Keep all columns visible but with scroll on mobile */
-  .ia-table {
-    min-width: 900px;
+  /* Premium responsive table - card layout on mobile */
+  .ia-table-wrap {
+    overflow-x: visible;
+    border: none;
   }
-  .ia-table th, .ia-table td {
-    padding: 0.7rem 0.5rem;
-    font-size: 0.72rem;
+  
+  .ia-table {
+    min-width: 100%;
+  }
+  
+  /* Hide table header on mobile */
+  .ia-table thead {
+    display: none;
+  }
+  
+  /* Transform rows into premium cards */
+  .ia-table tbody tr {
+    display: block;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: all var(--transition);
+  }
+  
+  .ia-table tbody tr:hover {
+    border-color: var(--border-hover);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transform: translateY(-2px);
+  }
+  
+  .ia-table tbody td {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    vertical-align: middle;
+  }
+  
+  .ia-table tbody td:last-child {
+    border-bottom: none;
+    border-left: none;
+    box-shadow: none;
+    background: transparent;
+    position: static;
+    grid-column: 1 / -1;
+    padding-top: 1rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+  
+  /* Add labels before each cell content */
+  .ia-table tbody td::before {
+    content: attr(data-label);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  
+  /* Name field - special styling */
+  .ia-table tbody td:nth-child(1) {
+    background: var(--surface-2);
+    padding: 1rem;
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+  
+  .ia-table tbody td:nth-child(1)::before {
+    content: 'Ambassador';
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+  }
+  
+  .ia-table .td-name {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
   }
   
   /* Action buttons more compact on mobile */
   .ia-action-btn {
-    padding: 0.25rem 0.45rem;
-    font-size: 0.55rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.6rem;
   }
   
   /* Ensure no horizontal overflow at page level */
   .ia-wrap, .ia-layout, .ia-main {
-    overflow-x: hidden;
+    overflow-x: auto;
+  }
+  
+  /* Premium responsive table - card layout on mobile */
+  .ia-table-wrap {
+    overflow-x: auto;
+    border: none;
+  }
+  
+  /* Card layout for table rows */
+  .ia-table {
+    min-width: 100%;
+  }
+  
+  .ia-table thead {
+    display: none;
+  }
+  
+  .ia-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .ia-table tbody tr {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    position: relative;
+  }
+  
+  .ia-table tbody td {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    align-items: center;
+    padding: 0.4rem 0;
+    border: none;
+    text-align: left;
+  }
+  
+  .ia-table tbody td::before {
+    content: attr(data-label);
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-right: 1rem;
+  }
+  
+  .ia-table tbody td.td-name {
+    grid-column: 1 / -1;
+    font-size: 0.95rem;
+    font-weight: 700;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.5rem;
+  }
+  
+  .ia-table tbody td.td-name::before {
+    display: none;
+  }
+  
+  /* Actions row at bottom of card */
+  .ia-table tbody td:last-child {
+    grid-column: 1 / -1;
+    padding-top: 0.75rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+  
+  .ia-row-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .ia-action-btn {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.65rem;
   }
 }
 
@@ -1011,6 +1257,554 @@ html, body {
   .ia-stat-value {
     font-size: 1.4rem;
   }
+  
+  /* Even more compact cards on small screens */
+  .ia-table tbody td {
+    grid-template-columns: 100px 1fr;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.75rem;
+  }
+  
+  .ia-table tbody td:nth-child(1) {
+    padding: 0.85rem;
+  }
+  
+  .ia-table .td-name {
+    font-size: 0.9rem;
+  }
+  
+  .ia-action-btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.55rem;
+  }
+}
+
+/* ── SIDEBAR PENDING BADGE ── */
+.ia-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  margin-left: auto;
+  background: var(--warning);
+  color: #000;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  border-radius: 999px;
+}
+.ia-nav-badge.hidden { display: none; }
+
+/* ── STATUS FILTER BAR ── */
+.ia-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.ia-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+  margin-bottom: -1px;
+}
+.ia-filter-btn:hover { color: var(--text); }
+.ia-filter-btn.active {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+.ia-filter-count {
+  display: inline-block;
+  padding: 1px 7px;
+  background: var(--subtle);
+  color: var(--text);
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 999px;
+}
+.ia-filter-btn.active .ia-filter-count {
+  background: var(--text);
+  color: var(--bg);
+}
+
+/* ── STATUS PILLS ── */
+.ia-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 1px solid currentColor;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ia-pill.active { color: var(--success); }
+.ia-pill.pending { color: var(--warning); background: rgba(245, 158, 11, 0.08); }
+.ia-pill.suspended { color: var(--muted); }
+.ia-pill.rejected { color: var(--danger); }
+
+/* ── ADVANCED SEARCH ── */
+.ia-search-panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  transition: all var(--transition);
+}
+.ia-search-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition);
+}
+.ia-search-header:hover {
+  background: var(--surface-2);
+}
+.ia-search-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.ia-search-icon {
+  width: 18px;
+  height: 18px;
+  stroke: var(--muted);
+  transition: stroke var(--transition);
+}
+.ia-search-header:hover .ia-search-icon {
+  stroke: var(--text);
+}
+.ia-search-toggle-icon {
+  width: 16px;
+  height: 16px;
+  stroke: var(--muted);
+  transition: transform var(--transition);
+}
+.ia-search-panel.open .ia-search-toggle-icon {
+  transform: rotate(180deg);
+}
+.ia-search-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ia-search-panel.open .ia-search-body {
+  max-height: 400px;
+}
+.ia-search-content {
+  padding: 0 1.25rem 1.25rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+.ia-search-field label {
+  display: block;
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+.ia-search-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0.7rem 0.9rem;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  transition: border-color var(--transition);
+  outline: none;
+}
+.ia-search-input:focus {
+  border-color: var(--text);
+}
+.ia-search-input::placeholder {
+  color: var(--muted);
+}
+.ia-search-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+.ia-search-btn {
+  padding: 0.7rem 1.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  transition: all var(--transition);
+}
+.ia-search-btn:hover {
+  border-color: var(--text);
+  color: var(--text);
+}
+.ia-search-btn.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.ia-search-btn-reset {
+  padding: 0.7rem 1.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  transition: all var(--transition);
+}
+.ia-search-btn-reset:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.ia-search-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+}
+.ia-filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text);
+  border-radius: 2px;
+}
+.ia-filter-tag-remove {
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--muted);
+  transition: color var(--transition);
+}
+.ia-filter-tag-remove:hover {
+  color: var(--danger);
+}
+
+/* ── BULK ACTION BAR ── */
+.ia-bulk-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  margin-bottom: 1rem;
+  animation: fadeUp 0.3s ease;
+}
+.ia-bulk-bar.show {
+  display: flex;
+}
+.ia-bulk-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.ia-bulk-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.ia-bulk-count span {
+  color: var(--success);
+  font-size: 0.9rem;
+}
+.ia-bulk-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.ia-bulk-btn {
+  padding: 0.6rem 1.2rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  transition: all var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ia-bulk-btn:hover {
+  border-color: var(--success);
+  color: var(--success);
+}
+.ia-bulk-btn.approve-all:hover {
+  background: var(--success);
+  color: #000;
+}
+.ia-bulk-btn.reject-all {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.ia-bulk-btn.reject-all:hover {
+  background: var(--danger);
+  color: #fff;
+}
+.ia-bulk-btn.deselect {
+  color: var(--muted);
+}
+.ia-bulk-btn.deselect:hover {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+/* ── TABLE CHECKBOX ── */
+.ia-checkbox-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ia-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--success);
+  border: 2px solid var(--border);
+  transition: all var(--transition);
+}
+.ia-checkbox:hover {
+  border-color: var(--text);
+}
+.ia-checkbox:checked {
+  border-color: var(--success);
+}
+.ia-table th:first-child,
+.ia-table td:first-child {
+  width: 50px;
+  text-align: center;
+}
+
+/* ── ACTION BUTTON VARIANTS ── */
+.ia-action-btn.approve { border-color: var(--success); color: var(--success); }
+.ia-action-btn.approve:hover { background: var(--success); color: #000; }
+.ia-action-btn.reject { border-color: var(--danger); color: var(--danger); }
+.ia-action-btn.reject:hover { background: var(--danger); color: #fff; }
+.ia-action-btn.payouts { border-color: var(--border); color: var(--text); }
+.ia-action-btn.payouts:hover { border-color: var(--text); background: var(--text); color: var(--bg); }
+
+/* ── SHARE APPLY BUTTON ── */
+.ia-share-apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--transition);
+  margin-right: 0.75rem;
+}
+.ia-share-apply:hover { border-color: var(--text); background: var(--surface-2); }
+.ia-share-apply.copied { border-color: var(--success); color: var(--success); }
+
+/* ── PAYOUTS DRAWER ── */
+.ia-drawer-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: none;
+  z-index: 200;
+  animation: fadeIn 0.2s ease;
+}
+.ia-drawer-overlay.show { display: flex; justify-content: flex-end; }
+.ia-drawer {
+  width: min(560px, 100vw);
+  height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  animation: slideInRight 0.3s ease;
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.ia-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.5rem 1.75rem;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.ia-drawer-title {
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.ia-drawer-sub {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.ia-drawer-close {
+  width: 32px; height: 32px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.ia-drawer-close:hover { color: var(--text); border-color: var(--text); }
+.ia-drawer-body { padding: 1.5rem 1.75rem; }
+
+.ia-payout-summary {
+  display: grid;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin-bottom: 1.75rem;
+}
+.ia-payout-summary-cell {
+  background: var(--surface);
+  padding: 1rem 1.25rem;
+}
+.ia-payout-summary-cell .lbl {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.ia-payout-summary-cell .val {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.ia-payout-form {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 1.25rem;
+  margin-bottom: 1.75rem;
+}
+.ia-payout-form-title {
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.ia-payout-form .ia-form-group { margin-bottom: 0.75rem; }
+.ia-payout-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.ia-payout-list-header {
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 0.85rem;
+  color: var(--muted);
+}
+.ia-payout-item {
+  border: 1px solid var(--border);
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.6rem;
+  background: var(--surface);
+}
+.ia-payout-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+.ia-payout-item-amt { font-size: 1.05rem; font-weight: 700; }
+.ia-payout-item-meta { font-size: 0.75rem; color: var(--muted); }
+.ia-payout-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.ia-payout-actions button {
+  flex: 1;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: inherit;
+}
+.ia-payout-actions button.pay { border-color: var(--success); color: var(--success); }
+.ia-payout-actions button.pay:hover { background: var(--success); color: #000; }
+.ia-payout-actions button.cancel { border-color: var(--danger); color: var(--danger); }
+.ia-payout-actions button.cancel:hover { background: var(--danger); color: #fff; }
+.ia-payout-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 </style>
 </head>
@@ -1062,6 +1856,7 @@ html, body {
         <div class="ia-nav-item active">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Ambassadors
+          <span class="ia-nav-badge hidden" id="iaNavPendingBadge">0</span>
         </div>
       </nav>
       <div class="ia-sidebar-footer">
@@ -1127,17 +1922,127 @@ html, body {
         <!-- Table Section -->
         <div class="ia-section-header">
           <span class="ia-section-title">All Ambassadors</span>
-          <button class="ia-btn ia-btn-primary" onclick="openAddModal()">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Ambassador
+          <div style="display: flex; align-items: center;">
+            <button class="ia-share-apply" id="iaCopyApplyBtn" onclick="copyApplyLink()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+              Share Apply Link
+            </button>
+            <button class="ia-btn ia-btn-primary" onclick="openAddModal()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Ambassador
+            </button>
+          </div>
+        </div>
+
+        <!-- Status Filter Bar -->
+        <div class="ia-filter-bar" id="iaFilterBar">
+          <button class="ia-filter-btn active" data-filter="all" onclick="setStatusFilter('all')">
+            All <span class="ia-filter-count" id="fcAll">0</span>
           </button>
+          <button class="ia-filter-btn" data-filter="pending" onclick="setStatusFilter('pending')">
+            Pending <span class="ia-filter-count" id="fcPending">0</span>
+          </button>
+          <button class="ia-filter-btn" data-filter="active" onclick="setStatusFilter('active')">
+            Active <span class="ia-filter-count" id="fcActive">0</span>
+          </button>
+          <button class="ia-filter-btn" data-filter="suspended" onclick="setStatusFilter('suspended')">
+            Suspended <span class="ia-filter-count" id="fcSuspended">0</span>
+          </button>
+          <button class="ia-filter-btn" data-filter="rejected" onclick="setStatusFilter('rejected')">
+            Rejected <span class="ia-filter-count" id="fcRejected">0</span>
+          </button>
+        </div>
+
+        <!-- Advanced Search Panel -->
+        <div class="ia-search-panel" id="iaSearchPanel">
+          <div class="ia-search-header" onclick="toggleSearchPanel()">
+            <div class="ia-search-title">
+              <svg class="ia-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
+              Advanced Search
+            </div>
+            <svg class="ia-search-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div class="ia-search-body">
+            <div class="ia-search-content">
+              <div class="ia-search-field">
+                <label for="searchName">Name</label>
+                <input type="text" id="searchName" class="ia-search-input" placeholder="Search by name...">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchCode">Referral Code</label>
+                <input type="text" id="searchCode" class="ia-search-input" placeholder="Search by code..." style="text-transform:uppercase;">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchPhone">Phone</label>
+                <input type="text" id="searchPhone" class="ia-search-input" placeholder="Search by phone...">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchEmail">Email</label>
+                <input type="text" id="searchEmail" class="ia-search-input" placeholder="Search by email...">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchMinOrders">Min Orders</label>
+                <input type="number" id="searchMinOrders" class="ia-search-input" placeholder="Minimum orders" min="0">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchMaxOrders">Max Orders</label>
+                <input type="number" id="searchMaxOrders" class="ia-search-input" placeholder="Maximum orders" min="0">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchDateFrom">Created From</label>
+                <input type="date" id="searchDateFrom" class="ia-search-input">
+              </div>
+              <div class="ia-search-field">
+                <label for="searchDateTo">Created To</label>
+                <input type="date" id="searchDateTo" class="ia-search-input">
+              </div>
+              <div class="ia-search-actions">
+                <button class="ia-search-btn-reset" onclick="resetSearch()">Reset</button>
+                <button class="ia-search-btn active" onclick="applySearch()">Apply Search</button>
+              </div>
+            </div>
+            <div class="ia-search-active-filters" id="iaActiveFilters" style="display: none;">
+              <!-- Active filter tags will be injected here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Bulk Action Bar -->
+        <div class="ia-bulk-bar" id="iaBulkBar">
+          <div class="ia-bulk-info">
+            <span class="ia-bulk-count"><span id="iaSelectedCount">0</span> selected</span>
+          </div>
+          <div class="ia-bulk-actions">
+            <button class="ia-bulk-btn approve-all" onclick="bulkApprove()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Approve Selected
+            </button>
+            <button class="ia-bulk-btn reject-all" onclick="bulkReject()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Reject Selected
+            </button>
+            <button class="ia-bulk-btn deselect" onclick="clearSelection()">
+              Clear Selection
+            </button>
+          </div>
         </div>
 
         <div class="ia-table-wrap">
           <table class="ia-table">
             <thead>
               <tr>
+                <th>
+                  <div class="ia-checkbox-wrap">
+                    <input type="checkbox" class="ia-checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                  </div>
+                </th>
                 <th>Name</th>
+                <th>Status</th>
                 <th>Phone</th>
                 <th>Referral Code</th>
                 <th>Commission %</th>
@@ -1181,8 +2086,8 @@ html, body {
         </div>
         <div class="ia-form-group">
           <label for="addCommission">Commission Rate (%)</label>
-          <input type="number" id="addCommission" class="ia-input" placeholder="10" min="0" max="100" step="0.5" value="10">
-          <p class="ia-form-hint">Default: 10%</p>
+          <input type="number" id="addCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5" value="7">
+          <p class="ia-form-hint">Default: 7%</p>
         </div>
       </div>
       <div class="ia-form-row">
@@ -1228,7 +2133,7 @@ html, body {
         </div>
         <div class="ia-form-group">
           <label for="editCommission">Commission Rate (%)</label>
-          <input type="number" id="editCommission" class="ia-input" placeholder="10" min="0" max="100" step="0.5">
+          <input type="number" id="editCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5">
         </div>
       </div>
       <div class="ia-form-row">
@@ -1382,6 +2287,69 @@ html, body {
     </div>
   </div>
 
+  <!-- Payouts Drawer -->
+  <div class="ia-drawer-overlay" id="iaPayoutsDrawer" onclick="handleDrawerOverlay(event)">
+    <aside class="ia-drawer" onclick="event.stopPropagation()">
+      <div class="ia-drawer-head">
+        <div>
+          <div class="ia-drawer-title">Payouts Ledger</div>
+          <div class="ia-drawer-sub"><span id="iaPayoutDrawerName">—</span> · <span id="iaPayoutDrawerCode" style="color:var(--muted);font-weight:500;font-size:0.85rem;">—</span></div>
+        </div>
+        <button class="ia-drawer-close" onclick="closePayoutsDrawer()" aria-label="Close">×</button>
+      </div>
+
+      <div class="ia-drawer-body">
+        <div class="ia-payout-summary" style="grid-template-columns: repeat(2, 1fr);">
+          <div class="ia-payout-summary-cell">
+            <div class="lbl">Total Paid</div>
+            <div class="val" id="iaDrawerTotalPaid">₹0</div>
+          </div>
+          <div class="ia-payout-summary-cell">
+            <div class="lbl">Pending</div>
+            <div class="val" id="iaDrawerPending">₹0</div>
+          </div>
+        </div>
+
+        <div class="ia-payout-form">
+          <div class="ia-payout-form-title">Add Payout</div>
+          <div class="ia-payout-form-row">
+            <div class="ia-form-group">
+              <label for="poStart" style="font-size:0.65rem;">Period Start</label>
+              <input type="date" id="poStart" class="ia-input">
+            </div>
+            <div class="ia-form-group">
+              <label for="poEnd" style="font-size:0.65rem;">Period End</label>
+              <input type="date" id="poEnd" class="ia-input">
+            </div>
+          </div>
+          <div class="ia-payout-form-row">
+            <div class="ia-form-group">
+              <label for="poAmount" style="font-size:0.65rem;">Amount (INR)</label>
+              <input type="number" id="poAmount" class="ia-input" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div class="ia-form-group">
+              <label for="poRef" style="font-size:0.65rem;">Reference (Optional)</label>
+              <input type="text" id="poRef" class="ia-input" placeholder="UPI ref / Txn ID">
+            </div>
+          </div>
+          <div class="ia-form-group">
+            <label for="poNotes" style="font-size:0.65rem;">Notes (Optional)</label>
+            <input type="text" id="poNotes" class="ia-input" placeholder="Internal note">
+          </div>
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <button class="ia-btn ia-btn-primary" id="iaAddPayoutBtn" onclick="submitNewPayout()" style="flex:1;">Record Payout</button>
+            <button class="ia-btn" onclick="clearPayoutForm()" style="flex:0 0 auto;">Reset</button>
+          </div>
+        </div>
+
+        <div class="ia-payout-list-header">History</div>
+        <div id="iaPayoutList">
+          <div class="ia-payout-empty">Loading…</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
   <!-- Toast -->
   <div id="iaToast" class="ia-toast"></div>
 
@@ -1391,6 +2359,17 @@ html, body {
 const API = 'https://exchange-return-tracking.onrender.com/api/influencer-admin';
 let authToken = null; // JWT stored in memory only (not localStorage)
 let influencersData = [];
+let selectedInfluencers = new Set();
+let searchFilters = {
+  name: '',
+  code: '',
+  phone: '',
+  email: '',
+  minOrders: null,
+  maxOrders: null,
+  dateFrom: null,
+  dateTo: null
+};
 
 // ─── BOOT ───────────────────────────────────────────────────────────────────
 // Note: With JWT, we don't persist tokens in localStorage for security
@@ -1550,7 +2529,7 @@ async function loadDashboard() {
     if (data.success) {
       influencersData = data.influencers || [];
       renderStats(influencersData);
-      renderTable(influencersData);
+      renderTable(filteredInfluencers());
       updateTimestamp();
       hide('iaLoading');
       show('iaDashboard');
@@ -1564,54 +2543,169 @@ async function loadDashboard() {
 }
 
 function renderStats(list) {
-  const active = list.filter(i => i.is_active).length;
+  const active = list.filter(i => (i.status === 'active') || (i.status === undefined && i.is_active)).length;
+  const pending = list.filter(i => i.status === 'pending').length;
+  const suspended = list.filter(i => i.status === 'suspended').length;
+  const rejected = list.filter(i => i.status === 'rejected').length;
   const avgComm = list.length > 0
-    ? (list.reduce((s, i) => s + parseFloat(i.commission_rate || 10), 0) / list.length).toFixed(1)
+    ? (list.reduce((s, i) => s + parseFloat(i.commission_rate || 7), 0) / list.length).toFixed(1)
     : 0;
   setText('statTotal', list.length);
   setText('statActive', active);
   setText('statAvgCommission', avgComm + '%');
+
+  // Filter counts
+  setText('fcAll', list.length);
+  setText('fcPending', pending);
+  setText('fcActive', active);
+  setText('fcSuspended', suspended);
+  setText('fcRejected', rejected);
+
+  // Sidebar pending badge
+  const badge = document.getElementById('iaNavPendingBadge');
+  if (badge) {
+    if (pending > 0) {
+      badge.textContent = pending;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+}
+
+// ─── STATUS FILTER ───────────────────────────────────────────────────────────
+let iaStatusFilter = 'all';
+function setStatusFilter(filter) {
+  iaStatusFilter = filter;
+  document.querySelectorAll('.ia-filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === filter);
+  });
+  renderTable(filteredInfluencers());
+}
+function filteredInfluencers() {
+  let list = influencersData || [];
+  
+  // Apply status filter
+  if (iaStatusFilter !== 'all') {
+    list = list.filter(i => {
+      const s = i.status || (i.is_active ? 'active' : 'suspended');
+      return s === iaStatusFilter;
+    });
+  }
+  
+  // Apply search filters
+  if (searchFilters.name) {
+    list = list.filter(i => 
+      (i.name || '').toLowerCase().includes(searchFilters.name.toLowerCase())
+    );
+  }
+  if (searchFilters.code) {
+    list = list.filter(i => 
+      (i.referral_code || '').toLowerCase().includes(searchFilters.code.toLowerCase())
+    );
+  }
+  if (searchFilters.phone) {
+    list = list.filter(i => 
+      (i.phone || '').includes(searchFilters.phone)
+    );
+  }
+  if (searchFilters.email) {
+    list = list.filter(i => 
+      (i.email || '').toLowerCase().includes(searchFilters.email.toLowerCase())
+    );
+  }
+  if (searchFilters.minOrders !== null) {
+    list = list.filter(i => 
+      (i.usage_count || 0) >= searchFilters.minOrders
+    );
+  }
+  if (searchFilters.maxOrders !== null) {
+    list = list.filter(i => 
+      (i.usage_count || 0) <= searchFilters.maxOrders
+    );
+  }
+  if (searchFilters.dateFrom) {
+    list = list.filter(i => 
+      new Date(i.created_at) >= new Date(searchFilters.dateFrom)
+    );
+  }
+  if (searchFilters.dateTo) {
+    list = list.filter(i => 
+      new Date(i.created_at) <= new Date(searchFilters.dateTo + 'T23:59:59')
+    );
+  }
+  
+  return list;
+}
+function statusPill(inf) {
+  const s = inf.status || (inf.is_active ? 'active' : 'suspended');
+  const label = s.charAt(0).toUpperCase() + s.slice(1);
+  return `<span class="ia-pill ${s}">${label}</span>`;
 }
 
 function renderTable(list) {
   const tbody = document.getElementById('iaTableBody');
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10"><div class="ia-empty"><h3>No Ambassadors Yet</h3><p>Click "Add Ambassador" to get started.</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12"><div class="ia-empty"><h3>No Ambassadors${iaStatusFilter !== 'all' ? ' in this view' : ' Yet'}</h3><p>${iaStatusFilter !== 'all' ? 'Try a different filter.' : 'Click "Add Ambassador" or share the apply link to get started.'}</p></div></td></tr>`;
     return;
   }
   tbody.innerHTML = list.map(inf => {
     const portalUrl = `${window.location.origin}/pages/influencer-portal?token=${inf.link_token}`;
     const created = new Date(inf.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-    // Handle discount value (use discount_value if exists, fallback to commission_rate)
-    const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 10);
-    // Handle usage limit
+    const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 7);
     const usageLimit = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : 'Unlimited';
+    const status = inf.status || (inf.is_active ? 'active' : 'suspended');
+    const isSelected = selectedInfluencers.has(inf.id);
+
+    let actions;
+    if (status === 'pending') {
+      actions = `
+        <button class="ia-action-btn approve" onclick="approveInfluencer(${inf.id})">Approve</button>
+        <button class="ia-action-btn reject" onclick="rejectInfluencer(${inf.id})">Reject</button>
+        <button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button>`;
+    } else if (status === 'rejected') {
+      actions = `
+        <button class="ia-action-btn approve" onclick="approveInfluencer(${inf.id})">Reactivate</button>
+        <button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Delete</button>`;
+    } else {
+      actions = `
+        <button class="ia-action-btn view" onclick="viewInfluencerStats(${inf.id})">View</button>
+        <button class="ia-action-btn payouts" onclick="openPayoutsDrawer(${inf.id})">Payouts</button>
+        <button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button>
+        <button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Remove</button>`;
+    }
+
     return `
       <tr class="ia-row-enter" id="row-${inf.id}">
-        <td class="td-name">${esc(inf.name)}</td>
-        <td class="td-phone" style="font-size:0.75rem;color:var(--muted);">${esc(inf.phone || '—')}</td>
-        <td><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced - create manually in Shopify admin">⚠️</span>' : ''}</span></td>
-        <td class="td-commission">${parseFloat(inf.commission_rate || 10).toFixed(1)}%</td>
-        <td class="td-discount">${parseFloat(discountVal).toFixed(1)}%</td>
-        <td class="td-usage">${usageLimit}</td>
-        <td class="td-orders" style="font-weight: 600; color: ${inf.usage_count > 0 ? 'var(--success)' : 'var(--muted)'};">${inf.usage_count !== undefined && inf.usage_count !== null ? inf.usage_count : '—'}</td>
-        <td class="td-date">${created}</td>
-        <td>
+        <td data-label="Select">
+          <div class="ia-checkbox-wrap">
+            <input type="checkbox" class="ia-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleSelect(${inf.id})">
+          </div>
+        </td>
+        <td class="td-name" data-label="Name">${esc(inf.name)}</td>
+        <td data-label="Status">${statusPill(inf)}</td>
+        <td class="td-phone" style="font-size:0.75rem;color:var(--muted);" data-label="Phone">${esc(inf.phone || '—')}</td>
+        <td data-label="Code"><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced - create manually in Shopify admin">️</span>' : ''}</span></td>
+        <td class="td-commission" data-label="Commission">${parseFloat(inf.commission_rate || 7).toFixed(1)}%</td>
+        <td class="td-discount" data-label="Discount">${parseFloat(discountVal).toFixed(1)}%</td>
+        <td class="td-usage" data-label="Usage Limit">${usageLimit}</td>
+        <td class="td-orders" style="font-weight: 600; color: ${inf.usage_count > 0 ? 'var(--success)' : 'var(--muted)'};" data-label="Orders">${inf.usage_count !== undefined && inf.usage_count !== null ? inf.usage_count : '—'}</td>
+        <td class="td-date" data-label="Created">${created}</td>
+        <td data-label="Portal">
           <button class="ia-copy-btn" id="copyBtn-${inf.id}" onclick="copyLink('${portalUrl}', ${inf.id})">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             Copy Link
           </button>
         </td>
-        <td>
-          <div class="ia-row-actions">
-            <button class="ia-action-btn view" onclick="viewInfluencerStats(${inf.id})">View</button>
-            <button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button>
-            <button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Remove</button>
-          </div>
+        <td data-label="Actions">
+          <div class="ia-row-actions">${actions}</div>
         </td>
       </tr>
     `;
   }).join('');
+  
+  // Update select all checkbox state
+  updateSelectAllCheckbox();
 }
 
 // ─── ADD ─────────────────────────────────────────────────────────────────────
@@ -1619,8 +2713,8 @@ function openAddModal() {
   document.getElementById('addName').value = '';
   document.getElementById('addPhone').value = '';
   document.getElementById('addCode').value = '';
-  document.getElementById('addCommission').value = '10';
-  document.getElementById('addDiscountValue').value = '10';
+  document.getElementById('addCommission').value = '7';
+  document.getElementById('addDiscountValue').value = '7';
   document.getElementById('addUsageLimit').value = '';
   document.getElementById('addError').classList.remove('show');
   openModal('iaAddModal');
@@ -1632,7 +2726,7 @@ async function submitAdd() {
   const name = document.getElementById('addName').value.trim();
   const phone = document.getElementById('addPhone').value.trim();
   const referralCode = document.getElementById('addCode').value.trim().toUpperCase();
-  const commissionRate = parseFloat(document.getElementById('addCommission').value) || 10;
+  const commissionRate = parseFloat(document.getElementById('addCommission').value) || 7;
   const discountValue = document.getElementById('addDiscountValue').value ? parseFloat(document.getElementById('addDiscountValue').value) : commissionRate;
   const usageLimit = document.getElementById('addUsageLimit').value.trim();
 
@@ -1678,9 +2772,9 @@ function openEditModal(id) {
   document.getElementById('editName').value = inf.name;
   document.getElementById('editPhone').value = inf.phone || '';
   document.getElementById('editCode').value = inf.referral_code;
-  document.getElementById('editCommission').value = parseFloat(inf.commission_rate || 10).toFixed(1);
+  document.getElementById('editCommission').value = parseFloat(inf.commission_rate || 7).toFixed(1);
   // Handle discount_value (use discount_value if exists, fallback to commission_rate)
-  const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 10);
+  const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 7);
   document.getElementById('editDiscountValue').value = parseFloat(discountVal).toFixed(1);
   // Handle usage_limit (show empty if null/unlimited)
   document.getElementById('editUsageLimit').value = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : '';
@@ -1769,6 +2863,7 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 function handleOverlayClick(e, id) { if (e.target === e.currentTarget) closeModal(id); }
 
 // ─── TOAST ───────────────────────────────────────────────────────────────────
+// ─── TOAST ───────────────────────────────────────────────────────────────────
 let toastTimer;
 function showToast(msg, isError = false) {
   const t = document.getElementById('iaToast');
@@ -1777,6 +2872,224 @@ function showToast(msg, isError = false) {
   t.className = 'ia-toast' + (isError ? ' error' : '');
   requestAnimationFrame(() => t.classList.add('show'));
   toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─── APPLY LINK SHARING ────────────────────────────────────────────────────────────
+async function copyApplyLink() {
+  const url = `${window.location.origin}/pages/influencer-apply`;
+  const btn = document.getElementById('iaCopyApplyBtn');
+  try {
+    await navigator.clipboard.writeText(url);
+    if (btn) {
+      const original = btn.innerHTML;
+      btn.classList.add('copied');
+      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied';
+      setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 2000);
+    }
+    showToast('Apply link copied ✓');
+  } catch (e) {
+    showToast('Could not copy. Link: ' + url, true);
+  }
+}
+
+// ─── APPROVE / REJECT ──────────────────────────────────────────────────────────────
+async function approveInfluencer(id) {
+  if (!confirm('Approve this ambassador? This will activate their Shopify discount code at checkout.')) return;
+  try {
+    const res = await fetch(`${API}/approve/${id}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.warning ? 'Approved ⚠️ ' + data.warning : 'Ambassador approved ✓');
+      await loadDashboard();
+    } else {
+      showToast(data.error || 'Failed to approve', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
+}
+
+async function rejectInfluencer(id) {
+  if (!confirm('Reject this application? Their Shopify price rule will be disabled.')) return;
+  try {
+    const res = await fetch(`${API}/reject/${id}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Application rejected');
+      await loadDashboard();
+    } else {
+      showToast(data.error || 'Failed to reject', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
+}
+
+// ─── PAYOUTS DRAWER ──────────────────────────────────────────────────────────────
+let currentDrawerInfluencer = null;
+
+function openPayoutsDrawer(id) {
+  const inf = (influencersData || []).find(i => i.id === id);
+  if (!inf) return;
+  currentDrawerInfluencer = inf;
+  setText('iaPayoutDrawerName', inf.name);
+  setText('iaPayoutDrawerCode', inf.referral_code || '—');
+  clearPayoutForm();
+  document.getElementById('iaPayoutsDrawer').classList.add('show');
+  document.body.style.overflow = 'hidden';
+  loadDrawerPayouts(id);
+}
+
+function closePayoutsDrawer() {
+  document.getElementById('iaPayoutsDrawer').classList.remove('show');
+  document.body.style.overflow = '';
+  currentDrawerInfluencer = null;
+}
+
+function handleDrawerOverlay(e) {
+  if (e.target.id === 'iaPayoutsDrawer') closePayoutsDrawer();
+}
+
+function clearPayoutForm() {
+  ['poStart', 'poEnd', 'poAmount', 'poRef', 'poNotes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+async function loadDrawerPayouts(id) {
+  const list = document.getElementById('iaPayoutList');
+  list.innerHTML = '<div class="ia-payout-empty">Loading…</div>';
+  try {
+    const res = await fetch(`${API}/payouts/${id}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (data.success) {
+      const payouts = data.payouts || [];
+      let totalPaid = 0, pending = 0;
+      payouts.forEach(p => {
+        const amt = parseFloat(p.amount || 0);
+        if (p.status === 'paid') totalPaid += amt;
+        if (p.status === 'pending') pending += amt;
+      });
+      setText('iaDrawerTotalPaid', '₹' + totalPaid.toLocaleString('en-IN', { maximumFractionDigits: 2 }));
+      setText('iaDrawerPending', '₹' + pending.toLocaleString('en-IN', { maximumFractionDigits: 2 }));
+      renderPayoutsList(payouts);
+    } else {
+      list.innerHTML = '<div class="ia-payout-empty">Failed to load.</div>';
+    }
+  } catch (err) {
+    console.error(err);
+    list.innerHTML = '<div class="ia-payout-empty">Connection error.</div>';
+  }
+}
+
+function renderPayoutsList(payouts) {
+  const list = document.getElementById('iaPayoutList');
+  if (!payouts.length) {
+    list.innerHTML = '<div class="ia-payout-empty">No payouts recorded yet. Use the form above to add one.</div>';
+    return;
+  }
+  list.innerHTML = payouts.map(p => {
+    const start = new Date(p.period_start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const end = new Date(p.period_end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const paidAt = p.paid_at ? new Date(p.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+    const amount = parseFloat(p.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    const actions = p.status === 'pending'
+      ? `<button class="pay" onclick="updatePayoutStatusAdmin(${p.id}, 'paid')">Mark Paid</button>
+         <button class="cancel" onclick="updatePayoutStatusAdmin(${p.id}, 'cancelled')">Cancel</button>`
+      : p.status === 'paid'
+      ? `<button onclick="updatePayoutStatusAdmin(${p.id}, 'pending')">Revert to Pending</button>`
+      : `<button onclick="updatePayoutStatusAdmin(${p.id}, 'pending')">Restore</button>`;
+    return `
+      <div class="ia-payout-item">
+        <div class="ia-payout-item-top">
+          <div class="ia-payout-item-amt">₹${amount}</div>
+          <span class="ia-pill ${p.status === 'paid' ? 'active' : p.status === 'pending' ? 'pending' : 'rejected'}">${p.status.toUpperCase()}</span>
+        </div>
+        <div class="ia-payout-item-meta">${start} → ${end}${paidAt ? ' · Paid ' + paidAt : ''}${p.reference ? ' · Ref: ' + esc(p.reference) : ''}</div>
+        ${p.notes ? `<div class="ia-payout-item-meta" style="margin-top:0.3rem;">${esc(p.notes)}</div>` : ''}
+        <div class="ia-payout-actions">${actions}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function submitNewPayout() {
+  if (!currentDrawerInfluencer) return;
+  const periodStart = document.getElementById('poStart').value;
+  const periodEnd = document.getElementById('poEnd').value;
+  const amount = document.getElementById('poAmount').value;
+  const reference = document.getElementById('poRef').value.trim();
+  const notes = document.getElementById('poNotes').value.trim();
+
+  if (!periodStart || !periodEnd || !amount) {
+    showToast('Period start, end, and amount are required', true);
+    return;
+  }
+  if (new Date(periodStart) > new Date(periodEnd)) {
+    showToast('Start cannot be after end', true);
+    return;
+  }
+
+  const btn = document.getElementById('iaAddPayoutBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const res = await fetch(`${API}/payouts/${currentDrawerInfluencer.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ periodStart, periodEnd, amount, reference: reference || null, notes: notes || null })
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Payout recorded ✓');
+      clearPayoutForm();
+      await loadDrawerPayouts(currentDrawerInfluencer.id);
+    } else {
+      showToast(data.error || 'Failed to save', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Record Payout';
+  }
+}
+
+async function updatePayoutStatusAdmin(payoutId, status) {
+  if (status === 'cancelled' && !confirm('Cancel this payout? Amount will be removed from pending total.')) return;
+  try {
+    const res = await fetch(`${API}/payouts/item/${payoutId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ status })
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Payout updated ✓');
+      if (currentDrawerInfluencer) await loadDrawerPayouts(currentDrawerInfluencer.id);
+    } else {
+      showToast(data.error || 'Failed to update', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
 }
 
 // ─── VIEW STATS ──────────────────────────────────────────────────────────────
@@ -1963,6 +3276,277 @@ function fmt(num) {
 
 function fmtDate(d) {
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// ─── ADVANCED SEARCH ─────────────────────────────────────────────────────────
+function toggleSearchPanel() {
+  const panel = document.getElementById('iaSearchPanel');
+  panel.classList.toggle('open');
+}
+
+function applySearch() {
+  searchFilters.name = document.getElementById('searchName').value.trim();
+  searchFilters.code = document.getElementById('searchCode').value.trim();
+  searchFilters.phone = document.getElementById('searchPhone').value.trim();
+  searchFilters.email = document.getElementById('searchEmail').value.trim();
+  
+  const minOrders = document.getElementById('searchMinOrders').value;
+  searchFilters.minOrders = minOrders ? parseInt(minOrders) : null;
+  
+  const maxOrders = document.getElementById('searchMaxOrders').value;
+  searchFilters.maxOrders = maxOrders ? parseInt(maxOrders) : null;
+  
+  searchFilters.dateFrom = document.getElementById('searchDateFrom').value || null;
+  searchFilters.dateTo = document.getElementById('searchDateTo').value || null;
+  
+  renderTable(filteredInfluencers());
+  renderActiveFilters();
+  showToast('Search applied ✓');
+}
+
+function resetSearch() {
+  searchFilters = {
+    name: '',
+    code: '',
+    phone: '',
+    email: '',
+    minOrders: null,
+    maxOrders: null,
+    dateFrom: null,
+    dateTo: null
+  };
+  
+  document.getElementById('searchName').value = '';
+  document.getElementById('searchCode').value = '';
+  document.getElementById('searchPhone').value = '';
+  document.getElementById('searchEmail').value = '';
+  document.getElementById('searchMinOrders').value = '';
+  document.getElementById('searchMaxOrders').value = '';
+  document.getElementById('searchDateFrom').value = '';
+  document.getElementById('searchDateTo').value = '';
+  
+  renderTable(filteredInfluencers());
+  renderActiveFilters();
+  showToast('Search reset');
+}
+
+function renderActiveFilters() {
+  const container = document.getElementById('iaActiveFilters');
+  const filters = [];
+  
+  if (searchFilters.name) filters.push({ label: `Name: ${searchFilters.name}`, key: 'name' });
+  if (searchFilters.code) filters.push({ label: `Code: ${searchFilters.code}`, key: 'code' });
+  if (searchFilters.phone) filters.push({ label: `Phone: ${searchFilters.phone}`, key: 'phone' });
+  if (searchFilters.email) filters.push({ label: `Email: ${searchFilters.email}`, key: 'email' });
+  if (searchFilters.minOrders !== null) filters.push({ label: `Min Orders: ${searchFilters.minOrders}`, key: 'minOrders' });
+  if (searchFilters.maxOrders !== null) filters.push({ label: `Max Orders: ${searchFilters.maxOrders}`, key: 'maxOrders' });
+  if (searchFilters.dateFrom) filters.push({ label: `From: ${searchFilters.dateFrom}`, key: 'dateFrom' });
+  if (searchFilters.dateTo) filters.push({ label: `To: ${searchFilters.dateTo}`, key: 'dateTo' });
+  
+  if (filters.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  
+  container.style.display = 'flex';
+  container.innerHTML = filters.map(f => `
+    <div class="ia-filter-tag">
+      ${f.label}
+      <span class="ia-filter-tag-remove" onclick="removeFilter('${f.key}')">&times;</span>
+    </div>
+  `).join('');
+}
+
+function removeFilter(key) {
+  searchFilters[key] = key.includes('Orders') ? null : '';
+  
+  if (key === 'name') document.getElementById('searchName').value = '';
+  if (key === 'code') document.getElementById('searchCode').value = '';
+  if (key === 'phone') document.getElementById('searchPhone').value = '';
+  if (key === 'email') document.getElementById('searchEmail').value = '';
+  if (key === 'minOrders') document.getElementById('searchMinOrders').value = '';
+  if (key === 'maxOrders') document.getElementById('searchMaxOrders').value = '';
+  if (key === 'dateFrom') document.getElementById('searchDateFrom').value = '';
+  if (key === 'dateTo') document.getElementById('searchDateTo').value = '';
+  
+  renderTable(filteredInfluencers());
+  renderActiveFilters();
+}
+
+// ─── BULK SELECTION ──────────────────────────────────────────────────────────
+function toggleSelect(id) {
+  if (selectedInfluencers.has(id)) {
+    selectedInfluencers.delete(id);
+  } else {
+    selectedInfluencers.add(id);
+  }
+  updateBulkBar();
+  updateSelectAllCheckbox();
+}
+
+function toggleSelectAll() {
+  const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+  const currentList = filteredInfluencers();
+  
+  if (selectAllCheckbox.checked) {
+    currentList.forEach(inf => selectedInfluencers.add(inf.id));
+  } else {
+    selectedInfluencers.clear();
+  }
+  
+  renderTable(currentList);
+  updateBulkBar();
+}
+
+function updateSelectAllCheckbox() {
+  const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+  const currentList = filteredInfluencers();
+  
+  if (currentList.length === 0) {
+    selectAllCheckbox.checked = false;
+    selectAllCheckbox.indeterminate = false;
+    return;
+  }
+  
+  const selectedCount = currentList.filter(inf => selectedInfluencers.has(inf.id)).length;
+  
+  if (selectedCount === 0) {
+    selectAllCheckbox.checked = false;
+    selectAllCheckbox.indeterminate = false;
+  } else if (selectedCount === currentList.length) {
+    selectAllCheckbox.checked = true;
+    selectAllCheckbox.indeterminate = false;
+  } else {
+    selectAllCheckbox.checked = false;
+    selectAllCheckbox.indeterminate = true;
+  }
+}
+
+function updateBulkBar() {
+  const bulkBar = document.getElementById('iaBulkBar');
+  const selectedCount = selectedInfluencers.size;
+  
+  document.getElementById('iaSelectedCount').textContent = selectedCount;
+  
+  if (selectedCount > 0) {
+    bulkBar.classList.add('show');
+  } else {
+    bulkBar.classList.remove('show');
+  }
+}
+
+function clearSelection() {
+  selectedInfluencers.clear();
+  renderTable(filteredInfluencers());
+  updateBulkBar();
+  showToast('Selection cleared');
+}
+
+// ─── BULK ACTIONS ────────────────────────────────────────────────────────────
+async function bulkApprove() {
+  const selectedIds = Array.from(selectedInfluencers);
+  
+  if (selectedIds.length === 0) {
+    showToast('No influencers selected', true);
+    return;
+  }
+  
+  const pendingIds = selectedIds.filter(id => {
+    const inf = influencersData.find(i => i.id === id);
+    return inf && (inf.status === 'pending' || inf.status === 'rejected');
+  });
+  
+  if (pendingIds.length === 0) {
+    showToast('No pending applications in selection', true);
+    return;
+  }
+  
+  if (!confirm(`Approve ${pendingIds.length} ambassador(s)? This will activate their Shopify discount codes.`)) return;
+  
+  try {
+    const res = await fetch(`${API}/bulk-approve`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}` 
+      },
+      body: JSON.stringify({ ids: pendingIds })
+    });
+    
+    if (res.status === 401) { handleLogout(); return; }
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      const { summary } = data;
+      clearSelection();
+      await loadDashboard();
+      
+      if (summary.failed === 0) {
+        showToast(`${summary.succeeded} ambassador(s) approved ✓`);
+      } else {
+        showToast(`${summary.succeeded} approved, ${summary.failed} failed`, true);
+      }
+    } else {
+      showToast(data.error || 'Bulk approval failed', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
+}
+
+async function bulkReject() {
+  const selectedIds = Array.from(selectedInfluencers);
+  
+  if (selectedIds.length === 0) {
+    showToast('No influencers selected', true);
+    return;
+  }
+  
+  const pendingIds = selectedIds.filter(id => {
+    const inf = influencersData.find(i => i.id === id);
+    return inf && inf.status === 'pending';
+  });
+  
+  if (pendingIds.length === 0) {
+    showToast('No pending applications in selection', true);
+    return;
+  }
+  
+  if (!confirm(`Reject ${pendingIds.length} application(s)? Their Shopify price rules will be disabled.`)) return;
+  
+  try {
+    const res = await fetch(`${API}/bulk-reject`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}` 
+      },
+      body: JSON.stringify({ ids: pendingIds })
+    });
+    
+    if (res.status === 401) { handleLogout(); return; }
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      const { summary } = data;
+      clearSelection();
+      await loadDashboard();
+      
+      if (summary.failed === 0) {
+        showToast(`${summary.succeeded} application(s) rejected`);
+      } else {
+        showToast(`${summary.succeeded} rejected, ${summary.failed} failed`, true);
+      }
+    } else {
+      showToast(data.error || 'Bulk rejection failed', true);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Connection error', true);
+  }
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────

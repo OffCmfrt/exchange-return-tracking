@@ -154,7 +154,7 @@ async function main() {
 
         const usageCount = (rows || []).length;
         const totalRevenue = (rows || []).reduce((s, r) => s + parseFloat(r.total_price || 0), 0);
-        const commissionRate = parseFloat(inf.commission_rate || 10);
+        const commissionRate = parseFloat(inf.commission_rate || 7);
         const estimatedEarnings = totalRevenue * (commissionRate / 100);
 
         const recentCache = (rows || []).slice(0, 20).map(r => ({

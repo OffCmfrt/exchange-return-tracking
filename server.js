@@ -219,6 +219,7 @@ const {
     listPayoutsByInfluencer,
     upsertPayout
 } = require('./config/db-helpers');
+const supabase = require('./config/supabase');
 
 async function generateUniqueRequestId() {
     let isUnique = false;
@@ -259,115 +260,316 @@ const cron = require('node-cron');
 let isSyncRunning = false;
 let lastSyncTimestamp = null;
 
+// Helper function to sync a single request with retry logic
+async function syncWithRetry(req, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await syncSingleRequest(req);
+            
+            // Update sync tracking fields (if they exist in DB)
+            try {
+                const { createClient } = require('@supabase/supabase-js');
+                const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+                await supabase
+                    .from('requests')
+                    .update({
+                        last_sync_attempt: new Date().toISOString(),
+                        sync_retry_count: 0,
+                        last_sync_error: null
+                    })
+                    .eq('request_id', req.requestId);
+            } catch (dbError) {
+                // Ignore if columns don't exist yet (migration not run)
+            }
+            
+            return { success: true, attempts: attempt };
+        } catch (error) {
+            if (attempt === maxRetries) {
+                // Final failure - log permanently
+                try {
+                    const { createClient } = require('@supabase/supabase-js');
+                    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+                    await supabase
+                        .from('requests')
+                        .update({
+                            last_sync_attempt: new Date().toISOString(),
+                            sync_retry_count: attempt,
+                            last_sync_error: error.message
+                        })
+                        .eq('request_id', req.requestId);
+                } catch (dbError) {
+                    // Ignore if columns don't exist yet
+                }
+                
+                console.error(`[${req.requestId}] Sync failed after ${maxRetries} attempts:`, error.message);
+                return { success: false, attempts: attempt, error: error.message };
+            } else {
+                // Wait before retry (exponential backoff: 2s, 4s, 8s)
+                const waitTime = 1000 * Math.pow(2, attempt);
+                console.warn(`[${req.requestId}] Sync attempt ${attempt} failed, retrying in ${waitTime/1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+}
+
 async function performBackgroundSync() {
     if (isSyncRunning) {
         console.log('[Background Sync] Sync already running, skipping...');
-        return 0;
+        return { success: false, message: 'Sync already running' };
     }
     
     isSyncRunning = true;
+    const syncStartTime = new Date();
     console.log('[Background Sync] Starting automated sync...');
     
+    // Initialize metrics tracking
+    const syncMetrics = {
+        total: 0,
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        carrierBreakdown: {
+            shiprocket: { success: 0, failed: 0 },
+            delhivery: { success: 0, failed: 0 },
+            unknown: { success: 0, failed: 0 }
+        },
+        errors: []
+    };
+    
     try {
-        // Import supabase for direct database access
-        const supabase = require('./config/supabase');
-        
         // Fetch only active requests (not all requests)
         const { data: activeRequests, error } = await supabase
             .from('requests')
             .select('*')
-            .or('status.eq.pending,status.eq.pickup_pending,status.eq.scheduled,status.eq.picked_up,status.eq.in_transit')
+            .or('status.eq.pending,status.eq.pickup_pending,status.eq.pickup_booked,status.eq.scheduled,status.eq.picked_up,status.eq.in_transit')
             .not('awb_number', 'is', null)
             .order('created_at', { ascending: false });
         
         if (error || !activeRequests) {
             console.error('[Background Sync] Error fetching requests:', error);
-            return 0;
+            return { success: false, error: error?.message || 'No requests found' };
         }
         
+        syncMetrics.total = activeRequests.length;
         console.log(`[Background Sync] Processing ${activeRequests.length} active requests...`);
         
-        let updatedCount = 0;
-        const BATCH_SIZE = 5; // Process 5 at a time to avoid overwhelming Shiprocket API
+        const BATCH_SIZE = 5; // Process 5 at a time to avoid overwhelming carrier APIs
         
         for (let i = 0; i < activeRequests.length; i += BATCH_SIZE) {
             const batch = activeRequests.slice(i, i + BATCH_SIZE);
             
             // Process batch in parallel
-            await Promise.all(batch.map(async (req) => {
-                try {
-                    await syncSingleRequest(req);
-                    updatedCount++;
-                } catch (err) {
-                    console.error(`[Background Sync] Failed to sync ${req.requestId}:`, err.message);
+            const results = await Promise.allSettled(batch.map(async (req) => {
+                const carrier = req.carrier || detectCarrier(req);
+                const result = await syncWithRetry(req, 3);
+                
+                // Update metrics
+                if (result.success) {
+                    syncMetrics.success++;
+                    if (syncMetrics.carrierBreakdown[carrier]) {
+                        syncMetrics.carrierBreakdown[carrier].success++;
+                    }
+                } else {
+                    syncMetrics.failed++;
+                    if (syncMetrics.carrierBreakdown[carrier]) {
+                        syncMetrics.carrierBreakdown[carrier].failed++;
+                    }
+                    syncMetrics.errors.push({
+                        requestId: req.requestId,
+                        carrier: carrier,
+                        error: result.error
+                    });
                 }
+                
+                return { requestId: req.requestId, ...result };
             }));
+            
+            // Log batch progress
+            const batchSuccess = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+            const batchFailed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.success)).length;
+            console.log(`[Background Sync] Batch ${Math.floor(i/BATCH_SIZE) + 1} complete: ${batchSuccess} success, ${batchFailed} failed`);
         }
         
         lastSyncTimestamp = new Date().toISOString();
-        console.log(`[Background Sync] Complete: Updated ${updatedCount} requests`);
-        return updatedCount;
+        const syncDuration = ((new Date() - syncStartTime) / 1000).toFixed(2);
+        
+        // Log detailed summary
+        console.log(`\n[Background Sync] ========== SYNC SUMMARY ==========`);
+        console.log(`[Background Sync] Duration: ${syncDuration}s`);
+        console.log(`[Background Sync] Total: ${syncMetrics.total}, Success: ${syncMetrics.success}, Failed: ${syncMetrics.failed}, Skipped: ${syncMetrics.skipped}`);
+        console.log(`[Background Sync] Shiprocket: ${syncMetrics.carrierBreakdown.shiprocket.success} success, ${syncMetrics.carrierBreakdown.shiprocket.failed} failed`);
+        console.log(`[Background Sync] Delhivery: ${syncMetrics.carrierBreakdown.delhivery.success} success, ${syncMetrics.carrierBreakdown.delhivery.failed} failed`);
+        
+        if (syncMetrics.errors.length > 0) {
+            console.log(`[Background Sync] Errors:`);
+            syncMetrics.errors.slice(0, 5).forEach(err => {
+                console.log(`  - ${err.requestId} (${err.carrier}): ${err.error}`);
+            });
+            if (syncMetrics.errors.length > 5) {
+                console.log(`  ... and ${syncMetrics.errors.length - 5} more errors`);
+            }
+        }
+        console.log(`[Background Sync] ====================================\n`);
+        
+        return { success: true, metrics: syncMetrics };
     } catch (error) {
         console.error('[Background Sync] Fatal error:', error);
-        return 0;
+        return { success: false, error: error.message, metrics: syncMetrics };
     } finally {
         isSyncRunning = false;
     }
 }
 
+// Helper function to detect carrier based on request data
+function detectCarrier(req) {
+    // Check explicit carrier field first
+    if (req.carrier === 'delhivery' || req.carrier === 'shiprocket') {
+        return req.carrier;
+    }
+    
+    // Check AWB number patterns
+    if (req.awbNumber) {
+        // Delhivery waybills are typically 12+ digits
+        if (/^\d{12,}$/.test(req.awbNumber)) {
+            return 'delhivery';
+        }
+        // Shiprocket shipment IDs start with 'SR'
+        if (req.shipmentId && req.shipmentId.toString().startsWith('SR')) {
+            return 'shiprocket';
+        }
+    }
+    
+    // Check forward carrier
+    if (req.forwardCarrier) {
+        return req.forwardCarrier;
+    }
+    
+    // Default to shiprocket for backward compatibility
+    return 'shiprocket';
+}
+
+// Helper function to map carrier-specific status to internal status enum
+function mapCarrierStatus(carrierStatus, carrier = 'shiprocket') {
+    if (!carrierStatus) return null;
+    
+    const statusUpper = carrierStatus.toUpperCase();
+    
+    // Common status mappings for both carriers
+    if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
+        return { status: 'delivered', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
+        return { status: 'picked_up', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || 
+        statusUpper.includes('OUT FOR DELIVERY') || statusUpper.includes('DISPATCHED')) {
+        return { status: 'in_transit', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('SCHEDULED') || statusUpper.includes('PICKUP SCHEDULED')) {
+        return { status: 'scheduled', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('PICKUP GENERATED') || statusUpper.includes('AWB ASSIGNED') || 
+        statusUpper.includes('PICKUP CREATED') || statusUpper.includes('REGISTERED')) {
+        return { status: 'pickup_pending', shouldUpdate: true };
+    }
+    
+    // Delhivery pickup assigned status - pickup is confirmed/booked but not yet picked up
+    if (statusUpper.includes('PICKUP ASSIGNED') || statusUpper.includes('ASSIGNED')) {
+        return { status: 'pickup_booked', shouldUpdate: true };
+    }
+    
+    // Exception statuses - add admin note but don't change status automatically
+    if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || 
+        statusUpper.includes('CANCELLED') || statusUpper.includes('MISROUTED') || 
+        statusUpper.includes('DELAYED')) {
+        return { status: 'exception', shouldUpdate: false, needsNote: true };
+    }
+    
+    // Unknown status - don't update
+    return { status: null, shouldUpdate: false };
+}
+
 // Extract sync logic into reusable function
 async function syncSingleRequest(req) {
+    const carrier = detectCarrier(req);
+    
     // Return shipment sync
-    if (['pending', 'pickup_pending', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
+    if (['pending', 'pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
         let trackingData = null;
+        let currentStatus = null;
+        let newAwb = null;
         
+        // Fetch tracking based on carrier
         if (req.awbNumber) {
             try {
-                trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
+                if (carrier === 'delhivery') {
+                    console.log(`[${req.requestId}] Fetching Delhivery tracking for AWB: ${req.awbNumber}`);
+                    trackingData = await getDelhiveryTracking(req.awbNumber);
+                    
+                    if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
+                        const shipment = trackingData.shipments[0];
+                        currentStatus = shipment.status || shipment.delivered_status;
+                        newAwb = shipment.waybill_code || req.awbNumber;
+                    }
+                } else {
+                    // Shiprocket
+                    trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
+                    
+                    if (trackingData && trackingData.tracking_data) {
+                        const tracking = trackingData.tracking_data;
+                        currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                        newAwb = tracking.shipment_track?.[0]?.awb_code || tracking.awb_code;
+                    }
+                }
             } catch (e) {
-                console.warn(`[Sync] AWB ${req.awbNumber} (${req.requestId}) fetch failed: ${e.message}`);
+                console.warn(`[Sync] ${carrier} AWB ${req.awbNumber} (${req.requestId}) fetch failed: ${e.message}`);
             }
         }
         
-        if ((!trackingData || !trackingData.tracking_data) && req.shipmentId) {
+        // Fallback to shipment ID for Shiprocket
+        if (!trackingData && carrier === 'shiprocket' && req.shipmentId) {
             try { 
-                trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`); 
-            } catch (e) {}
+                trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`);
+                if (trackingData && trackingData.tracking_data) {
+                    const tracking = trackingData.tracking_data;
+                    currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                }
+            } catch (e) {
+                console.warn(`[Sync] Shiprocket ShipmentID ${req.shipmentId} (${req.requestId}) fetch failed: ${e.message}`);
+            }
         }
         
-        if (trackingData && trackingData.tracking_data) {
-            const tracking = trackingData.tracking_data;
-            const currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+        // Process tracking data
+        if (currentStatus) {
+            const statusMapping = mapCarrierStatus(currentStatus, carrier);
             
-            if (currentStatus) {
-                const newAwb = tracking.shipment_track?.[0]?.awb_code || tracking.awb_code;
-                let newStatus = req.status;
-                const statusUpper = currentStatus.toUpperCase();
+            if (statusMapping && statusMapping.shouldUpdate && statusMapping.status) {
+                let newStatus = statusMapping.status;
                 
-                if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
-                    newStatus = 'delivered';
-                } else if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
-                    newStatus = 'picked_up';
-                } else if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || statusUpper.includes('OUT FOR DELIVERY')) {
-                    newStatus = 'in_transit';
-                } else if (statusUpper.includes('SCHEDULED') || statusUpper.includes('PICKUP SCHEDULED')) {
-                    newStatus = 'scheduled';
-                } else if (statusUpper.includes('GENERATED') || statusUpper.includes('AWB ASSIGNED') || statusUpper.includes('PICKUP GENERATED')) {
-                    newStatus = 'pickup_pending';
-                } else if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || statusUpper.includes('CANCELLED')) {
-                    const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] Shiprocket status: ${currentStatus}`;
-                    if (!req.adminNotes || !req.adminNotes.includes(currentStatus)) {
-                        await updateRequestStatus(req.requestId, { adminNotes: (req.adminNotes || '') + note });
-                    }
-                }
+                // Build update object
+                const updates = { status: newStatus };
+                if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
+                if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
+                if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
+                if (newAwb && newAwb !== req.awbNumber) updates.awbNumber = newAwb;
                 
-                if (newStatus !== req.status || (newAwb && newAwb !== req.awbNumber)) {
-                    const updatesArr = { status: newStatus };
-                    if (newStatus === 'delivered') updatesArr.deliveredAt = new Date().toISOString();
-                    if (newStatus === 'picked_up') updatesArr.pickedUpAt = new Date().toISOString();
-                    if (newStatus === 'in_transit') updatesArr.inTransitAt = new Date().toISOString();
-                    if (newAwb) updatesArr.awbNumber = newAwb;
-                    await updateRequestStatus(req.requestId, updatesArr);
+                await updateRequestStatus(req.requestId, updates);
+                console.log(`[${req.requestId}] Status updated: ${req.status} → ${newStatus} (${carrier})`);
+            }
+            
+            // Add admin note for exception statuses
+            if (statusMapping && statusMapping.needsNote) {
+                const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] ${carrier} status: ${currentStatus}`;
+                if (!req.adminNotes || !req.adminNotes.includes(currentStatus)) {
+                    await updateRequestStatus(req.requestId, { 
+                        adminNotes: (req.adminNotes || '') + note 
+                    });
+                    console.log(`[${req.requestId}] Exception note added: ${currentStatus}`);
                 }
             }
         }
@@ -376,20 +578,48 @@ async function syncSingleRequest(req) {
     // Forward shipment sync for exchanges
     if (req.type === 'exchange' && req.forwardAwbNumber && req.forwardStatus !== 'delivered') {
         try {
-            const forwardTrack = await shiprocketAPI(`/courier/track/awb/${req.forwardAwbNumber}`);
-            if (forwardTrack && forwardTrack.tracking_data) {
-                const tracking = forwardTrack.tracking_data;
-                const currentStatus = (tracking.shipment_track?.[0]?.current_status || tracking.current_status || '').toUpperCase();
+            const forwardCarrier = req.forwardCarrier || carrier;
+            let forwardTrack = null;
+            let forwardCurrentStatus = null;
+            
+            if (forwardCarrier === 'delhivery') {
+                console.log(`[${req.requestId}] Fetching Delhivery forward tracking for AWB: ${req.forwardAwbNumber}`);
+                forwardTrack = await getDelhiveryTracking(req.forwardAwbNumber);
                 
-                let newForwardStatus = req.forwardStatus || 'scheduled';
-                if (currentStatus.includes('DELIVERED')) newForwardStatus = 'delivered';
-                else if (currentStatus.includes('PICKED UP') && !currentStatus.includes('GENERATED')) newForwardStatus = 'picked_up';
-                else if (currentStatus.includes('IN TRANSIT') || currentStatus.includes('SHIPPED') || currentStatus.includes('OUT FOR DELIVERY')) newForwardStatus = 'in_transit';
-                else if (currentStatus.includes('PICKUP GENERATED') || currentStatus.includes('AWB ASSIGNED') || currentStatus.includes('SCHEDULED')) newForwardStatus = 'scheduled';
+                if (forwardTrack && forwardTrack.shipments && forwardTrack.shipments.length > 0) {
+                    const shipment = forwardTrack.shipments[0];
+                    forwardCurrentStatus = shipment.status || shipment.delivered_status;
+                }
+            } else {
+                // Shiprocket
+                forwardTrack = await shiprocketAPI(`/courier/track/awb/${req.forwardAwbNumber}`);
                 
-                if (newForwardStatus !== req.forwardStatus) {
-                    console.log(`[${req.requestId}] Updating Forward Status: ${newForwardStatus}`);
-                    await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
+                if (forwardTrack && forwardTrack.tracking_data) {
+                    const tracking = forwardTrack.tracking_data;
+                    forwardCurrentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                }
+            }
+            
+            if (forwardCurrentStatus) {
+                const forwardStatusMapping = mapCarrierStatus(forwardCurrentStatus, forwardCarrier);
+                
+                if (forwardStatusMapping && forwardStatusMapping.shouldUpdate && forwardStatusMapping.status) {
+                    const newForwardStatus = forwardStatusMapping.status;
+                    
+                    if (newForwardStatus !== req.forwardStatus) {
+                        console.log(`[${req.requestId}] Updating Forward Status: ${req.forwardStatus} → ${newForwardStatus} (${forwardCarrier})`);
+                        await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
+                    }
+                }
+                
+                // Add note for forward exceptions
+                if (forwardStatusMapping && forwardStatusMapping.needsNote) {
+                    const note = `\n[Forward Sync Log ${new Date().toLocaleDateString('en-IN')}] ${forwardCarrier} status: ${forwardCurrentStatus}`;
+                    if (!req.adminNotes || !req.adminNotes.includes(forwardCurrentStatus)) {
+                        await updateRequestStatus(req.requestId, { 
+                            adminNotes: (req.adminNotes || '') + note 
+                        });
+                    }
                 }
             }
         } catch (e) {
@@ -604,7 +834,7 @@ async function performShopifyUsageSync() {
 
                 const usageCount = (orderRows || []).length;
                 const totalRevenue = (orderRows || []).reduce((s, r) => s + parseFloat(r.total_price || 0), 0);
-                const commissionRate = parseFloat(influencer.commission_rate || 10);
+                const commissionRate = parseFloat(influencer.commission_rate || 7);
                 const estimatedEarnings = totalRevenue * (commissionRate / 100);
 
                 // Cache top 20 recent conversions as JSONB for zero-query admin rendering
@@ -867,21 +1097,44 @@ async function shopifyAPI(endpoint, options = {}) {
 
 // ==================== SHOPIFY DISCOUNT CODE HELPERS ====================
 
-async function createShopifyDiscountCode(code, percentage, usageLimit, title) {
+async function createShopifyDiscountCode(code, value, valueType, usageLimit, title) {
     try {
+        // Backward compatibility: if valueType is a number, shift arguments
+        let finalValueType, finalUsageLimit, finalTitle, finalValue;
+        
+        if (typeof valueType === 'number') {
+            // Old signature: createShopifyDiscountCode(code, percentage, usageLimit, title)
+            finalValueType = 'percentage';
+            finalUsageLimit = valueType;
+            finalTitle = usageLimit;
+            finalValue = `-${value}`;
+        } else {
+            // New signature: createShopifyDiscountCode(code, value, valueType, usageLimit, title)
+            finalValueType = valueType || 'percentage';
+            finalUsageLimit = usageLimit;
+            finalTitle = title;
+            finalValue = typeof value === 'string' ? value : `-${value}`;
+        }
+        
         // Step 1: Create Price Rule
         const priceRulePayload = {
             price_rule: {
-                title: title || `Influencer: ${code}`,
+                title: finalTitle || `Influencer: ${code}`,
                 target_type: 'line_item',
                 target_selection: 'all',
                 allocation_method: 'across',
-                value_type: 'percentage',
-                value: `-${percentage}`,
+                value_type: finalValueType,
+                value: finalValue,
                 customer_selection: 'all',
+                once_per_customer: finalValueType === 'fixed_amount' ? true : false,
                 starts_at: new Date().toISOString()
             }
         };
+
+        // Set usage_limit on price_rule itself (total uses across all customers)
+        if (finalUsageLimit && finalUsageLimit > 0) {
+            priceRulePayload.price_rule.usage_limit = finalUsageLimit;
+        }
 
         const priceRuleResponse = await shopifyAPI('price_rules.json', {
             method: 'POST',
@@ -897,18 +1150,6 @@ async function createShopifyDiscountCode(code, percentage, usageLimit, title) {
             }
         };
 
-        // If usage limit is set, update the price rule with allocation_limit
-        if (usageLimit && usageLimit > 0) {
-            await shopifyAPI(`price_rules/${priceRuleId}.json`, {
-                method: 'PUT',
-                body: JSON.stringify({
-                    price_rule: {
-                        allocation_limit: usageLimit
-                    }
-                })
-            });
-        }
-
         const discountCodeResponse = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
             method: 'POST',
             body: JSON.stringify(discountCodePayload)
@@ -916,9 +1157,9 @@ async function createShopifyDiscountCode(code, percentage, usageLimit, title) {
 
         const discountCodeId = discountCodeResponse.discount_code.id;
 
-        console.log(`✅ Created Shopify discount code: ${code} (Price Rule ID: ${priceRuleId}, Discount Code ID: ${discountCodeId})`);
+        console.log(`✅ Created Shopify discount code: ${code.toUpperCase()} | type=${finalValueType} value=${finalValue} usage_limit=${finalUsageLimit || 'unlimited'} (Price Rule ID: ${priceRuleId}, Discount Code ID: ${discountCodeId})`);
 
-        return { priceRuleId, discountCodeId };
+        return { priceRuleId, discountCodeId, code: code.toUpperCase() };
     } catch (error) {
         console.error('❌ Failed to create Shopify discount code:', error.message);
         throw error;
@@ -1084,14 +1325,18 @@ async function activateShopifyDiscountCode(priceRuleId, code) {
  * @returns {object} - { primary: 'shiprocket'|'delhivery', useFallback: boolean }
  */
 function resolveCarrier(carrierMode, carrierOverride = null, operationType = 'pickup') {
-    // If admin overrides on a per-request basis, use that directly
+    // If admin overrides on a per-request basis, use that as primary but still allow fallback
     if (carrierOverride === 'shiprocket') {
-        console.log(`[${operationType}] Carrier override: Shiprocket (no fallback)`);
-        return { primary: 'shiprocket', useFallback: false };
+        console.log(`[${operationType}] Carrier override: Shiprocket (with fallback if enabled)`);
+        // Check if the carrier mode allows fallback
+        const allowsFallback = carrierMode.includes('with_fallback');
+        return { primary: 'shiprocket', useFallback: allowsFallback };
     }
     if (carrierOverride === 'delhivery') {
-        console.log(`[${operationType}] Carrier override: Delhivery (no fallback)`);
-        return { primary: 'delhivery', useFallback: false };
+        console.log(`[${operationType}] Carrier override: Delhivery (with fallback if enabled)`);
+        // Check if the carrier mode allows fallback
+        const allowsFallback = carrierMode.includes('with_fallback');
+        return { primary: 'delhivery', useFallback: allowsFallback };
     }
 
     // Resolve based on carrier mode setting
@@ -1461,22 +1706,66 @@ async function createShiprocketForwardOrder(requestData) {
 
         // Forward Order Items (Replacement Items)
         const items = Array.isArray(requestData.items) ? requestData.items : [];
-        const orderItems = items.map(item => {
+        console.log(`[${requestData.requestId}] 📦 Processing ${items.length} replacement item(s) for forward order`);
+        
+        const orderItems = [];
+        
+        for (const item of items) {
             const isDifferentProduct = item.replacementProductId && item.replacementProductId !== item.productId;
             const title = item.replacementProductTitle || item.name;
             const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
             const finalName = title + variantStr;
-            const finalVariantId = (item.replacementVariantId && item.replacementVariantId !== 'Same') ? item.replacementVariantId : (item.variantId || item.id);
+            let finalVariantId = (item.replacementVariantId && item.replacementVariantId !== 'Same') ? item.replacementVariantId : (item.variantId || item.id);
 
-            return {
+            console.log(`[${requestData.requestId}] Item: ${title}`);
+            console.log(`  - Original: ${item.name} (Variant: ${item.variant})`);
+            console.log(`  - Replacement: ${finalName}`);
+            console.log(`  - Variant ID: ${finalVariantId}`);
+            console.log(`  - Price: ₹${item.replacementPrice || item.price}`);
+            console.log(`  - Quantity: ${item.quantity}`);
+
+            // Validate variant exists in Shopify if we have a product ID
+            if (item.replacementProductId && finalVariantId && finalVariantId !== 'Same') {
+                try {
+                    console.log(`[${requestData.requestId}] 🔍 Validating variant ${finalVariantId} in Shopify...`);
+                    const variantsData = await shopifyAPI(`products/${item.replacementProductId}/variants.json`);
+                    const variants = variantsData.variants || [];
+                    const variantExists = variants.find(v => v.id.toString() === finalVariantId.toString());
+                    
+                    if (variantExists) {
+                        console.log(`[${requestData.requestId}] ✅ Variant confirmed: ${variantExists.title} (ID: ${variantExists.id})`);
+                        console.log(`[${requestData.requestId}]    Inventory: ${variantExists.inventory_quantity} units`);
+                    } else {
+                        console.warn(`[${requestData.requestId}] ⚠️ Variant ${finalVariantId} NOT FOUND in product ${item.replacementProductId}!`);
+                        console.warn(`[${requestData.requestId}]    Available variants:`, variants.map(v => ({ id: v.id, title: v.title })));
+                        
+                        // Try to find matching variant by title
+                        if (item.replacementVariant) {
+                            const matchingVariant = variants.find(v => 
+                                v.title === item.replacementVariant ||
+                                v.option1 === item.replacementVariant ||
+                                v.option2 === item.replacementVariant
+                            );
+                            if (matchingVariant) {
+                                console.log(`[${requestData.requestId}] ✅ Found matching variant by title: ${matchingVariant.title} (ID: ${matchingVariant.id})`);
+                                finalVariantId = matchingVariant.id;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[${requestData.requestId}] ❌ Failed to validate variant:`, e.message);
+                }
+            }
+
+            orderItems.push({
                 name: finalName,
                 sku: String(finalVariantId) + '-EXCH',
                 units: parseInt(item.quantity) || 1,
                 selling_price: parseFloat(item.replacementPrice || item.price) || 0,
                 discount: 0,
                 tax: 0
-            };
-        });
+            });
+        }
 
         // Fetch dynamic warehouse location settings
         const warehouseLocation = await getSetting('warehouse_location', null);
@@ -1517,6 +1806,14 @@ async function createShiprocketForwardOrder(requestData) {
 
         if (data.status_code === 400 || data.status_code === 422 || (data.errors && Object.keys(data.errors).length > 0)) {
             console.error('❌ Shiprocket Validation Error (Forward):', JSON.stringify(data));
+            console.error('❌ Payload that caused error:', JSON.stringify(payload, null, 2));
+            console.error('❌ Items being sent:', JSON.stringify(orderItems, null, 2));
+            return null;
+        }
+
+        if (!response.ok) {
+            console.error(`❌ Shiprocket API Error (HTTP ${response.status}):`, JSON.stringify(data));
+            console.error('❌ Payload that caused error:', JSON.stringify(payload, null, 2));
             return null;
         }
 
@@ -1652,7 +1949,57 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
 
         console.log(`📍 Using Delhivery pickup location: ${pickupLocationNickname}`);
 
+        // Process items/products for Delhivery
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        console.log(`📦 Processing ${items.length} item(s) for Delhivery order`);
+        
+        const products = [];
+        let totalQuantity = 0;
+        let totalAmount = 0;
+        let productsDesc = [];
+        for (const item of items) {
+            const title = item.replacementProductTitle || item.name;
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const productName = title + variantStr;
+            const quantity = parseInt(item.quantity) || 1;
+            const price = parseFloat(item.replacementPrice || item.price) || 0;
+            
+            console.log(`  - Product: ${productName}`);
+            console.log(`    Quantity: ${quantity}`);
+            console.log(`    Price: ₹${price}`);
+            
+            totalQuantity += quantity;
+            totalAmount += (price * quantity);
+            productsDesc.push(productName);
+            
+            products.push({
+                name: sanitizeAddress(productName),
+                quantity: quantity,
+                price: price,
+                selling_price: price,
+                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH',
+                hsn_code: '9965'  // Default HSN for apparel/general goods
+            });
+        }
+
+        // Get GST TIN for Delhivery (mandatory per Delhivery docs)
+        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AAKFO0351L1Z7';
+        const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;
+        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 30;
+        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 40;
+        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 2;
+
+        console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+        console.log(`📊 Total Quantity: ${totalQuantity}, Total Amount: ₹${totalAmount}`);
+        console.log(`🔢 Seller GST: ${sellerGstTin}`);
+
         // Build payload for Delhivery CMU API
+        // For forward dispatch (exchange), use 'fws' prefix to avoid duplicate order errors
+        const orderIdPrefix = requestData.type === 'exchange' ? 'fws-' : '';
+        const delhiveryOrderId = `${orderIdPrefix}${requestData.requestId}`;
+        
+        console.log(` Delhivery Order Type: ${requestData.type || 'return'}, Order ID: ${delhiveryOrderId}`);
+        
         const payload = {
             shipments: [{
                 name: sanitizeAddress(customerName),
@@ -1663,14 +2010,25 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
                 country: customerCountry,
                 phone: customerPhone,
                 payment_mode: 'Pickup', // For reverse pickup
-                order: requestData.requestId,
+                order: delhiveryOrderId,
                 cod_amount: 0,
+                order_date: new Date().toISOString().split('T')[0],
+                total_amount: totalAmount,
+                quantity: totalQuantity,
+                weight: pkgWeight,
+                shipment_width: pkgWidth,
+                shipment_height: pkgHeight,
+                shipment_length: pkgLength,
+                products_desc: productsDesc.join(', '),
+                hsn_code: '9965',
                 return_pin: returnPincode,
                 return_add: sanitizeAddress(returnAddress),
                 return_city: sanitizeAddress(returnCity),
                 return_state: sanitizeAddress(returnState),
                 return_country: returnCountry,
-                return_phone: returnPhone
+                return_phone: returnPhone,
+                seller_gst_tin: sellerGstTin,  // Mandatory for GST compliance
+                products: products  // Include product details
             }],
             pickup_location: {
                 name: pickupLocationNickname,
@@ -1700,7 +2058,65 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         const data = await response.json();
         console.log(`📦 Delhivery Response:`, JSON.stringify(data, null, 2));
 
-        // Check for error responses first
+        // First, check if we have packages data - even with errors, packages might contain useful data
+        if (data && data.packages && data.packages.length > 0) {
+            const pkg = data.packages[0];
+            
+            // If we have a waybill but status is Fail with duplicate error, recover it
+            if (pkg.waybill && pkg.status === 'Fail' && pkg.remarks && pkg.remarks.some(r => r.toLowerCase().includes('duplicate'))) {
+                console.warn(`⚠️ Delhivery duplicate order detected for ${requestData.requestId}. Using existing waybill: ${pkg.waybill}`);
+                return {
+                    waybill: pkg.waybill,
+                    shipment_id: pkg.refnum || requestData.requestId,
+                    success: true,
+                    data: { ...data, recovered: true, duplicateOrder: true }
+                };
+            }
+            
+            // Handle duplicate order error without waybill - try to retrieve existing waybill
+            if (pkg.status === 'Fail' && pkg.remarks && pkg.remarks.some(r => r.toLowerCase().includes('duplicate'))) {
+                console.warn(`⚠️ Delhivery duplicate order detected for ${requestData.requestId}. Attempting to retrieve existing waybill...`);
+                
+                // Try to get tracking info using the order reference
+                try {
+                    const trackingData = await delhiveryAPI(`/v1/packages/json/?refnos=${requestData.requestId}`);
+                    if (trackingData && trackingData.packages && trackingData.packages.length > 0) {
+                        const existingPkg = trackingData.packages[0];
+                        if (existingPkg.waybill_code || existingPkg.awb) {
+                            const existingWaybill = existingPkg.waybill_code || existingPkg.awb;
+                            console.log(`✅ Retrieved existing waybill for duplicate order: ${existingWaybill}`);
+                            return {
+                                waybill: existingWaybill,
+                                shipment_id: existingPkg.refnum || requestData.requestId,
+                                success: true,
+                                data: { ...data, recovered: true, existingWaybill }
+                            };
+                        }
+                    }
+                } catch (recoverError) {
+                    console.error(`❌ Failed to recover existing waybill:`, recoverError.message);
+                }
+                
+                // If recovery failed, throw error with specific message
+                throw new Error(`Delhivery duplicate order: ${requestData.requestId} already exists. ${pkg.remarks.join(', ')}`);
+            }
+            
+            // Check for success
+            if (pkg.status === 'Success' && pkg.waybill) {
+                return {
+                    waybill: pkg.waybill,
+                    shipment_id: pkg.refnum || null,
+                    success: true,
+                    data: data
+                };
+            } else if (pkg.status && pkg.status !== 'Success') {
+                console.error(`❌ Delhivery package status: ${pkg.status}`);
+                const errorMsg = pkg.remarks && pkg.remarks.length > 0 ? pkg.remarks.join(', ') : pkg.status;
+                throw new Error(`Delhivery package error: ${errorMsg}`);
+            }
+        }
+
+        // Check for error responses (only if no packages data was processed)
         if (data && data.rmk) {
             console.error(`❌ Delhivery Error: ${data.rmk}`);
             throw new Error(`Delhivery API Error: ${data.rmk}`);
@@ -1711,21 +2127,8 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
             throw new Error(`Delhivery API Error: ${data.message}`);
         }
 
-        // Check for success
-        if (data && data.packages && data.packages.length > 0) {
-            const pkg = data.packages[0];
-            if (pkg.status === 'Success' && pkg.waybill) {
-                return {
-                    waybill: pkg.waybill,
-                    shipment_id: pkg.refnum || null,
-                    success: true,
-                    data: data
-                };
-            } else if (pkg.status && pkg.status !== 'Success') {
-                console.error(`❌ Delhivery package status: ${pkg.status}`);
-                throw new Error(`Delhivery package error: ${pkg.status}`);
-            }
-        } else if (data && data.shipments && data.shipments.length > 0) {
+        // Check alternative response formats
+        if (data && data.shipments && data.shipments.length > 0) {
             const shipment = data.shipments[0];
             return {
                 waybill: shipment.waybill_code || shipment.awb_code || null,
@@ -1747,6 +2150,226 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         }
     } catch (error) {
         console.error('❌ Failed to create Delhivery return:', error);
+        return null;
+    }
+}
+
+/**
+ * Create Delhivery Forward Order (for exchange/replacement dispatch)
+ * This sends item FROM warehouse TO customer (opposite of return pickup)
+ */
+async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
+    try {
+        console.log(`\n📦 Creating Delhivery Forward Order for ${requestData.requestId}...`);
+        
+        // Fetch Shopify Order if we need customer address
+        if (!shopifyOrder && requestData.orderNumber) {
+            try {
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                }
+
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+            } catch (e) {
+                console.error(`[${requestData.requestId}] Failed to fetch Shopify order:`, e.message);
+            }
+        }
+
+        // Get warehouse location for pickup (FROM warehouse)
+        const warehouseLocation = await getSetting('warehouse_location', null);
+        
+        if (!warehouseLocation) {
+            console.error(`[${requestData.requestId}] ❌ No warehouse location configured`);
+            return null;
+        }
+
+        console.log('✅ Using warehouse from settings:', warehouseLocation.nickname || warehouseLocation.name);
+        console.log('📦 Warehouse Details:');
+        console.log(`   Name: ${warehouseLocation.name}`);
+        console.log(`   Address: ${warehouseLocation.address}`);
+        console.log(`   City: ${warehouseLocation.city}, ${warehouseLocation.state} ${warehouseLocation.pin_code || warehouseLocation.pincode}`);
+        console.log(`   Phone: ${warehouseLocation.phone}`);
+
+        // Customer details (TO customer) - use new_* fields for exchange address
+        let customerName = requestData.newName || requestData.customerName || 'Customer';
+        let customerAddress = requestData.newAddress || '';
+        let customerCity = requestData.newCity || '';
+        let customerState = requestData.newState || '';
+        let customerPincode = requestData.newPincode || '';
+        let customerPhone = requestData.customerPhone || requestData.newPhone || '9999999999';
+
+        // If we don't have exchange address in requestData, try to get from Shopify
+        if (!customerAddress && shopifyOrder) {
+            const address = shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address);
+            if (address) {
+                customerName = `${address.first_name || ''} ${address.last_name || ''}`.trim() || customerName;
+                customerAddress = ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 190);
+                customerCity = address.city || customerCity;
+                customerState = address.province || customerState;
+                customerPincode = address.zip || customerPincode;
+                customerPhone = customerPhone || address.phone || shopifyOrder?.phone || '9999999999';
+            }
+        }
+
+        // Validate phone number
+        let digits = String(customerPhone).replace(/\D/g, '');
+        customerPhone = digits.length >= 10 ? digits.slice(-10) : '9999999999';
+
+        // Sanitize addresses - Delhivery doesn't accept: &, #, %, ;, \
+        const sanitizeAddress = (str) => {
+            if (!str) return '';
+            return str.replace(/[&#%;\\]/g, '').trim();
+        };
+
+        // Build forward order ID with fws- prefix (required by Delhivery for forward shipments)
+        const forwardOrderId = `fws-${requestData.requestId}`;
+
+        // Get Delhivery pickup location nickname
+        const delhiveryPickupLocationSetting = await getSetting('delhivery_pickup_location', null);
+        const pickupLocationNickname = delhiveryPickupLocationSetting 
+            || (warehouseLocation && warehouseLocation.pickup_location)
+            || process.env.DELHIVERY_PICKUP_LOCATION 
+            || 'Primary';
+
+        console.log(` Using Delhivery pickup location: ${pickupLocationNickname}`);
+        console.log(`📦 Forward Order: FROM warehouse TO customer`);
+        console.log(`   Order ID: ${forwardOrderId}`);
+        console.log(`   From: ${warehouseLocation.city}, ${warehouseLocation.state}`);
+        console.log(`   To: ${customerCity}, ${customerState}`);
+
+        // Process items/products for Delhivery
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        console.log(`📦 Processing ${items.length} item(s) for Delhivery forward order`);
+        
+        const products = [];
+        let totalQuantity = 0;
+        let totalAmount = 0;
+        let productsDesc = [];
+        for (const item of items) {
+            const isDifferentProduct = item.replacementProductId && item.replacementProductId !== item.productId;
+            const title = item.replacementProductTitle || item.name;
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const productName = title + variantStr;
+            const quantity = parseInt(item.quantity) || 1;
+            const price = parseFloat(item.replacementPrice || item.price) || 0;
+            
+            console.log(`  - Product: ${productName}`);
+            console.log(`    Quantity: ${quantity}`);
+            console.log(`    Price: ₹${price}`);
+            
+            totalQuantity += quantity;
+            totalAmount += (price * quantity);
+            productsDesc.push(productName);
+            
+            products.push({
+                name: sanitizeAddress(productName),
+                quantity: quantity,
+                price: price,
+                selling_price: price,
+                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH',
+                hsn_code: '9965'  // Default HSN for apparel/general goods
+            });
+        }
+
+        // Get GST TIN for Delhivery (mandatory per Delhivery docs)
+        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AAKFO0351L1Z7';
+
+        // Default package dimensions and weight (configurable via env)
+        const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;  // grams
+        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 30;   // cm
+        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 40;     // cm
+        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 2;    // cm
+
+        console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+        console.log(`📊 Total Quantity: ${totalQuantity}, Total Amount: ₹${totalAmount}`);
+        console.log(`📦 Package: ${pkgWeight}g, ${pkgLength}x${pkgWidth}x${pkgHeight}cm`);
+        console.log(`🔢 Seller GST: ${sellerGstTin}`);
+
+        // Build payload for Delhivery CMU API - FORWARD direction
+        // pickup_location = warehouse (where we're sending FROM)
+        // customer = shipping address (where we're sending TO)
+        const payload = {
+            shipments: [{
+                order: forwardOrderId,
+                name: sanitizeAddress(customerName),
+                add: sanitizeAddress(customerAddress),
+                pin: customerPincode,
+                city: sanitizeAddress(customerCity),
+                state: sanitizeAddress(customerState),
+                country: "India",
+                phone: customerPhone,
+                payment_mode: "Prepaid",  // Forward shipment is prepaid
+                cod_amount: 0,
+                order_date: new Date().toISOString().split('T')[0],
+                total_amount: totalAmount,  // Total order value (shows in dashboard)
+                quantity: totalQuantity,    // Total quantity (shows in dashboard)
+                weight: pkgWeight,          // Weight in grams (shows in dashboard)
+                shipment_width: pkgWidth,
+                shipment_height: pkgHeight,
+                shipment_length: pkgLength,
+                products_desc: productsDesc.join(', '),  // Product description on label
+                hsn_code: '9965',
+                pickup_location: pickupLocationNickname,
+                seller_gst_tin: sellerGstTin,  // Mandatory for GST compliance
+                products: products  // Detailed product list
+            }],
+            pickup_location: {
+                name: pickupLocationNickname,
+                add: sanitizeAddress(warehouseLocation.address || warehouseLocation.address_line_1),
+                pin: warehouseLocation.pin_code || warehouseLocation.pincode,
+                city: sanitizeAddress(warehouseLocation.city),
+                state: sanitizeAddress(warehouseLocation.state || 'Haryana'),
+                country: 'IN',
+                phone: warehouseLocation.phone
+            }
+        };
+
+        console.log('🚀 Sending to Delhivery CMU API...');
+        console.log('📦 Payload:', JSON.stringify(payload, null, 2));
+
+        const response = await fetch('https://track.delhivery.com/api/cmu/create.json', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Token ${process.env.DELHIVERY_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: `format=json&data=${JSON.stringify(payload)}`
+        });
+
+        const data = await response.json();
+        console.log('📦 Delhivery Response:', JSON.stringify(data, null, 2));
+
+        if (data.error || data.status === "Error") {
+            console.error('❌ Delhivery Error:', data.error || data.message);
+            return null;
+        }
+
+        // Extract waybill and shipment details
+        const waybill = data.packages?.[0]?.waybill;
+        const shipmentId = data.packages?.[0]?.shipment_id || forwardOrderId;
+
+        if (waybill) {
+            console.log(`✅ Delhivery Forward Success!`);
+            console.log(`   Waybill: ${waybill}`);
+            console.log(`   Order ID: ${forwardOrderId}`);
+            
+            return {
+                waybill,
+                shipment_id: shipmentId,
+                order_id: forwardOrderId
+            };
+        } else {
+            console.error('❌ Delhivery did not return waybill');
+            console.error('   Error:', data.rmk || data.error);
+            return null;
+        }
+
+    } catch (error) {
+        console.error(`❌ Error creating Delhivery forward order:`, error.message);
         return null;
     }
 }
@@ -2454,29 +3077,36 @@ app.post('/api/get-variants', async (req, res) => {
 
 // ==================== WHATSAPP BOT INTEGRATION ====================
 
-async function sendWhatsAppNotification(phone, message, type, requestId) {
-    if (!phone || !message) return;
+async function sendWhatsAppNotification(phone, message, type, requestId, templateData = null) {
+    if (!phone || !message) return null;
 
     // Use environment variable or default to localhost:3000 (standard for local dev)
     const botUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:3000';
+    const internalToken = process.env.WHATSAPP_INTERNAL_TOKEN || '';
 
     try {
         console.log(`[${requestId}] 📤 Sending WhatsApp notification to ${phone}`);
         // Ensure fetch is available (Node 18+)
         const response = await fetch(`${botUrl}/api/internal/send-notification`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone, message, type, requestId })
+            headers: { 
+                'Content-Type': 'application/json',
+                'x-internal-token': internalToken
+            },
+            body: JSON.stringify({ phone, message, type, requestId, templateData })
         });
 
         const data = await response.json();
         if (data.success) {
             console.log(`[${requestId}] ✅ WhatsApp notification sent: ${data.messageId}`);
+            return { success: true, messageId: data.messageId, fallback: data.fallback };
         } else {
             console.warn(`[${requestId}] ⚠️ WhatsApp notification failed: ${data.error}`);
+            throw new Error(data.error || 'WhatsApp send failed');
         }
     } catch (error) {
         console.error(`[${requestId}] ❌ WhatsApp notification error:`, error.message);
+        throw error;
     }
 }
 
@@ -2640,7 +3270,7 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
 
                 // Update with success data
                 if (carrierUsed) {
-                    updates.status = 'pickup_pending';
+                    updates.status = 'pickup_booked';
                     updates.awbNumber = awbNumber;
                     updates.shipmentId = shipmentId;
                     updates.pickupDate = pickupDate;
@@ -3406,11 +4036,17 @@ app.get('/api/track-request/:identifier', async (req, res) => {
         // Detect: REQ IDs always start with 'REQ-'; everything else treated as an order number
         const isReqId = identifier.toUpperCase().startsWith('REQ-');
 
+        console.log(`[Track Request] identifier=${identifier}, isReqId=${isReqId}`);
+
         if (isReqId) {
             // --- Normal path: single request by REQ ID ---
             const request = await getRequestById(identifier);
             if (!request) return res.status(404).json({ error: 'Request not found' });
+            
+            console.log(`[Track Request] DB status for ${identifier}:`, request.status);
+            
             await enrichWithTracking(request);
+            console.log(`[Track Request] After enrichment, status:`, request.status);
             return res.json(request);
         } else {
             // --- Order number path: may return multiple requests ---
@@ -3842,6 +4478,205 @@ app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
     }
 });
 
+// Get detailed analytics (new premium endpoint)
+app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => {
+    try {
+        const { dateRange } = req.query;
+        
+        // Calculate date range
+        const now = new Date();
+        let startDate;
+        let previousStartDate;
+        
+        switch (dateRange) {
+            case '7d':
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                previousStartDate = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+                break;
+            case '90d':
+                startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                previousStartDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+                break;
+            case '30d':
+            default:
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                previousStartDate = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+                break;
+        }
+        
+        // Fetch current period data
+        const { data: currentRequests, error: currentError } = await supabase
+            .from('requests')
+            .select('*')
+            .gte('created_at', startDate.toISOString());
+        
+        if (currentError) throw currentError;
+        
+        // Fetch previous period data for comparison
+        const { data: previousRequests, error: previousError } = await supabase
+            .from('requests')
+            .select('*')
+            .gte('created_at', previousStartDate.toISOString())
+            .lt('created_at', startDate.toISOString());
+        
+        if (previousError) throw previousError;
+        
+        // Calculate stats for current period
+        const stats = {
+            total: currentRequests.length,
+            pending: currentRequests.filter(r => r.status === 'pending').length,
+            waitingPayment: currentRequests.filter(r => r.status === 'waiting_payment').length,
+            approved: currentRequests.filter(r => r.status === 'approved').length,
+            rejected: currentRequests.filter(r => r.status === 'rejected').length,
+            returns: currentRequests.filter(r => r.type === 'return').length,
+            exchanges: currentRequests.filter(r => r.type === 'exchange').length,
+            totalRevenue: currentRequests.reduce((sum, r) => {
+                // Try total_amount first, then calculate from items
+                if (r.total_amount) return sum + r.total_amount;
+                // Calculate from items array
+                if (r.items && Array.isArray(r.items)) {
+                    const itemsTotal = r.items.reduce((itemSum, item) => {
+                        const price = parseFloat(item.price) || 0;
+                        const quantity = parseInt(item.quantity) || 1;
+                        return itemSum + (price * quantity);
+                    }, 0);
+                    return sum + itemsTotal;
+                }
+                return sum;
+            }, 0)
+        };
+        
+        // Calculate stats for previous period
+        const previousStats = {
+            total: previousRequests.length,
+            totalRevenue: previousRequests.reduce((sum, r) => {
+                // Try total_amount first, then calculate from items
+                if (r.total_amount) return sum + r.total_amount;
+                // Calculate from items array
+                if (r.items && Array.isArray(r.items)) {
+                    const itemsTotal = r.items.reduce((itemSum, item) => {
+                        const price = parseFloat(item.price) || 0;
+                        const quantity = parseInt(item.quantity) || 1;
+                        return itemSum + (price * quantity);
+                    }, 0);
+                    return sum + itemsTotal;
+                }
+                return sum;
+            }, 0)
+        };
+        
+        // Calculate comparisons
+        const totalChange = previousStats.total > 0 
+            ? Math.round(((stats.total - previousStats.total) / previousStats.total) * 100) 
+            : 0;
+        
+        const valueChange = previousStats.totalRevenue > 0 
+            ? Math.round(((stats.totalRevenue - previousStats.totalRevenue) / previousStats.totalRevenue) * 100) 
+            : 0;
+        
+        // Status distribution
+        const statusDistribution = {};
+        currentRequests.forEach(r => {
+            statusDistribution[r.status] = (statusDistribution[r.status] || 0) + 1;
+        });
+        
+        // Return reasons breakdown
+        const reasons = {};
+        currentRequests.forEach(r => {
+            if (r.reason) {
+                reasons[r.reason] = (reasons[r.reason] || 0) + 1;
+            }
+        });
+        
+        // Carrier statistics
+        const carrierStats = {};
+        currentRequests.forEach(r => {
+            if (r.carrier) {
+                if (!carrierStats[r.carrier]) {
+                    carrierStats[r.carrier] = { total: 0, success: 0 };
+                }
+                carrierStats[r.carrier].total++;
+                if (['delivered', 'approved'].includes(r.status)) {
+                    carrierStats[r.carrier].success++;
+                }
+            }
+        });
+        
+        // Time series data (chronological order: oldest to newest)
+        const timeSeries = [];
+        const days = dateRange === '7d' ? 7 : dateRange === '90d' ? 90 : 30;
+        
+        for (let i = 0; i < days; i++) {
+            const date = new Date(now.getTime() - (days - 1 - i) * 24 * 60 * 60 * 1000);
+            const dateStr = date.toISOString().split('T')[0];
+            const nextDate = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+            
+            const dayRequests = currentRequests.filter(r => {
+                const reqDate = new Date(r.created_at);
+                return reqDate >= date && reqDate < nextDate;
+            });
+            
+            timeSeries.push({
+                date: dateStr,
+                total: dayRequests.length,
+                returns: dayRequests.filter(r => r.type === 'return').length,
+                exchanges: dayRequests.filter(r => r.type === 'exchange').length
+            });
+        }
+        
+        // Sort chronologically (oldest to newest)
+        timeSeries.sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        // Calculate average processing time
+        const completedRequests = currentRequests.filter(r => 
+            ['approved', 'rejected', 'delivered'].includes(r.status) && r.updated_at
+        );
+        
+        let avgProcessingTime = 0;
+        if (completedRequests.length > 0) {
+            const totalTime = completedRequests.reduce((sum, r) => {
+                const created = new Date(r.created_at);
+                const updated = new Date(r.updated_at);
+                return sum + (updated - created);
+            }, 0);
+            avgProcessingTime = totalTime / completedRequests.length / (1000 * 60 * 60 * 24); // Convert to days
+        }
+        
+        // Insights
+        const insights = {
+            topReason: Object.entries(reasons).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A',
+            topReasonCount: Object.entries(reasons).sort((a, b) => b[1] - a[1])[0]?.[1] || 0,
+            peakDay: timeSeries.sort((a, b) => b.total - a.total)[0]?.date || 'N/A',
+            peakDayCount: timeSeries.sort((a, b) => b.total - a.total)[0]?.total || 0,
+            carrierSuccessRate: Object.keys(carrierStats).length > 0 
+                ? Math.round(
+                    (Object.values(carrierStats).reduce((sum, c) => sum + c.success, 0) / 
+                     Object.values(carrierStats).reduce((sum, c) => sum + c.total, 0)) * 100
+                  ) + '%'
+                : 'N/A'
+        };
+        
+        res.json({
+            stats,
+            comparison: {
+                totalChange,
+                valueChange,
+                previousTotal: previousStats.total
+            },
+            statusDistribution,
+            reasons,
+            carrierStats,
+            timeSeries,
+            avgProcessingTime,
+            insights
+        });
+        
+    } catch (error) {
+        console.error('Get detailed analytics error:', error);
+        res.status(500).json({ error: 'Failed to fetch detailed analytics' });
+    }
+});
+
 // Approve request (admin) - supports legacy endpoints
 app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve-exchange'], authenticateAdmin, async (req, res) => {
     try {
@@ -4015,11 +4850,11 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                     if (fallbackReason) {
                         updates.carrierFallbackReason = fallbackReason;
                     }
-                    updates.status = 'pickup_pending';
+                    updates.status = 'pickup_booked';
                     updates.adminNotes = adminNotes + `\nPickup scheduled via ${carrierUsed}: AWB ${awbNumber || 'Pending'}`;
 
                     const request = await updateRequestStatus(requestId, updates);
-                    return res.json({ success: true, message: `Pickup initiated via ${carrierUsed} and status updated to pickup_pending`, request });
+                    return res.json({ success: true, message: `Pickup initiated via ${carrierUsed} and status updated to pickup_booked`, request });
                 } else {
                     throw new Error('No carrier was used');
                 }
@@ -4030,31 +4865,136 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
         }
 
         // 2. Final Approval -> Quality Check Passed -> Process Resolution
-        // Trigger Forward Shipment on Shiprocket only (no Shopify exchange order)
+        // Trigger Forward Shipment based on carrier settings (Shiprocket and/or Delhivery)
         if (requestDetails.type === 'exchange' && requestDetails.status !== 'approved') {
             console.log(`[${requestId}] Finalizing exchange resolution...`);
 
-            // Create Shiprocket forward shipment (Shopify exchange order creation intentionally skipped)
-            if (process.env.SHIPROCKET_EMAIL) {
-                console.log('Creating Forward Shipment for Exchange:', requestId);
-                let items = requestDetails.items;
-                if (typeof items === 'string') { try { items = JSON.parse(items); } catch (e) { items = []; } }
+            // Get carrier mode for dispatch (forward shipment)
+            const carrierMode = await getCarrierMode('dispatch');
+            const carrierResolution = resolveCarrier(carrierMode, null, 'dispatch');
+            
+            console.log(`[${requestId}] 🚀 Creating Forward Shipment for Exchange with carrier: ${carrierResolution.primary}${carrierResolution.useFallback ? ' (with fallback)' : ''}`);
+            
+            let items = requestDetails.items;
+            if (typeof items === 'string') { 
+                try { 
+                    items = JSON.parse(items); 
+                    console.log(`[${requestId}] 📋 Parsed items from JSON string: ${items.length} item(s)`);
+                } catch (e) { 
+                    console.error(`[${requestId}] ❌ Failed to parse items JSON:`, e);
+                    items = []; 
+                } 
+            }
 
-                const forwardOrder = await createShiprocketForwardOrder({ ...requestDetails, items });
-                if (forwardOrder && forwardOrder.shipment_id) {
-                    adminNotes += `\nReplacement Shipment Created (Shiprocket ID: ${forwardOrder.shipment_id})`;
-                    updates.forwardShipmentId = String(forwardOrder.shipment_id);
-                    updates.forwardAwbNumber = forwardOrder.awb_code || '';
-                    updates.forwardStatus = 'scheduled';
+            // Log item details before creating forward order
+            console.log(`[${requestId}] 📦 Items to be dispatched:`);
+            items.forEach((item, idx) => {
+                console.log(`  ${idx + 1}. ${item.replacementProductTitle || item.name}`);
+                console.log(`     Variant: ${item.replacementVariant || item.variant}`);
+                console.log(`     Variant ID: ${item.replacementVariantId || item.variantId}`);
+                console.log(`     Qty: ${item.quantity}`);
+            });
+
+            // Create forward order based on carrier mode
+            let forwardOrder = null;
+            let carrierUsed = null;
+
+            const primaryCarrier = carrierResolution.primary;
+            const useFallback = carrierResolution.useFallback;
+
+            try {
+                if (primaryCarrier === 'shiprocket') {
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
+                    }
+                    console.log(`[${requestId}] Using Shiprocket for forward dispatch...`);
+                    forwardOrder = await createShiprocketForwardOrder({ ...requestDetails, items });
+                    carrierUsed = 'shiprocket';
+                    
+                    if (!forwardOrder || !forwardOrder.shipment_id) {
+                        throw new Error('Shiprocket returned empty response');
+                    }
+                } else if (primaryCarrier === 'delhivery') {
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    console.log(`[${requestId}] Using Delhivery for forward dispatch...`);
+                    forwardOrder = await createDelhiveryForwardOrder({ ...requestDetails, items });
+                    carrierUsed = 'delhivery';
+                    
+                    if (!forwardOrder || !forwardOrder.waybill) {
+                        throw new Error('Delhivery returned empty response');
+                    }
+                }
+            } catch (primaryError) {
+                console.error(`[${requestId}] ❌ Primary carrier (${primaryCarrier}) failed:`, primaryError.message);
+                
+                // Try fallback if enabled
+                if (useFallback) {
+                    const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
+                    const fallbackEnv = fallbackCarrier === 'shiprocket' ? process.env.SHIPROCKET_EMAIL : process.env.DELHIVERY_API_KEY;
+                    
+                    if (fallbackEnv) {
+                        try {
+                            console.log(`[${requestId}] ⚠️ Falling back to ${fallbackCarrier}...`);
+                            forwardOrder = fallbackCarrier === 'shiprocket'
+                                ? await createShiprocketForwardOrder({ ...requestDetails, items })
+                                : await createDelhiveryForwardOrder({ ...requestDetails, items });
+                            carrierUsed = fallbackCarrier;
+                            
+                            const isValid = fallbackCarrier === 'shiprocket'
+                                ? (forwardOrder && forwardOrder.shipment_id)
+                                : (forwardOrder && forwardOrder.waybill);
+                            
+                            if (!isValid) {
+                                throw new Error(`${fallbackCarrier} also failed to create forward shipment`);
+                            }
+                            
+                            console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success`);
+                        } catch (fallbackError) {
+                            console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
+                            forwardOrder = null;
+                        }
+                    } else {
+                        console.error(`[${requestId}] ❌ ${primaryCarrier} failed and ${fallbackCarrier} not configured`);
+                        forwardOrder = null;
+                    }
                 } else {
-                    adminNotes += `\nFailed to create replacement shipment in Shiprocket. Check logs.`;
+                    console.error(`[${requestId}] ❌ ${primaryCarrier} failed and fallback not enabled`);
+                    forwardOrder = null;
                 }
             }
+
+            if (forwardOrder && (forwardOrder.shipment_id || forwardOrder.waybill)) {
+                const shipmentInfo = carrierUsed === 'shiprocket' 
+                    ? `Shiprocket ID: ${forwardOrder.shipment_id}` 
+                    : `Delhivery AWB: ${forwardOrder.waybill}`;
+                adminNotes += `\nReplacement Shipment Created (${carrierUsed}: ${shipmentInfo})`;
+                updates.forwardShipmentId = String(forwardOrder.shipment_id || forwardOrder.order_id);
+                updates.forwardAwbNumber = forwardOrder.awb_code || forwardOrder.waybill || '';
+                updates.forwardStatus = 'scheduled';
+                updates.forwardCarrier = carrierUsed;
+                // Only mark as approved if forward shipment was successfully created
+                updates.status = 'approved';
+            } else {
+                // Forward shipment creation failed - do NOT mark as approved
+                adminNotes += `\nFailed to create replacement shipment. Check logs.`;
+                console.error(`[${requestId}] ❌ Forward shipment creation failed. Status will remain as: ${requestDetails.status}`);
+                // Keep the current status instead of marking as approved
+                updates.status = requestDetails.status;
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to create forward shipment. Please check logs and try again.',
+                    requestId: requestId
+                });
+            }
+        } else {
+            // For non-exchange types or already approved, just mark as approved
+            updates.status = 'approved';
         }
 
         const request = await updateRequestStatus(requestId, {
             ...updates,
-            status: 'approved',
             adminNotes: adminNotes
         });
 
@@ -4062,6 +5002,139 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
     } catch (error) {
         console.error('Approve request error:', error);
         res.status(500).json({ error: 'Failed to approve request' });
+    }
+});
+
+// Approve return with discount code creation (admin)
+app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (req, res) => {
+    try {
+        const { 
+            requestId, 
+            notes, 
+            discountCode,      // e.g., "RETURN10" or "REFUND500"
+            discountValue,     // e.g., 10 (for 10%) or 500 (for ₹500)
+            discountType,      // 'percentage' or 'fixed'
+            usageLimit,        // optional, null = unlimited
+            sendWhatsApp,      // boolean: send via WhatsApp?
+            whatsappPhone      // optional: edited phone number
+        } = req.body;
+
+        // 1. Validate request exists and is in 'delivered' status
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        if (requestDetails.status !== 'delivered') {
+            return res.status(400).json({ 
+                error: 'Can only approve with discount for delivered returns' 
+            });
+        }
+        if (requestDetails.type !== 'return') {
+            return res.status(400).json({ error: 'Only for return requests' });
+        }
+
+        // 2. Create Shopify discount code (auto-generate if not provided)
+        let shopifyResult = null;
+        let discountCodeGenerated = null;
+        
+        if (discountValue) {
+            const finalCode = discountCode || `RETURN${requestId.slice(-6).toUpperCase()}`;
+            const valueType = discountType === 'fixed' ? 'fixed_amount' : 'percentage';
+            const title = `Return Compensation: ${requestDetails.orderNumber}`;
+            
+            shopifyResult = await createShopifyDiscountCode(
+                finalCode,
+                discountValue,
+                valueType,
+                usageLimit || null,
+                title
+            );
+            
+            discountCodeGenerated = finalCode.toUpperCase();
+            console.log(`[${requestId}] ✅ Shopify discount created: ${discountCodeGenerated}`);
+        }
+
+        // 3. Update request status to 'approved' with discount info
+        let adminNotes = notes || '';
+        if (discountCodeGenerated) {
+            adminNotes += `\n--- Discount Code Issued ---\nCode: ${discountCodeGenerated}\nValue: ${discountType === 'fixed' ? '₹' + discountValue : discountValue + '%'}\nUsage Limit: ${usageLimit || 'Unlimited'}`;
+        }
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'approved',
+            adminNotes,
+            discountCode: discountCodeGenerated || null,
+            discountValue: discountValue || null,
+            discountType: discountType || null,
+            approvedAt: new Date().toISOString()
+        });
+
+        // 4. Send WhatsApp notification if requested
+        let whatsappSent = false;
+        let whatsappMessageId = null;
+        let whatsappError = null;
+        
+        if (sendWhatsApp && discountCodeGenerated) {
+            const phoneToSend = whatsappPhone || requestDetails.customerPhone;
+            if (phoneToSend) {
+                const valueTypeLabel = discountType === 'fixed' ? `₹${discountValue}` : `${discountValue}%`;
+                const customerName = requestDetails.customerName || 'Valued Customer';
+                const message = `Hi ${customerName}! 👋\n\nGreat news! Your return for order *${requestDetails.orderNumber}* has been approved and processed successfully. ✅\n\n🎁 *Your Exclusive Compensation:*\n━━━━━━━━━━━━━━━━━\n💰 Discount Code: *${discountCodeGenerated}*\n💎 Value: ${valueTypeLabel}\n📝 Usage: ${usageLimit ? usageLimit + ' time(s)' : 'Unlimited'}\n━━━━━━━━━━━━━━━━━\n\nSimply apply this code at checkout on any product in our store!\n\nThank you for your patience and trust in us. We look forward to serving you again! 🙏\n\nNeed help? Reply to this message.`;
+                
+                try {
+                    const whatsappResult = await sendWhatsAppNotification(
+                        phoneToSend,
+                        message,
+                        'return_approved_with_discount',
+                        requestId,
+                        {
+                            templateName: 'return_approved_discount',
+                            customerName: customerName,
+                            orderNumber: requestDetails.orderNumber,
+                            discountCode: discountCodeGenerated,
+                            value: discountValue,
+                            valueType: discountType === 'fixed' ? 'fixed_amount' : 'percentage',
+                            usage: usageLimit ? `${usageLimit} time(s)` : 'Unlimited'
+                        }
+                    );
+                    
+                    whatsappSent = true;
+                    whatsappMessageId = whatsappResult?.messageId || null;
+                    console.log(`[${requestId}] ✅ WhatsApp template sent successfully. Message ID: ${whatsappMessageId}`);
+                    
+                    // Update database with WhatsApp status
+                    await updateRequestStatus(requestId, {
+                        whatsappSent: true,
+                        whatsappMessageId: whatsappMessageId,
+                        whatsappSentAt: new Date().toISOString()
+                    });
+                } catch (error) {
+                    whatsappError = error.message;
+                    console.error(`[${requestId}] ❌ WhatsApp send failed:`, error.message);
+                    
+                    // Update database with error
+                    await updateRequestStatus(requestId, {
+                        whatsappSent: false,
+                        whatsappError: error.message
+                    });
+                }
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'Return approved with discount code',
+            discountCode: discountCodeGenerated,
+            whatsappSent,
+            whatsappMessageId,
+            whatsappError,
+            request 
+        });
+    } catch (error) {
+        console.error('Approve return with discount error:', error);
+        res.status(500).json({ 
+            error: 'Failed to approve return with discount: ' + error.message 
+        });
     }
 });
 
@@ -4124,6 +5197,140 @@ app.post('/api/admin/mark-delivered', authenticateAdmin, async (req, res) => {
     } catch (error) {
         console.error('Mark delivered error:', error);
         res.status(500).json({ error: 'Failed to update status' });
+    }
+});
+
+// Re-dispatch cancelled or failed orders (admin)
+app.post('/api/admin/redispatch', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, carrierOverride } = req.body;
+        
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        
+        // Only allow re-dispatch for cancelled or failed orders
+        if (requestDetails.status !== 'cancelled' && requestDetails.status !== 'failed') {
+            return res.status(400).json({ 
+                error: 'Can only re-dispatch cancelled or failed orders',
+                currentStatus: requestDetails.status
+            });
+        }
+        
+        console.log(`[${requestId}] RE-DISPATCHING order (was ${requestDetails.status}). Previous carrier: ${requestDetails.carrier || 'none'}`);
+        
+        // Clear previous carrier info and reset to pending for re-processing
+        const adminNotes = (requestDetails.adminNotes || '') + 
+            `\n[SYSTEM] Order re-dispatched by admin from ${requestDetails.status} status (Previous carrier: ${requestDetails.carrier || 'none'})`;
+        
+        const request = await updateRequestStatus(requestId, {
+            status: 'pending',
+            carrier: null,
+            carrierAwb: null,
+            carrierShipmentId: null,
+            awbNumber: null,
+            shipmentId: null,
+            pickupDate: null,
+            forwardAwbNumber: null,
+            forwardShipmentId: null,
+            adminNotes
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Order reset to pending for re-dispatch. You can now approve it again.',
+            request
+        });
+    } catch (error) {
+        console.error('Re-dispatch error:', error);
+        res.status(500).json({ error: 'Failed to re-dispatch order' });
+    }
+});
+
+// ── Admin: Update exchange details (items, phone, address) ──
+app.put('/api/admin/update-request/:requestId', authenticateAdmin, async (req, res) => {
+    const requestId = req.params.requestId;
+    const { items, customerPhone, newAddress, newCity, newPincode, newState, customerName } = req.body;
+    
+    console.log(`[ADMIN UPDATE] ${requestId} — Exchange details modification started`);
+    
+    try {
+        // Validate request exists
+        const existingRequest = await getRequestById(requestId);
+        if (!existingRequest) {
+            console.log(`[ADMIN UPDATE] ${requestId} — Request not found`);
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        
+        // Only allow modifications for requests that haven't been shipped yet
+        const blockedStatuses = ['shipped', 'delivered', 'resolved'];
+        if (blockedStatuses.includes(existingRequest.status)) {
+            console.log(`[ADMIN UPDATE] ${requestId} — Cannot modify request with status: ${existingRequest.status}`);
+            return res.status(400).json({ 
+                error: 'Cannot modify request after shipment has been initiated' 
+            });
+        }
+        
+        const updateData = {};
+        
+        // Update items if provided
+        if (items && Array.isArray(items) && items.length > 0) {
+            // Validate each item has required fields
+            for (const item of items) {
+                if (!item.replacementVariantId || !item.replacementProductTitle) {
+                    console.log(`[ADMIN UPDATE] ${requestId} — Invalid item data: missing replacementVariantId or replacementProductTitle`);
+                    return res.status(400).json({ 
+                        error: 'Each item must have replacementVariantId and replacementProductTitle' 
+                    });
+                }
+            }
+            updateData.items = JSON.stringify(items);
+            console.log(`[ADMIN UPDATE] ${requestId} — Updating ${items.length} item(s)`);
+        }
+        
+        // Update customer phone if provided
+        if (customerPhone !== undefined) {
+            updateData.customer_phone = customerPhone;
+            console.log(`[ADMIN UPDATE] ${requestId} — Updating customer phone`);
+        }
+        
+        // Update shipping address fields if provided
+        if (newAddress !== undefined) updateData.new_address = newAddress;
+        if (newCity !== undefined) updateData.new_city = newCity;
+        if (newPincode !== undefined) updateData.new_pincode = newPincode;
+        if (newState !== undefined) updateData.new_state = newState;
+        if (customerName !== undefined) updateData.customer_name = customerName;
+        
+        // Add audit trail
+        const timestamp = new Date().toISOString();
+        updateData.admin_notes = `[${timestamp}] Exchange details modified by admin\n` + 
+            (existingRequest.admin_notes || '');
+        updateData.updated_at = timestamp;
+        
+        // Perform update
+        const { data, error } = await supabase
+            .from('requests')
+            .update(updateData)
+            .eq('request_id', requestId)
+            .select()
+            .single();
+        
+        if (error) {
+            console.error(`[ADMIN UPDATE] ${requestId} — Database update error:`, error);
+            return res.status(500).json({ error: 'Failed to update request' });
+        }
+        
+        console.log(`[ADMIN UPDATE] ${requestId} — ✅ Successfully updated`);
+        
+        res.json({ 
+            success: true, 
+            message: 'Request updated successfully',
+            data: convertFromSnakeCase(data)
+        });
+    } catch (error) {
+        console.error(`[ADMIN UPDATE] ${requestId} — Error:`, error);
+        res.status(500).json({ error: 'Failed to update request' });
     }
 });
 
@@ -4314,6 +5521,43 @@ app.get('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
 // Manual Sync Trigger - immediately trigger background sync
 app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
     try {
+        const { requestId, forceRetry } = req.body;
+        
+        // If requestId is provided, sync only that specific request
+        if (requestId) {
+            console.log(`[Manual Sync] Admin triggered sync for single request: ${requestId}`);
+            
+            const request = await getRequestById(requestId);
+            if (!request) {
+                return res.status(404).json({ 
+                    success: false, 
+                    error: `Request ${requestId} not found` 
+                });
+            }
+            
+            // Use higher retry count for manual sync if forceRetry is true
+            const maxRetries = forceRetry ? 5 : 3;
+            const result = await syncWithRetry(request, maxRetries);
+            
+            if (result.success) {
+                return res.json({
+                    success: true,
+                    message: `Successfully synced ${requestId}`,
+                    requestId: requestId,
+                    attempts: result.attempts
+                });
+            } else {
+                return res.json({
+                    success: false,
+                    message: `Failed to sync ${requestId} after ${result.attempts} attempts`,
+                    requestId: requestId,
+                    error: result.error,
+                    attempts: result.attempts
+                });
+            }
+        }
+        
+        // Full background sync
         if (isSyncRunning) {
             return res.json({
                 success: false,
@@ -4321,19 +5565,32 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
             });
         }
 
-        console.log('[Manual Sync] Admin triggered manual sync...');
+        console.log('[Manual Sync] Admin triggered full background sync...');
         
-        // Wait for sync to complete and get the updated count
-        const updatedCount = await performBackgroundSync();
+        // Wait for sync to complete and get metrics
+        const syncResult = await performBackgroundSync();
 
-        res.json({
-            success: true,
-            message: `Sync complete! Updated ${updatedCount} requests.`,
-            updated: updatedCount
-        });
+        if (syncResult.success) {
+            res.json({
+                success: true,
+                message: `Sync complete! ${syncResult.metrics.success} success, ${syncResult.metrics.failed} failed`,
+                metrics: syncResult.metrics
+            });
+        } else {
+            res.json({
+                success: false,
+                message: 'Sync failed',
+                error: syncResult.error,
+                metrics: syncResult.metrics
+            });
+        }
     } catch (error) {
         console.error('[Manual Sync] Error:', error);
-        res.status(500).json({ error: 'Failed to trigger sync' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to trigger sync',
+            details: error.message 
+        });
     }
 });
 
@@ -4395,6 +5652,40 @@ app.post(['/api/admin/reject', '/api/admin/reject-return', '/api/admin/reject-ex
     } catch (error) {
         console.error('Reject request error:', error);
         res.status(500).json({ error: 'Failed to reject request' });
+    }
+});
+
+// Undo rejection (admin) - restore rejected request to pending status
+app.post('/api/admin/undo-rejection', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.body;
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        if (requestDetails.status !== 'rejected') {
+            return res.status(400).json({ error: 'Can only undo rejected requests' });
+        }
+
+        const adminNotes = (requestDetails.adminNotes || '') + 
+            `\n[SYSTEM] Rejection undone by admin on ${new Date().toLocaleString('en-IN')}`;
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'pending',
+            adminNotes
+        });
+
+        res.json({ 
+            success: true, 
+            message: 'Request restored to pending status',
+            request 
+        });
+
+    } catch (error) {
+        console.error('Undo rejection error:', error);
+        res.status(500).json({ error: 'Failed to undo rejection' });
     }
 });
 
@@ -4611,7 +5902,7 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
                         shipmentId,
                         awbNumber,
                         pickupDate,
-                        status: 'pickup_pending',
+                        status: 'pickup_booked',
                         adminNotes,
                         carrier: carrierUsed,
                         carrierShipmentId: shipmentId,
@@ -4760,7 +6051,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
         const linkToken = crypto.randomBytes(16).toString('hex');
 
         // Parse values
-        const commission = commissionRate !== undefined ? parseFloat(commissionRate) : 10.00;
+        const commission = commissionRate !== undefined ? parseFloat(commissionRate) : 7.00;
         const discount = discountValue !== undefined ? parseFloat(discountValue) : commission;
         const usage = usageLimit !== undefined && usageLimit !== '' ? parseInt(usageLimit) : null;
 
@@ -4779,7 +6070,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
         let shopifyIds = { priceRuleId: null, discountCodeId: null };
         let shopifyWarning = null;
         try {
-            shopifyIds = await createShopifyDiscountCode(referralCode, discount, usage, `Influencer: ${name}`);
+            shopifyIds = await createShopifyDiscountCode(referralCode, discount, 'percentage', usage, `Influencer: ${name}`);
             
             // Update influencer with Shopify IDs
             await updateInfluencer(influencer.id, {
@@ -4836,7 +6127,7 @@ app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res
 
         // Sync with Shopify if discount code details changed
         const codeChanged = referralCode && referralCode !== existingInfluencer.referral_code;
-        const discountChanged = discountValue !== undefined && parseFloat(discountValue) !== parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 10);
+        const discountChanged = discountValue !== undefined && parseFloat(discountValue) !== parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 7);
         const usageChanged = usageLimit !== undefined && (usageLimit === '' ? null : parseInt(usageLimit)) !== existingInfluencer.usage_limit;
 
         if (codeChanged || discountChanged || usageChanged) {
@@ -4866,7 +6157,7 @@ app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res
                 // Backfill: create new Shopify discount for older influencers
                 try {
                     const finalCode = referralCode || existingInfluencer.referral_code;
-                    const finalDiscount = discountValue !== undefined ? parseFloat(discountValue) : parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 10);
+                    const finalDiscount = discountValue !== undefined ? parseFloat(discountValue) : parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 7);
                     const finalUsage = usageLimit !== undefined ? (usageLimit === '' ? null : parseInt(usageLimit)) : existingInfluencer.usage_limit;
 
                     const shopifyIds = await createShopifyDiscountCode(
@@ -4934,7 +6225,7 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
         }
 
         const referralCode = influencer.referral_code;
-        const commissionRate = parseFloat(influencer.commission_rate || 10);
+        const commissionRate = parseFloat(influencer.commission_rate || 7);
         console.log(`[Admin Influencer Stats] Fetching cached stats for ${influencer.name} (Code: ${referralCode})`);
 
         // FAST: Read pre-calculated stats from Supabase (no Shopify API calls!)
@@ -5120,6 +6411,146 @@ app.get('/api/influencer-admin/conversions/:id', authenticateAdmin, async (req, 
 
 // ==================== INFLUENCER APPLICATION & PAYOUT ADMIN ENDPOINTS ====================
 
+// Bulk approve multiple influencer applications
+app.post('/api/influencer-admin/bulk-approve', authenticateAdmin, async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Array of influencer IDs is required' });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        for (const id of ids) {
+            try {
+                const influencer = await getInfluencerById(id);
+                if (!influencer) {
+                    results.failed.push({ id, error: 'Influencer not found' });
+                    continue;
+                }
+
+                if (influencer.status === 'active') {
+                    results.success.push({ id, message: 'Already active' });
+                    continue;
+                }
+
+                let discountCodeId = influencer.shopify_discount_code_id;
+                let shopifyWarning = null;
+
+                // Attach the live discount code in Shopify
+                if (influencer.shopify_price_rule_id) {
+                    try {
+                        const result = await activateShopifyDiscountCode(influencer.shopify_price_rule_id, influencer.referral_code);
+                        discountCodeId = result.discountCodeId ? String(result.discountCodeId) : discountCodeId;
+                    } catch (shopifyError) {
+                        console.error(`Shopify activation failed for ${id}:`, shopifyError.message);
+                        shopifyWarning = `Shopify activation failed: ${shopifyError.message}`;
+                    }
+                } else {
+                    // No draft price rule exists. Create a fresh code.
+                    try {
+                        const discount = parseFloat(influencer.discount_value || influencer.commission_rate || 7);
+                        const usage = influencer.usage_limit || null;
+                        const shopifyIds = await createShopifyDiscountCode(
+                            influencer.referral_code,
+                            discount,
+                            'percentage',
+                            usage,
+                            `Influencer: ${influencer.name}`
+                        );
+                        await updateInfluencer(id, {
+                            shopifyPriceRuleId: String(shopifyIds.priceRuleId),
+                            shopifyDiscountCodeId: String(shopifyIds.discountCodeId)
+                        });
+                        discountCodeId = String(shopifyIds.discountCodeId);
+                    } catch (shopifyError) {
+                        console.error(`Shopify fresh-create failed for ${id}:`, shopifyError.message);
+                        shopifyWarning = `Shopify code could not be created: ${shopifyError.message}`;
+                    }
+                }
+
+                await updateInfluencer(id, {
+                    status: 'active',
+                    isActive: true,
+                    approvedAt: new Date().toISOString(),
+                    shopifyDiscountCodeId: discountCodeId || undefined
+                });
+
+                results.success.push({ id, warning: shopifyWarning });
+            } catch (error) {
+                console.error(`Bulk approve failed for ${id}:`, error);
+                results.failed.push({ id, error: error.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            results,
+            summary: {
+                total: ids.length,
+                succeeded: results.success.length,
+                failed: results.failed.length
+            }
+        });
+    } catch (error) {
+        console.error('Bulk approve error:', error);
+        res.status(500).json({ error: 'Failed to bulk approve influencers' });
+    }
+});
+
+// Bulk reject multiple influencer applications
+app.post('/api/influencer-admin/bulk-reject', authenticateAdmin, async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Array of influencer IDs is required' });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        for (const id of ids) {
+            try {
+                const influencer = await getInfluencerById(id);
+                if (!influencer) {
+                    results.failed.push({ id, error: 'Influencer not found' });
+                    continue;
+                }
+
+                if (influencer.shopify_price_rule_id) {
+                    await disableShopifyDiscountCode(influencer.shopify_price_rule_id);
+                }
+
+                await updateInfluencer(id, { status: 'rejected', isActive: false });
+                results.success.push({ id });
+            } catch (error) {
+                console.error(`Bulk reject failed for ${id}:`, error);
+                results.failed.push({ id, error: error.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            results,
+            summary: {
+                total: ids.length,
+                succeeded: results.success.length,
+                failed: results.failed.length
+            }
+        });
+    } catch (error) {
+        console.error('Bulk reject error:', error);
+        res.status(500).json({ error: 'Failed to bulk reject influencers' });
+    }
+});
+
 // Approve a pending influencer application (attaches the Shopify discount code)
 app.post('/api/influencer-admin/approve/:id', authenticateAdmin, async (req, res) => {
     try {
@@ -5147,11 +6578,12 @@ app.post('/api/influencer-admin/approve/:id', authenticateAdmin, async (req, res
         } else {
             // No draft price rule exists (maybe initial draft creation failed). Create a fresh code.
             try {
-                const discount = parseFloat(influencer.discount_value || influencer.commission_rate || 10);
+                const discount = parseFloat(influencer.discount_value || influencer.commission_rate || 7);
                 const usage = influencer.usage_limit || null;
                 const shopifyIds = await createShopifyDiscountCode(
                     influencer.referral_code,
                     discount,
+                    'percentage',
                     usage,
                     `Influencer: ${influencer.name}`
                 );
@@ -5340,7 +6772,7 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
         }
 
         const referralCode = influencer.referral_code;
-        const commissionRate = parseFloat(influencer.commission_rate || 10);
+        const commissionRate = parseFloat(influencer.commission_rate || 7);
         console.log(`[Influencer Stats] Fetching cached stats for ${influencer.name} (Code: ${referralCode}, Range: ${range || 'all'})`);
 
         // Determine date range
@@ -5544,8 +6976,8 @@ app.post('/api/influencer/apply', async (req, res) => {
             referralCode: finalCode,
             linkToken,
             phone: cleanPhone,
-            commissionRate: 10,
-            discountValue: 10,
+            commissionRate: 7,
+            discountValue: 7,
             usageLimit: null,
             isActive: false,
             status: 'pending',
@@ -5563,7 +6995,7 @@ app.post('/api/influencer/apply', async (req, res) => {
         // ── Create DRAFT Shopify price rule (no discount_code attached yet) ──
         let shopifyWarning = null;
         try {
-            const draft = await createShopifyDiscountDraft(finalCode, 10, null, `Influencer (Pending): ${name}`);
+            const draft = await createShopifyDiscountDraft(finalCode, 7, null, `Influencer (Pending): ${name}`);
             await updateInfluencer(influencer.id, {
                 shopifyPriceRuleId: String(draft.priceRuleId)
             });

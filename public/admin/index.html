@@ -65,6 +65,10 @@
                 <h1 style="font-size: 1.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #111827; margin: 0;">
                     Returns & Exchanges Dashboard</h1>
                 <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <button onclick="openAnalyticsPage()" class="btn" style="background: white; border: 1px solid #e5e7eb; color: #111827; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                        Analytics
+                    </button>
                     <button onclick="openSettingsModal()" class="btn" style="background: white; border: 1px solid #e5e7eb; color: #111827; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         Settings
@@ -138,12 +142,15 @@
                                 <option value="waiting_payment">Waiting Payment</option>
                                 <option value="pending">Pending Admin</option>
                                 <option value="pickup_pending">Pickup Pending</option>
-                                <option value="scheduled">Pickup Booked</option>
+                                <option value="pickup_booked">Pickup Booked</option>
                                 <option value="picked_up">Picked Up</option>
                                 <option value="in_transit">In Transit</option>
+                                <option value="out_for_delivery">Out for Delivery</option>
                                 <option value="delivered">Delivered (Pending Insp.)</option>
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
+                                <option value="cancelled">Cancelled</option>
+                                <option value="failed">Failed</option>
                             </select>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af;"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </div>
@@ -203,8 +210,10 @@
                             border: 1px solid #ffc107 !important;
                         }
                         .badge-scheduled,
+                        .badge-pickup-booked,
                         .badge-picked-up,
-                        .badge-in-transit {
+                        .badge-in-transit,
+                        .badge-out-for-delivery {
                             background-color: #dbeafe !important;
                             color: #1e40af !important;
                             border: 1px solid #93c5fd !important;
@@ -882,6 +891,185 @@
                         border-color: #111827;
                     }
                 </style>
+
+                <!-- Premium CSS for Modify Exchange Modal -->
+                <style>
+                    /* Modify Exchange Modal Animations */
+                    #modifyModal .modal-content {
+                        animation: slideUp 0.3s ease-out;
+                    }
+
+                    @keyframes slideUp {
+                        from {
+                            opacity: 0;
+                            transform: translateY(20px);
+                        }
+                        to {
+                            opacity: 1;
+                            transform: translateY(0);
+                        }
+                    }
+
+                    /* Exchange Item Cards */
+                    .exchange-item-card {
+                        transition: all 0.3s ease;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+                    }
+
+                    .exchange-item-card:hover {
+                        box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+                        transform: translateY(-2px);
+                        border-color: #f59e0b;
+                    }
+
+                    /* Product Search Results */
+                    .product-search-results {
+                        animation: fadeIn 0.2s ease;
+                    }
+
+                    @keyframes fadeIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+
+                    .product-result-item:hover {
+                        background: linear-gradient(90deg, #f9fafb 0%, #f3f4f6 100%);
+                    }
+
+                    /* Remove Item Button */
+                    .remove-item-btn:hover {
+                        background: #fecaca !important;
+                        transform: scale(1.1);
+                        transition: all 0.2s;
+                    }
+
+                    /* Form Controls */
+                    .form-control {
+                        width: 100%;
+                        padding: 0.75rem 1rem;
+                        border: 2px solid #e5e7eb;
+                        border-radius: 8px;
+                        font-size: 0.875rem;
+                        transition: all 0.2s;
+                        background: white;
+                    }
+
+                    .form-control:focus {
+                        outline: none;
+                        border-color: #f59e0b;
+                        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+                    }
+
+                    .form-control:disabled {
+                        background: #f9fafb;
+                        cursor: not-allowed;
+                    }
+
+                    /* Warning Button Hover Effect */
+                    .btn-warning {
+                        transition: all 0.3s ease;
+                    }
+
+                    .btn-warning:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+                        filter: brightness(1.05);
+                    }
+
+                    .btn-warning:active {
+                        transform: translateY(0);
+                        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+                    }
+
+                    /* Loading Spinner for Save Button */
+                    .save-spinner {
+                        display: inline-block;
+                        width: 16px;
+                        height: 16px;
+                        border: 2px solid rgba(255,255,255,0.3);
+                        border-top-color: white;
+                        border-radius: 50%;
+                        animation: spin 0.8s linear infinite;
+                        margin-right: 0.5rem;
+                    }
+
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+
+                    /* Product Search Dropdown Shadow */
+                    .product-search-results {
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+                    }
+
+                    /* Section Headers */
+                    .section-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        font-weight: 600;
+                        color: #111827;
+                        margin-bottom: 1rem;
+                    }
+
+                    /* Form Group Spacing */
+                    .form-group {
+                        margin-bottom: 1rem;
+                    }
+
+                    /* Primary Button Gradient Enhancement */
+                    .btn-primary {
+                        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+                        border: none;
+                        color: white;
+                        padding: 0.875rem 1.5rem;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+                    }
+
+                    .btn-primary:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+                        filter: brightness(1.05);
+                    }
+
+                    .btn-primary:active {
+                        transform: translateY(0);
+                    }
+
+                    .btn-primary:disabled {
+                        opacity: 0.6;
+                        cursor: not-allowed;
+                        transform: none;
+                    }
+
+                    /* Secondary Button */
+                    .btn-secondary {
+                        background: white;
+                        border: 2px solid #d1d5db;
+                        color: #374151;
+                        padding: 0.875rem 1.5rem;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                    }
+
+                    .btn-secondary:hover {
+                        background: #f9fafb;
+                        border-color: #9ca3af;
+                    }
+
+                    /* Modal Overlay Enhancement */
+                    .modal {
+                        background: rgba(0, 0, 0, 0.5);
+                        backdrop-filter: blur(4px);
+                    }
+                </style>
+
                 <div id="paginationControls" class="premium-pagination">
                     <span id="pageInfo" class="premium-pagination-info">Showing <strong>0</strong> to <strong>0</strong> of <strong>0</strong> requests</span>
                     <div class="premium-pagination-actions">
@@ -1275,9 +1463,128 @@
             <p style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.75rem;">Choose a specific carrier for this request. Leave as "Default" to use system settings.</p>
             <select id="carrierOverride" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; background: white; color: #374151;">
                 <option value="">Default (Use System Settings)</option>
-                <option value="shiprocket">Shiprocket Only</option>
-                <option value="delhivery">Delhivery Only</option>
+                <option value="shiprocket">Shiprocket (Primary)</option>
+                <option value="delhivery">Delhivery (Primary)</option>
             </select>
+        </div>
+
+        <!-- Premium Discount Code Creation Panel (only for delivered returns) -->
+        <div id="discountCodeSection" class="hidden" style="margin-top: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <!-- Header -->
+            <div style="background: rgba(255,255,255,0.1); padding: 1rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.2);">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 40px; height: 40px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-gift" style="color: #667eea; font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; color: white; font-size: 1rem; font-weight: 600;">Create Compensation Discount</h3>
+                        <p style="margin: 0; color: rgba(255,255,255,0.8); font-size: 0.75rem;">Reward customer with exclusive discount code</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Body -->
+            <div style="padding: 1.25rem; background: white;">
+                <!-- Quick Presets -->
+                <div style="margin-bottom: 1rem;">
+                    <label style="font-size: 0.7rem; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">Quick Presets</label>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button type="button" onclick="applyDiscountPreset(10, 'percentage')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            10% Off
+                        </button>
+                        <button type="button" onclick="applyDiscountPreset(15, 'percentage')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            15% Off
+                        </button>
+                        <button type="button" onclick="applyDiscountPreset(20, 'percentage')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            20% Off
+                        </button>
+                        <button type="button" onclick="applyDiscountPreset(200, 'fixed')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            ₹200 Off
+                        </button>
+                        <button type="button" onclick="applyDiscountPreset(500, 'fixed')" style="flex: 1; min-width: 80px; padding: 0.5rem; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">
+                            ₹500 Off
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Custom Discount Fields -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.4rem;">
+                            <i class="fas fa-ticket-alt" style="margin-right: 0.3rem; color: #667eea;"></i>
+                            Discount Code *
+                        </label>
+                        <input id="discountCode" type="text" placeholder="Auto-generated if empty" 
+                            style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; text-transform: uppercase; font-weight: 500;" />
+                    </div>
+                    <div>
+                        <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.4rem;">
+                            <i class="fas fa-percentage" style="margin-right: 0.3rem; color: #667eea;"></i>
+                            Discount Type *
+                        </label>
+                        <select id="discountType" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; background: white;">
+                            <option value="percentage">Percentage (%)</option>
+                            <option value="fixed">Fixed Amount (₹)</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.4rem;">
+                            <i class="fas fa-coins" style="margin-right: 0.3rem; color: #667eea;"></i>
+                            Discount Value *
+                        </label>
+                        <input id="discountValue" type="number" placeholder="e.g., 10 or 500" min="1"
+                            style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; font-weight: 500;" />
+                    </div>
+                    <div>
+                        <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.4rem;">
+                            <i class="fas fa-layer-group" style="margin-right: 0.3rem; color: #667eea;"></i>
+                            Usage Limit
+                        </label>
+                        <input id="discountUsageLimit" type="number" placeholder="Empty = Unlimited" min="1"
+                            style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem;" />
+                    </div>
+                </div>
+                
+                <!-- Customer Phone for WhatsApp -->
+                <div style="background: #f9fafb; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid #e5e7eb;">
+                    <label style="font-size: 0.75rem; color: #374151; font-weight: 600; display: block; margin-bottom: 0.5rem;">
+                        <i class="fab fa-whatsapp" style="margin-right: 0.3rem; color: #25d366;"></i>
+                        WhatsApp Delivery
+                    </label>
+                    <div style="display: flex; gap: 0.75rem; align-items: center;">
+                        <div style="flex: 1;">
+                            <input id="whatsappPhone" type="tel" placeholder="Customer phone number" 
+                                style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem;" />
+                            <p style="font-size: 0.7rem; color: #9ca3af; margin-top: 0.3rem;">Editable - defaults to order phone</p>
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; white-space: nowrap; padding: 0.6rem 1rem; background: #25d366; color: white; border-radius: 6px; font-size: 0.85rem; font-weight: 500;">
+                            <input id="sendWhatsAppDiscount" type="checkbox" checked style="width: 16px; height: 16px; accent-color: white;" />
+                            <i class="fab fa-whatsapp"></i>
+                            Send
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Message Preview -->
+                <div id="whatsappPreview" style="background: #e8f5e9; padding: 1rem; border-radius: 8px; border-left: 4px solid #25d366; display: none;">
+                    <label style="font-size: 0.7rem; color: #2e7d32; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">
+                        <i class="fas fa-eye" style="margin-right: 0.3rem;"></i>
+                        WhatsApp Message Preview
+                    </label>
+                    <div id="whatsappMessagePreview" style="font-size: 0.8rem; color: #1b5e20; line-height: 1.6; font-family: monospace; white-space: pre-wrap;"></div>
+                </div>
+                
+                <!-- Helper Text -->
+                <div style="margin-top: 1rem; padding: 0.75rem; background: #fef3c7; border-radius: 6px; border-left: 3px solid #f59e0b;">
+                    <p style="margin: 0; font-size: 0.75rem; color: #92400e;">
+                        <i class="fas fa-info-circle" style="margin-right: 0.3rem;"></i>
+                        <strong>Tip:</strong> Discount code will be created in Shopify instantly. Customer can apply it at checkout on any product.
+                    </p>
+                </div>
+            </div>
         </div>
 
         <div id="modalActions" class="hidden" style="margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem;">
@@ -1434,11 +1741,15 @@
             'pending':         'Pending Review',
             'pickup_pending':  'Pickup Pending — Awaiting Carrier Confirmation',
             'scheduled':       'Pickup Booked — Awaiting Pickup',
+            'pickup_booked':   'Pickup Booked — Awaiting Pickup',
             'picked_up':       'Item Picked Up by Courier',
             'in_transit':      'In Transit',
+            'out_for_delivery':'Out for Delivery',
             'delivered':       'Received at Warehouse',
             'approved':        'Approved',
-            'rejected':        'Rejected'
+            'rejected':        'Rejected',
+            'cancelled':       'Cancelled',
+            'failed':          'Failed — Requires Re-dispatch'
         };
         return labels[status] || status.replace(/_/g, ' ');
     }
@@ -1786,8 +2097,11 @@
     // View Request Details
     async function viewDetails(requestId) {
         try {
+            console.log('viewDetails called for requestId:', requestId);
             const response = await fetch(`${API_URL}/track-request/${requestId}`);
             const data = await response.json();
+            
+            console.log('viewDetails API response status:', data.status, 'response.ok:', response.ok);
 
             if (response.ok) {
                 currentRequest = data;
@@ -1804,6 +2118,9 @@
         
         // Store request data globally for workflow timeline access
         window.currentRequestData = data;
+        
+        // Debug: Log incoming data status
+        console.log('displayRequestDetails called with status:', data.status, 'full data keys:', Object.keys(data));
 
         modalContent.innerHTML = `
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
@@ -1843,6 +2160,16 @@
                 <p style="font-size: 0.9rem;"><strong>Phone:</strong> ${data.customerPhone || 'N/A'}</p>
                 ${data.paymentId ? `<p style="font-size: 0.9rem; margin-top: 0.5rem; color: #166534;"><strong>Payment ID:</strong> ${data.paymentId} (₹${data.paymentAmount})</p>` : ''}
             </div>
+
+            ${data.type === 'exchange' && !['shipped', 'delivered', 'resolved'].includes(data.status) ? `
+            <button onclick="openModifyModal()" class="btn btn-warning" style="margin-top: 1rem; width: 100%; padding: 0.875rem; font-weight: 600; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3); transition: all 0.3s ease;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Modify Exchange Details
+            </button>
+            ` : ''}
 
             <div style="margin-bottom: 1rem;">
                 <p style="font-weight: 500; margin-bottom: 0.75rem;">Items & Exchange Details</p>
@@ -1939,6 +2266,44 @@
                 </div>
             ` : ''}
 
+            ${data.discountCode ? `
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; color: white;">
+                    <p style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fas fa-gift"></i>
+                        Compensation Discount Code
+                    </p>
+                    <div style="background: rgba(255,255,255,0.2); padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem;">
+                        <p style="font-size: 1.1rem; font-weight: 700; letter-spacing: 1px; margin: 0;">${data.discountCode}</p>
+                    </div>
+                    <div style="display: flex; gap: 1rem; font-size: 0.85rem;">
+                        <p style="margin: 0;"><strong>Value:</strong> ${data.discountType === 'fixed' ? '₹' : ''}${data.discountValue}${data.discountType === 'percentage' ? '%' : ''}</p>
+                        <p style="margin: 0;"><strong>Type:</strong> ${data.discountType === 'fixed' ? 'Fixed Amount' : 'Percentage'}</p>
+                    </div>
+                    ${data.discountUsageLimit ? `<p style="font-size: 0.85rem; margin: 0.5rem 0 0 0;"><strong>Usage Limit:</strong> ${data.discountUsageLimit} time(s)</p>` : '<p style="font-size: 0.85rem; margin: 0.5rem 0 0 0;"><strong>Usage:</strong> Unlimited</p>'}
+                    ${data.approvedAt ? `<p style="font-size: 0.8rem; margin: 0.5rem 0 0 0; opacity: 0.9;"><strong>Approved:</strong> ${formatDateIST(data.approvedAt)}</p>` : ''}
+                </div>
+            ` : ''}
+
+            ${data.whatsappSent !== undefined ? `
+                <div style="background: ${data.whatsappSent ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'}; padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; color: white;">
+                    <p style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fas fa-${data.whatsappSent ? 'check-circle' : 'exclamation-circle'}"></i>
+                        WhatsApp Template Status
+                    </p>
+                    ${data.whatsappSent ? `
+                        <div style="background: rgba(255,255,255,0.2); padding: 0.75rem; border-radius: 6px;">
+                            <p style="font-size: 0.95rem; font-weight: 600; margin: 0;">✅ Sent Successfully</p>
+                            ${data.whatsappMessageId ? `<p style="font-size: 0.8rem; margin: 0.5rem 0 0 0; opacity: 0.9; word-break: break-all;"><strong>Message ID:</strong> ${data.whatsappMessageId}</p>` : ''}
+                        </div>
+                    ` : `
+                        <div style="background: rgba(255,255,255,0.2); padding: 0.75rem; border-radius: 6px;">
+                            <p style="font-size: 0.95rem; font-weight: 600; margin: 0;">❌ Failed to Send</p>
+                            ${data.whatsappError ? `<p style="font-size: 0.85rem; margin: 0.5rem 0 0 0; opacity: 0.9;"><strong>Error:</strong> ${data.whatsappError}</p>` : ''}
+                        </div>
+                    `}
+                </div>
+            ` : ''}
+
             ${data.status === 'delivered' || data.status === 'pending' ? `
                 <div style="margin-top: 1.5rem;">
                     <label for="adminNotes" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Admin Notes</label>
@@ -1957,7 +2322,7 @@
         // User said: "pickup booked -> item delivered -> admin approves". 
         // So we show buttons if status is 'delivered'.
         
-        if (['pending', 'pickup_pending', 'scheduled', 'picked_up', 'in_transit', 'delivered'].includes(data.status)) {
+        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'failed', 'rejected'].includes(data.status)) {
             console.log('Action block status matched:', data.status);
             modalActions.classList.remove('hidden');
             
@@ -2012,12 +2377,41 @@
                 }
             }
 
+            // Show discount code section for delivered returns
+            const discountSection = document.getElementById('discountCodeSection');
+            if (discountSection) {
+                if (data.status === 'delivered' && data.type === 'return') {
+                    discountSection.classList.remove('hidden');
+                    
+                    // Populate WhatsApp phone with customer's phone
+                    const whatsappPhoneInput = document.getElementById('whatsappPhone');
+                    if (whatsappPhoneInput && data.customerPhone) {
+                        whatsappPhoneInput.value = data.customerPhone;
+                    }
+                    
+                    // Set up real-time preview
+                    setupWhatsAppPreview();
+                } else {
+                    discountSection.classList.add('hidden');
+                }
+            }
+
             // Show manual received button for all active shipment statuses AND pending (as fallback)
             if (manualReceivedBtn) {
-                if (['pending', 'scheduled', 'picked_up', 'in_transit'].includes(data.status)) {
+                const statusArr = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit'];
+                const shouldShow = statusArr.includes(data.status);
+                console.log('Mark as Received - checking status:', data.status, 'is in array:', shouldShow);
+                console.log('Mark as Received button element:', manualReceivedBtn);
+                console.log('Mark as Received button classes:', manualReceivedBtn.className);
+                console.log('Mark as Received button computed display:', window.getComputedStyle(manualReceivedBtn).display);
+                console.log('Mark as Received button offsetWidth:', manualReceivedBtn.offsetWidth, 'offsetHeight:', manualReceivedBtn.offsetHeight);
+                
+                if (shouldShow) {
                     manualReceivedBtn.classList.remove('hidden');
+                    console.log('Mark as Received button SHOWN');
                 } else {
                     manualReceivedBtn.classList.add('hidden');
+                    console.log('Mark as Received button HIDDEN');
                 }
             }
 
@@ -2038,8 +2432,62 @@
                 }
             }
 
+            // Add re-dispatch button for cancelled/failed orders
+            let redispatchBtn = modalActions.querySelector('button[onclick="redispatchOrder()"]');
+            if (data.status === 'cancelled' || data.status === 'failed') {
+                if (!redispatchBtn) {
+                    redispatchBtn = document.createElement('button');
+                    redispatchBtn.onclick = () => redispatchOrder();
+                    redispatchBtn.textContent = data.status === 'cancelled' ? 'Re-dispatch Cancelled Order' : 'Re-dispatch Failed Order';
+                    redispatchBtn.style.cssText = 'flex: 1; background: #f59e0b; color: white; border: 1px solid #f59e0b; min-width: 150px; font-weight: 600;';
+                    modalActions.appendChild(redispatchBtn);
+                }
+                redispatchBtn.classList.remove('hidden');
+                
+                // Show carrier override for re-dispatch
+                if (carrierOverrideSection) {
+                    carrierOverrideSection.classList.remove('hidden');
+                    const warningText = carrierOverrideSection.querySelector('p');
+                    if (warningText) {
+                        warningText.textContent = `This order is ${data.status.toUpperCase()}. Re-dispatching will reset it to pending status and allow you to approve it again with a fresh carrier booking.`;
+                    }
+                }
+            } else {
+                if (redispatchBtn) {
+                    redispatchBtn.classList.add('hidden');
+                }
+            }
+
             if (rejectBtn) {
                 rejectBtn.classList.remove('hidden');
+            }
+
+            // Add undo rejection button for rejected requests
+            let undoBtn = modalActions.querySelector('button[onclick="undoRejection()"]');
+            if (data.status === 'rejected') {
+                if (!undoBtn) {
+                    undoBtn = document.createElement('button');
+                    undoBtn.onclick = () => undoRejection();
+                    undoBtn.textContent = '↩ Undo Rejection';
+                    undoBtn.style.cssText = 'flex: 1; background: #3b82f6; color: white; border: 1px solid #3b82f6; min-width: 150px; font-weight: 600;';
+                    modalActions.appendChild(undoBtn);
+                }
+                undoBtn.classList.remove('hidden');
+                
+                // Hide reject button for already rejected items
+                if (rejectBtn) {
+                    rejectBtn.classList.add('hidden');
+                }
+                if (approveBtn) {
+                    approveBtn.classList.add('hidden');
+                }
+                if (manualReceivedBtn) {
+                    manualReceivedBtn.classList.add('hidden');
+                }
+            } else {
+                if (undoBtn) {
+                    undoBtn.classList.add('hidden');
+                }
             }
         } else {
             modalActions.classList.add('hidden');
@@ -2264,37 +2712,186 @@
         return html;
     }
 
+    // Apply quick preset discount
+    function applyDiscountPreset(value, type) {
+        document.getElementById('discountValue').value = value;
+        document.getElementById('discountType').value = type;
+        
+        // Auto-generate code if empty
+        const codeInput = document.getElementById('discountCode');
+        if (!codeInput.value.trim()) {
+            const timestamp = Date.now().toString().slice(-4);
+            codeInput.value = type === 'percentage' ? `RETURN${value}${timestamp}` : `FLAT${value}${timestamp}`;
+        }
+        
+        // Visual feedback
+        event.target.style.background = '#667eea';
+        event.target.style.color = 'white';
+        setTimeout(() => {
+            event.target.style.background = '#f3f4f6';
+            event.target.style.color = 'inherit';
+        }, 300);
+        
+        // Update preview
+        setupWhatsAppPreview();
+    }
+
+    // Setup real-time WhatsApp message preview
+    function setupWhatsAppPreview() {
+        const checkbox = document.getElementById('sendWhatsAppDiscount');
+        const preview = document.getElementById('whatsappPreview');
+        const previewContent = document.getElementById('whatsappMessagePreview');
+        
+        const updatePreview = () => {
+            const code = document.getElementById('discountCode').value || 'RETURN123';
+            const value = document.getElementById('discountValue').value || '10';
+            const type = document.getElementById('discountType').value;
+            const usage = document.getElementById('discountUsageLimit').value;
+            const orderNumber = currentRequest?.orderNumber || '#1234';
+            const customerName = currentRequest?.customerName || 'Valued Customer';
+            
+            const valueTypeLabel = type === 'fixed' ? `₹${value}` : `${value}%`;
+            const usageText = usage ? `${usage} time(s)` : 'Unlimited';
+            
+            const message = `Hi ${customerName}! 👋\n\nGreat news! Your return for order *${orderNumber}* has been approved and processed successfully. ✅\n\n🎁 *Your Exclusive Compensation:*\n━━━━━━━━━━━━━━━━━\n💰 Discount Code: *${code.toUpperCase()}*\n💎 Value: ${valueTypeLabel}\n📝 Usage: ${usageText}\n━━━━━━━━━━━━━━━━━\n\nSimply apply this code at checkout on any product in our store!\n\nThank you for your patience and trust in us. We look forward to serving you again! 🙏\n\nNeed help? Reply to this message.`;
+            
+            if (previewContent) {
+                previewContent.textContent = message;
+            }
+        };
+        
+        // Show/hide preview based on checkbox
+        if (checkbox && preview) {
+            checkbox.addEventListener('change', () => {
+                preview.style.display = checkbox.checked ? 'block' : 'none';
+            });
+            
+            // Initial state
+            preview.style.display = checkbox.checked ? 'block' : 'none';
+        }
+        
+        // Add listeners to all discount fields
+        ['discountCode', 'discountValue', 'discountType', 'discountUsageLimit'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('input', updatePreview);
+                element.addEventListener('change', updatePreview);
+            }
+        });
+        
+        // Initial preview
+        updatePreview();
+    }
+
     async function approveRequest() {
-        if (!confirm('Are you sure you want to approve this request?')) return;
         const notes = document.getElementById('adminNotes')?.value || '';
         const carrierOverride = document.getElementById('carrierOverride')?.value || '';
-
-        try {
-            const endpoint = currentRequest.type === 'return' ? 'approve-return' : 'approve-exchange';
-            const response = await fetch(`${API_URL}/admin/${endpoint}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
-                },
-                body: JSON.stringify({
-                    requestId: currentRequest.requestId,
-                    notes,
-                    carrierOverride
-                })
-            });
-
-            const data = await response.json();
-            if (response.ok) {
-                alert(data.message || 'Action completed successfully');
-                closeModal();
-                loadRequests();
-            } else {
-                alert(data.error || 'Failed to process request');
+        
+        // Check if discount code section is visible
+        const discountSection = document.getElementById('discountCodeSection');
+        const isDiscountVisible = discountSection && !discountSection.classList.contains('hidden');
+        
+        const discountCode = document.getElementById('discountCode')?.value?.trim() || '';
+        const discountValue = document.getElementById('discountValue')?.value || '';
+        const discountType = document.getElementById('discountType')?.value || 'percentage';
+        const discountUsageLimit = document.getElementById('discountUsageLimit')?.value || null;
+        const sendWhatsApp = document.getElementById('sendWhatsAppDiscount')?.checked || false;
+        const whatsappPhone = document.getElementById('whatsappPhone')?.value?.trim() || '';
+        
+        // If discount section is visible and value is provided
+        const hasDiscount = discountValue && parseFloat(discountValue) > 0;
+        
+        if (isDiscountVisible && hasDiscount) {
+            // Validate phone if WhatsApp is enabled
+            if (sendWhatsApp && !whatsappPhone) {
+                alert('Please provide a phone number to send WhatsApp message, or uncheck the send option.');
+                return;
             }
-        } catch (error) {
-            console.error('Approval error:', error);
-            alert('An error occurred. Please check console.');
+            
+            const codeText = discountCode || '(Auto-generated)';
+            const valueText = discountType === 'fixed' ? `₹${discountValue}` : `${discountValue}%`;
+            
+            if (!confirm(`Approve this return and create discount code?\n\nCode: ${codeText}\nValue: ${valueText}\nUsage: ${discountUsageLimit || 'Unlimited'}\nWhatsApp: ${sendWhatsApp ? 'Yes (' + whatsappPhone + ')' : 'No'}`)) return;
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/approve-return-with-discount`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        requestId: currentRequest.requestId,
+                        notes,
+                        discountCode: discountCode || null,
+                        discountValue: parseFloat(discountValue),
+                        discountType,
+                        usageLimit: discountUsageLimit ? parseInt(discountUsageLimit) : null,
+                        sendWhatsApp,
+                        whatsappPhone: sendWhatsApp ? whatsappPhone : null
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    let successMsg = '✅ Return approved successfully!\n\n';
+                    if (data.discountCode) {
+                        successMsg += `Discount Code: ${data.discountCode}\n`;
+                        
+                        // Show WhatsApp template status
+                        if (data.whatsappSent) {
+                            successMsg += `WhatsApp Template: ✅ Sent Successfully\n`;
+                            successMsg += `Message ID: ${data.whatsappMessageId || 'N/A'}\n`;
+                        } else if (data.whatsappError) {
+                            successMsg += `WhatsApp Template: ❌ Failed\n`;
+                            successMsg += `Error: ${data.whatsappError}\n`;
+                        } else if (sendWhatsApp) {
+                            successMsg += `WhatsApp Template: ⚠️ Not Sent (No Phone)\n`;
+                        }
+                        
+                        successMsg += `\nCustomer can now use this code at checkout.`;
+                    }
+                    alert(successMsg);
+                    closeModal();
+                    loadRequests();
+                } else {
+                    alert('❌ ' + (data.error || 'Failed to process request'));
+                }
+            } catch (error) {
+                console.error('Approval with discount error:', error);
+                alert('❌ An error occurred. Please check console.');
+            }
+        } else {
+            // Use existing approve endpoint (no discount)
+            if (!confirm('Are you sure you want to approve this request without creating a discount code?')) return;
+            
+            try {
+                const endpoint = currentRequest.type === 'return' ? 'approve-return' : 'approve-exchange';
+                const response = await fetch(`${API_URL}/admin/${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        requestId: currentRequest.requestId,
+                        notes,
+                        carrierOverride
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    alert('✅ Action completed successfully');
+                    closeModal();
+                    loadRequests();
+                } else {
+                    alert('❌ ' + (data.error || 'Failed to process request'));
+                }
+            } catch (error) {
+                console.error('Approval error:', error);
+                alert('❌ An error occurred. Please check console.');
+            }
         }
     }
 
@@ -2350,6 +2947,37 @@
         }
     }
 
+    async function redispatchOrder() {
+        const statusText = currentRequest.status === 'cancelled' ? 'cancelled' : 'failed';
+        if (!confirm(`Are you sure you want to re-dispatch this ${statusText} order? This will reset it to pending status so you can approve it again with a fresh carrier booking.`)) return;
+
+        try {
+            const response = await fetch(`${API_URL}/admin/redispatch`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ 
+                    requestId: currentRequest.requestId,
+                    carrierOverride: document.getElementById('carrierOverride')?.value || null
+                })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                alert(data.message || 'Order has been reset to pending for re-dispatch');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('Failed to re-dispatch: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Re-dispatch error:', error);
+            alert('Failed to re-dispatch order');
+        }
+    }
+
     async function rejectRequest() {
         const notes = prompt('Please provide a reason for rejection:');
         if (!notes) return;
@@ -2377,6 +3005,38 @@
             }
         } catch (error) {
             alert('Failed to reject request');
+        }
+    }
+
+    async function undoRejection() {
+        if (!confirm('Are you sure you want to undo the rejection? This will restore the request to pending status.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_URL}/admin/undo-rejection`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    requestId: currentRequest.requestId
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                alert('✅ Request restored to pending status successfully!');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('Failed to undo rejection: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Undo rejection error:', error);
+            alert('Failed to undo rejection');
         }
     }
 
@@ -2817,7 +3477,9 @@
                     // Set carrier mode (supports separate pickup/dispatch with backward compatibility)
                     // Load pickup carrier mode
                     const pickupCarrierMode = data.carrier_mode_pickup || data.carrier_mode || 'shiprocket_with_fallback';
-                    const pickupCarrierModeId = `carrier-pickup-${pickupCarrierMode.replace(/_/g, '-')}`;
+                    // Map carrier mode values to element IDs (remove '_with' from with_fallback options)
+                    const pickupElementId = pickupCarrierMode.replace('_with_fallback', '-fallback').replace(/_/g, '-');
+                    const pickupCarrierModeId = `carrier-pickup-${pickupElementId}`;
                     const pickupCarrierModeEl = document.getElementById(pickupCarrierModeId);
                     if (pickupCarrierModeEl) {
                         pickupCarrierModeEl.checked = true;
@@ -2825,7 +3487,8 @@
                     
                     // Load dispatch carrier mode
                     const dispatchCarrierMode = data.carrier_mode_dispatch || data.carrier_mode || 'shiprocket_with_fallback';
-                    const dispatchCarrierModeId = `carrier-dispatch-${dispatchCarrierMode.replace(/_/g, '-')}`;
+                    const dispatchElementId = dispatchCarrierMode.replace('_with_fallback', '-fallback').replace(/_/g, '-');
+                    const dispatchCarrierModeId = `carrier-dispatch-${dispatchElementId}`;
                     const dispatchCarrierModeEl = document.getElementById(dispatchCarrierModeId);
                     if (dispatchCarrierModeEl) {
                         dispatchCarrierModeEl.checked = true;
@@ -3111,7 +3774,1418 @@
         }, { passive: true });
     });
 
+    // ── MODIFY EXCHANGE DETAILS ──────────────────────────────────────────────
+
+    let modifyModalData = null;
+    let productSearchCache = {};
+    let productSearchTimeout = null;
+
+    function openModifyModal() {
+        if (!currentRequest) return;
+        
+        modifyModalData = JSON.parse(JSON.stringify(currentRequest)); // Deep copy
+        
+        // Pre-fill customer information
+        document.getElementById('modify-customerName').value = currentRequest.customerName || '';
+        document.getElementById('modify-customerPhone').value = currentRequest.customerPhone || '';
+        
+        // Pre-fill shipping address
+        document.getElementById('modify-newAddress').value = currentRequest.newAddress || '';
+        document.getElementById('modify-newCity').value = currentRequest.newCity || '';
+        document.getElementById('modify-newState').value = currentRequest.newState || '';
+        document.getElementById('modify-newPincode').value = currentRequest.newPincode || '';
+        
+        // Pre-fill exchange items
+        const itemsContainer = document.getElementById('modify-items-container');
+        itemsContainer.innerHTML = '';
+        
+        const items = Array.isArray(currentRequest.items) 
+            ? currentRequest.items 
+            : (typeof currentRequest.items === 'string' 
+                ? JSON.parse(currentRequest.items) 
+                : []);
+        
+        if (items.length === 0) {
+            addExchangeItem();
+        } else {
+            items.forEach(item => addExchangeItem(item));
+        }
+        
+        document.getElementById('modifyModal').classList.add('active');
+    }
+
+    function closeModifyModal() {
+        document.getElementById('modifyModal').classList.remove('active');
+        modifyModalData = null;
+    }
+
+    function addExchangeItem(existingItem = null) {
+        const template = document.getElementById('exchange-item-template');
+        const clone = template.content.cloneNode(true);
+        const container = document.getElementById('modify-items-container');
+        container.appendChild(clone);
+        
+        // If editing existing item, populate fields
+        if (existingItem) {
+            const card = container.lastElementChild;
+            populateExchangeItemCard(card, existingItem);
+        }
+    }
+
+    function populateExchangeItemCard(card, item) {
+        // Store original item data (what customer selected)
+        card.querySelector('.original-product-id').value = item.productId || '';
+        card.querySelector('.original-product-title').value = item.name || '';
+        card.querySelector('.original-product-variant').value = item.variant || '';
+        card.querySelector('.original-product-image').value = item.image || '';
+        card.querySelector('.original-price').value = item.price || 0;
+        
+        // Display original item
+        card.querySelector('.original-product-title').textContent = item.name || '';
+        card.querySelector('.original-product-variant').textContent = item.variant ? `Size: ${item.variant}` : '';
+        card.querySelector('.original-product-image').src = item.image || '';
+        
+        // Store and display replacement item data (what will be dispatched)
+        card.querySelector('.product-id-input').value = item.replacementProductId || '';
+        card.querySelector('.product-title-input').value = item.replacementProductTitle || '';
+        card.querySelector('.variant-id-input').value = item.replacementVariantId || '';
+        card.querySelector('.variant-title-input').value = item.replacementVariant || '';
+        card.querySelector('.product-image-input').value = item.replacementProductImage || '';
+        card.querySelector('.quantity-input').value = item.quantity || 1;
+        card.querySelector('.price-input').value = item.replacementPrice || item.price || 0;
+        
+        // Calculate and display price difference
+        const originalPrice = parseFloat(item.price || 0);
+        const newPrice = parseFloat(item.replacementPrice || item.price || 0);
+        const priceDiff = newPrice - originalPrice;
+        const priceDiffDisplay = card.querySelector('.price-diff-display');
+        if (priceDiff > 0) {
+            priceDiffDisplay.textContent = `+₹${priceDiff}`;
+            priceDiffDisplay.style.background = '#fee2e2';
+            priceDiffDisplay.style.borderColor = '#fca5a5';
+            priceDiffDisplay.style.color = '#991b1b';
+        } else if (priceDiff < 0) {
+            priceDiffDisplay.textContent = `-₹${Math.abs(priceDiff)}`;
+            priceDiffDisplay.style.background = '#dcfce7';
+            priceDiffDisplay.style.borderColor = '#86efac';
+            priceDiffDisplay.style.color = '#166534';
+        } else {
+            priceDiffDisplay.textContent = '₹0';
+            priceDiffDisplay.style.background = '#fef3c7';
+            priceDiffDisplay.style.borderColor = '#fcd34d';
+            priceDiffDisplay.style.color = '#92400e';
+        }
+        
+        // Display selected replacement product info
+        if (item.replacementProductTitle) {
+            card.querySelector('.selected-product-info').style.display = 'block';
+            card.querySelector('.selected-product-title').textContent = item.replacementProductTitle;
+            card.querySelector('.selected-product-image').src = item.replacementProductImage || item.image || '';
+            
+            // Show and populate variant dropdown
+            if (item.replacementVariantId) {
+                card.querySelector('.variant-selection').style.display = 'block';
+                // Pre-select the correct variant (M) if it exists in the item
+                const variantSelect = card.querySelector('.variant-select');
+                const variantOption = document.createElement('option');
+                variantOption.value = item.replacementVariantId;
+                variantOption.textContent = `${item.replacementVariant} - ₹${item.replacementPrice || item.price} (Selected)`;
+                variantOption.selected = true;
+                variantOption.dataset.title = item.replacementVariant || '';
+                variantOption.dataset.price = item.replacementPrice || item.price || '0';
+                variantSelect.appendChild(variantOption);
+            }
+        }
+    }
+
+    function removeExchangeItem(btn) {
+        const card = btn.closest('.exchange-item-card');
+        const container = document.getElementById('modify-items-container');
+        if (container.children.length > 1) {
+            card.remove();
+        } else {
+            alert('At least one item is required');
+        }
+    }
+
+    async function searchProductsForItem(input) {
+        const query = input.value.trim();
+        const resultsDiv = input.parentElement.querySelector('.product-search-results');
+        
+        if (productSearchTimeout) clearTimeout(productSearchTimeout);
+        
+        if (query.length < 2) {
+            resultsDiv.style.display = 'none';
+            return;
+        }
+        
+        // Debounce search
+        productSearchTimeout = setTimeout(async () => {
+            try {
+                // Use cache if available
+                if (productSearchCache[query]) {
+                    displayProductSearchResults(resultsDiv, productSearchCache[query], input);
+                    return;
+                }
+                
+                const response = await fetch(`${API_URL}/products/search?q=${encodeURIComponent(query)}`);
+                const products = await response.json();
+                
+                productSearchCache[query] = products;
+                displayProductSearchResults(resultsDiv, products, input);
+            } catch (error) {
+                console.error('Product search failed:', error);
+                resultsDiv.innerHTML = '<div style="padding: 1rem; text-align: center; color: #ef4444;">Search failed. Please try again.</div>';
+                resultsDiv.style.display = 'block';
+            }
+        }, 300);
+    }
+
+    function displayProductSearchResults(resultsDiv, products, input) {
+        if (!products || products.length === 0) {
+            resultsDiv.innerHTML = '<div style="padding: 1rem; text-align: center; color: #6b7280;">No products found</div>';
+            resultsDiv.style.display = 'block';
+            return;
+        }
+        
+        resultsDiv.innerHTML = products.map(product => `
+            <div class="product-result-item" onclick="selectProductForItem(this)" 
+                 data-product-id="${product.id}" 
+                 data-product-title="${product.title}"
+                 data-product-image="${product.image || ''}"
+                 data-variants='${JSON.stringify(product.variants)}'
+                 style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; cursor: pointer; display: flex; gap: 0.75rem; align-items: center; transition: background 0.2s;"
+                 onmouseover="this.style.background='#f9fafb'" 
+                 onmouseout="this.style.background='white'">
+                <img src="${product.image || 'https://via.placeholder.com/50'}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px;">
+                <div style="flex: 1;">
+                    <p style="font-weight: 600; color: #111827; margin: 0; font-size: 0.875rem;">${product.title}</p>
+                    <p style="font-size: 0.75rem; color: #6b7280; margin: 0.25rem 0 0 0;">${product.variants.length} variant(s) available</p>
+                </div>
+            </div>
+        `).join('');
+        
+        resultsDiv.style.display = 'block';
+    }
+
+    function selectProductForItem(element) {
+        const card = element.closest('.exchange-item-card');
+        const productId = element.dataset.productId;
+        const productTitle = element.dataset.productTitle;
+        const productImage = element.dataset.productImage;
+        const variants = JSON.parse(element.dataset.variants);
+        
+        // Hide search results
+        element.closest('.product-search-results').style.display = 'none';
+        
+        // Update hidden fields
+        card.querySelector('.product-id-input').value = productId;
+        card.querySelector('.product-title-input').value = productTitle;
+        card.querySelector('.product-image-input').value = productImage;
+        
+        // Show selected product info
+        card.querySelector('.selected-product-info').style.display = 'block';
+        card.querySelector('.selected-product-title').textContent = productTitle;
+        card.querySelector('.selected-product-image').src = productImage;
+        
+        // Populate variant dropdown
+        const variantSelect = card.querySelector('.variant-select');
+        variantSelect.innerHTML = '<option value="">Select Size / Variant</option>' + 
+            variants.map(v => `
+                <option value="${v.id}" 
+                        data-title="${v.title}" 
+                        data-price="${v.price}"
+                        data-inventory="${v.inventory_quantity || 0}"
+                        ${v.inventory_quantity === 0 ? 'disabled' : ''}>
+                    ${v.title} - ₹${v.price} ${v.inventory_quantity === 0 ? '(Out of Stock)' : `(${v.inventory_quantity} available)`}
+                </option>
+            `).join('');
+        
+        card.querySelector('.variant-selection').style.display = 'block';
+    }
+
+    function onVariantSelect(select) {
+        const card = select.closest('.exchange-item-card');
+        const selectedOption = select.options[select.selectedIndex];
+        
+        if (selectedOption.value) {
+            card.querySelector('.variant-id-input').value = selectedOption.value;
+            card.querySelector('.variant-title-input').value = selectedOption.dataset.title;
+            card.querySelector('.price-input').value = selectedOption.dataset.price;
+            
+            // Recalculate price difference
+            const originalPrice = parseFloat(card.querySelector('.original-price').value) || 0;
+            const newPrice = parseFloat(selectedOption.dataset.price) || 0;
+            const priceDiff = newPrice - originalPrice;
+            const priceDiffDisplay = card.querySelector('.price-diff-display');
+            
+            if (priceDiff > 0) {
+                priceDiffDisplay.textContent = `+₹${priceDiff}`;
+                priceDiffDisplay.style.background = '#fee2e2';
+                priceDiffDisplay.style.borderColor = '#fca5a5';
+                priceDiffDisplay.style.color = '#991b1b';
+            } else if (priceDiff < 0) {
+                priceDiffDisplay.textContent = `-₹${Math.abs(priceDiff)}`;
+                priceDiffDisplay.style.background = '#dcfce7';
+                priceDiffDisplay.style.borderColor = '#86efac';
+                priceDiffDisplay.style.color = '#166534';
+            } else {
+                priceDiffDisplay.textContent = '₹0';
+                priceDiffDisplay.style.background = '#fef3c7';
+                priceDiffDisplay.style.borderColor = '#fcd34d';
+                priceDiffDisplay.style.color = '#92400e';
+            }
+        }
+    }
+
+    async function saveExchangeModifications() {
+        const saveBtn = document.getElementById('saveModifyBtn');
+        const originalText = saveBtn.textContent;
+        
+        try {
+            // Validate phone number
+            const customerPhone = document.getElementById('modify-customerPhone').value.trim();
+            if (!customerPhone || !/^[0-9]{10}$/.test(customerPhone)) {
+                alert('Please enter a valid 10-digit phone number');
+                return;
+            }
+            
+            // Validate address
+            const newAddress = document.getElementById('modify-newAddress').value.trim();
+            const newCity = document.getElementById('modify-newCity').value.trim();
+            const newState = document.getElementById('modify-newState').value.trim();
+            const newPincode = document.getElementById('modify-newPincode').value.trim();
+            
+            if (!newAddress || !newCity || !newState || !/^[0-9]{6}$/.test(newPincode)) {
+                alert('Please fill in all address fields correctly');
+                return;
+            }
+            
+            // Collect exchange items
+            const itemCards = document.querySelectorAll('.exchange-item-card');
+            const items = [];
+            
+            for (const card of itemCards) {
+                const productId = card.querySelector('.product-id-input').value;
+                const variantId = card.querySelector('.variant-id-input').value;
+                
+                if (!productId || !variantId) {
+                    alert('Please select a product and variant for all items');
+                    return;
+                }
+                
+                items.push({
+                    replacementProductId: productId,
+                    replacementVariantId: variantId,
+                    replacementProductTitle: card.querySelector('.product-title-input').value,
+                    replacementVariant: card.querySelector('.variant-title-input').value,
+                    replacementProductImage: card.querySelector('.product-image-input').value,
+                    replacementPrice: parseFloat(card.querySelector('.price-input').value),
+                    quantity: parseInt(card.querySelector('.quantity-input').value) || 1,
+                    name: card.querySelector('.product-title-input').value,
+                    variant: card.querySelector('.variant-title-input').value,
+                    price: parseFloat(card.querySelector('.price-input').value)
+                });
+            }
+            
+            if (items.length === 0) {
+                alert('Please add at least one exchange item');
+                return;
+            }
+            
+            // Show loading state
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="save-spinner"></span>Saving...';
+            
+            // Send update request
+            const response = await fetch(`${API_URL}/api/admin/update-request/${modifyModalData.requestId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    items,
+                    customerPhone,
+                    newAddress,
+                    newCity,
+                    newState,
+                    newPincode,
+                    customerName: document.getElementById('modify-customerName').value.trim()
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                // Update local currentRequest
+                currentRequest = data.data;
+                
+                // Close modal
+                closeModifyModal();
+                
+                // Refresh modal display
+                displayRequestDetails(currentRequest);
+                
+                // Show success message
+                alert('✅ Exchange details updated successfully!');
+                
+                // Refresh the requests table
+                loadRequests();
+            } else {
+                throw new Error(data.error || 'Failed to update request');
+            }
+        } catch (error) {
+            console.error('Save modifications error:', error);
+            alert('❌ Failed to save changes: ' + error.message);
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalText;
+        }
+    }
+
+    // ============================================================
+    // PREMIUM ANALYTICS PAGE FUNCTIONS
+    // ============================================================
+
+    // Chart instances for analytics page
+    let timeTrendChartInstance = null;
+    let returnExchangeTrendInstance = null;
+    let statusStackedChartInstance = null;
+    let statusBarChartInstance = null;
+    let statusPieChartInstance = null;
+    let reasonsBreakdownInstance = null;
+    let carrierComparisonInstance = null;
+
+    let currentAnalyticsRange = '30d';
+    let currentAnalyticsData = null;
+
+    function openAnalyticsPage() {
+        console.log('Opening analytics page...');
+        document.getElementById('analyticsModal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+        
+        // Reset state
+        document.getElementById('analyticsLoading').classList.remove('hidden');
+        document.getElementById('analyticsContent').classList.add('hidden');
+        
+        // Load data
+        loadDetailedAnalytics(currentAnalyticsRange);
+    }
+
+    function closeAnalyticsPage() {
+        console.log('Closing analytics page...');
+        document.getElementById('analyticsModal').classList.remove('active');
+        document.body.style.overflow = '';
+        
+        // Destroy all chart instances to free memory
+        if (timeTrendChartInstance) timeTrendChartInstance.destroy();
+        if (returnExchangeTrendInstance) returnExchangeTrendInstance.destroy();
+        if (statusStackedChartInstance) statusStackedChartInstance.destroy();
+        if (statusBarChartInstance) statusBarChartInstance.destroy();
+        if (statusPieChartInstance) statusPieChartInstance.destroy();
+        if (reasonsBreakdownInstance) reasonsBreakdownInstance.destroy();
+        if (carrierComparisonInstance) carrierComparisonInstance.destroy();
+    }
+
+    function updateDateRange(range) {
+        console.log('Updating date range to:', range);
+        currentAnalyticsRange = range;
+        
+        // Update button styles
+        document.querySelectorAll('.date-range-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.dataset.range === range) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // Update date range label
+        const labels = {
+            '7d': 'Last 7 Days',
+            '30d': 'Last 30 Days',
+            '90d': 'Last 90 Days'
+        };
+        document.getElementById('analyticsDateRange').textContent = labels[range] || 'Last 30 Days';
+        
+        // Reload data
+        loadDetailedAnalytics(range);
+    }
+
+    async function loadDetailedAnalytics(dateRange) {
+        try {
+            console.log('Loading detailed analytics for range:', dateRange);
+            
+            // Show loading
+            document.getElementById('analyticsLoading').classList.remove('hidden');
+            document.getElementById('analyticsContent').classList.add('hidden');
+            
+            // Fetch analytics data
+            const response = await fetch(`${API_URL}/admin/analytics/detailed?dateRange=${dateRange}`, {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch analytics data');
+            }
+            
+            const data = await response.json();
+            console.log('Analytics data received:', data);
+            
+            currentAnalyticsData = data;
+            
+            // Update UI
+            updateAnalyticsKPIs(data);
+            renderAllCharts(data);
+            updateInsightsTable(data);
+            
+            // Show content
+            document.getElementById('analyticsLoading').classList.add('hidden');
+            document.getElementById('analyticsContent').classList.remove('hidden');
+            
+        } catch (error) {
+            console.error('Error loading analytics:', error);
+            document.getElementById('analyticsLoading').innerHTML = `
+                <div style="text-align: center; padding: 2rem;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="margin: 0 auto 1rem auto;">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <p style="color: #6b7280; font-size: 1rem; margin-bottom: 1rem;">Failed to load analytics data</p>
+                    <button onclick="loadDetailedAnalytics('${dateRange}')" style="background: #111827; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                        Retry
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    function updateAnalyticsKPIs(data) {
+        const stats = data.stats || {};
+        const comparison = data.comparison || {};
+        
+        // Total Requests
+        animateValue('kpiTotalRequests', 0, stats.total || 0, 1000);
+        const totalChange = comparison.totalChange || 0;
+        const totalChangeEl = document.getElementById('kpiTotalChange');
+        totalChangeEl.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange}%`;
+        totalChangeEl.style.background = totalChange >= 0 ? '#dcfce7' : '#fee2e2';
+        totalChangeEl.style.color = totalChange >= 0 ? '#166534' : '#991b1b';
+        document.getElementById('kpiTotalPrevious').textContent = comparison.previousTotal || 0;
+        
+        // Pending Requests
+        animateValue('kpiPendingRequests', 0, stats.pending || 0, 1000);
+        const pendingPercent = stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0;
+        document.getElementById('kpiPendingPercent').textContent = `${pendingPercent}%`;
+        document.getElementById('kpiWaitingPayment').textContent = stats.waitingPayment || 0;
+        
+        // Approval Rate
+        const approved = stats.approved || 0;
+        const rejected = stats.rejected || 0;
+        const totalResolved = approved + rejected;
+        const approvalRate = totalResolved > 0 ? Math.round((approved / totalResolved) * 100) : 0;
+        animateValue('kpiApprovedRequests', 0, approved, 1000);
+        document.getElementById('kpiApprovalRate').textContent = `${approvalRate}%`;
+        document.getElementById('kpiRejectedRequests').textContent = rejected;
+        
+        // Return vs Exchange
+        const returns = stats.returns || 0;
+        const exchanges = stats.exchanges || 0;
+        document.getElementById('kpiReturnExchange').textContent = `${returns} / ${exchanges}`;
+        document.getElementById('kpiReturnRatio').textContent = `${returns}:${exchanges}`;
+        
+        // Total Value
+        const totalValue = stats.totalRevenue || 0;
+        const formattedValue = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(totalValue);
+        document.getElementById('kpiTotalValue').textContent = formattedValue;
+        const valueChange = comparison.valueChange || 0;
+        const valueChangeEl = document.getElementById('kpiValueChange');
+        valueChangeEl.textContent = `${valueChange >= 0 ? '+' : ''}${valueChange}%`;
+        
+        // Average Processing Time
+        const avgTime = data.avgProcessingTime || 0;
+        const avgDays = Math.round(avgTime);
+        document.getElementById('kpiAvgTime').textContent = `${avgDays}d`;
+    }
+
+    function renderAllCharts(data) {
+        renderTimeTrendChart(data.timeSeries || []);
+        renderReturnExchangeTrend(data.timeSeries || []);
+        renderStatusBarChart(data.statusDistribution || {});
+        renderStatusPieChart(data.statusDistribution || {});
+        renderReasonsBreakdownChart(data.reasons || {});
+        renderCarrierComparisonChart(data.carrierStats || {});
+    }
+
+    function renderTimeTrendChart(timeSeries) {
+        const ctx = document.getElementById('timeTrendChart').getContext('2d');
+        if (timeTrendChartInstance) timeTrendChartInstance.destroy();
+        
+        // Ensure chronological order (oldest to newest)
+        const sortedSeries = [...timeSeries].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const labels = sortedSeries.map(d => d.date);
+        const totalData = sortedSeries.map(d => d.total);
+        
+        let gradient = ctx.createLinearGradient(0, 0, 0, 300);
+        gradient.addColorStop(0, 'rgba(17, 24, 39, 0.3)');
+        gradient.addColorStop(1, 'rgba(17, 24, 39, 0.01)');
+        
+        timeTrendChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Total Requests',
+                    data: totalData,
+                    borderColor: '#111827',
+                    backgroundColor: gradient,
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderReturnExchangeTrend(timeSeries) {
+        const ctx = document.getElementById('returnExchangeTrendChart').getContext('2d');
+        if (returnExchangeTrendInstance) returnExchangeTrendInstance.destroy();
+        
+        // Ensure chronological order (oldest to newest)
+        const sortedSeries = [...timeSeries].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const labels = sortedSeries.map(d => d.date);
+        const returnsData = sortedSeries.map(d => d.returns || 0);
+        const exchangesData = sortedSeries.map(d => d.exchanges || 0);
+        
+        returnExchangeTrendInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Returns',
+                        data: returnsData,
+                        borderColor: '#111827',
+                        backgroundColor: 'rgba(17, 24, 39, 0.1)',
+                        tension: 0.4,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Exchanges',
+                        data: exchangesData,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { usePointStyle: true, padding: 20 }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderStatusBarChart(statusDistribution) {
+        const ctx = document.getElementById('statusBarChart').getContext('2d');
+        if (statusBarChartInstance) statusBarChartInstance.destroy();
+        
+        const statusLabels = {
+            'pending': 'Pending Admin',
+            'waiting_payment': 'Waiting Payment',
+            'pickup_pending': 'Pickup Pending',
+            'pickup_booked': 'Pickup Booked',
+            'picked_up': 'Picked Up',
+            'in_transit': 'In Transit',
+            'out_for_delivery': 'Out for Delivery',
+            'delivered': 'Delivered',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'cancelled': 'Cancelled',
+            'failed': 'Failed'
+        };
+        
+        const statusColors = {
+            'pending': '#ff6b35',
+            'waiting_payment': '#ffd54f',
+            'pickup_pending': '#fed7aa',
+            'pickup_booked': '#3b82f6',
+            'picked_up': '#6366f1',
+            'in_transit': '#6366f1',
+            'out_for_delivery': '#f59e0b',
+            'delivered': '#10b981',
+            'approved': '#10b981',
+            'rejected': '#ef4444',
+            'cancelled': '#9ca3af',
+            'failed': '#f97316'
+        };
+        
+        const sortedStatuses = Object.entries(statusDistribution)
+            .sort((a, b) => b[1] - a[1])
+            .filter(([_, count]) => count > 0);
+        
+        const labels = sortedStatuses.map(([status]) => statusLabels[status] || status);
+        const data = sortedStatuses.map(([_, count]) => count);
+        const colors = sortedStatuses.map(([status]) => statusColors[status] || '#9ca3af');
+        
+        statusBarChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Requests',
+                    data: data,
+                    backgroundColor: colors,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    y: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderStatusPieChart(statusDistribution) {
+        const ctx = document.getElementById('statusPieChart').getContext('2d');
+        if (statusPieChartInstance) statusPieChartInstance.destroy();
+        
+        const statusLabels = {
+            'pending': 'Pending Admin',
+            'waiting_payment': 'Waiting Payment',
+            'pickup_pending': 'Pickup Pending',
+            'pickup_booked': 'Pickup Booked',
+            'picked_up': 'Picked Up',
+            'in_transit': 'In Transit',
+            'out_for_delivery': 'Out for Delivery',
+            'delivered': 'Delivered',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'cancelled': 'Cancelled',
+            'failed': 'Failed'
+        };
+        
+        const statusColors = {
+            'pending': '#ff6b35',
+            'waiting_payment': '#ffd54f',
+            'pickup_pending': '#fed7aa',
+            'pickup_booked': '#3b82f6',
+            'picked_up': '#6366f1',
+            'in_transit': '#6366f1',
+            'out_for_delivery': '#f59e0b',
+            'delivered': '#10b981',
+            'approved': '#10b981',
+            'rejected': '#ef4444',
+            'cancelled': '#9ca3af',
+            'failed': '#f97316'
+        };
+        
+        const filteredStatuses = Object.entries(statusDistribution)
+            .filter(([_, count]) => count > 0);
+        
+        const labels = filteredStatuses.map(([status]) => statusLabels[status] || status);
+        const data = filteredStatuses.map(([_, count]) => count);
+        const colors = filteredStatuses.map(([status]) => statusColors[status] || '#9ca3af');
+        
+        statusPieChartInstance = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '65%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 15,
+                            font: { size: 11 }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                }
+            }
+        });
+    }
+
+    function renderReasonsBreakdownChart(reasons) {
+        const ctx = document.getElementById('reasonsBreakdownChart').getContext('2d');
+        if (reasonsBreakdownInstance) reasonsBreakdownInstance.destroy();
+        
+        const reasonLabels = {
+            'size': 'Wrong Size',
+            'fit': 'Fit Issue',
+            'color': 'Color Preference',
+            'changed_mind': 'Changed Mind',
+            'defective': 'Defective',
+            'wrong_item': 'Wrong Item',
+            'other': 'Other'
+        };
+        
+        const sortedReasons = Object.entries(reasons)
+            .sort((a, b) => b[1] - a[1]);
+        
+        const labels = sortedReasons.map(([reason]) => reasonLabels[reason] || reason);
+        const data = sortedReasons.map(([_, count]) => count);
+        
+        let gradient = ctx.createLinearGradient(0, 0, 0, 300);
+        gradient.addColorStop(0, '#8b5cf6');
+        gradient.addColorStop(1, '#a78bfa');
+        
+        reasonsBreakdownInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Requests',
+                    data: data,
+                    backgroundColor: gradient,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderCarrierComparisonChart(carrierStats) {
+        const ctx = document.getElementById('carrierComparisonChart').getContext('2d');
+        if (carrierComparisonInstance) carrierComparisonInstance.destroy();
+        
+        const carriers = Object.keys(carrierStats);
+        const totalData = carriers.map(c => carrierStats[c].total || 0);
+        const successData = carriers.map(c => carrierStats[c].success || 0);
+        
+        carrierComparisonInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: carriers.map(c => c === 'shiprocket' ? 'Shiprocket' : c === 'delhivery' ? 'Delhivery' : c),
+                datasets: [
+                    {
+                        label: 'Total Requests',
+                        data: totalData,
+                        backgroundColor: '#111827',
+                        borderRadius: 6
+                    },
+                    {
+                        label: 'Successful',
+                        data: successData,
+                        backgroundColor: '#10b981',
+                        borderRadius: 6
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { usePointStyle: true, padding: 20 }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateInsightsTable(data) {
+        const stats = data.stats || {};
+        const insights = data.insights || {};
+        
+        const tbody = document.getElementById('insightsTableBody');
+        
+        const rows = [
+            {
+                metric: 'Most Common Return Reason',
+                value: insights.topReason || 'N/A',
+                details: insights.topReasonCount ? `${insights.topReasonCount} requests` : ''
+            },
+            {
+                metric: 'Peak Request Day',
+                value: insights.peakDay || 'N/A',
+                details: insights.peakDayCount ? `${insights.peakDayCount} requests` : ''
+            },
+            {
+                metric: 'Average Processing Time',
+                value: `${Math.round(data.avgProcessingTime || 0)} days`,
+                details: 'From request to completion'
+            },
+            {
+                metric: 'Approval Rate',
+                value: `${stats.total > 0 ? Math.round(((stats.approved || 0) / stats.total) * 100) : 0}%`,
+                details: `${stats.approved || 0} approved out of ${stats.total || 0} total`
+            },
+            {
+                metric: 'Carrier Success Rate',
+                value: insights.carrierSuccessRate || 'N/A',
+                details: 'Based on successful deliveries'
+            },
+            {
+                metric: 'Return vs Exchange Ratio',
+                value: `${stats.returns || 0}:${stats.exchanges || 0}`,
+                details: `Returns: ${stats.returns || 0}, Exchanges: ${stats.exchanges || 0}`
+            }
+        ];
+        
+        tbody.innerHTML = rows.map(row => `
+            <tr>
+                <td style="padding: 1rem; font-weight: 500; color: #111827;">${row.metric}</td>
+                <td style="padding: 1rem; font-weight: 600; color: #111827;">${row.value}</td>
+                <td style="padding: 1rem; color: #6b7280;">${row.details}</td>
+            </tr>
+        `).join('');
+    }
+
+    function exportAnalytics() {
+        if (!currentAnalyticsData) {
+            alert('No analytics data to export');
+            return;
+        }
+        
+        const data = currentAnalyticsData;
+        const stats = data.stats || {};
+        
+        // Create CSV content
+        let csv = 'Metric,Value\n';
+        csv += `Total Requests,${stats.total || 0}\n`;
+        csv += `Pending Requests,${stats.pending || 0}\n`;
+        csv += `Approved Requests,${stats.approved || 0}\n`;
+        csv += `Rejected Requests,${stats.rejected || 0}\n`;
+        csv += `Returns,${stats.returns || 0}\n`;
+        csv += `Exchanges,${stats.exchanges || 0}\n`;
+        csv += `Total Revenue,${stats.totalRevenue || 0}\n`;
+        csv += `Average Processing Time (days),${Math.round(data.avgProcessingTime || 0)}\n`;
+        csv += '\n';
+        
+        // Add status distribution
+        csv += 'Status Distribution\n';
+        csv += 'Status,Count\n';
+        Object.entries(data.statusDistribution || {}).forEach(([status, count]) => {
+            csv += `${status},${count}\n`;
+        });
+        csv += '\n';
+        
+        // Add reasons
+        csv += 'Return Reasons\n';
+        csv += 'Reason,Count\n';
+        Object.entries(data.reasons || {}).forEach(([reason, count]) => {
+            csv += `${reason},${count}\n`;
+        });
+        
+        // Download CSV
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `analytics-${currentAnalyticsRange}-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        
+        alert('✅ Analytics exported successfully!');
+    }
+
 </script>
+
+<!-- Product Search Template (will be cloned dynamically) -->
+<template id="exchange-item-template">
+    <div class="exchange-item-card" style="background: white; border: 2px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; position: relative;">
+        <button onclick="removeExchangeItem(this)" class="remove-item-btn" style="position: absolute; top: 0.75rem; right: 0.75rem; background: #fee2e2; border: none; color: #dc2626; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; z-index: 10;">×</button>
+        
+        <!-- Original Item Section (Customer's Choice) -->
+        <div class="original-item-section" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                <span style="font-weight: 600; color: #991b1b; font-size: 0.875rem;">Original Item (Customer's Choice)</span>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <img class="original-product-image" src="" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb;">
+                <div style="flex: 1;">
+                    <p class="original-product-title" style="font-weight: 500; color: #374151; margin: 0; font-size: 0.875rem;"></p>
+                    <p class="original-product-variant" style="font-size: 0.8rem; color: #6b7280; margin: 0.25rem 0 0 0;"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Arrow Indicator -->
+        <div style="text-align: center; margin: -0.5rem 0; position: relative; z-index: 5;">
+            <div style="display: inline-block; background: white; padding: 0 1rem;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <polyline points="19 12 12 19 5 12"></polyline>
+                </svg>
+            </div>
+        </div>
+
+        <!-- New Item Section (What Will Be Dispatched) -->
+        <div class="new-item-section" style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1rem; margin-top: -0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <span style="font-weight: 600; color: #065f46; font-size: 0.875rem;">New Item (To Be Dispatched)</span>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0.75rem;">
+                <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">Search New Product</label>
+                <div style="position: relative;">
+                    <input type="text" class="product-search-input form-control" placeholder="Type to search products..." oninput="searchProductsForItem(this)" style="padding: 0.5rem 0.75rem; font-size: 0.875rem;">
+                    <div class="product-search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 2px solid #e5e7eb; border-radius: 8px; margin-top: 0.5rem; max-height: 250px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+                </div>
+            </div>
+
+            <div class="selected-product-info" style="display: none; padding: 0.75rem; background: white; border: 1px solid #86efac; border-radius: 6px; margin-bottom: 0.75rem;">
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <img class="selected-product-image" src="" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb;">
+                    <div style="flex: 1;">
+                        <p class="selected-product-title" style="font-weight: 600; color: #111827; margin: 0; font-size: 0.875rem;"></p>
+                        <p style="font-size: 0.75rem; color: #6b7280; margin: 0.25rem 0 0 0;">Select a size/variant below:</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="variant-selection" style="display: none; margin-bottom: 0.75rem;">
+                <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">New Size / Variant</label>
+                <select class="variant-select form-control" onchange="onVariantSelect(this)" style="padding: 0.5rem 0.75rem; font-size: 0.875rem;"></select>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">Qty</label>
+                    <input type="number" class="quantity-input form-control" value="1" min="1" max="10" style="padding: 0.5rem 0.75rem; font-size: 0.875rem;">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">Price (₹)</label>
+                    <input type="number" class="price-input form-control" readonly style="background: #f9fafb; padding: 0.5rem 0.75rem; font-size: 0.875rem;">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">Price Diff</label>
+                    <div class="price-diff-display" style="padding: 0.5rem 0.75rem; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; font-size: 0.875rem; font-weight: 600; color: #92400e; text-align: center;">₹0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hidden fields for storing selected data -->
+        <input type="hidden" class="product-id-input">
+        <input type="hidden" class="product-title-input">
+        <input type="hidden" class="variant-id-input">
+        <input type="hidden" class="variant-title-input">
+        <input type="hidden" class="product-image-input">
+        <!-- Original item data for reference -->
+        <input type="hidden" class="original-product-id">
+        <input type="hidden" class="original-product-title">
+        <input type="hidden" class="original-product-variant">
+        <input type="hidden" class="original-product-image">
+        <input type="hidden" class="original-price">
+    </div>
+</template>
+
+<!-- Modify Exchange Details Modal -->
+<div id="modifyModal" class="modal">
+    <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 1.5rem; border-radius: 12px 12px 0 0;">
+            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 0.75rem;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Modify Exchange Items & Address
+            </h2>
+            <button class="modal-close" onclick="closeModifyModal()" style="color: white;">×</button>
+        </div>
+
+        <div style="padding: 2rem;">
+            <!-- Warning Banner -->
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 8px; margin-bottom: 2rem;">
+                <p style="font-size: 0.875rem; color: #92400e; margin: 0; font-weight: 500;">
+                    ⚠️ <strong>Important:</strong> These changes will affect the upcoming shipment. Please verify all details carefully before saving.
+                </p>
+            </div>
+
+            <!-- Section 1: Exchange Items -->
+            <div style="margin-bottom: 2.5rem;">
+                <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                        <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                    </svg>
+                    Exchange Items
+                </h3>
+                <p style="font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem;">Change the size/variant or product to be dispatched. Original items shown for reference.</p>
+
+                <div id="modify-items-container">
+                    <!-- Items will be populated dynamically -->
+                </div>
+
+                <button onclick="addExchangeItem()" class="btn btn-secondary" style="margin-top: 1rem; padding: 0.75rem 1.5rem; border: 2px dashed #d1d5db; background: #f9fafb; color: #6b7280; border-radius: 8px; cursor: pointer; font-weight: 500; width: 100%; transition: all 0.2s;">
+                    + Add Another Item
+                </button>
+            </div>
+
+            <!-- Section 2: Customer Contact Information -->
+            <div style="margin-bottom: 2.5rem; padding: 1.5rem; background: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb;">
+                <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    Customer Contact Information
+                </h3>
+
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Customer Name</label>
+                    <input type="text" id="modify-customerName" class="form-control" placeholder="Full Name">
+                </div>
+
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Phone Number <span style="color: #ef4444;">*</span></label>
+                    <input type="tel" id="modify-customerPhone" class="form-control" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10">
+                    <p style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">Carrier will use this to contact customer for pickup/delivery</p>
+                </div>
+            </div>
+
+            <!-- Section 3: Shipping Address -->
+            <div style="margin-bottom: 2.5rem; padding: 1.5rem; background: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb;">
+                <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    Shipping Address (Delivery Location)
+                </h3>
+
+                <div class="form-group">
+                    <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Address Line 1 <span style="color: #ef4444;">*</span></label>
+                    <textarea id="modify-newAddress" class="form-control" rows="3" placeholder="House No., Street, Locality"></textarea>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                    <div class="form-group">
+                        <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">City <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="modify-newCity" class="form-control" placeholder="City">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">State <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="modify-newState" class="form-control" placeholder="State">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Pincode <span style="color: #ef4444;">*</span></label>
+                        <input type="text" id="modify-newPincode" class="form-control" placeholder="6-digit pincode" pattern="[0-9]{6}" maxlength="6">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div style="display: flex; gap: 1rem; padding-top: 1.5rem; border-top: 2px solid #e5e7eb;">
+                <button onclick="closeModifyModal()" class="btn btn-secondary" style="flex: 1; padding: 0.875rem; font-weight: 600; border: 2px solid #d1d5db; background: white; color: #374151; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                    Cancel
+                </button>
+                <button onclick="saveExchangeModifications()" id="saveModifyBtn" class="btn btn-primary" style="flex: 2; padding: 0.875rem; font-weight: 600; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); transition: all 0.3s ease;">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<!-- Premium Analytics Full Page Modal -->
+<div id="analyticsModal" class="modal" style="z-index: 10001;">
+    <div class="analytics-full-page" style="width: 100%; height: 100%; background: #f9fafb; overflow-y: auto;">
+        <!-- Analytics Header -->
+        <div style="background: white; border-bottom: 1px solid #e5e7eb; padding: 1.5rem 2rem; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1600px; margin: 0 auto;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <button onclick="closeAnalyticsPage()" style="background: white; border: 1px solid #e5e7eb; padding: 0.5rem; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='white'">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    </button>
+                    <div>
+                        <h2 style="font-size: 1.5rem; font-weight: 600; margin: 0; color: #111827;">Detailed Analytics Dashboard</h2>
+                        <p style="font-size: 0.85rem; color: #6b7280; margin: 0.25rem 0 0 0;" id="analyticsDateRange">Last 30 Days</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <!-- Date Range Selector -->
+                    <div style="display: flex; gap: 0.5rem; background: #f3f4f6; padding: 0.25rem; border-radius: 8px;">
+                        <button onclick="updateDateRange('7d')" class="date-range-btn" data-range="7d" style="padding: 0.5rem 1rem; border: none; background: white; border-radius: 6px; font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">7 Days</button>
+                        <button onclick="updateDateRange('30d')" class="date-range-btn" data-range="30d" style="padding: 0.5rem 1rem; border: none; background: transparent; border-radius: 6px; font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s;">30 Days</button>
+                        <button onclick="updateDateRange('90d')" class="date-range-btn" data-range="90d" style="padding: 0.5rem 1rem; border: none; background: transparent; border-radius: 6px; font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s;">90 Days</button>
+                    </div>
+                    
+                    <!-- Export Button -->
+                    <button onclick="exportAnalytics()" style="background: #111827; color: white; border: none; padding: 0.6rem 1.25rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        Export
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Content -->
+        <div style="max-width: 1600px; margin: 0 auto; padding: 2rem;">
+            <!-- Loading State -->
+            <div id="analyticsLoading" style="text-align: center; padding: 4rem;">
+                <div class="spinner" style="width: 48px; height: 48px; border-width: 3px; margin: 0 auto 1rem auto;"></div>
+                <p style="color: #6b7280; font-size: 1rem;">Loading analytics data...</p>
+            </div>
+
+            <!-- Analytics Content (Hidden until loaded) -->
+            <div id="analyticsContent" class="hidden">
+                <!-- KPI Cards -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #111827; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Total Requests</p>
+                            <span id="kpiTotalChange" style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #dcfce7; color: #166534;">+0%</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiTotalRequests">0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">vs <span id="kpiTotalPrevious">0</span> previous period</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #3b82f6; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Pending Action</p>
+                            <span style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #fef3c7; color: #92400e;" id="kpiPendingPercent">0%</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiPendingRequests">0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;"><span id="kpiWaitingPayment">0</span> waiting payment</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #10b981; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Approval Rate</p>
+                            <span style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #dcfce7; color: #166534;" id="kpiApprovalRate">0%</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiApprovedRequests">0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;"><span id="kpiRejectedRequests">0</span> rejected</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #8b5cf6; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Return vs Exchange</p>
+                            <span style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #ede9fe; color: #5b21b6;" id="kpiReturnRatio">0:0</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiReturnExchange">0 / 0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Returns / Exchanges</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: white; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #f59e0b; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #6b7280; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Total Order Value</p>
+                            <span style="font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 12px; background: #fef3c7; color: #92400e;" id="kpiValueChange">+0%</span>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1; margin: 0;" id="kpiTotalValue">₹0</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Processed value</p>
+                    </div>
+
+                    <div class="analytics-kpi-card" style="background: linear-gradient(135deg, #111827 0%, #374151 100%); color: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: all 0.3s;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                            <p style="font-size: 0.85rem; color: #9ca3af; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Avg Processing Time</p>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        </div>
+                        <p style="font-size: 2.5rem; font-weight: 300; line-height: 1; margin: 0;" id="kpiAvgTime">0d</p>
+                        <p style="font-size: 0.8rem; color: #9ca3af; margin: 0.5rem 0 0 0;">Average completion time</p>
+                    </div>
+                </div>
+
+                <!-- Time-Based Trends Section -->
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0 0 1rem 0; text-transform: uppercase; letter-spacing: 0.5px;">Time-Based Trends</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Requests Over Time</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="timeTrendChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Returns vs Exchanges Trend</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="returnExchangeTrendChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Distribution Section -->
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0 0 1rem 0; text-transform: uppercase; letter-spacing: 0.5px;">Status Distribution</h3>
+                    <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 1.5rem;">
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Requests by Status</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="statusBarChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Status Breakdown</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="statusPieChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed Breakdowns Section -->
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0 0 1rem 0; text-transform: uppercase; letter-spacing: 0.5px;">Detailed Breakdowns</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Return Reasons</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="reasonsBreakdownChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="analytics-chart-card" style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 350px;">
+                            <h4 style="font-size: 0.9rem; color: #6b7280; margin: 0 0 1rem 0; font-weight: 500;">Carrier Performance</h4>
+                            <div style="position: relative; height: 280px;">
+                                <canvas id="carrierComparisonChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top Insights Table -->
+                <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0 0 1rem 0; text-transform: uppercase; letter-spacing: 0.5px;">Top Insights</h3>
+                    <div style="overflow-x: auto;">
+                        <table class="analytics-insights-table" style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid #e5e7eb;">
+                                    <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">Metric</th>
+                                    <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">Value</th>
+                                    <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #6b7280; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px;">Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="insightsTableBody">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>
