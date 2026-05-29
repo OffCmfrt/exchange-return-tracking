@@ -7619,6 +7619,30 @@ app.get('/api/influencer-admin/reel-targets', authenticateAdmin, async (req, res
     }
 });
 
+// Admin: Create/update monthly reel target (without influencerId in path)
+app.post('/api/influencer-admin/reel-targets', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId, month, year, targetCount, notes } = req.body;
+        
+        if (!influencerId || !month || !year || !targetCount) {
+            return res.status(400).json({ error: 'influencerId, month, year, and targetCount are required' });
+        }
+        
+        const target = await createReelTarget({
+            influencerId,
+            month: parseInt(month),
+            year: parseInt(year),
+            targetCount: parseInt(targetCount),
+            notes
+        });
+        
+        res.json({ success: true, target });
+    } catch (error) {
+        console.error('Create reel target error:', error);
+        res.status(500).json({ error: 'Failed to create reel target' });
+    }
+});
+
 // Admin: Browse Shopify products
 app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req, res) => {
     try {
