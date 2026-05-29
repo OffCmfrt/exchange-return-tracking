@@ -883,6 +883,16 @@ body, html { background: var(--bg); }
 
 <script>
 const PORTAL_API = 'https://exchange-return-tracking.onrender.com/api/influencer';
+const API_BASE = 'https://exchange-return-tracking.onrender.com/api';
+
+// Helper: Show toast notification
+function showToast(message, isError = false) {
+  const toast = document.createElement('div');
+  toast.style.cssText = `position: fixed; bottom: 2rem; right: 2rem; padding: 1rem 1.5rem; background: ${isError ? 'var(--danger)' : 'var(--success)'}; color: white; font-size: 0.75rem; font-weight: 600; z-index: 99999; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
 const params = new URLSearchParams(window.location.search);
 const token = params.get('token');
 let currentRange = 'all';
@@ -1221,47 +1231,17 @@ function esc(str) {
 function portalEsc(str) { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function portalFmt(n) { return parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+// Load portal shipments - Enhanced version
 async function loadPortalShipments() {
-  try {
-    const res = await fetch(`${PORTAL_API}/shipments/${token}`);
-    const data = await res.json();
-    if (!data.success || !data.shipments || data.shipments.length === 0) {
-      document.getElementById('ipShipmentsList').innerHTML = '<div class="ip-empty">No shipments yet</div>';
-      return;
-    }
-    const list = document.getElementById('ipShipmentsList');
-    list.innerHTML = data.shipments.map(s => {
-      const sent = new Date(s.sent_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-      const due = new Date(s.reel_due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-      let actionHtml = '';
-      if (s.reel_status === 'pending' || s.reel_status === 'overdue') {
-        actionHtml = `<input type="text" class="ip-ship-input" id="reel-${s.id}" placeholder="Paste Reel URL">
-          <button class="ip-ship-submit" onclick="submitReelUrl(${s.id})">Submit</button>`;
-      } else {
-        actionHtml = s.reel_url ? `<a href="${portalEsc(s.reel_url)}" target="_blank" style="color: var(--text); font-size: 0.75rem;">View Reel</a>` : '';
-      }
-      return `
-        <div class="ip-ship-item">
-          <div class="ip-ship-info">
-            <div class="ip-ship-product">${portalEsc(s.product_title)}</div>
-            <div class="ip-ship-dates">Sent: ${sent} · Due: ${due}</div>
-          </div>
-          <div class="ip-ship-actions">
-            <span class="ip-badge ${s.reel_status}">${s.reel_status}</span>
-            ${actionHtml}
-          </div>
-        </div>
-      `;
-    }).join('');
-  } catch (e) {
-    document.getElementById('ipShipmentsList').innerHTML = '<div class="ip-empty">Failed to load</div>';
-  }
+  // This function is now deprecated - replaced by enhanced shipment functions
+  // The enhanced UI uses: loadMonthlyReelTarget(), loadAssignedReels(), loadMyProductRequests()
+  return;
 }
 
 async function submitReelUrl(shipmentId) {
   const input = document.getElementById(`reel-${shipmentId}`);
   const reelUrl = input.value.trim();
-  if (!reelUrl) { alert('Please paste a URL'); return; }
+  if (!reelUrl) { showToast('Please paste a URL', true); return; }
   try {
     const res = await fetch(`${PORTAL_API}/shipments/${token}/${shipmentId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -1269,10 +1249,10 @@ async function submitReelUrl(shipmentId) {
     });
     const data = await res.json();
     if (data.success) {
-      alert('Reel submitted!');
-      loadPortalShipments();
-    } else { alert(data.error || 'Failed'); }
-  } catch (e) { alert('Network error'); }
+      showToast('Reel submitted successfully!');
+      loadAssignedReels();
+    } else { showToast(data.error || 'Failed to submit', true); }
+  } catch (e) { showToast('Network error', true); }
 }
 
 async function loadPortalLeaderboard() {
@@ -1691,7 +1671,7 @@ async function searchInventoryProducts() {
   try {
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><p>Searching...</p></div>';
     
-    const res = await fetch(`${PORTAL_API}/shopify-products?search=${encodeURIComponent(search)}&limit=20`);
+    const res = await fetch(`${API_BASE}/influencer/${token}/shopify-products?search=${encodeURIComponent(search)}&limit=20`);
     const data = await res.json();
     
     if (!data.success || !data.products || data.products.length === 0) {
