@@ -4757,15 +4757,119 @@ async function loadMonthlyTargets() {
 }
 
 // Open reel target modal
+// Open Set Monthly Target Modal
 function openReelTargetModal() {
   const month = document.getElementById('srTargetMonth').value;
   const year = document.getElementById('srTargetYear').value;
   
-  const modal = promptModal(
-    'Set Monthly Reel Target',
-    `Month: ${getMonthName(month)} ${year}\n\nThis feature will be available in the next update.`,
-    ['Close']
-  );
+  // Create modal
+  const modal = document.createElement('div');
+  modal.id = 'srTargetModal';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+  
+  modal.innerHTML = `
+    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+      <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1.5rem;">Set Monthly Reel Target</h3>
+      
+      <div style="padding: 1rem; background: var(--subtle); margin-bottom: 1.5rem; border-left: 3px solid var(--text);">
+        <p style="font-size: 0.85rem; font-weight: 600; margin: 0;">Period: ${getMonthName(month)} ${year}</p>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="rtInfluencer">Select Influencer *</label>
+        <select id="rtInfluencer" class="ia-input" required>
+          <option value="">Choose influencer...</option>
+        </select>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="rtTargetCount">Monthly Reel Target *</label>
+        <input type="number" id="rtTargetCount" class="ia-input" min="1" max="30" value="3" required>
+        <p style="font-size: 0.7rem; color: var(--muted); margin-top: 0.3rem;">Recommended: 3-5 reels per month</p>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="rtNotes">Notes (Optional)</label>
+        <textarea id="rtNotes" class="ia-input" rows="3" placeholder="Any specific instructions or campaign details..." style="resize: vertical;"></textarea>
+      </div>
+      
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button onclick="closeReelTargetModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
+        <button onclick="saveReelTarget(${month}, ${year})" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Save Target</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Load influencers into select
+  loadInfluencersForTarget();
+}
+
+function closeReelTargetModal() {
+  const modal = document.getElementById('srTargetModal');
+  if (modal) modal.remove();
+}
+
+async function loadInfluencersForTarget() {
+  try {
+    const res = await fetch(`${API}/influencers`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      const select = document.getElementById('rtInfluencer');
+      select.innerHTML = '<option value="">Choose influencer...</option>' + 
+        data.influencers.map(i => `<option value="${i.id}">${i.name || i.handle}</option>`).join('');
+    }
+  } catch (e) {
+    console.error('Load influencers error:', e);
+  }
+}
+
+async function saveReelTarget(month, year) {
+  const influencerId = document.getElementById('rtInfluencer').value;
+  const targetCount = parseInt(document.getElementById('rtTargetCount').value);
+  const notes = document.getElementById('rtNotes').value.trim();
+  
+  if (!influencerId) {
+    alert('Please select an influencer');
+    return;
+  }
+  if (!targetCount || targetCount < 1) {
+    alert('Target must be at least 1');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${API}/reel-targets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        influencerId,
+        month,
+        year,
+        targetCount,
+        notes: notes || null
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('Monthly target set successfully!');
+      closeReelTargetModal();
+      loadMonthlyTargets();
+    } else {
+      alert(data.error || 'Failed to set target');
+    }
+  } catch (e) {
+    alert('Network error. Please try again.');
+  }
 }
 
 function getMonthName(monthNum) {
@@ -4811,15 +4915,140 @@ async function searchShopifyProducts() {
   }
 }
 
-// Assign product to influencer
+// Assign product to influencer with complete modal
 function assignProductToInfluencer(productId, productTitle, imageUrl) {
-  const influencerId = prompt('Enter Influencer ID:');
-  if (!influencerId) return;
+  const modal = document.createElement('div');
+  modal.id = 'srAssignModal';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
   
-  const dueDate = prompt('Reel Due Date (YYYY-MM-DD):');
-  if (!dueDate) return;
+  modal.innerHTML = `
+    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+      <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1.5rem;">Assign Product & Create Shipment</h3>
+      
+      ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 200px; object-fit: cover; margin-bottom: 1rem; border: 1px solid var(--border);">` : ''}
+      
+      <div style="padding: 1rem; background: var(--subtle); margin-bottom: 1.5rem; border-left: 3px solid var(--text);">
+        <p style="font-size: 0.85rem; font-weight: 600; margin: 0;">Product: ${productTitle}</p>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="apInfluencer">Select Influencer *</label>
+        <select id="apInfluencer" class="ia-input" required>
+          <option value="">Choose influencer...</option>
+        </select>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="apReelDueDate">Reel Due Date *</label>
+        <input type="date" id="apReelDueDate" class="ia-input" required min="${new Date().toISOString().split('T')[0]}">
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="apIsMonthlyTarget">Mark as Monthly Target? *</label>
+        <select id="apIsMonthlyTarget" class="ia-input">
+          <option value="true">Yes - Counts towards monthly reel quota</option>
+          <option value="false">No - One-time shipment</option>
+        </select>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="apNotes">Admin Notes (Optional)</label>
+        <textarea id="apNotes" class="ia-input" rows="3" placeholder="Campaign details, special instructions..." style="resize: vertical;"></textarea>
+      </div>
+      
+      <div style="padding: 1rem; background: #4facfe20; border-left: 3px solid #4facfe; margin-top: 1rem;">
+        <p style="font-size: 0.75rem; color: #4facfe; margin: 0; font-weight: 600;">ℹ️ This will:</p>
+        <ul style="font-size: 0.7rem; color: var(--muted); margin: 0.5rem 0 0 1rem; line-height: 1.6;">
+          <li>Create a shipment record in database</li>
+          <li>Mark as "pending" status</li>
+          <li>Notify influencer in their portal</li>
+          <li>Track reel submission deadline</li>
+        </ul>
+      </div>
+      
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button onclick="closeAssignProductModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
+        <button onclick="saveProductShipment('${productTitle.replace(/'/g, "\\'")}', '${imageUrl}')" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Create Shipment</button>
+      </div>
+    </div>
+  `;
   
-  showToast('Shipment created successfully');
+  document.body.appendChild(modal);
+  
+  // Load influencers
+  loadInfluencersForShipment();
+}
+
+function closeAssignProductModal() {
+  const modal = document.getElementById('srAssignModal');
+  if (modal) modal.remove();
+}
+
+async function loadInfluencersForShipment() {
+  try {
+    const res = await fetch(`${API}/influencers`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      const select = document.getElementById('apInfluencer');
+      select.innerHTML = '<option value="">Choose influencer...</option>' + 
+        data.influencers.map(i => `<option value="${i.id}">${i.name || i.handle}</option>`).join('');
+    }
+  } catch (e) {
+    console.error('Load influencers error:', e);
+  }
+}
+
+async function saveProductShipment(productTitle, imageUrl) {
+  const influencerId = document.getElementById('apInfluencer').value;
+  const reelDueDate = document.getElementById('apReelDueDate').value;
+  const isMonthlyTarget = document.getElementById('apIsMonthlyTarget').value === 'true';
+  const notes = document.getElementById('apNotes').value.trim();
+  
+  if (!influencerId) {
+    alert('Please select an influencer');
+    return;
+  }
+  if (!reelDueDate) {
+    alert('Please select a reel due date');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${API}/shipments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        influencerId,
+        productTitle,
+        productImageUrl: imageUrl || null,
+        reelDueDate,
+        isMonthlyTarget,
+        notes: notes || null
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('Shipment created successfully!');
+      closeAssignProductModal();
+      // Refresh current tab data
+      const activeTab = document.querySelector('.sr-tab.active');
+      if (activeTab && activeTab.dataset.tab === 'inventory') {
+        // Stay on inventory
+      }
+    } else {
+      alert(data.error || 'Failed to create shipment');
+    }
+  } catch (e) {
+    alert('Network error. Please try again.');
+  }
 }
 
 // Load product requests
@@ -4927,8 +5156,197 @@ async function loadAllShipments() {
 }
 
 // Open add shipment modal
+// Open Add Shipment Modal - Complete manual shipment creation
 function openAddShipmentModal() {
-  showToast('Shipment creation modal coming soon');
+  const modal = document.createElement('div');
+  modal.id = 'srAddShipmentModal';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+  
+  modal.innerHTML = `
+    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 700px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+      <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1.5rem;">Create Manual Shipment</h3>
+      
+      <div style="padding: 1rem; background: #4facfe20; border-left: 3px solid #4facfe; margin-bottom: 1.5rem;">
+        <p style="font-size: 0.75rem; color: #4facfe; margin: 0; font-weight: 600;">ℹ️ This will create a shipment and auto-book via Delhivery</p>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="asInfluencer">Select Influencer *</label>
+        <select id="asInfluencer" class="ia-input" required>
+          <option value="">Choose influencer...</option>
+        </select>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="asProductTitle">Product Title *</label>
+        <input type="text" id="asProductTitle" class="ia-input" placeholder="e.g. Classic Black T-Shirt" required>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="asReelDueDate">Reel Due Date *</label>
+        <input type="date" id="asReelDueDate" class="ia-input" required min="${new Date().toISOString().split('T')[0]}">
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="asIsMonthlyTarget">Mark as Monthly Target? *</label>
+        <select id="asIsMonthlyTarget" class="ia-input">
+          <option value="true">Yes - Counts towards monthly reel quota</option>
+          <option value="false">No - One-time shipment</option>
+        </select>
+      </div>
+      
+      <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+        <p style="font-size: 0.75rem; color: var(--muted); margin-bottom: 1rem; font-weight: 600;">SHIPPING ADDRESS</p>
+        
+        <div class="ia-form-group">
+          <label for="asFullName">Full Name *</label>
+          <input type="text" id="asFullName" class="ia-input" placeholder="Rahul Sharma" required>
+        </div>
+        
+        <div class="ia-form-group">
+          <label for="asAddress1">Address Line 1 *</label>
+          <input type="text" id="asAddress1" class="ia-input" placeholder="123 Main Street" required>
+        </div>
+        
+        <div class="ia-form-group">
+          <label for="asAddress2">Address Line 2 (Optional)</label>
+          <input type="text" id="asAddress2" class="ia-input" placeholder="Apt 4B">
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="ia-form-group">
+            <label for="asCity">City *</label>
+            <input type="text" id="asCity" class="ia-input" placeholder="Mumbai" required>
+          </div>
+          <div class="ia-form-group">
+            <label for="asState">State *</label>
+            <input type="text" id="asState" class="ia-input" placeholder="Maharashtra" required>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="ia-form-group">
+            <label for="asPincode">Pincode * (6 digits)</label>
+            <input type="text" id="asPincode" class="ia-input" placeholder="400001" maxlength="6" required>
+          </div>
+          <div class="ia-form-group">
+            <label for="asPhone">Phone * (10 digits)</label>
+            <input type="text" id="asPhone" class="ia-input" placeholder="9876543210" maxlength="10" required>
+          </div>
+        </div>
+      </div>
+      
+      <div class="ia-form-group" style="margin-top: 1rem;">
+        <label for="asNotes">Admin Notes (Optional)</label>
+        <textarea id="asNotes" class="ia-input" rows="3" placeholder="Campaign details, special instructions..." style="resize: vertical;"></textarea>
+      </div>
+      
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button onclick="closeAddShipmentModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
+        <button onclick="createManualShipment()" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Create & Ship via Delhivery</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Load influencers
+  loadInfluencersForAddShipment();
+}
+
+function closeAddShipmentModal() {
+  const modal = document.getElementById('srAddShipmentModal');
+  if (modal) modal.remove();
+}
+
+async function loadInfluencersForAddShipment() {
+  try {
+    const res = await fetch(`${API}/influencers`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      const select = document.getElementById('asInfluencer');
+      select.innerHTML = '<option value="">Choose influencer...</option>' + 
+        data.influencers.map(i => `<option value="${i.id}">${i.name || i.handle}</option>`).join('');
+    }
+  } catch (e) {
+    console.error('Load influencers error:', e);
+  }
+}
+
+async function createManualShipment() {
+  const influencerId = document.getElementById('asInfluencer').value;
+  const productTitle = document.getElementById('asProductTitle').value.trim();
+  const reelDueDate = document.getElementById('asReelDueDate').value;
+  const isMonthlyTarget = document.getElementById('asIsMonthlyTarget').value === 'true';
+  const fullName = document.getElementById('asFullName').value.trim();
+  const addressLine1 = document.getElementById('asAddress1').value.trim();
+  const addressLine2 = document.getElementById('asAddress2').value.trim();
+  const city = document.getElementById('asCity').value.trim();
+  const state = document.getElementById('asState').value.trim();
+  const pincode = document.getElementById('asPincode').value.trim();
+  const phone = document.getElementById('asPhone').value.trim();
+  const notes = document.getElementById('asNotes').value.trim();
+  
+  // Validation
+  if (!influencerId) {
+    alert('Please select an influencer');
+    return;
+  }
+  if (!productTitle || productTitle.length < 3) {
+    alert('Product title must be at least 3 characters');
+    return;
+  }
+  if (!reelDueDate) {
+    alert('Please select a reel due date');
+    return;
+  }
+  if (!pincode || pincode.length !== 6) {
+    alert('Invalid pincode (must be 6 digits)');
+    return;
+  }
+  if (!phone || phone.length !== 10) {
+    alert('Invalid phone number (must be 10 digits)');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${API}/shipments/manual`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        influencerId,
+        productTitle,
+        reelDueDate,
+        isMonthlyTarget,
+        shippingFullName: fullName,
+        shippingAddressLine1: addressLine1,
+        shippingAddressLine2: addressLine2 || null,
+        shippingCity: city,
+        shippingState: state,
+        shippingPincode: pincode,
+        shippingPhone: phone,
+        notes: notes || null
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('Shipment created and Delhivery booking initiated!');
+      closeAddShipmentModal();
+      loadAllShipments();
+    } else {
+      alert(data.error || 'Failed to create shipment');
+    }
+  } catch (e) {
+    alert('Network error. Please try again.');
+  }
 }
 
 // Helper: Get status badge HTML
