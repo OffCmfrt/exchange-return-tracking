@@ -4813,15 +4813,16 @@ function closeReelTargetModal() {
 
 async function loadInfluencersForTarget() {
   try {
-    const res = await fetch(`${API}/influencers`, {
+    const res = await fetch(`${API}/list`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     const data = await res.json();
     
-    if (data.success) {
+    if (data.success || Array.isArray(data)) {
+      const influencers = Array.isArray(data) ? data : (data.influencers || []);
       const select = document.getElementById('rtInfluencer');
       select.innerHTML = '<option value="">Choose influencer...</option>' + 
-        data.influencers.map(i => `<option value="${i.id}">${i.name || i.handle}</option>`).join('');
+        influencers.map(i => `<option value="${i.id}">${i.name || i.handle || 'Influencer'}</option>`).join('');
     }
   } catch (e) {
     console.error('Load influencers error:', e);
@@ -4866,6 +4867,89 @@ async function saveReelTarget(month, year) {
       loadMonthlyTargets();
     } else {
       alert(data.error || 'Failed to set target');
+    }
+  } catch (e) {
+    alert('Network error. Please try again.');
+  }
+}
+
+// Edit existing reel target
+function editReelTarget(influencerId, currentTarget) {
+  const month = document.getElementById('srTargetMonth').value;
+  const year = document.getElementById('srTargetYear').value;
+  
+  const modal = document.createElement('div');
+  modal.id = 'srEditTargetModal';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+  
+  modal.innerHTML = `
+    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+      <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1.5rem;">Edit Monthly Target</h3>
+      
+      <div style="padding: 1rem; background: var(--subtle); margin-bottom: 1.5rem; border-left: 3px solid var(--text);">
+        <p style="font-size: 0.85rem; font-weight: 600; margin: 0;">Period: ${getMonthName(month)} ${year}</p>
+        <p style="font-size: 0.75rem; color: var(--muted); margin: 0.3rem 0 0 0;">Current Target: ${currentTarget} reels</p>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="etTargetCount">New Monthly Target *</label>
+        <input type="number" id="etTargetCount" class="ia-input" min="1" max="30" value="${currentTarget}" required>
+        <p style="font-size: 0.7rem; color: var(--muted); margin-top: 0.3rem;">Recommended: 3-5 reels per month</p>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="etNotes">Update Notes (Optional)</label>
+        <textarea id="etNotes" class="ia-input" rows="3" placeholder="Reason for changing target..." style="resize: vertical;"></textarea>
+      </div>
+      
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button onclick="closeEditTargetModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
+        <button onclick="updateReelTarget('${influencerId}', ${month}, ${year})" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Update Target</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+}
+
+function closeEditTargetModal() {
+  const modal = document.getElementById('srEditTargetModal');
+  if (modal) modal.remove();
+}
+
+async function updateReelTarget(influencerId, month, year) {
+  const targetCount = parseInt(document.getElementById('etTargetCount').value);
+  const notes = document.getElementById('etNotes').value.trim();
+  
+  if (!targetCount || targetCount < 1) {
+    alert('Target must be at least 1');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${API}/reel-targets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        influencerId,
+        month,
+        year,
+        targetCount,
+        notes: notes || null
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('Target updated successfully!');
+      closeEditTargetModal();
+      loadMonthlyTargets();
+    } else {
+      alert(data.error || 'Failed to update target');
     }
   } catch (e) {
     alert('Network error. Please try again.');
@@ -4986,15 +5070,16 @@ function closeAssignProductModal() {
 
 async function loadInfluencersForShipment() {
   try {
-    const res = await fetch(`${API}/influencers`, {
+    const res = await fetch(`${API}/list`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     const data = await res.json();
     
-    if (data.success) {
+    if (data.success || Array.isArray(data)) {
+      const influencers = Array.isArray(data) ? data : (data.influencers || []);
       const select = document.getElementById('apInfluencer');
       select.innerHTML = '<option value="">Choose influencer...</option>' + 
-        data.influencers.map(i => `<option value="${i.id}">${i.name || i.handle}</option>`).join('');
+        influencers.map(i => `<option value="${i.id}">${i.name || i.handle || 'Influencer'}</option>`).join('');
     }
   } catch (e) {
     console.error('Load influencers error:', e);
@@ -5261,15 +5346,16 @@ function closeAddShipmentModal() {
 
 async function loadInfluencersForAddShipment() {
   try {
-    const res = await fetch(`${API}/influencers`, {
+    const res = await fetch(`${API}/list`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     const data = await res.json();
     
-    if (data.success) {
+    if (data.success || Array.isArray(data)) {
+      const influencers = Array.isArray(data) ? data : (data.influencers || []);
       const select = document.getElementById('asInfluencer');
       select.innerHTML = '<option value="">Choose influencer...</option>' + 
-        data.influencers.map(i => `<option value="${i.id}">${i.name || i.handle}</option>`).join('');
+        influencers.map(i => `<option value="${i.id}">${i.name || i.handle || 'Influencer'}</option>`).join('');
     }
   } catch (e) {
     console.error('Load influencers error:', e);
