@@ -5234,10 +5234,50 @@ async function rejectProductRequest(requestId) {
   }
 }
 
-// Load all shipments
+// Load all shipments - Complete implementation
 async function loadAllShipments() {
-  // This would call an existing endpoint or new one
-  showToast('Shipments loading feature coming soon');
+  try {
+    const res = await fetch(`${API}/shipments`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      const tbody = document.getElementById('srShipmentsTableBody');
+      if (data.shipments.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 3rem; color: var(--muted);">No shipments found</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = data.shipments.map(s => {
+        const reelStatusBadge = s.reel_status ? getStatusBadge(s.reel_status) : '<span style="color: var(--muted); font-size: 0.7rem;">N/A</span>';
+        const monthlyTargetBadge = s.is_monthly_target ? '<span style="color: var(--success); font-size: 0.7rem;">✓ Yes</span>' : '<span style="color: var(--muted); font-size: 0.7rem;">No</span>';
+        const trackingLink = s.delhivery_tracking_url ? `<a href="${s.delhivery_tracking_url}" target="_blank" style="color: #4facfe; font-size: 0.7rem;">Track</a>` : '<span style="color: var(--muted); font-size: 0.7rem;">—</span>';
+        
+        return `
+          <tr>
+            <td>
+              <div style="font-weight: 600;">${s.influencers?.name || 'Unknown'}</div>
+              <div style="font-size: 0.7rem; color: var(--muted);">${s.influencers?.referral_code || ''}</div>
+            </td>
+            <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${s.product_title}">${s.product_title}</td>
+            <td style="font-size: 0.75rem;">${new Date(s.sent_at || s.created_at).toLocaleDateString()}</td>
+            <td style="font-size: 0.75rem;">${s.reel_due_date ? new Date(s.reel_due_date).toLocaleDateString() : '—'}</td>
+            <td>${reelStatusBadge}</td>
+            <td style="text-align: center;">${monthlyTargetBadge}</td>
+            <td style="text-align: center;">${trackingLink}</td>
+            <td>
+              <button class="ia-btn" onclick="viewShipmentDetails('${s.id}')" style="padding: 0.3rem 0.6rem; font-size: 0.65rem; margin-right: 0.3rem;">View</button>
+              ${s.delhivery_awb ? `<button class="ia-btn" onclick="trackShipment('${s.delhivery_awb}')" style="padding: 0.3rem 0.6rem; font-size: 0.65rem; color: #4facfe; border-color: #4facfe;">Track</button>` : ''}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+  } catch (e) {
+    console.error('Load shipments error:', e);
+    showToast('Failed to load shipments', true);
+  }
 }
 
 // Open add shipment modal
@@ -5442,10 +5482,151 @@ function getStatusBadge(status) {
     approved: 'var(--success)',
     rejected: 'var(--danger)',
     shipped: '#4facfe',
-    delivered: 'var(--success)'
+    delivered: 'var(--success)',
+    received: 'var(--success)',
+    overdue: 'var(--danger)'
   };
   const color = colors[status] || 'var(--muted)';
   return `<span style="display: inline-block; padding: 0.2rem 0.6rem; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; background: ${color}20; color: ${color}; border: 1px solid ${color};">${status}</span>`;
+}
+
+// View shipment details modal
+async function viewShipmentDetails(shipmentId) {
+  try {
+    const res = await fetch(`${API}/shipments/${shipmentId}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    
+    if (!data.success || !data.shipment) {
+      showToast('Shipment not found', true);
+      return;
+    }
+    
+    const s = data.shipment;
+    const modal = document.createElement('div');
+    modal.id = 'srViewShipmentModal';
+    modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+    
+    modal.innerHTML = `
+      <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 700px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin: 0;">Shipment Details</h3>
+          <button onclick="closeViewShipmentModal()" style="background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 1.5rem;">&times;</button>
+        </div>
+        
+        <div style="padding: 1rem; background: var(--subtle); margin-bottom: 1.5rem;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+              <div style="font-size: 0.7rem; color: var(--muted); margin-bottom: 0.3rem;">Status</div>
+              <div>${getStatusBadge(s.status)}</div>
+            </div>
+            <div>
+              <div style="font-size: 0.7rem; color: var(--muted); margin-bottom: 0.3rem;">Reel Status</div>
+              <div>${s.reel_status ? getStatusBadge(s.reel_status) : 'N/A'}</div>
+            </div>
+          </div>
+        </div>
+        
+        <div style="margin-bottom: 1.5rem;">
+          <h4 style="font-size: 0.7rem; color: var(--muted); margin-bottom: 0.5rem; text-transform: uppercase;">Ambassador</h4>
+          <div style="padding: 1rem; background: var(--subtle);">
+            <div style="font-weight: 600;">${s.influencers?.name || 'Unknown'}</div>
+            <div style="font-size: 0.75rem; color: var(--muted);">${s.influencers?.referral_code || ''}</div>
+            <div style="font-size: 0.75rem; color: var(--muted);">${s.influencers?.phone || ''}</div>
+          </div>
+        </div>
+        
+        <div style="margin-bottom: 1.5rem;">
+          <h4 style="font-size: 0.7rem; color: var(--muted); margin-bottom: 0.5rem; text-transform: uppercase;">Product</h4>
+          <div style="padding: 1rem; background: var(--subtle);">
+            <div style="font-weight: 600;">${s.product_title}</div>
+            <div style="font-size: 0.75rem; color: var(--muted);">Sent: ${new Date(s.sent_at || s.created_at).toLocaleDateString()}</div>
+            ${s.reel_due_date ? `<div style="font-size: 0.75rem; color: var(--muted);">Reel Due: ${new Date(s.reel_due_date).toLocaleDateString()}</div>` : ''}
+          </div>
+        </div>
+        
+        <div style="margin-bottom: 1.5rem;">
+          <h4 style="font-size: 0.7rem; color: var(--muted); margin-bottom: 0.5rem; text-transform: uppercase;">Shipping Address</h4>
+          <div style="padding: 1rem; background: var(--subtle); font-size: 0.75rem; line-height: 1.6;">
+            ${s.shipping_full_name || s.influencers?.name || ''}<br>
+            ${s.shipping_address_line1 || ''}<br>
+            ${s.shipping_address_line2 ? s.shipping_address_line2 + '<br>' : ''}
+            ${s.shipping_city || ''}, ${s.shipping_state || ''} ${s.shipping_pincode || ''}<br>
+            Phone: ${s.shipping_phone || s.influencers?.phone || ''}
+          </div>
+        </div>
+        
+        ${s.delhivery_awb ? `
+          <div style="margin-bottom: 1.5rem;">
+            <h4 style="font-size: 0.7rem; color: var(--muted); margin-bottom: 0.5rem; text-transform: uppercase;">Delhivery Tracking</h4>
+            <div style="padding: 1rem; background: #4facfe20; border-left: 3px solid #4facfe;">
+              <div style="font-size: 0.75rem; margin-bottom: 0.3rem;"><strong>AWB:</strong> ${s.delhivery_awb}</div>
+              ${s.delhivery_tracking_url ? `<a href="${s.delhivery_tracking_url}" target="_blank" style="color: #4facfe; font-size: 0.75rem;">Track Shipment →</a>` : ''}
+            </div>
+          </div>
+        ` : ''}
+        
+        ${s.notes ? `
+          <div style="margin-bottom: 1.5rem;">
+            <h4 style="font-size: 0.7rem; color: var(--muted); margin-bottom: 0.5rem; text-transform: uppercase;">Notes</h4>
+            <div style="padding: 1rem; background: var(--subtle); font-size: 0.75rem; line-height: 1.6;">${s.notes}</div>
+          </div>
+        ` : ''}
+        
+        ${s.status === 'shipped' && s.reel_status !== 'received' ? `
+          <div style="display: flex; gap: 0.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+            <button class="ia-btn ia-btn-primary" onclick="updateReelStatus('${s.id}', 'received')" style="padding: 0.5rem 1rem; font-size: 0.7rem;">Mark Reel Received</button>
+            <button class="ia-btn" onclick="updateReelStatus('${s.id}', 'overdue')" style="padding: 0.5rem 1rem; font-size: 0.7rem; color: var(--danger); border-color: var(--danger);">Mark Overdue</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+  } catch (e) {
+    console.error('View shipment details error:', e);
+    showToast('Failed to load shipment details', true);
+  }
+}
+
+// Close view shipment details modal
+function closeViewShipmentModal() {
+  const modal = document.getElementById('srViewShipmentModal');
+  if (modal) modal.remove();
+}
+
+// Update reel status
+async function updateReelStatus(shipmentId, newStatus) {
+  if (!confirm(`Mark reel as ${newStatus}?`)) return;
+  
+  try {
+    const res = await fetch(`${API}/shipments/${shipmentId}/reel-status`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ reelStatus: newStatus })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast(`Reel status updated to ${newStatus}`);
+      closeViewShipmentModal();
+      loadAllShipments();
+    } else {
+      showToast(data.error || 'Failed to update status', true);
+    }
+  } catch (e) {
+    showToast('Network error', true);
+  }
+}
+
+// Track shipment via Delhivery
+function trackShipment(awb) {
+  const url = `https://www.delhivery.com/track?wb=${awb}`;
+  window.open(url, '_blank');
 }
 
 function promptModal(title, message, buttons) {

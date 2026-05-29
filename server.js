@@ -212,6 +212,7 @@ const {
     updatePayoutStatus,
     getPayoutById,
     createShipment,
+    listShipments,
     listShipmentsByInfluencer,
     updateShipment,
     deleteShipment,
@@ -7923,6 +7924,182 @@ app.get('/api/influencer/:token/shopify-products', async (req, res) => {
     } catch (error) {
         console.error('Shopify products fetch error:', error);
         res.status(502).json({ error: 'Failed to fetch Shopify products' });
+    }
+});
+
+// Admin: List all shipments (for Shipments & Reels page)
+app.get('/api/influencer-admin/shipments', authenticateAdmin, async (req, res) => {
+    try {
+        const shipments = await listShipments();
+        
+        // Enrich with influencer data
+        const enriched = await Promise.all(
+            shipments.map(async (s) => {
+                const influencer = await getInfluencerById(s.influencer_id);
+                return {
+                    ...s,
+                    influencers: influencer ? {
+                        name: influencer.name,
+                        referral_code: influencer.referral_code,
+                        phone: influencer.phone
+                    } : null
+                };
+            })
+        );
+        
+        res.json({ success: true, shipments: enriched });
+    } catch (error) {
+        console.error('List shipments error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipments' });
+    }
+});
+
+// Admin: Get single shipment details
+app.get('/api/influencer-admin/shipments/:shipmentId', authenticateAdmin, async (req, res) => {
+    try {
+        const { shipmentId } = req.params;
+        const shipment = await getShipmentById(shipmentId);
+        
+        if (!shipment) {
+            return res.status(404).json({ error: 'Shipment not found' });
+        }
+        
+        // Enrich with influencer data
+        const influencer = await getInfluencerById(shipment.influencer_id);
+        const enriched = {
+            ...shipment,
+            influencers: influencer ? {
+                name: influencer.name,
+                referral_code: influencer.referral_code,
+                phone: influencer.phone
+            } : null
+        };
+        
+        res.json({ success: true, shipment: enriched });
+    } catch (error) {
+        console.error('Get shipment error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipment' });
+    }
+});
+
+// Admin: Update reel status
+app.post('/api/influencer-admin/shipments/:shipmentId/reel-status', authenticateAdmin, async (req, res) => {
+    try {
+        const { shipmentId } = req.params;
+        const { reelStatus } = req.body;
+        
+        if (!['pending', 'received', 'overdue', 'submitted'].includes(reelStatus)) {
+            return res.status(400).json({ error: 'Invalid reel status' });
+        }
+        
+        const updated = await updateShipment(shipmentId, {
+            reel_status: reelStatus,
+            reel_received_at: reelStatus === 'received' ? new Date().toISOString() : null
+        });
+        
+        res.json({ success: true, shipment: updated });
+    } catch (error) {
+        console.error('Update reel status error:', error);
+        res.status(500).json({ error: 'Failed to update reel status' });
+    }
+});
+
+// Admin: Create manual shipment with Delhivery booking
+app.post('/api/influencer-admin/shipments/manual', authenticateAdmin, async (req, res) => {
+    try {
+        const {
+            influencerId,
+            productTitle,
+            reelDueDate,
+            isMonthlyTarget,
+            shippingFullName,
+            shippingAddressLine1,
+            shippingAddressLine2,
+            shippingCity,
+            shippingState,
+            shippingPincode,
+            shippingPhone,
+            notes
+        } = req.body;
+        
+        // Validate required fields
+        if (!influencerId || !productTitle || !reelDueDate || !shippingFullName || 
+            !shippingAddressLine1 || !shippingCity || !shippingState || !shippingPincode || !shippingPhone) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        
+        // Validate pincode format
+        if (!/^[0-9]{6}$/.test(shippingPincode)) {
+            return res.status(400).json({ error: 'Invalid pincode format' });
+        }
+        
+        // Validate phone format
+        if (!/^[0-9]{10}$/.test(shippingPhone)) {
+            return res.status(400).json({ error: 'Invalid phone number format' });
+        }
+        
+        // Get influencer for Delhivery booking
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+        
+        // Create shipment record
+        const shipmentData = {
+            influencer_id: influencerId,
+            product_title: productTitle,
+            reel_due_date: reelDueDate,
+            is_monthly_target: isMonthlyTarget === true || isMonthlyTarget === 'true',
+            shipping_full_name: shippingFullName,
+            shipping_address_line1: shippingAddressLine1,
+            shipping_address_line2: shippingAddressLine2 || null,
+            shipping_city: shippingCity,
+            shipping_state: shippingState,
+            shipping_pincode: shippingPincode,
+            shipping_phone: shippingPhone,
+            notes: notes || null,
+            sent_at: new Date().toISOString(),
+            status: 'shipped'
+        };
+        
+        const shipment = await createShipment(shipmentData);
+        
+        // Auto-book via Delhivery
+        let delhiveryResult = null;
+        try {
+            const delhiveryShipmentData = {
+                requestId: `INF-${shipment.id.substring(0, 8)}`,
+                customerName: shippingFullName,
+                customerAddress: shippingAddressLine1,
+                customerCity: shippingCity,
+                customerState: shippingState,
+                customerPincode: shippingPincode,
+                customerPhone: shippingPhone,
+                items: [{ name: productTitle, quantity: 1, price: 0 }]
+            };
+            
+            delhiveryResult = await createDelhiveryForwardOrder(delhiveryShipmentData, null);
+            
+            // Update shipment with Delhivery details
+            if (delhiveryResult && delhiveryResult.waybill) {
+                await updateShipment(shipment.id, {
+                    delhivery_awb: delhiveryResult.waybill,
+                    delhivery_shipment_id: delhiveryResult.shipment_id
+                });
+            }
+        } catch (delhiveryError) {
+            console.error('Delhivery booking failed for manual shipment:', delhiveryError);
+            // Don't fail the request, shipment is created even if Delhivery fails
+        }
+        
+        res.json({ 
+            success: true, 
+            shipment,
+            delhivery: delhiveryResult
+        });
+    } catch (error) {
+        console.error('Create manual shipment error:', error);
+        res.status(500).json({ error: 'Failed to create shipment' });
     }
 });
 

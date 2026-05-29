@@ -808,6 +808,7 @@ module.exports = {
 
     // Influencer Shipments (Analytics)
     createShipment,
+    listShipments,
     listShipmentsByInfluencer,
     updateShipment,
     deleteShipment,
@@ -849,6 +850,16 @@ async function createShipment(data) {
         .single();
     if (error) throw error;
     return row;
+}
+
+async function listShipments() {
+    const supabase = require('./supabase');
+    const { data, error } = await supabase
+        .from('influencer_product_shipments')
+        .select('*')
+        .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
 }
 
 async function listShipmentsByInfluencer(influencerId) {
