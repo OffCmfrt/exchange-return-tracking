@@ -7869,6 +7869,63 @@ app.get('/api/influencer/product-requests/:token', async (req, res) => {
     }
 });
 
+// Influencer: Browse Shopify products (inventory)
+app.get('/api/influencer/:token/shopify-products', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { search, limit = 20, page = 1 } = req.query;
+        
+        // Verify influencer exists
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid token' });
+        }
+        
+        let endpoint = `products.json?limit=${Math.min(parseInt(limit), 50)}&page=${parseInt(page)}`;
+        if (search) {
+            endpoint += `&title=${encodeURIComponent(search)}`;
+        }
+        
+        const shopifyData = await shopifyAPI(endpoint);
+        
+        const products = (shopifyData.products || []).map(p => ({
+            id: p.id,
+            shopifyId: p.id,
+            title: p.title,
+            handle: p.handle,
+            description: p.body_html ? p.body_html.replace(/<[^>]*>/g, '').substring(0, 200) : '',
+            images: (p.images || []).slice(0, 3).map(img => ({
+                src: img.src,
+                alt: img.alt || p.title
+            })),
+            variants: (p.variants || []).map(v => ({
+                id: v.id,
+                title: v.title,
+                price: v.price,
+                sku: v.sku,
+                inventoryQuantity: v.inventory_quantity || 0,
+                available: v.available || true
+            })),
+            productType: p.product_type,
+            vendor: p.vendor,
+            tags: p.tags || []
+        }));
+        
+        res.json({
+            success: true,
+            products,
+            pagination: {
+                currentPage: parseInt(page),
+                hasNextPage: products.length >= parseInt(limit),
+                totalProducts: shopifyData.products?.length || 0
+            }
+        });
+    } catch (error) {
+        console.error('Shopify products fetch error:', error);
+        res.status(502).json({ error: 'Failed to fetch Shopify products' });
+    }
+});
+
 // ==================== ERROR HANDLING ====================
 
 // 404 handler

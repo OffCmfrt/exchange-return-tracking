@@ -1641,8 +1641,169 @@ async function loadMyProductRequests() {
 }
 
 // Browse inventory (placeholder)
-function browseInventory() {
-  alert('Inventory browsing feature coming soon! For now, manually enter product details in the request form.');
+// Browse Inventory - Complete product browsing modal
+async function browseInventory() {
+  const modal = document.createElement('div');
+  modal.id = 'ipBrowseInventoryModal';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+  
+  modal.innerHTML = `
+    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 900px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin: 0;">Browse Inventory</h3>
+        <button onclick="closeBrowseInventoryModal()" style="background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 1.5rem; line-height: 1;">&times;</button>
+      </div>
+      
+      <div style="margin-bottom: 1.5rem;">
+        <div style="display: flex; gap: 1rem;">
+          <input type="text" id="ipInventorySearch" class="ip-auth-input" placeholder="Search products..." style="flex: 1;" onkeyup="if(event.key==='Enter') searchInventoryProducts()">
+          <button onclick="searchInventoryProducts()" style="padding: 0.8rem 1.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Search</button>
+        </div>
+      </div>
+      
+      <div id="ipInventoryGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; max-height: 500px; overflow-y: auto; padding: 0.5rem;">
+        <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);">
+          <p>Loading products...</p>
+        </div>
+      </div>
+      
+      <div style="padding: 1rem; background: var(--subtle); margin-top: 1.5rem; border-left: 3px solid var(--text);">
+        <p style="font-size: 0.7rem; color: var(--muted); margin: 0;">💡 Click "Request" on any product to submit a request to admin with your reason and shipping details.</p>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Auto-load products
+  searchInventoryProducts();
+}
+
+function closeBrowseInventoryModal() {
+  const modal = document.getElementById('ipBrowseInventoryModal');
+  if (modal) modal.remove();
+}
+
+async function searchInventoryProducts() {
+  const search = document.getElementById('ipInventorySearch').value;
+  const grid = document.getElementById('ipInventoryGrid');
+  
+  try {
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><p>Searching...</p></div>';
+    
+    const res = await fetch(`${PORTAL_API}/shopify-products?search=${encodeURIComponent(search)}&limit=20`);
+    const data = await res.json();
+    
+    if (!data.success || !data.products || data.products.length === 0) {
+      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><p>No products found</p></div>';
+      return;
+    }
+    
+    grid.innerHTML = data.products.map(p => {
+      const imageUrl = p.images[0]?.src || '';
+      const price = p.variants[0]?.price || '0';
+      const title = p.title;
+      const productId = p.id;
+      
+      return `
+        <div style="border: 1px solid var(--border); background: var(--bg); overflow: hidden; display: flex; flex-direction: column;">
+          ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 180px; object-fit: cover; background: var(--subtle);">` : '<div style="width: 100%; height: 180px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.7rem;">No Image</div>'}
+          <div style="padding: 0.75rem; flex: 1; display: flex; flex-direction: column;">
+            <div style="font-weight: 600; font-size: 0.75rem; margin-bottom: 0.4rem; line-height: 1.3; flex: 1;">${portalEsc(title)}</div>
+            <div style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0.75rem;">₹${price}</div>
+            <button onclick="requestProductFromInventory(${productId}, '${title.replace(/'/g, "\\'")}', '${imageUrl}')" style="width: 100%; padding: 0.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">
+              Request This Product
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    console.error('Search inventory error:', e);
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--danger);"><p>Failed to load products</p></div>';
+  }
+}
+
+function requestProductFromInventory(productId, productTitle, imageUrl) {
+  // Close inventory modal
+  closeBrowseInventoryModal();
+  
+  // Open product request modal with pre-filled data
+  setTimeout(() => {
+    openProductRequestModalWithProduct(productTitle, imageUrl);
+  }, 200);
+}
+
+function openProductRequestModalWithProduct(productTitle, imageUrl) {
+  const modal = document.createElement('div');
+  modal.id = 'ipProductRequestModal';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+  
+  modal.innerHTML = `
+    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+      <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1.5rem;">Request Product</h3>
+      
+      ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 150px; object-fit: cover; margin-bottom: 1rem; border: 1px solid var(--border);">` : ''}
+      
+      <div class="ip-auth-group">
+        <label for="prProductTitle">Product Title *</label>
+        <input type="text" id="prProductTitle" class="ip-auth-input" value="${portalEsc(productTitle)}" readonly style="background: var(--subtle); cursor: not-allowed;">
+      </div>
+      
+      <div class="ip-auth-group">
+        <label for="prReason">Why do you need this product? * (min 10 characters)</label>
+        <textarea id="prReason" class="ip-auth-input" rows="4" placeholder="I need this product for my upcoming reel about..." required style="resize: vertical;"></textarea>
+      </div>
+      
+      <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+        <p style="font-size: 0.7rem; color: var(--muted); margin-bottom: 1rem;">Shipping Address</p>
+        
+        <div class="ip-auth-group">
+          <label for="prFullName">Full Name *</label>
+          <input type="text" id="prFullName" class="ip-auth-input" placeholder="Rahul Sharma" required>
+        </div>
+        
+        <div class="ip-auth-group">
+          <label for="prAddress1">Address Line 1 *</label>
+          <input type="text" id="prAddress1" class="ip-auth-input" placeholder="123 Main Street" required>
+        </div>
+        
+        <div class="ip-auth-group">
+          <label for="prAddress2">Address Line 2 (optional)</label>
+          <input type="text" id="prAddress2" class="ip-auth-input" placeholder="Apt 4B">
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="ip-auth-group">
+            <label for="prCity">City *</label>
+            <input type="text" id="prCity" class="ip-auth-input" placeholder="Mumbai" required>
+          </div>
+          <div class="ip-auth-group">
+            <label for="prState">State *</label>
+            <input type="text" id="prState" class="ip-auth-input" placeholder="Maharashtra" required>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="ip-auth-group">
+            <label for="prPincode">Pincode * (6 digits)</label>
+            <input type="text" id="prPincode" class="ip-auth-input" placeholder="400001" maxlength="6" required>
+          </div>
+          <div class="ip-auth-group">
+            <label for="prPhone">Phone * (10 digits)</label>
+            <input type="text" id="prPhone" class="ip-auth-input" placeholder="9876543210" maxlength="10" required>
+          </div>
+        </div>
+      </div>
+      
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button onclick="closeProductRequestModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
+        <button onclick="submitProductRequest()" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Submit Request</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
 }
 
 // Helper: Get month name
