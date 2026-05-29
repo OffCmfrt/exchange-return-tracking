@@ -410,6 +410,78 @@ body, html { background: var(--bg); }
   animation: fadeUp 0.6s 0.3s ease both;
 }
 
+/* ── PORTAL SECTIONS ── */
+.ip-section {
+  margin-top: 2.5rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  animation: fadeUp 0.6s ease both;
+}
+.ip-section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.ip-section-header h3 {
+  font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.ip-ship-list { padding: 0; }
+.ip-ship-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap; gap: 0.5rem;
+}
+.ip-ship-item:last-child { border-bottom: none; }
+.ip-ship-info { flex: 1; }
+.ip-ship-product { font-weight: 600; font-size: 0.85rem; }
+.ip-ship-dates { font-size: 0.7rem; color: var(--muted); margin-top: 0.25rem; }
+.ip-ship-actions { display: flex; gap: 0.5rem; align-items: center; }
+.ip-ship-input {
+  padding: 0.4rem 0.6rem; font-size: 0.7rem; background: var(--surface-2);
+  border: 1px solid var(--border); color: var(--text); width: 180px;
+}
+.ip-ship-submit {
+  padding: 0.4rem 0.7rem; font-size: 0.65rem; background: var(--text);
+  border: none; color: var(--bg); cursor: pointer; letter-spacing: 0.05em;
+  text-transform: uppercase; font-weight: 600;
+}
+.ip-badge {
+  display: inline-block; padding: 0.2rem 0.5rem; font-size: 0.6rem;
+  letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600;
+}
+.ip-badge.pending { background: #f59e0b; color: #000; }
+.ip-badge.received { background: #22c55e; color: #fff; }
+.ip-badge.overdue { background: #ff3b3b; color: #fff; }
+.ip-badge.paid { background: #22c55e; color: #fff; }
+.ip-badge.unpaid { background: #555; color: #fff; }
+
+.ip-payout-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.ip-payout-table th {
+  text-align: left; padding: 0.75rem 1.5rem; font-size: 0.6rem;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.ip-payout-table td { padding: 0.7rem 1.5rem; border-bottom: 1px solid var(--border); }
+.ip-payout-table tr:last-child td { border-bottom: none; }
+
+.ip-lb-table { width: 100%; border-collapse: collapse; }
+.ip-lb-table th {
+  text-align: left; padding: 0.75rem 1.5rem; font-size: 0.6rem;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.ip-lb-table td { padding: 0.75rem 1.5rem; border-bottom: 1px solid var(--border); font-size: 0.8rem; }
+.ip-lb-table tr:last-child td { border-bottom: none; }
+.ip-lb-table tr.highlight { background: var(--surface-2); }
+.ip-lb-rank {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--subtle); font-size: 0.65rem; font-weight: 700;
+}
+.ip-lb-rank.top1 { background: var(--text); color: var(--bg); }
+.ip-empty { text-align: center; padding: 2rem; color: var(--muted); font-size: 0.75rem; }
+
 /* ── ANIMATIONS ── */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(16px); }
@@ -534,6 +606,42 @@ body, html { background: var(--bg); }
         <div class="ip-feed-empty">
           <span class="ip-stat-loading" style="width:60px;"></span>
         </div>
+      </div>
+    </section>
+
+    <!-- My Shipments & Reels -->
+    <section class="ip-section">
+      <div class="ip-section-header">
+        <h3>My Shipments & Reels</h3>
+      </div>
+      <div class="ip-ship-list" id="ipShipmentsList">
+        <div class="ip-empty">Loading...</div>
+      </div>
+    </section>
+
+    <!-- My Payouts -->
+    <section class="ip-section">
+      <div class="ip-section-header">
+        <h3>My Payouts</h3>
+      </div>
+      <div style="overflow-x: auto;">
+        <table class="ip-payout-table">
+          <thead><tr><th>Month</th><th>Orders</th><th>Revenue</th><th>Commission</th><th>Amount Due</th><th>Status</th></tr></thead>
+          <tbody id="ipPayoutsBody"><tr><td colspan="6" class="ip-empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Leaderboard -->
+    <section class="ip-section">
+      <div class="ip-section-header">
+        <h3>Leaderboard</h3>
+      </div>
+      <div style="overflow-x: auto;">
+        <table class="ip-lb-table">
+          <thead><tr><th>Rank</th><th>Name</th><th>Code</th><th>Revenue</th><th>Orders</th></tr></thead>
+          <tbody id="ipLeaderboardBody"><tr><td colspan="5" class="ip-empty">Loading...</td></tr></tbody>
+        </table>
       </div>
     </section>
 
@@ -810,6 +918,120 @@ window.initializeSelections = function() {
   console.log('Safety: initializeSelections mock called.');
   return;
 };
+
+// ─── PORTAL SECTIONS ─────────────────────────────────────────────────────────
+function portalEsc(str) { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function portalFmt(n) { return parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+async function loadPortalShipments() {
+  try {
+    const res = await fetch(`${PORTAL_API}/shipments/${token}`);
+    const data = await res.json();
+    if (!data.success || !data.shipments || data.shipments.length === 0) {
+      document.getElementById('ipShipmentsList').innerHTML = '<div class="ip-empty">No shipments yet</div>';
+      return;
+    }
+    const list = document.getElementById('ipShipmentsList');
+    list.innerHTML = data.shipments.map(s => {
+      const sent = new Date(s.sent_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      const due = new Date(s.reel_due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      let actionHtml = '';
+      if (s.reel_status === 'pending' || s.reel_status === 'overdue') {
+        actionHtml = `<input type="text" class="ip-ship-input" id="reel-${s.id}" placeholder="Paste Reel URL">
+          <button class="ip-ship-submit" onclick="submitReelUrl(${s.id})">Submit</button>`;
+      } else {
+        actionHtml = s.reel_url ? `<a href="${portalEsc(s.reel_url)}" target="_blank" style="color: var(--text); font-size: 0.75rem;">View Reel</a>` : '';
+      }
+      return `
+        <div class="ip-ship-item">
+          <div class="ip-ship-info">
+            <div class="ip-ship-product">${portalEsc(s.product_title)}</div>
+            <div class="ip-ship-dates">Sent: ${sent} · Due: ${due}</div>
+          </div>
+          <div class="ip-ship-actions">
+            <span class="ip-badge ${s.reel_status}">${s.reel_status}</span>
+            ${actionHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    document.getElementById('ipShipmentsList').innerHTML = '<div class="ip-empty">Failed to load</div>';
+  }
+}
+
+async function submitReelUrl(shipmentId) {
+  const input = document.getElementById(`reel-${shipmentId}`);
+  const reelUrl = input.value.trim();
+  if (!reelUrl) { alert('Please paste a URL'); return; }
+  try {
+    const res = await fetch(`${PORTAL_API}/shipments/${token}/${shipmentId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reelUrl })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert('Reel submitted!');
+      loadPortalShipments();
+    } else { alert(data.error || 'Failed'); }
+  } catch (e) { alert('Network error'); }
+}
+
+async function loadPortalPayouts() {
+  try {
+    const res = await fetch(`${PORTAL_API}/payouts/${token}`);
+    const data = await res.json();
+    if (!data.success || !data.payouts || data.payouts.length === 0) {
+      document.getElementById('ipPayoutsBody').innerHTML = '<tr><td colspan="6" class="ip-empty">No payouts yet</td></tr>';
+      return;
+    }
+    document.getElementById('ipPayoutsBody').innerHTML = data.payouts.map(p => `
+      <tr>
+        <td>${p.month}</td>
+        <td>${p.orders_count || 0}</td>
+        <td>₹${portalFmt(parseFloat(p.revenue_amount || 0))}</td>
+        <td>${p.commission_rate}%</td>
+        <td style="font-weight: 700;">₹${portalFmt(parseFloat(p.amount_due || 0))}</td>
+        <td><span class="ip-badge ${p.status === 'paid' ? 'paid' : 'unpaid'}">${p.status}</span></td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    document.getElementById('ipPayoutsBody').innerHTML = '<tr><td colspan="6" class="ip-empty">Failed to load</td></tr>';
+  }
+}
+
+async function loadPortalLeaderboard() {
+  try {
+    const res = await fetch(`${PORTAL_API}/leaderboard/${token}?range=all&limit=10`);
+    const data = await res.json();
+    if (!data.success || !data.leaderboard || data.leaderboard.length === 0) {
+      document.getElementById('ipLeaderboardBody').innerHTML = '<tr><td colspan="5" class="ip-empty">No data</td></tr>';
+      return;
+    }
+    document.getElementById('ipLeaderboardBody').innerHTML = data.leaderboard.map(r => `
+      <tr class="${r.current_user ? 'highlight' : ''}">
+        <td><span class="ip-lb-rank ${r.rank === 1 ? 'top1' : ''}">${r.rank}</span></td>
+        <td style="font-weight: 600;">${portalEsc(r.name)} ${r.current_user ? '(You)' : ''}</td>
+        <td style="color: var(--muted); font-size: 0.7rem;">${portalEsc(r.referral_code)}</td>
+        <td style="font-weight: 700;">₹${portalFmt(r.revenue)}</td>
+        <td>${r.orders}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    document.getElementById('ipLeaderboardBody').innerHTML = '<tr><td colspan="5" class="ip-empty">Failed to load</td></tr>';
+  }
+}
+
+// Hook into boot
+const origShowPortal = showPortal;
+if (typeof showPortal === 'function') {
+  window.showPortal = function(...args) {
+    origShowPortal(...args);
+    loadPortalShipments();
+    loadPortalPayouts();
+    loadPortalLeaderboard();
+  };
+}
 </script>
 </body>
 </html>

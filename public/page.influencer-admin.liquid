@@ -771,6 +771,114 @@ html, body {
   animation: spin 0.8s linear infinite;
 }
 
+/* ── LEADERBOARD ── */
+.ia-leaderboard-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin-bottom: 2rem;
+}
+.ia-leaderboard-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.ia-leaderboard-header h3 {
+  font-size: 0.85rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.ia-lb-range-btns { display: flex; gap: 0.5rem; }
+.ia-lb-range-btn {
+  padding: 0.35rem 0.75rem; font-size: 0.7rem; letter-spacing: 0.05em;
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  cursor: pointer; transition: all var(--transition);
+}
+.ia-lb-range-btn.active, .ia-lb-range-btn:hover {
+  background: var(--text); color: var(--bg); border-color: var(--text);
+}
+.ia-lb-table { width: 100%; border-collapse: collapse; }
+.ia-lb-table th {
+  text-align: left; padding: 0.75rem 1.5rem; font-size: 0.6rem;
+  letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.ia-lb-table td {
+  padding: 0.85rem 1.5rem; font-size: 0.8rem; border-bottom: 1px solid var(--border);
+}
+.ia-lb-table tr:last-child td { border-bottom: none; }
+.ia-lb-rank {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--subtle); font-size: 0.7rem; font-weight: 700;
+}
+.ia-lb-rank.top1 { background: var(--text); color: var(--bg); }
+.ia-lb-name { font-weight: 600; }
+.ia-lb-revenue { font-weight: 700; }
+.ia-lb-empty { text-align: center; padding: 2rem; color: var(--muted); font-size: 0.8rem; }
+
+/* ── TABS ── */
+.ia-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; gap: 0; }
+.ia-tab-btn {
+  padding: 0.75rem 1.25rem; font-size: 0.7rem; letter-spacing: 0.1em;
+  text-transform: uppercase; background: transparent; border: none;
+  color: var(--muted); cursor: pointer; position: relative;
+  transition: color var(--transition);
+}
+.ia-tab-btn.active { color: var(--text); }
+.ia-tab-btn.active::after {
+  content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+  height: 2px; background: var(--text);
+}
+.ia-tab-content { display: none; }
+.ia-tab-content.active { display: block; }
+
+/* ── MONTHLY BARS ── */
+.ia-monthly-bars { margin-top: 1.5rem; }
+.ia-monthly-bar-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+.ia-monthly-bar-label { width: 70px; font-size: 0.7rem; color: var(--muted); text-align: right; }
+.ia-monthly-bar-track { flex: 1; height: 20px; background: var(--surface-2); position: relative; }
+.ia-monthly-bar-fill { height: 100%; background: var(--text); transition: width 0.5s ease; }
+.ia-monthly-bar-value { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 0.65rem; font-weight: 700; }
+
+/* ── SHIPMENT TABLE ── */
+.ia-ship-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.ia-ship-table th {
+  text-align: left; padding: 0.6rem 0.75rem; font-size: 0.6rem;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.ia-ship-table td { padding: 0.7rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.ia-ship-table tr:last-child td { border-bottom: none; }
+.ia-ship-actions { display: flex; gap: 0.4rem; }
+.ia-ship-btn-sm {
+  padding: 0.25rem 0.5rem; font-size: 0.6rem; background: transparent;
+  border: 1px solid var(--border); color: var(--muted); cursor: pointer;
+  transition: all var(--transition);
+}
+.ia-ship-btn-sm:hover { background: var(--text); color: var(--bg); }
+
+/* ── PAYOUT TABLE ── */
+.ia-payout-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.ia-payout-table th {
+  text-align: left; padding: 0.6rem 0.75rem; font-size: 0.6rem;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.ia-payout-table td { padding: 0.7rem 0.75rem; border-bottom: 1px solid var(--border); }
+.ia-payout-table tr:last-child td { border-bottom: none; }
+.ia-payout-toggle {
+  padding: 0.3rem 0.6rem; font-size: 0.65rem; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--muted);
+  transition: all var(--transition);
+}
+.ia-payout-toggle.paid { background: var(--success); color: #fff; border-color: var(--success); }
+
+/* ── BADGES ── */
+.ia-badge { display: inline-block; padding: 0.2rem 0.5rem; font-size: 0.6rem; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; }
+.ia-badge.pending { background: var(--warning); color: #000; }
+.ia-badge.received { background: var(--success); color: #fff; }
+.ia-badge.overdue { background: var(--danger); color: #fff; }
+.ia-badge.paid { background: var(--success); color: #fff; }
+.ia-badge.unpaid { background: var(--muted); color: #fff; }
+
 @media (max-width: 768px) {
   .ia-stats-grid { grid-template-columns: repeat(2, 1fr); }
   .ia-range-buttons { flex-wrap: wrap; }
@@ -1001,6 +1109,21 @@ html, body {
           </div>
         </div>
 
+        <!-- Leaderboard -->
+        <div class="ia-leaderboard-card">
+          <div class="ia-leaderboard-header">
+            <h3>Top Performers</h3>
+            <div class="ia-lb-range-btns">
+              <button class="ia-lb-range-btn active" data-lbrange="30d" onclick="loadLeaderboard('30d', this)">30D</button>
+              <button class="ia-lb-range-btn" data-lbrange="90d" onclick="loadLeaderboard('90d', this)">90D</button>
+              <button class="ia-lb-range-btn" data-lbrange="all" onclick="loadLeaderboard('all', this)">All</button>
+            </div>
+          </div>
+          <div id="leaderboardBody">
+            <div class="ia-lb-empty">Loading leaderboard...</div>
+          </div>
+        </div>
+
         <!-- Table Section -->
         <div class="ia-section-header">
           <span class="ia-section-title">All Ambassadors</span>
@@ -1164,35 +1287,92 @@ html, body {
         </div>
       </div>
 
-      <!-- Stats Grid -->
-      <div class="ia-stats-grid" id="statsGrid">
-        <div class="ia-stat-box">
-          <div class="ia-stat-box-label">Total Revenue</div>
-          <div class="ia-stat-box-value" id="statTotalRevenue">—</div>
+      <!-- Tabs -->
+      <div class="ia-tabs">
+        <button class="ia-tab-btn active" data-tab="overview" onclick="switchTab('overview', this)">Overview</button>
+        <button class="ia-tab-btn" data-tab="shipments" onclick="switchTab('shipments', this)">Shipments & Reels</button>
+        <button class="ia-tab-btn" data-tab="payouts" onclick="switchTab('payouts', this)">Payouts</button>
+      </div>
+
+      <!-- Tab 1: Overview -->
+      <div class="ia-tab-content active" id="tab-overview">
+        <!-- Stats Grid -->
+        <div class="ia-stats-grid" id="statsGrid">
+          <div class="ia-stat-box">
+            <div class="ia-stat-box-label">Total Revenue</div>
+            <div class="ia-stat-box-value" id="statTotalRevenue">—</div>
+          </div>
+          <div class="ia-stat-box">
+            <div class="ia-stat-box-label">Total Orders</div>
+            <div class="ia-stat-box-value" id="statTotalOrders">—</div>
+          </div>
+          <div class="ia-stat-box">
+            <div class="ia-stat-box-label">Avg. Order Value</div>
+            <div class="ia-stat-box-value" id="statAov">—</div>
+          </div>
+          <div class="ia-stat-box highlight">
+            <div class="ia-stat-box-label">Estimated Earnings</div>
+            <div class="ia-stat-box-value" id="statEarnings">—</div>
+            <div class="ia-stat-box-sub" id="statCommissionRate">—</div>
+          </div>
         </div>
-        <div class="ia-stat-box">
-          <div class="ia-stat-box-label">Total Orders</div>
-          <div class="ia-stat-box-value" id="statTotalOrders">—</div>
-        </div>
-        <div class="ia-stat-box">
-          <div class="ia-stat-box-label">Avg. Order Value</div>
-          <div class="ia-stat-box-value" id="statAov">—</div>
-        </div>
-        <div class="ia-stat-box highlight">
-          <div class="ia-stat-box-label">Estimated Earnings</div>
-          <div class="ia-stat-box-value" id="statEarnings">—</div>
-          <div class="ia-stat-box-sub" id="statCommissionRate">—</div>
+
+        <!-- Monthly Revenue Bars -->
+        <div class="ia-monthly-bars" id="monthlyBars"></div>
+
+        <!-- Conversions List -->
+        <div class="ia-conversions-section">
+          <div class="ia-section-header" style="margin-top: 2rem;">
+            <span class="ia-section-title">Recent Conversions</span>
+            <span id="statsConversionsCount" style="font-size: 0.65rem; color: var(--muted);"></span>
+          </div>
+          <div class="ia-conversions-list" id="statsConversionsList">
+            <div class="ia-conversion-empty">Select a date range to view conversions</div>
+          </div>
         </div>
       </div>
 
-      <!-- Conversions List -->
-      <div class="ia-conversions-section">
-        <div class="ia-section-header" style="margin-top: 2rem;">
-          <span class="ia-section-title">Recent Conversions</span>
-          <span id="statsConversionsCount" style="font-size: 0.65rem; color: var(--muted);"></span>
+      <!-- Tab 2: Shipments & Reels -->
+      <div class="ia-tab-content" id="tab-shipments">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <span style="font-size: 0.75rem; color: var(--muted);">Product shipments and reel tracking</span>
+          <button class="ia-btn ia-btn-primary" onclick="openAddShipmentForm()" style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">
+            + Add Shipment
+          </button>
         </div>
-        <div class="ia-conversions-list" id="statsConversionsList">
-          <div class="ia-conversion-empty">Select a date range to view conversions</div>
+        <div id="addShipmentForm" style="display: none; margin-bottom: 1.5rem; padding: 1rem; border: 1px solid var(--border); background: var(--surface-2);">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div><label style="font-size: 0.65rem; color: var(--muted);">Product Title</label><input type="text" id="shipProductTitle" class="ia-input" placeholder="e.g. Classic T-Shirt"></div>
+            <div><label style="font-size: 0.65rem; color: var(--muted);">Sent At</label><input type="date" id="shipSentAt" class="ia-input"></div>
+            <div><label style="font-size: 0.65rem; color: var(--muted);">Reel Due Date</label><input type="date" id="shipDueDate" class="ia-input"></div>
+            <div><label style="font-size: 0.65rem; color: var(--muted);">Image URL (optional)</label><input type="text" id="shipImage" class="ia-input" placeholder="https://..."></div>
+          </div>
+          <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+            <button class="ia-btn ia-btn-primary" onclick="submitShipment()" style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">Save</button>
+            <button class="ia-btn ia-btn-ghost" onclick="closeAddShipmentForm()" style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">Cancel</button>
+          </div>
+        </div>
+        <div style="overflow-x: auto;">
+          <table class="ia-ship-table">
+            <thead><tr><th>Product</th><th>Sent</th><th>Due</th><th>Status</th><th>Reel URL</th><th>Actions</th></tr></thead>
+            <tbody id="shipmentsTableBody"><tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--muted);">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 3: Payouts -->
+      <div class="ia-tab-content" id="tab-payouts">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <span style="font-size: 0.75rem; color: var(--muted);">Monthly commission payouts</span>
+          <button class="ia-btn ia-btn-primary" onclick="generatePayouts()" style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">
+            Generate Payouts
+          </button>
+        </div>
+        <div style="overflow-x: auto;">
+          <table class="ia-payout-table">
+            <thead><tr><th>Month</th><th>Orders</th><th>Revenue</th><th>Commission %</th><th>Amount Due</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="payoutsTableBody"><tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--muted);">Loading...</td></tr></tbody>
+          </table>
         </div>
       </div>
 
@@ -1844,6 +2024,222 @@ async function syncShopifyUsage() {
     }, 3000);
   }
 }
-</script>
+
+// ─── LEADERBOARD ─────────────────────────────────────────────────────────────
+async function loadLeaderboard(range = '30d', btnEl) {
+  if (btnEl) {
+    document.querySelectorAll('.ia-lb-range-btn').forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+  }
+  const body = document.getElementById('leaderboardBody');
+  body.innerHTML = '<div class="ia-lb-empty">Loading...</div>';
+  try {
+    const res = await fetch(`${API}/leaderboard?range=${range}&limit=10`, { headers: { 'Authorization': `Bearer ${authToken}` }});
+    const data = await res.json();
+    if (!data.success || !data.leaderboard || data.leaderboard.length === 0) {
+      body.innerHTML = '<div class="ia-lb-empty">No data available</div>';
+      return;
+    }
+    const maxRevenue = Math.max(...data.leaderboard.map(r => r.revenue), 1);
+    body.innerHTML = `
+      <table class="ia-lb-table">
+        <thead><tr><th>Rank</th><th>Name</th><th>Code</th><th>Revenue</th><th>Orders</th></tr></thead>
+        <tbody>${data.leaderboard.map(r => `
+          <tr>
+            <td><span class="ia-lb-rank ${r.rank === 1 ? 'top1' : ''}">${r.rank}</span></td>
+            <td class="ia-lb-name">${esc(r.name)}</td>
+            <td style="color: var(--muted); font-size: 0.75rem;">${esc(r.referral_code)}</td>
+            <td class="ia-lb-revenue">₹${fmt(r.revenue)}</td>
+            <td>${r.orders}</td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    console.error('Leaderboard error:', e);
+    body.innerHTML = '<div class="ia-lb-empty">Failed to load</div>';
+  }
+}
+
+// ─── TABS ────────────────────────────────────────────────────────────────────
+function switchTab(tabName, btnEl) {
+  document.querySelectorAll('.ia-tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.ia-tab-content').forEach(c => c.classList.remove('active'));
+  btnEl.classList.add('active');
+  document.getElementById(`tab-${tabName}`).classList.add('active');
+}
+
+// ─── ANALYTICS LOADER ────────────────────────────────────────────────────────
+let currentAnalyticsInfluencerId = null;
+async function loadAnalytics(id) {
+  currentAnalyticsInfluencerId = id;
+  try {
+    const res = await fetch(`${API}/analytics/${id}?range=all`, { headers: { 'Authorization': `Bearer ${authToken}` }});
+    const data = await res.json();
+    if (!data.success) return;
+
+    // Update overview stats
+    document.getElementById('statTotalRevenue').textContent = `₹${fmt(data.summary.totalRevenue)}`;
+    document.getElementById('statTotalOrders').textContent = data.summary.totalOrders;
+    document.getElementById('statAov').textContent = `₹${fmt(data.summary.aov)}`;
+    document.getElementById('statEarnings').textContent = `₹${fmt(data.summary.estimatedEarnings)}`;
+    document.getElementById('statCommissionRate').textContent = `${data.summary.commissionRate}% commission`;
+
+    // Monthly bars
+    renderMonthlyBars(data.monthly);
+
+    // Shipments
+    renderShipmentsTable(data.shipments.items);
+
+    // Payouts
+    renderPayoutsTable(data.payouts.items);
+  } catch (e) {
+    console.error('Analytics load error:', e);
+  }
+}
+
+function renderMonthlyBars(monthly) {
+  const container = document.getElementById('monthlyBars');
+  if (!monthly || monthly.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding: 1rem; color: var(--muted); font-size: 0.75rem;">No monthly data</div>';
+    return;
+  }
+  const maxRev = Math.max(...monthly.map(m => m.revenue), 1);
+  const top6 = monthly.slice(0, 6).reverse();
+  container.innerHTML = top6.map(m => `
+    <div class="ia-monthly-bar-row">
+      <div class="ia-monthly-bar-label">${m.month}</div>
+      <div class="ia-monthly-bar-track">
+        <div class="ia-monthly-bar-fill" style="width: ${(m.revenue / maxRev * 100).toFixed(1)}%;"></div>
+        <div class="ia-monthly-bar-value">₹${fmt(m.revenue)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── SHIPMENTS ───────────────────────────────────────────────────────────────
+function openAddShipmentForm() { document.getElementById('addShipmentForm').style.display = 'block'; }
+function closeAddShipmentForm() { document.getElementById('addShipmentForm').style.display = 'none'; }
+
+async function submitShipment() {
+  const productTitle = document.getElementById('shipProductTitle').value.trim();
+  const sentAt = document.getElementById('shipSentAt').value;
+  const reelDueDate = document.getElementById('shipDueDate').value;
+  const productImageUrl = document.getElementById('shipImage').value.trim();
+  if (!productTitle || !sentAt || !reelDueDate) { showToast('Fill all required fields', true); return; }
+  try {
+    const res = await fetch(`${API}/shipments/${currentAnalyticsInfluencerId}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ productTitle, sentAt, reelDueDate, productImageUrl })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Shipment added');
+      closeAddShipmentForm();
+      loadAnalytics(currentAnalyticsInfluencerId);
+    } else { showToast(data.error || 'Failed', true); }
+  } catch (e) { showToast('Network error', true); }
+}
+
+async function markShipmentReceived(shipmentId) {
+  const reelUrl = prompt('Enter Reel URL:');
+  if (!reelUrl) return;
+  try {
+    const res = await fetch(`${API}/shipments/${shipmentId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ reelUrl, reelStatus: 'received' })
+    });
+    const data = await res.json();
+    if (data.success) { showToast('Marked as received'); loadAnalytics(currentAnalyticsInfluencerId); }
+    else showToast(data.error || 'Failed', true);
+  } catch (e) { showToast('Network error', true); }
+}
+
+async function deleteShipmentItem(shipmentId) {
+  if (!confirm('Delete this shipment?')) return;
+  try {
+    const res = await fetch(`${API}/shipments/${shipmentId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${authToken}` }});
+    const data = await res.json();
+    if (data.success) { showToast('Deleted'); loadAnalytics(currentAnalyticsInfluencerId); }
+    else showToast(data.error || 'Failed', true);
+  } catch (e) { showToast('Network error', true); }
+}
+
+function renderShipmentsTable(items) {
+  const tbody = document.getElementById('shipmentsTableBody');
+  if (!items || items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--muted);">No shipments</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(s => `
+    <tr>
+      <td>${esc(s.product_title)}</td>
+      <td>${new Date(s.sent_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
+      <td>${new Date(s.reel_due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
+      <td><span class="ia-badge ${s.reel_status}">${s.reel_status}</span></td>
+      <td>${s.reel_url ? `<a href="${esc(s.reel_url)}" target="_blank" style="color: var(--text); font-size: 0.7rem;">View</a>` : '—'}</td>
+      <td class="ia-ship-actions">
+        ${s.reel_status !== 'received' ? `<button class="ia-ship-btn-sm" onclick="markShipmentReceived(${s.id})">Mark Received</button>` : ''}
+        <button class="ia-ship-btn-sm" onclick="deleteShipmentItem(${s.id})">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ─── PAYOUTS ─────────────────────────────────────────────────────────────────
+async function generatePayouts() {
+  const month = prompt('Enter month (YYYY-MM):', new Date().toISOString().substring(0, 7));
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) { showToast('Invalid format', true); return; }
+  try {
+    const res = await fetch(`${API.replace('/influencer-admin', '/influencer-admin')}/payouts/generate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ month })
+    });
+    const data = await res.json();
+    if (data.success) { showToast(`Generated ${data.generated} payouts`); loadAnalytics(currentAnalyticsInfluencerId); }
+    else showToast(data.error || 'Failed', true);
+  } catch (e) { showToast('Network error', true); }
+}
+
+async function togglePayoutStatus(payoutId, currentStatus) {
+  const newStatus = currentStatus === 'paid' ? 'pending' : 'paid';
+  try {
+    const res = await fetch(`${API}/payouts/item/${payoutId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ status: newStatus })
+    });
+    const data = await res.json();
+    if (data.success) { showToast(`Marked as ${newStatus}`); loadAnalytics(currentAnalyticsInfluencerId); }
+    else showToast(data.error || 'Failed', true);
+  } catch (e) { showToast('Network error', true); }
+}
+
+function renderPayoutsTable(items) {
+  const tbody = document.getElementById('payoutsTableBody');
+  if (!items || items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--muted);">No payouts generated</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(p => `
+    <tr>
+      <td>${p.month}</td>
+      <td>${p.orders_count || 0}</td>
+      <td>₹${fmt(parseFloat(p.revenue_amount || 0))}</td>
+      <td>${p.commission_rate}%</td>
+      <td style="font-weight: 700;">₹${fmt(parseFloat(p.amount_due || 0))}</td>
+      <td><span class="ia-badge ${p.status === 'paid' ? 'paid' : 'unpaid'}">${p.status}</span></td>
+      <td><button class="ia-payout-toggle ${p.status === 'paid' ? 'paid' : ''}" onclick="togglePayoutStatus(${p.id}, '${p.status}')">${p.status === 'paid' ? 'Paid ✓' : 'Mark Paid'}</button></td>
+    </tr>
+  `).join('');
+}
+
+// Hook viewInfluencerStats to also load analytics
+const origViewInfluencerStats = viewInfluencerStats;
+viewInfluencerStats = function(id) {
+  origViewInfluencerStats(id);
+  loadAnalytics(id);
+  loadLeaderboard('30d');
+};
+
 </body>
 </html>

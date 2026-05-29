@@ -1914,4 +1914,68 @@
         }, { passive: true });
     });
 
+    // ─── INFLUENCER LEADERBOARD ──────────────────────────────────────────────
+    async function loadInfluencerLeaderboard(range = '30d') {
+        try {
+            const res = await fetch(`${API_URL}/influencer-admin/leaderboard?range=${range}&limit=10`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.success || !data.leaderboard) return;
+            
+            // Check if leaderboard container exists, if not create one
+            let container = document.getElementById('influencerLeaderboard');
+            if (!container) {
+                // Create and prepend to main content
+                const main = document.querySelector('.main-content') || document.querySelector('main') || document.body;
+                container = document.createElement('div');
+                container.id = 'influencerLeaderboard';
+                container.style.cssText = 'margin: 1rem; padding: 1.5rem; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px;';
+                main.insertBefore(container, main.firstChild);
+            }
+            
+            if (data.leaderboard.length === 0) {
+                container.innerHTML = '<p style="color: #666; text-align: center; padding: 1rem;">No influencer data</p>';
+                return;
+            }
+            
+            container.innerHTML = `
+                <h3 style="margin-bottom: 1rem; font-size: 1rem; color: #fff;">Top Influencers (${range})</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #2a2a2a;">
+                            <th style="padding: 0.5rem; text-align: left; color: #888; font-size: 0.7rem;">Rank</th>
+                            <th style="padding: 0.5rem; text-align: left; color: #888; font-size: 0.7rem;">Name</th>
+                            <th style="padding: 0.5rem; text-align: left; color: #888; font-size: 0.7rem;">Code</th>
+                            <th style="padding: 0.5rem; text-align: right; color: #888; font-size: 0.7rem;">Revenue</th>
+                            <th style="padding: 0.5rem; text-align: right; color: #888; font-size: 0.7rem;">Orders</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.leaderboard.map(r => `
+                            <tr style="border-bottom: 1px solid #222;">
+                                <td style="padding: 0.5rem; font-weight: ${r.rank <= 3 ? '700' : '400'};">${r.rank}</td>
+                                <td style="padding: 0.5rem;">${escapeHtml(r.name)}</td>
+                                <td style="padding: 0.5rem; color: #888; font-size: 0.75rem;">${escapeHtml(r.referral_code)}</td>
+                                <td style="padding: 0.5rem; text-align: right; font-weight: 700;">₹${fmtNum(r.revenue)}</td>
+                                <td style="padding: 0.5rem; text-align: right;">${r.orders}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        } catch (e) {
+            console.error('Leaderboard load error:', e);
+        }
+    }
+
+    function escapeHtml(str) { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function fmtNum(n) { return parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+    // Load leaderboard on dashboard init
+    if (authToken) {
+        loadInfluencerLeaderboard('30d');
+    }
+
 </script>

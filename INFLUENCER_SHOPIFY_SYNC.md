@@ -106,3 +106,114 @@ If you get permission errors, regenerate your Shopify access token with the corr
 
 ### Old ambassadors not showing usage limit?
 Edit and save them once - this will backfill the Shopify discount code and sync the data.
+
+---
+
+# Influencer Analytics & Leaderboard
+
+## What's New
+
+Detailed analytics view for each influencer (accessible to both admin and influencer) + a leaderboard ranked by sales.
+
+## Features
+
+### 1. Product Shipments & Reel Tracking
+- Admin manually adds products sent to an influencer with a due date for reel submission
+- Influencer can submit their reel URL from the portal
+- Admin can mark reels as "Received" and attach URLs
+- Status badges: Pending, Received, Overdue (auto-computed when due date passes)
+
+### 2. Monthly Commission Payouts
+- One row per influencer per calendar month
+- Auto-calculated from `influencer_orders`: `amount_due = revenue * commission_rate / 100`
+- Admin clicks "Generate Payouts" for a given month (YYYY-MM)
+- Paid/Unpaid toggle per row with timestamp tracking
+
+### 3. Analytics Dashboard (3-Tab Modal)
+- **Overview**: Revenue, orders, AOV, estimated earnings + monthly bar chart + recent conversions
+- **Shipments & Reels**: Table of all products sent, due dates, reel status, actions
+- **Payouts**: Monthly payout history with paid/unpaid toggle
+
+### 4. Leaderboard
+- Top 10 influencers ranked by revenue
+- Range selector: 30 Days / 90 Days / All Time
+- Visible on: Admin Influencer Page, Influencer Portal, Admin Dashboard
+- Full names visible to everyone
+- Influencer portal highlights the current user's own row
+
+## Setup Instructions
+
+### 1. Run Database Migration
+Open your Supabase dashboard → SQL Editor → Run this file:
+```
+supabase_migration_influencer_analytics.sql
+```
+
+This creates 2 new tables:
+- `influencer_product_shipments` — tracks products sent to influencers and reel status
+- `influencer_payouts` — monthly commission payout ledger
+
+### 2. Deploy to Render
+Push to GitHub — Render will auto-deploy the new API routes.
+
+### 3. Test It
+1. Go to https://offcomfrt.in/pages/influencer-admin
+2. Click "View" on any influencer
+3. You'll see 3 tabs: Overview, Shipments & Reels, Payouts
+4. Add a shipment → Switch to Shipments tab → see it appear
+5. Click "Generate Payouts" → enter current month (e.g., 2026-05)
+6. Toggle Paid/Unpaid on any payout row
+7. Check the leaderboard widget above the ambassador table
+
+## New API Endpoints
+
+### Admin Routes (require `authenticateAdmin`)
+```
+POST   /api/influencer-admin/shipments/:influencerId     — Create shipment
+GET    /api/influencer-admin/shipments/:influencerId     — List shipments
+PATCH  /api/influencer-admin/shipments/:shipmentId       — Update shipment
+DELETE /api/influencer-admin/shipments/:shipmentId       — Delete shipment
+
+POST   /api/influencer-admin/payouts/generate            — Generate payouts for month (body: {month: 'YYYY-MM'})
+GET    /api/influencer-admin/payouts/:influencerId        — List payouts
+PATCH  /api/influencer-admin/payouts/:payoutId            — Toggle paid/pending (body: {status: 'paid'|'pending'})
+
+GET    /api/influencer-admin/analytics/:influencerId      — Full analytics (summary, monthly, shipments, payouts)
+GET    /api/influencer-admin/leaderboard                  — Top 10 influencers by revenue
+```
+
+### Influencer Routes (validate `link_token`)
+```
+PATCH  /api/influencer/shipments/:token/:shipmentId       — Submit reel URL (body: {reelUrl})
+GET    /api/influencer/shipments/:token                   — List own shipments
+GET    /api/influencer/payouts/:token                     — List own payouts
+GET    /api/influencer/analytics/:token                   — Full analytics
+GET    /api/influencer/leaderboard/:token                 — Leaderboard (highlights own row)
+```
+
+## Analytics Response Shape
+```json
+{
+  "influencer": { "id", "name", "referral_code", "commission_rate" },
+  "summary": { "totalRevenue", "totalOrders", "aov", "estimatedEarnings", "commissionRate" },
+  "monthly": [{ "month": "2026-04", "orders": 12, "revenue": 18000, "commission": 1800 }],
+  "shipments": { "total", "pending", "received", "overdue", "items": [...] },
+  "payouts": { "totalPaid", "totalPending", "items": [...] }
+}
+```
+
+## Troubleshooting
+
+### Shipments not appearing?
+1. Verify you ran `supabase_migration_influencer_analytics.sql`
+2. Check Supabase → `influencer_product_shipments` table exists
+3. Check browser console for API errors
+
+### Payouts showing zero?
+1. Ensure `influencer_orders` table has data for the selected month
+2. Check influencer's `commission_rate` is set
+3. Generate payouts for a month that actually has orders
+
+### Leaderboard empty?
+1. Check `influencer_orders` table has attributed orders
+2. Verify the date range has data (try "All" instead of "30D")

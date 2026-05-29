@@ -578,10 +578,157 @@ async function getInfluencerById(id) {
         .single();
 
     if (error) {
-        if (error.code === 'PGRST116') return null; // Not found
+        if (error.code === 'PGRST116') return null;
         throw error;
     }
     return data;
+}
+
+// ── Influencer Product Shipments ──
+
+async function createShipment(data) {
+    const { data: row, error } = await supabase
+        .from('influencer_product_shipments')
+        .insert([{
+            influencer_id: data.influencerId,
+            product_title: data.productTitle,
+            product_image_url: data.productImageUrl || null,
+            shopify_product_id: data.shopifyProductId || null,
+            sent_at: data.sentAt,
+            reel_due_date: data.reelDueDate,
+            reel_status: 'pending',
+            notes: data.notes || null
+        }])
+        .select()
+        .single();
+    if (error) throw error;
+    return row;
+}
+
+async function listShipmentsByInfluencer(influencerId) {
+    const { data, error } = await supabase
+        .from('influencer_product_shipments')
+        .select('*')
+        .eq('influencer_id', influencerId)
+        .order('sent_at', { ascending: false });
+    if (error) throw error;
+    return data;
+}
+
+async function updateShipment(shipmentId, updates) {
+    const updateData = {};
+    if (updates.productTitle !== undefined) updateData.product_title = updates.productTitle;
+    if (updates.productImageUrl !== undefined) updateData.product_image_url = updates.productImageUrl;
+    if (updates.shopifyProductId !== undefined) updateData.shopify_product_id = updates.shopifyProductId;
+    if (updates.sentAt !== undefined) updateData.sent_at = updates.sentAt;
+    if (updates.reelDueDate !== undefined) updateData.reel_due_date = updates.reelDueDate;
+    if (updates.reelStatus !== undefined) updateData.reel_status = updates.reelStatus;
+    if (updates.reelUrl !== undefined) updateData.reel_url = updates.reelUrl;
+    if (updates.reelReceivedAt !== undefined) updateData.reel_received_at = updates.reelReceivedAt;
+    if (updates.notes !== undefined) updateData.notes = updates.notes;
+    if (updates.reelStatus === 'received' && !updates.reelReceivedAt) {
+        updateData.reel_received_at = new Date().toISOString();
+    }
+
+    const { data: row, error } = await supabase
+        .from('influencer_product_shipments')
+        .update(updateData)
+        .eq('id', shipmentId)
+        .select()
+        .single();
+    if (error) throw error;
+    return row;
+}
+
+async function deleteShipment(shipmentId) {
+    const { error } = await supabase
+        .from('influencer_product_shipments')
+        .delete()
+        .eq('id', shipmentId);
+    if (error) throw error;
+    return { success: true };
+}
+
+async function getShipmentById(shipmentId) {
+    const { data, error } = await supabase
+        .from('influencer_product_shipments')
+        .select('*')
+        .eq('id', shipmentId)
+        .single();
+    if (error) {
+        if (error.code === 'PGRST116') return null;
+        throw error;
+    }
+    return data;
+}
+
+// ── Influencer Monthly Payouts ──
+
+async function listPayoutsByInfluencer(influencerId) {
+    const { data, error } = await supabase
+        .from('influencer_payouts')
+        .select('*')
+        .eq('influencer_id', influencerId)
+        .order('month', { ascending: false });
+    if (error) throw error;
+    return data;
+}
+
+async function upsertPayout(data) {
+    const { data: row, error } = await supabase
+        .from('influencer_payouts')
+        .upsert({
+            influencer_id: data.influencerId,
+            month: data.month,
+            orders_count: data.ordersCount,
+            revenue_amount: data.revenueAmount,
+            commission_rate: data.commissionRate,
+            amount_due: data.amountDue,
+            status: data.status || 'pending'
+        }, { onConflict: 'influencer_id,month' })
+        .select()
+        .single();
+    if (error) throw error;
+    return row;
+}
+
+async function updatePayoutStatus(payoutId, status, paidAt = null) {
+    const updateData = { status };
+    if (status === 'paid' && paidAt) {
+        updateData.paid_at = paidAt;
+    } else if (status === 'pending') {
+        updateData.paid_at = null;
+    }
+    const { data: row, error } = await supabase
+        .from('influencer_payouts')
+        .update(updateData)
+        .eq('id', payoutId)
+        .select()
+        .single();
+    if (error) throw error;
+    return row;
+}
+
+async function getPayoutById(payoutId) {
+    const { data, error } = await supabase
+        .from('influencer_payouts')
+        .select('*')
+        .eq('id', payoutId)
+        .single();
+    if (error) {
+        if (error.code === 'PGRST116') return null;
+        throw error;
+    }
+    return data;
+}
+
+async function listPayouts(influencerId) {
+    return listPayoutsByInfluencer(influencerId);
+}
+
+async function createPayout(data) {
+    // For backward compat with existing legacy route
+    return upsertPayout(data);
 }
 
 module.exports = {
@@ -603,5 +750,20 @@ module.exports = {
     updateInfluencer,
     deleteInfluencer,
     getInfluencerByToken,
-    getInfluencerById
+    getInfluencerById,
+
+    // Influencer Shipments
+    createShipment,
+    listShipmentsByInfluencer,
+    updateShipment,
+    deleteShipment,
+    getShipmentById,
+
+    // Influencer Payouts
+    listPayoutsByInfluencer,
+    upsertPayout,
+    updatePayoutStatus,
+    getPayoutById,
+    listPayouts,
+    createPayout
 };

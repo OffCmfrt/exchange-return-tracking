@@ -210,7 +210,14 @@ const {
     listPayouts,
     createPayout,
     updatePayoutStatus,
-    getPayoutById
+    getPayoutById,
+    createShipment,
+    listShipmentsByInfluencer,
+    updateShipment,
+    deleteShipment,
+    getShipmentById,
+    listPayoutsByInfluencer,
+    upsertPayout
 } = require('./config/db-helpers');
 
 async function generateUniqueRequestId() {
@@ -5642,6 +5649,439 @@ app.get('/api/influencer/payouts/:token', async (req, res) => {
         });
     } catch (error) {
         console.error('Influencer payouts fetch error:', error);
+        res.status(500).json({ error: 'Failed to fetch payouts' });
+    }
+});
+
+// ==================== INFLUENCER ANALYTICS & SHIPMENTS ====================
+
+// Create shipment (admin)
+app.post('/api/influencer-admin/shipments/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const { productTitle, productImageUrl, shopifyProductId, sentAt, reelDueDate, notes } = req.body;
+        if (!productTitle || !sentAt || !reelDueDate) {
+            return res.status(400).json({ error: 'productTitle, sentAt, and reelDueDate are required' });
+        }
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) return res.status(404).json({ error: 'Influencer not found' });
+        const shipment = await createShipment({ influencerId, productTitle, productImageUrl, shopifyProductId, sentAt, reelDueDate, notes });
+        res.json({ success: true, shipment });
+    } catch (error) {
+        console.error('Create shipment error:', error);
+        res.status(500).json({ error: 'Failed to create shipment' });
+    }
+});
+
+// List shipments (admin)
+app.get('/api/influencer-admin/shipments/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const shipments = await listShipmentsByInfluencer(influencerId);
+        // Compute overdue at read time
+        const today = new Date().toISOString().split('T')[0];
+        const enriched = shipments.map(s => {
+            if (s.reel_status === 'pending' && s.reel_due_date < today) {
+                return { ...s, reel_status: 'overdue' };
+            }
+            return s;
+        });
+        res.json({ success: true, shipments: enriched });
+    } catch (error) {
+        console.error('List shipments error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipments' });
+    }
+});
+
+// Update shipment (admin)
+app.patch('/api/influencer-admin/shipments/:shipmentId', authenticateAdmin, async (req, res) => {
+    try {
+        const { shipmentId } = req.params;
+        const existing = await getShipmentById(shipmentId);
+        if (!existing) return res.status(404).json({ error: 'Shipment not found' });
+        const shipment = await updateShipment(shipmentId, req.body);
+        res.json({ success: true, shipment });
+    } catch (error) {
+        console.error('Update shipment error:', error);
+        res.status(500).json({ error: 'Failed to update shipment' });
+    }
+});
+
+// Delete shipment (admin)
+app.delete('/api/influencer-admin/shipments/:shipmentId', authenticateAdmin, async (req, res) => {
+    try {
+        const { shipmentId } = req.params;
+        await deleteShipment(shipmentId);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete shipment error:', error);
+        res.status(500).json({ error: 'Failed to delete shipment' });
+    }
+});
+
+// ==================== PAYOUTS (MONTHLY) ====================
+
+async function generatePayoutsForMonth(month) {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    const startDate = `${month}-01T00:00:00Z`;
+    const endD = new Date(startDate);
+    endD.setMonth(endD.getMonth() + 1);
+    const endDate = endD.toISOString();
+
+    const { data: rows, error } = await supabaseAdmin
+        .from('influencer_orders')
+        .select('influencer_id, total_price')
+        .gte('order_created_at', startDate)
+        .lt('order_created_at', endDate);
+
+    if (error) throw error;
+
+    const aggregated = {};
+    for (const row of rows) {
+        if (!aggregated[row.influencer_id]) {
+            aggregated[row.influencer_id] = { ordersCount: 0, revenue: 0 };
+        }
+        aggregated[row.influencer_id].ordersCount++;
+        aggregated[row.influencer_id].revenue += parseFloat(row.total_price || 0);
+    }
+
+    const results = [];
+    for (const [infId, agg] of Object.entries(aggregated)) {
+        const influencer = await getInfluencerById(infId);
+        if (!influencer) continue;
+        const commissionRate = parseFloat(influencer.commission_rate || 10);
+        const amountDue = (agg.revenue * commissionRate) / 100;
+
+        // Skip if already paid
+        const { data: existing } = await supabaseAdmin
+            .from('influencer_payouts')
+            .select('status')
+            .eq('influencer_id', infId)
+            .eq('month', month)
+            .single();
+        if (existing && existing.status === 'paid') continue;
+
+        const payout = await upsertPayout({
+            influencerId: infId,
+            month,
+            ordersCount: agg.ordersCount,
+            revenueAmount: agg.revenue,
+            commissionRate,
+            amountDue,
+            status: 'pending'
+        });
+        results.push(payout);
+    }
+    return results;
+}
+
+// Generate payouts for a month (admin)
+app.post('/api/influencer-admin/payouts/generate', authenticateAdmin, async (req, res) => {
+    try {
+        const { month } = req.body;
+        if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+            return res.status(400).json({ error: 'month in YYYY-MM format is required' });
+        }
+        const results = await generatePayoutsForMonth(month);
+        res.json({ success: true, generated: results.length, payouts: results });
+    } catch (error) {
+        console.error('Generate payouts error:', error);
+        res.status(500).json({ error: 'Failed to generate payouts' });
+    }
+});
+
+// ==================== ANALYTICS AGGREGATE ====================
+
+async function getAnalyticsForInfluencer(influencer, range = 'all') {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    let createdAtMin = null;
+    if (range === '30d') {
+        const d = new Date(); d.setDate(d.getDate() - 30); createdAtMin = d.toISOString();
+    } else if (range === '90d') {
+        const d = new Date(); d.setDate(d.getDate() - 90); createdAtMin = d.toISOString();
+    } else if (range === '6m') {
+        const d = new Date(); d.setMonth(d.getMonth() - 6); createdAtMin = d.toISOString();
+    }
+
+    // Summary from influencer_orders
+    let orderQuery = supabaseAdmin.from('influencer_orders').select('total_price').eq('influencer_id', influencer.id);
+    let countQuery = supabaseAdmin.from('influencer_orders').select('*', { count: 'exact', head: true }).eq('influencer_id', influencer.id);
+    let monthlyQuery = supabaseAdmin.from('influencer_orders').select('order_created_at, total_price').eq('influencer_id', influencer.id);
+
+    if (createdAtMin) {
+        orderQuery = orderQuery.gte('order_created_at', createdAtMin);
+        countQuery = countQuery.gte('order_created_at', createdAtMin);
+        monthlyQuery = monthlyQuery.gte('order_created_at', createdAtMin);
+    }
+
+    const [{ data: orders }, { count: orderCount }, { data: monthlyRows }] = await Promise.all([orderQuery, countQuery, monthlyQuery]);
+
+    const totalRevenue = orders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
+    const commissionRate = parseFloat(influencer.commission_rate || 10);
+    const aov = orderCount > 0 ? totalRevenue / orderCount : 0;
+    const estimatedEarnings = (totalRevenue * commissionRate) / 100;
+
+    // Monthly aggregation
+    const monthlyMap = {};
+    for (const row of (monthlyRows || [])) {
+        const m = row.order_created_at ? row.order_created_at.substring(0, 7) : 'unknown';
+        if (!monthlyMap[m]) monthlyMap[m] = { month: m, orders: 0, revenue: 0 };
+        monthlyMap[m].orders++;
+        monthlyMap[m].revenue += parseFloat(row.total_price || 0);
+    }
+    const monthly = Object.values(monthlyMap).sort((a, b) => b.month.localeCompare(a.month)).map(m => ({
+        ...m,
+        commission: parseFloat(((m.revenue * commissionRate) / 100).toFixed(2)),
+        revenue: parseFloat(m.revenue.toFixed(2))
+    }));
+
+    // Shipments
+    const shipments = await listShipmentsByInfluencer(influencer.id);
+    const today = new Date().toISOString().split('T')[0];
+    let pending = 0, received = 0, overdue = 0;
+    const enrichedShipments = shipments.map(s => {
+        let status = s.reel_status;
+        if (status === 'pending' && s.reel_due_date < today) status = 'overdue';
+        if (status === 'pending') pending++;
+        else if (status === 'received') received++;
+        else if (status === 'overdue') overdue++;
+        return { ...s, reel_status: status };
+    });
+
+    // Payouts
+    const payouts = await listPayoutsByInfluencer(influencer.id);
+    let totalPaid = 0, totalPendingAmount = 0;
+    payouts.forEach(p => {
+        if (p.status === 'paid') totalPaid += parseFloat(p.amount_due || 0);
+        else totalPendingAmount += parseFloat(p.amount_due || 0);
+    });
+
+    return {
+        influencer: {
+            id: influencer.id,
+            name: influencer.name,
+            referral_code: influencer.referral_code,
+            commission_rate: commissionRate
+        },
+        summary: {
+            totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+            totalOrders: orderCount || 0,
+            aov: parseFloat(aov.toFixed(2)),
+            estimatedEarnings: parseFloat(estimatedEarnings.toFixed(2)),
+            commissionRate
+        },
+        monthly,
+        shipments: {
+            total: enrichedShipments.length,
+            pending,
+            received,
+            overdue,
+            items: enrichedShipments
+        },
+        payouts: {
+            totalPaid: parseFloat(totalPaid.toFixed(2)),
+            totalPending: parseFloat(totalPendingAmount.toFixed(2)),
+            items: payouts
+        }
+    };
+}
+
+// Admin analytics
+app.get('/api/influencer-admin/analytics/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const { range } = req.query;
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) return res.status(404).json({ error: 'Influencer not found' });
+        const analytics = await getAnalyticsForInfluencer(influencer, range);
+        res.json({ success: true, ...analytics });
+    } catch (error) {
+        console.error('Analytics error:', error);
+        res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+});
+
+// Influencer analytics
+app.get('/api/influencer/analytics/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { range } = req.query;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        const analytics = await getAnalyticsForInfluencer(influencer, range);
+        res.json({ success: true, ...analytics });
+    } catch (error) {
+        console.error('Influencer analytics error:', error);
+        res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+});
+
+// ==================== LEADERBOARD ====================
+
+async function getLeaderboard(range = 'all', limit = 10, currentToken = null) {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    let createdAtMin = null;
+    if (range === '30d') { const d = new Date(); d.setDate(d.getDate() - 30); createdAtMin = d.toISOString(); }
+    else if (range === '90d') { const d = new Date(); d.setDate(d.getDate() - 90); createdAtMin = d.toISOString(); }
+    else if (range === '6m') { const d = new Date(); d.setMonth(d.getMonth() - 6); createdAtMin = d.toISOString(); }
+
+    let query = supabaseAdmin
+        .from('influencer_orders')
+        .select('influencer_id, total_price')
+        .order('order_created_at', { ascending: false });
+    if (createdAtMin) query = query.gte('order_created_at', createdAtMin);
+
+    const { data: orders, error } = await query;
+    if (error) throw error;
+
+    const aggregated = {};
+    for (const row of (orders || [])) {
+        if (!aggregated[row.influencer_id]) aggregated[row.influencer_id] = { revenue: 0, orders: 0 };
+        aggregated[row.influencer_id].revenue += parseFloat(row.total_price || 0);
+        aggregated[row.influencer_id].orders++;
+    }
+
+    let currentInfluencerId = null;
+    if (currentToken) {
+        const currentInf = await getInfluencerByToken(currentToken);
+        if (currentInf) currentInfluencerId = currentInf.id;
+    }
+
+    const rows = Object.entries(aggregated).map(([id, agg]) => ({
+        influencerId: parseInt(id),
+        revenue: parseFloat(agg.revenue.toFixed(2)),
+        orders: agg.orders
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    const leaderboard = [];
+    for (let i = 0; i < Math.min(rows.length, limit); i++) {
+        const row = rows[i];
+        const influencer = await getInfluencerById(row.influencerId);
+        if (!influencer) continue;
+        leaderboard.push({
+            rank: i + 1,
+            id: influencer.id,
+            name: influencer.name,
+            referral_code: influencer.referral_code,
+            revenue: row.revenue,
+            orders: row.orders,
+            current_user: influencer.id === currentInfluencerId
+        });
+    }
+
+    // If current influencer not in top N, find their rank
+    if (currentInfluencerId && !leaderboard.find(r => r.id === currentInfluencerId)) {
+        const idx = rows.findIndex(r => r.influencerId === currentInfluencerId);
+        if (idx >= 0) {
+            const influencer = await getInfluencerById(currentInfluencerId);
+            leaderboard.push({
+                rank: idx + 1,
+                id: influencer.id,
+                name: influencer.name,
+                referral_code: influencer.referral_code,
+                revenue: rows[idx].revenue,
+                orders: rows[idx].orders,
+                current_user: true
+            });
+        }
+    }
+
+    return leaderboard;
+}
+
+// Admin leaderboard
+app.get('/api/influencer-admin/leaderboard', authenticateAdmin, async (req, res) => {
+    try {
+        const { range = 'all', limit = 10 } = req.query;
+        const leaderboard = await getLeaderboard(range, parseInt(limit));
+        res.json({ success: true, leaderboard });
+    } catch (error) {
+        console.error('Leaderboard error:', error);
+        res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
+});
+
+// Influencer leaderboard
+app.get('/api/influencer/leaderboard/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { range = 'all', limit = 10 } = req.query;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        const leaderboard = await getLeaderboard(range, parseInt(limit), token);
+        res.json({ success: true, leaderboard });
+    } catch (error) {
+        console.error('Influencer leaderboard error:', error);
+        res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
+});
+
+// ==================== INFLUENCER SELF-SUBMIT ====================
+
+// Influencer submit reel URL
+app.patch('/api/influencer/shipments/:token/:shipmentId', async (req, res) => {
+    try {
+        const { token, shipmentId } = req.params;
+        const { reelUrl } = req.body;
+        if (!reelUrl) return res.status(400).json({ error: 'reelUrl is required' });
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+
+        const shipment = await getShipmentById(shipmentId);
+        if (!shipment || shipment.influencer_id !== influencer.id) {
+            return res.status(404).json({ error: 'Shipment not found' });
+        }
+
+        const updated = await updateShipment(shipmentId, {
+            reelUrl,
+            reelStatus: 'received',
+            reelReceivedAt: new Date().toISOString()
+        });
+        res.json({ success: true, shipment: updated });
+    } catch (error) {
+        console.error('Influencer submit reel error:', error);
+        res.status(500).json({ error: 'Failed to submit reel' });
+    }
+});
+
+// Influencer list shipments
+app.get('/api/influencer/shipments/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        const shipments = await listShipmentsByInfluencer(influencer.id);
+        const today = new Date().toISOString().split('T')[0];
+        const enriched = shipments.map(s => {
+            if (s.reel_status === 'pending' && s.reel_due_date < today) {
+                return { ...s, reel_status: 'overdue' };
+            }
+            return s;
+        });
+        res.json({ success: true, shipments: enriched });
+    } catch (error) {
+        console.error('Influencer shipments error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipments' });
+    }
+});
+
+// Influencer list payouts
+app.get('/api/influencer/payouts/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        const payouts = await listPayoutsByInfluencer(influencer.id);
+        res.json({ success: true, payouts });
+    } catch (error) {
+        console.error('Influencer payouts error:', error);
         res.status(500).json({ error: 'Failed to fetch payouts' });
     }
 });
