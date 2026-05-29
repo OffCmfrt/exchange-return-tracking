@@ -7947,7 +7947,13 @@ app.get('/api/influencer/:token/shopify-products', async (req, res) => {
         });
     } catch (error) {
         console.error('Shopify products fetch error:', error);
-        res.status(502).json({ error: 'Failed to fetch Shopify products' });
+        console.error('Error details:', error.message, error.stack);
+        console.error('Shopify config - Token exists:', !!process.env.SHOPIFY_ACCESS_TOKEN, 'Shop exists:', !!process.env.SHOPIFY_STORE);
+        res.status(502).json({ 
+            error: 'Failed to fetch Shopify products',
+            details: error.message,
+            shopConfigured: !!(process.env.SHOPIFY_ACCESS_TOKEN && process.env.SHOPIFY_STORE)
+        });
     }
 });
 
