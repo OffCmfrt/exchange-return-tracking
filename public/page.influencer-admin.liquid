@@ -3334,23 +3334,22 @@ function renderTable(list) {
     const usageLimit = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : 'Unlimited';
     const status = inf.status || (inf.is_active ? 'active' : 'suspended');
     const isSelected = selectedInfluencers.has(inf.id);
+    const tierColors = { 'Rising Star': '#3b82f6', 'Growing Creator': '#22c55e', 'Established Influencer': '#a855f7', 'Top Tier Creator': '#f59e0b' };
+    const tierColor = tierColors[inf.follower_tier] || '#6366f1';
+    const tierBadge = inf.follower_tier ? `<span class="ia-dt-badge" style="background:${tierColor}20;color:${tierColor};padding:.15rem .4rem;font-size:.6rem;">${inf.follower_tier}</span>` : '-';
+    const followerCount = inf.follower_count ? Number(inf.follower_count).toLocaleString() : '-';
+    const contentWeekly = inf.content_weekly_count || '-';
+    const selectedProds = inf.selected_products ? (typeof inf.selected_products === 'string' ? JSON.parse(inf.selected_products) : inf.selected_products) : [];
+    const productsCount = selectedProds.length || '-';
 
     let actions;
+    actions = `<button class="ia-action-btn view" onclick="viewInfluencerDetails('${inf.id}')">View</button>`;
     if (status === 'pending') {
-      actions = `
-        <button class="ia-action-btn approve" onclick="approveInfluencer(${inf.id})">Approve</button>
-        <button class="ia-action-btn reject" onclick="rejectInfluencer(${inf.id})">Reject</button>
-        <button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button>`;
+      actions += `<button class="ia-action-btn approve" onclick="approveInfluencer(${inf.id})">Approve</button><button class="ia-action-btn reject" onclick="rejectInfluencer(${inf.id})">Reject</button>`;
     } else if (status === 'rejected') {
-      actions = `
-        <button class="ia-action-btn approve" onclick="approveInfluencer(${inf.id})">Reactivate</button>
-        <button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Delete</button>`;
+      actions += `<button class="ia-action-btn approve" onclick="approveInfluencer(${inf.id})">Reactivate</button><button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Delete</button>`;
     } else {
-      actions = `
-        <button class="ia-action-btn view" onclick="viewInfluencerStats(${inf.id})">View</button>
-        <button class="ia-action-btn payouts" onclick="openPayoutsDrawer(${inf.id})">Payouts</button>
-        <button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button>
-        <button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Remove</button>`;
+      actions += `<button class="ia-action-btn payouts" onclick="openPayoutsDrawer(${inf.id})">Payouts</button><button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button><button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Remove</button>`;
     }
 
     return `
@@ -3362,11 +3361,12 @@ function renderTable(list) {
         </td>
         <td class="td-name" data-label="Name">${esc(inf.name)}</td>
         <td data-label="Status">${statusPill(inf)}</td>
+        <td data-label="Tier">${tierBadge}</td>
+        <td data-label="Followers" style="font-size:0.8rem;">${followerCount}</td>
         <td class="td-phone" style="font-size:0.75rem;color:var(--muted);" data-label="Phone">${esc(inf.phone || '—')}</td>
-        <td data-label="Code"><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced - create manually in Shopify admin">⚠️</span>' : ''}</span></td>
-        <td class="td-commission" data-label="Commission">${parseFloat(inf.commission_rate || 7).toFixed(1)}%</td>
-        <td class="td-discount" data-label="Discount">${parseFloat(discountVal).toFixed(1)}%</td>
-        <td class="td-usage" data-label="Usage Limit">${usageLimit}</td>
+        <td data-label="Code"><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced">⚠️</span>' : ''}</span></td>
+        <td data-label="Content/Wk" style="font-size:0.8rem;">${contentWeekly}</td>
+        <td data-label="Products" style="font-size:0.8rem;">${productsCount}</td>
         <td class="td-orders" style="font-weight: 600; color: ${inf.usage_count > 0 ? 'var(--success)' : 'var(--muted)'};" data-label="Orders">${inf.usage_count !== undefined && inf.usage_count !== null ? inf.usage_count : '—'}</td>
         <td class="td-date" data-label="Created">${created}</td>
         <td data-label="Portal">
@@ -5631,6 +5631,293 @@ function trackShipment(awb) {
 
 function promptModal(title, message, buttons) {
   alert(message);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INFLUENCER DETAILS MODAL - 6 TABS
+// ═══════════════════════════════════════════════════════════════
+
+function viewInfluencerDetails(influencerId) {
+  const inf = state.influencers.find(i => i.id === influencerId);
+  if (!inf) return;
+  
+  showInfluencerDetailsModal(inf);
+}
+
+async function showInfluencerDetailsModal(inf) {
+  // Remove existing modal
+  const existing = document.getElementById('iaDetailsModal');
+  if (existing) existing.remove();
+  
+  const modal = document.createElement('div');
+  modal.id = 'iaDetailsModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto;';
+  
+  // Fetch additional data
+  let shipments = [], payouts = [], performance = [], notes = [];
+  try {
+    const [shipRes, payRes, notesRes] = await Promise.all([
+      fetch(`${API}/influencer-admin/${inf.id}/shipments`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+      fetch(`${API}/influencer-admin/${inf.id}/payouts`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+      inf.id ? fetch(`${API}/influencer-admin/${inf.id}/notes`, { headers: { 'Authorization': `Bearer ${authToken}` } }).catch(() => null) : null
+    ]);
+    if (shipRes.ok) { const d = await shipRes.json(); shipments = d.shipments || []; }
+    if (payRes.ok) { const d = await payRes.json(); payouts = d.payouts || []; }
+    if (notesRes && notesRes.ok) { const d = await notesRes.json(); notes = d.notes || []; }
+  } catch (e) { console.error('Failed to load details', e); }
+  
+  const tierColors = { 'Rising Star': '#3b82f6', 'Growing Creator': '#22c55e', 'Established Influencer': '#a855f7', 'Top Tier Creator': '#f59e0b' };
+  const tierColor = tierColors[inf.follower_tier] || '#6366f1';
+  const statusColors = { pending: '#f59e0b', active: '#22c55e', rejected: '#ef4444', paused: '#6b7280' };
+  const statusColor = statusColors[inf.status] || '#6b7280';
+  
+  modal.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);width:100%;max-width:1000px;max-height:95vh;overflow-y:auto;animation:fadeUp .3s ease;">
+      <div style="padding:1.5rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
+        <div>
+          <div style="font-size:.65rem;letter-spacing:.3em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem;">Influencer Details</div>
+          <h2 style="font-size:1.3rem;font-weight:700;margin-bottom:.3rem;">${inf.name}</h2>
+          <div style="font-size:.85rem;color:var(--muted);">${inf.instagram_handle || ''}</div>
+          <div style="display:flex;gap:.5rem;margin-top:.75rem;flex-wrap:wrap;">
+            <span style="padding:.25rem .6rem;font-size:.65rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:${tierColor}20;color:${tierColor};border:1px solid ${tierColor};">${inf.follower_tier || 'Rising Star'}</span>
+            <span style="padding:.25rem .6rem;font-size:.65rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:${statusColor}20;color:${statusColor};border:1px solid ${statusColor};">${inf.status || 'pending'}</span>
+          </div>
+        </div>
+        <button onclick="document.getElementById('iaDetailsModal').remove()" style="background:transparent;border:1px solid var(--border);color:var(--text);padding:.5rem 1rem;font-size:.7rem;cursor:pointer;">Close</button>
+      </div>
+      <div style="padding:0;border-bottom:1px solid var(--border);display:flex;overflow-x:auto;" id="iaDetailsTabs">
+        <button class="ia-dt-tab active" data-tab="overview" onclick="switchDetailTab('overview')">Overview</button>
+        <button class="ia-dt-tab" data-tab="application" onclick="switchDetailTab('application')">Application</button>
+        <button class="ia-dt-tab" data-tab="performance" onclick="switchDetailTab('performance')">Performance</button>
+        <button class="ia-dt-tab" data-tab="shipments" onclick="switchDetailTab('shipments')">Shipments</button>
+        <button class="ia-dt-tab" data-tab="payouts" onclick="switchDetailTab('payouts')">Payouts</button>
+        <button class="ia-dt-tab" data-tab="notes" onclick="switchDetailTab('notes')">Admin Notes</button>
+      </div>
+      <div id="iaDetailsContent" style="padding:1.5rem;min-height:400px;">
+        <!-- Content changes dynamically -->
+      </div>
+    </div>
+    <style>
+      .ia-dt-tab { background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);padding:.75rem 1rem;font-size:.75rem;font-weight:600;letter-spacing:.05em;cursor:pointer;white-space:nowrap;transition:.2s; }
+      .ia-dt-tab:hover { color:var(--text); }
+      .ia-dt-tab.active { color:var(--text);border-bottom-color:var(--text); }
+      .ia-dt-card { background:var(--surface-2);border:1px solid var(--border);padding:1rem;margin-bottom:1rem; }
+      .ia-dt-card-title { font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:.75rem;font-weight:700; }
+      .ia-dt-row { display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--subtle);font-size:.85rem; }
+      .ia-dt-row:last-child { border-bottom:none; }
+      .ia-dt-label { color:var(--muted); }
+      .ia-dt-value { font-weight:600; }
+      .ia-dt-progress { height:6px;background:var(--subtle);margin-top:.5rem;position:relative; }
+      .ia-dt-progress-fill { height:100%;background:var(--success);transition:width .3s; }
+      .ia-dt-badge { display:inline-block;padding:.2rem .5rem;font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase; }
+      .ia-dt-btn { padding:.5rem 1rem;border:1px solid var(--border);background:transparent;color:var(--text);font-size:.7rem;font-weight:600;cursor:pointer;transition:.2s; }
+      .ia-dt-btn:hover { background:var(--text);color:var(--bg); }
+      .ia-dt-btn-primary { background:var(--text);color:var(--bg); }
+    </style>
+  `;
+  
+  document.body.appendChild(modal);
+  renderDetailTab('overview', inf, { shipments, payouts, performance, notes });
+}
+
+function switchDetailTab(tab) {
+  document.querySelectorAll('.ia-dt-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  const inf = state.influencers.find(i => i.id === document.querySelector('[data-current-influencer]')?.dataset.currentInfluencer) || window.currentDetailInfluencer;
+  if (!inf) return;
+  window.currentDetailInfluencer = inf;
+  
+  // Re-fetch data if needed
+  showInfluencerDetailsModal(inf);
+  setTimeout(() => {
+    const tabBtn = document.querySelector(`.ia-dt-tab[data-tab="${tab}"]`);
+    if (tabBtn) tabBtn.classList.add('active');
+    document.querySelectorAll('.ia-dt-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    renderDetailTab(tab, inf);
+  }, 50);
+}
+
+function renderDetailTab(tab, inf, data = {}) {
+  const content = document.getElementById('iaDetailsContent');
+  if (!content) return;
+  window.currentDetailInfluencer = inf;
+  
+  const tierColors = { 'Rising Star': '#3b82f6', 'Growing Creator': '#22c55e', 'Established Influencer': '#a855f7', 'Top Tier Creator': '#f59e0b' };
+  const tierColor = tierColors[inf.follower_tier] || '#6366f1';
+  const totalRevenue = (data.shipments || []).reduce((sum, s) => sum + (parseFloat(s.total_amount) || 0), 0);
+  const totalOrders = (data.shipments || []).length;
+  const pendingPayouts = (data.payouts || []).filter(p => p.status === 'pending').reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  const paidPayouts = (data.payouts || []).filter(p => p.status === 'paid').reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  const monthlyTarget = inf.monthly_target || 12;
+  const contentDelivered = inf.content_weekly_count ? monthlyTarget : 0;
+  
+  if (tab === 'overview') {
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Personal Information</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Name</span><span class="ia-dt-value">${inf.name}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Email</span><span class="ia-dt-value">${inf.email || '-'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Phone</span><span class="ia-dt-value">${inf.phone || '-'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">City</span><span class="ia-dt-value">${inf.city || '-'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Referral Code</span><span class="ia-dt-value">${inf.referral_code}</span></div>
+        </div>
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Social Media & Reach</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Instagram</span><span class="ia-dt-value">${inf.instagram_handle || '-'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">YouTube</span><span class="ia-dt-value">${inf.youtube_handle || '-'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Followers</span><span class="ia-dt-value">${inf.follower_count ? Number(inf.follower_count).toLocaleString() : '-'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Tier</span><span class="ia-dt-value" style="color:${tierColor}">${inf.follower_tier || 'Rising Star'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Niche</span><span class="ia-dt-value">${inf.niche || '-'}</span></div>
+        </div>
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Content Commitment</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Weekly Content</span><span class="ia-dt-value">${inf.content_weekly_count || 3} pieces</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Monthly Target</span><span class="ia-dt-value">${inf.monthly_target || 12} pieces</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Product Limit</span><span class="ia-dt-value">${inf.tier_override || (inf.follower_tier?.includes('Top') ? 5 : inf.follower_tier?.includes('Established') ? 4 : inf.follower_tier?.includes('Growing') ? 3 : 2)} products</span></div>
+        </div>
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Quick Stats</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Total Orders</span><span class="ia-dt-value">${totalOrders}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Total Revenue</span><span class="ia-dt-value">₹${totalRevenue.toLocaleString()}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Commission Rate</span><span class="ia-dt-value">${inf.commission_rate || 7}%</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Payouts Paid</span><span class="ia-dt-value">₹${paidPayouts.toLocaleString()}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Pending Payouts</span><span class="ia-dt-value">₹${pendingPayouts.toLocaleString()}</span></div>
+        </div>
+      </div>`;
+  } else if (tab === 'application') {
+    const selectedProds = inf.selected_products ? (typeof inf.selected_products === 'string' ? JSON.parse(inf.selected_products) : inf.selected_products) : [];
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Application Timeline</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Applied On</span><span class="ia-dt-value">${inf.applied_at ? new Date(inf.applied_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Reviewed By</span><span class="ia-dt-value">${inf.reviewed_by || '-'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Status</span><span class="ia-dt-value">${inf.status || 'pending'}</span></div>
+        </div>
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Physical Details</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Height</span><span class="ia-dt-value">${inf.height_cm ? inf.height_cm + ' cm' : '-'}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Weight</span><span class="ia-dt-value">${inf.weight_kg ? inf.weight_kg + ' kg' : '-'}</span></div>
+        </div>
+        <div class="ia-dt-card" style="grid-column:1/-1;">
+          <div class="ia-dt-card-title">Shipping Address</div>
+          <div style="padding:.75rem;background:var(--subtle);font-size:.85rem;line-height:1.6;">
+            ${inf.address_type === 'office' ? '🏢 Office' : '🏠 Home'}<br>
+            ${inf.shipping_address || ''}${inf.shipping_address ? '<br>' : ''}
+            ${inf.shipping_city || ''}${inf.shipping_city ? ', ' : ''}${inf.shipping_state || ''} ${inf.shipping_pin || ''}<br>
+            ${inf.shipping_landmark ? 'Near: ' + inf.shipping_landmark : ''}
+          </div>
+        </div>
+        <div class="ia-dt-card" style="grid-column:1/-1;">
+          <div class="ia-dt-card-title">Selected Products (${selectedProds.length})</div>
+          ${selectedProds.length > 0 ? '<div style="font-size:.85rem;color:var(--muted);">' + selectedProds.join(', ') + '</div>' : '<div style="font-size:.85rem;color:var(--muted);">No products selected</div>'}
+        </div>
+        ${inf.why_join ? `
+        <div class="ia-dt-card" style="grid-column:1/-1;">
+          <div class="ia-dt-card-title">Why Offcomfrt?</div>
+          <div style="font-size:.85rem;line-height:1.6;font-style:italic;">"${inf.why_join}"</div>
+        </div>` : ''}
+      </div>`;
+  } else if (tab === 'performance') {
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Performance Overview</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Total Orders</span><span class="ia-dt-value">${totalOrders}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Total Revenue</span><span class="ia-dt-value">₹${totalRevenue.toLocaleString()}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Commission Earned</span><span class="ia-dt-value">₹${(totalRevenue * 0.07).toLocaleString()}</span></div>
+        </div>
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Target Progress</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Monthly Target</span><span class="ia-dt-value">${monthlyTarget} pieces</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Delivered</span><span class="ia-dt-value">${totalOrders} pieces</span></div>
+          <div class="ia-dt-progress"><div class="ia-dt-progress-fill" style="width:${Math.min(100, (totalOrders/monthlyTarget)*100)}%"></div></div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:.5rem;">${Math.round((totalOrders/monthlyTarget)*100)}% of monthly target</div>
+        </div>
+        <div class="ia-dt-card" style="grid-column:1/-1;">
+          <div class="ia-dt-card-title">Recent Orders</div>
+          ${(data.shipments || []).slice(0, 5).map(s => `
+            <div class="ia-dt-row">
+              <span class="ia-dt-label">${s.created_at ? new Date(s.created_at).toLocaleDateString() : '-'}</span>
+              <span class="ia-dt-value">₹${parseFloat(s.total_amount || 0).toLocaleString()} - ${s.status || 'pending'}</span>
+            </div>
+          `).join('') || '<div style="font-size:.85rem;color:var(--muted);">No orders yet</div>'}
+        </div>
+      </div>`;
+  } else if (tab === 'shipments') {
+    content.innerHTML = `
+      <div class="ia-dt-card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:1rem;">
+          <div class="ia-dt-card-title" style="margin:0;">Shipment History (${data.shipments?.length || 0})</div>
+        </div>
+        ${(data.shipments || []).map(s => `
+          <div style="padding:.75rem;background:var(--subtle);margin-bottom:.5rem;border:1px solid var(--border);">
+            <div style="display:flex;justify-content:space-between;margin-bottom:.3rem;">
+              <span style="font-weight:600;font-size:.85rem;">${s.product_name || 'Product'}</span>
+              <span style="font-size:.7rem;padding:.2rem .5rem;background:${s.status === 'delivered' ? '#22c55e20' : s.status === 'shipped' ? '#3b82f620' : '#f59e0b20'};color:${s.status === 'delivered' ? '#22c55e' : s.status === 'shipped' ? '#3b82f6' : '#f59e0b'};">${s.status || 'pending'}</span>
+            </div>
+            <div style="font-size:.75rem;color:var(--muted);">
+              ${s.delhivery_awb ? 'AWB: ' + s.delhivery_awb + ' | ' : ''}
+              Sent: ${s.created_at ? new Date(s.created_at).toLocaleDateString() : '-'}
+            </div>
+            ${s.reel_status ? `<div style="font-size:.75rem;margin-top:.3rem;">Reel: ${s.reel_status}</div>` : ''}
+          </div>
+        `).join('') || '<div style="text-align:center;padding:2rem;color:var(--muted);">No shipments yet</div>'}
+      </div>`;
+  } else if (tab === 'payouts') {
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Payout Summary</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Total Paid</span><span class="ia-dt-value">₹${paidPayouts.toLocaleString()}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Pending</span><span class="ia-dt-value">₹${pendingPayouts.toLocaleString()}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">UPI ID</span><span class="ia-dt-value">${inf.payout_upi || '-'}</span></div>
+        </div>
+        <div class="ia-dt-card">
+          <div class="ia-dt-card-title">Payout History</div>
+          ${(data.payouts || []).map(p => `
+            <div class="ia-dt-row">
+              <span class="ia-dt-label">${p.period || '-'}</span>
+              <span style="color:${p.status === 'paid' ? '#22c55e' : '#f59e0b'}">₹${parseFloat(p.amount || 0).toLocaleString()} ${p.status === 'paid' ? '✓' : '⏳'}</span>
+            </div>
+          `).join('') || '<div style="font-size:.85rem;color:var(--muted);">No payouts yet</div>'}
+        </div>
+      </div>`;
+  } else if (tab === 'notes') {
+    content.innerHTML = `
+      <div class="ia-dt-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <div class="ia-dt-card-title" style="margin:0;">Admin Notes (Internal)</div>
+          <button class="ia-dt-btn ia-dt-btn-primary" onclick="addDetailNote('${inf.id}')">+ Add Note</button>
+        </div>
+        ${(data.notes || []).map(n => `
+          <div style="padding:.75rem;background:var(--subtle);margin-bottom:.5rem;border:1px solid var(--border);">
+            <div style="font-size:.75rem;color:var(--muted);margin-bottom:.3rem;">${n.created_at ? new Date(n.created_at).toLocaleDateString() : '-'} | ${n.admin_name || 'Admin'}</div>
+            <div style="font-size:.85rem;">${n.note_text || ''}</div>
+          </div>
+        `).join('') || '<div style="text-align:center;padding:2rem;color:var(--muted);">No notes yet</div>'}
+      </div>
+      <div class="ia-dt-card">
+        <div class="ia-dt-card-title">Tier & Target Management</div>
+        <div class="ia-dt-row"><span class="ia-dt-label">Current Tier</span><span class="ia-dt-value" style="color:${tierColor}">${inf.follower_tier || 'Rising Star'}</span></div>
+        <div class="ia-dt-row"><span class="ia-dt-label">Monthly Target</span><span class="ia-dt-value">${inf.monthly_target || 12} pieces</span></div>
+        <div class="ia-dt-row"><span class="ia-dt-label">Product Override</span><span class="ia-dt-value">${inf.tier_override || 'None'}</span></div>
+      </div>`;
+  }
+}
+
+async function addDetailNote(influencerId) {
+  const note = prompt('Enter admin note:');
+  if (!note) return;
+  try {
+    const res = await fetch(`${API}/influencer-admin/${influencerId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ note })
+    });
+    if (res.ok) { showToast('Note added'); switchDetailTab('notes'); }
+    else showToast('Failed to add note', true);
+  } catch (e) { showToast('Network error', true); }
 }
 </script>
 

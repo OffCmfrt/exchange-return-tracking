@@ -6722,6 +6722,60 @@ app.patch('/api/influencer-admin/payouts/item/:payoutId', authenticateAdmin, asy
     }
 });
 
+// GET influencer admin notes
+app.get('/api/influencer-admin/:id/notes', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data: notes, error } = await supabase
+            .from('admin_notes')
+            .select('*')
+            .eq('influencer_id', id)
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        res.json({ success: true, notes: notes || [] });
+    } catch (error) {
+        console.error('Get notes error:', error);
+        res.json({ success: true, notes: [] });
+    }
+});
+
+// POST influencer admin note
+app.post('/api/influencer-admin/:id/notes', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { note } = req.body;
+        if (!note) return res.status(400).json({ error: 'Note text is required' });
+        const adminName = req.admin?.name || 'Admin';
+        const { data, error } = await supabase
+            .from('admin_notes')
+            .insert({ influencer_id: id, admin_name: adminName, note_text: note })
+            .select()
+            .single();
+        if (error) throw error;
+        res.json({ success: true, note: data });
+    } catch (error) {
+        console.error('Add note error:', error);
+        res.status(500).json({ error: 'Failed to add note' });
+    }
+});
+
+// PATCH influencer target/tier
+app.patch('/api/influencer-admin/:id/target', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { monthlyTarget, tierOverride } = req.body;
+        const updates = {};
+        if (monthlyTarget !== undefined) updates.monthly_target = parseInt(monthlyTarget);
+        if (tierOverride !== undefined) updates.tier_override = parseInt(tierOverride);
+        if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No updates provided' });
+        const influencer = await updateInfluencer(id, updates);
+        res.json({ success: true, influencer });
+    } catch (error) {
+        console.error('Update target error:', error);
+        res.status(500).json({ error: 'Failed to update' });
+    }
+});
+
 // ==================== INFLUENCER PORTAL ENDPOINTS ====================
 
 // Verify Influencer Token & Get Profile
@@ -6929,21 +6983,54 @@ app.post('/api/influencer/apply', async (req, res) => {
             instagramHandle,
             youtubeHandle,
             followerCount,
+            followerTier,
             niche,
             city,
             whyJoin,
             preferredCode,
-            payoutUpi
+            payoutUpi,
+            contentWeeklyCount,
+            heightCm,
+            weightKg,
+            shippingAddress,
+            shippingCity,
+            shippingState,
+            shippingPin,
+            shippingLandmark,
+            addressType,
+            selectedProducts
         } = req.body || {};
 
-        // ── Validation ──
         if (!name || !phone || !email || !instagramHandle || !preferredCode) {
             return res.status(400).json({
                 error: 'Missing required fields',
                 field: !name ? 'name' : !phone ? 'phone' : !email ? 'email' : !instagramHandle ? 'instagramHandle' : 'preferredCode'
             });
         }
-
+        if (!followerCount || followerCount < 1000) {
+            return res.status(400).json({ error: 'Please enter a valid follower count (minimum 1,000)', field: 'followerCount' });
+        }
+        if (!niche) {
+            return res.status(400).json({ error: 'Please select a niche', field: 'niche' });
+        }
+        if (!contentWeeklyCount || contentWeeklyCount < 1) {
+            return res.status(400).json({ error: 'Please enter content delivery commitment', field: 'contentWeekly' });
+        }
+        if (!heightCm || heightCm < 100) {
+            return res.status(400).json({ error: 'Please enter a valid height', field: 'heightCm' });
+        }
+        if (!weightKg || weightKg < 30) {
+            return res.status(400).json({ error: 'Please enter a valid weight', field: 'weightKg' });
+        }
+        if (!shippingAddress || !shippingCity || !shippingState || !shippingPin) {
+            return res.status(400).json({ error: 'Complete shipping address is required' });
+        }
+        if (shippingPin && shippingPin.length !== 6) {
+            return res.status(400).json({ error: 'PIN code must be 6 digits', field: 'shippingPin' });
+        }
+        if (!selectedProducts || !Array.isArray(selectedProducts) || selectedProducts.length === 0) {
+            return res.status(400).json({ error: 'Please select at least 1 product', field: 'selectedProducts' });
+        }
         const cleanPhone = String(phone).replace(/\D/g, '');
         if (cleanPhone.length < 10) {
             return res.status(400).json({ error: 'Phone must be at least 10 digits', field: 'phone' });
@@ -6985,6 +7072,19 @@ app.post('/api/influencer/apply', async (req, res) => {
             ? parseInt(followerCount) || 0
             : null;
 
+        // Calculate tier, monthly target, and validate product limit
+        const appFollowerNum = parseInt(followerCount) || 0;
+        let appTierInfo = { tier: 'Rising Star', limit: 2 };
+        if (appFollowerNum >= 500000) appTierInfo = { tier: 'Top Tier Creator', limit: 5 };
+        else if (appFollowerNum >= 100000) appTierInfo = { tier: 'Established Influencer', limit: 4 };
+        else if (appFollowerNum >= 50000) appTierInfo = { tier: 'Growing Creator', limit: 3 };
+        
+        if (selectedProducts.length > appTierInfo.limit) {
+            return res.status(400).json({ error: 'Your tier allows only ' + appTierInfo.limit + ' products', field: 'selectedProducts' });
+        }
+
+        const monthlyTarget = (parseInt(contentWeeklyCount) || 3) * 4;
+
         const influencer = await createInfluencer({
             name: String(name).trim(),
             referralCode: finalCode,
@@ -6999,11 +7099,23 @@ app.post('/api/influencer/apply', async (req, res) => {
             instagramHandle: String(instagramHandle).trim(),
             youtubeHandle: youtubeHandle ? String(youtubeHandle).trim() : null,
             followerCount: followers,
+            followerTier: followerTier || tierInfo.tier,
             niche: niche ? String(niche).trim() : null,
             city: city ? String(city).trim() : null,
             whyJoin: whyJoin ? String(whyJoin).trim().slice(0, 1000) : null,
             payoutUpi: payoutUpi ? String(payoutUpi).trim() : null,
-            appliedAt: new Date().toISOString()
+            appliedAt: new Date().toISOString(),
+            contentWeeklyCount: parseInt(contentWeeklyCount) || 3,
+            monthlyTarget: monthlyTarget,
+            heightCm: parseFloat(heightCm) || null,
+            weightKg: parseFloat(weightKg) || null,
+            shippingAddress: String(shippingAddress).trim(),
+            shippingCity: String(shippingCity).trim(),
+            shippingState: String(shippingState).trim(),
+            shippingPin: String(shippingPin).trim(),
+            shippingLandmark: shippingLandmark ? String(shippingLandmark).trim() : null,
+            addressType: addressType || 'home',
+            selectedProducts: JSON.stringify(selectedProducts)
         });
 
         // ── Create DRAFT Shopify price rule (no discount_code attached yet) ──
@@ -7036,6 +7148,38 @@ app.post('/api/influencer/apply', async (req, res) => {
         console.error('Influencer apply error:', error);
         res.status(500).json({ error: 'Failed to submit application. Please try again later.' });
     }
+});
+
+// GET /api/influencer/products - Fetch available products from Shopify
+app.get('/api/influencer/products', async (req, res) => {
+    try {
+        const data = await shopifyAPI(`products.json?limit=50&fields=id,title,image,variants`);
+        const products = (data.products || []).map(p => {
+            const variant = p.variants && p.variants.length > 0 ? p.variants[0] : null;
+            return {
+                id: String(p.id),
+                title: p.title,
+                image: p.image ? p.image.src : null,
+                price: variant ? variant.price : '0.00',
+                available: variant ? variant.inventory_quantity > 0 : true
+            };
+        });
+        return res.json({ success: true, products });
+    } catch (error) {
+        console.error('Products fetch error:', error);
+        res.status(500).json({ error: 'Failed to fetch products', products: [] });
+    }
+});
+
+// GET /api/influencer/tiers - Get tier configuration
+app.get('/api/influencer/tiers', async (req, res) => {
+    const tiers = [
+        { name: 'Rising Star', minFollowers: 0, maxFollowers: 49999, productLimit: 2, tierColor: '#3b82f6' },
+        { name: 'Growing Creator', minFollowers: 50000, maxFollowers: 99999, productLimit: 3, tierColor: '#22c55e' },
+        { name: 'Established Influencer', minFollowers: 100000, maxFollowers: 499999, productLimit: 4, tierColor: '#a855f7' },
+        { name: 'Top Tier Creator', minFollowers: 500000, maxFollowers: null, productLimit: 5, tierColor: '#f59e0b' }
+    ];
+    return res.json({ success: true, tiers });
 });
 
 // GET /api/influencer/payouts/:token - Influencer-facing payout history

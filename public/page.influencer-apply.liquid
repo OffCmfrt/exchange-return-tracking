@@ -20,6 +20,11 @@
   --muted: #6b6b6b;
   --error: #c0392b;
   --success: #1a7f3e;
+  --warning: #d97706;
+  --tier-blue: #3b82f6;
+  --tier-green: #22c55e;
+  --tier-purple: #a855f7;
+  --tier-gold: #f59e0b;
   --transition: 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,7 +37,7 @@ html, body {
   line-height: 1.55;
   min-height: 100vh;
 }
-.ia-shell { max-width: 920px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+.ia-shell { max-width: 960px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
 
 /* ── HERO ── */
 .ia-hero {
@@ -112,9 +117,11 @@ html, body {
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 2.5rem;
+  flex-wrap: wrap;
 }
 .ia-progress-step {
   flex: 1;
+  min-width: 100px;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -145,8 +152,8 @@ html, body {
   color: var(--surface);
 }
 .ia-progress-label {
-  font-size: 0.7rem;
-  letter-spacing: 0.18em;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   font-weight: 600;
   color: var(--muted);
@@ -155,7 +162,8 @@ html, body {
 .ia-progress-step.active .ia-progress-label,
 .ia-progress-step.complete .ia-progress-label { color: var(--text); }
 .ia-progress-line {
-  flex: 1;
+  flex: 0.5;
+  min-width: 20px;
   height: 1px;
   background: var(--border);
   transition: background var(--transition);
@@ -213,6 +221,199 @@ html, body {
 .ia-help { font-size: 0.78rem; color: var(--muted); margin-top: 0.5rem; }
 .ia-error { font-size: 0.8rem; color: var(--error); margin-top: 0.5rem; min-height: 1.1em; }
 
+/* ── TIER CALCULATOR ── */
+.ia-tier-widget {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 2px solid var(--border);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  transition: all var(--transition);
+}
+.ia-tier-widget.active {
+  border-color: var(--tier-blue);
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+}
+.ia-tier-eyebrow {
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+.ia-tier-name {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.ia-tier-name.rising { color: var(--tier-blue); }
+.ia-tier-name.growing { color: var(--tier-green); }
+.ia-tier-name.established { color: var(--tier-purple); }
+.ia-tier-name.top { color: var(--tier-gold); }
+.ia-tier-limit {
+  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+.ia-tier-benefits {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.ia-tier-benefit {
+  background: var(--surface);
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.ia-tier-benefit.highlight {
+  background: var(--text);
+  color: var(--surface);
+  border-color: var(--text);
+}
+.ia-tier-benefit-range {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+.ia-tier-benefit.highlight .ia-tier-benefit-range { color: rgba(255,255,255,0.7); }
+.ia-tier-benefit-value {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+/* ── SHIPPING SECTION ── */
+.ia-section-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin: 2rem 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--text);
+}
+.ia-section-label:first-of-type { margin-top: 0; }
+.ia-radio-group {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 0.5rem;
+}
+.ia-radio-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.ia-radio-option input { margin: 0; cursor: pointer; }
+.ia-radio-option span { cursor: pointer; }
+
+/* ── PRODUCT SELECTION ── */
+.ia-product-counter {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ia-product-counter-text {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.ia-product-counter-text strong { color: var(--text); }
+.ia-product-counter-limit {
+  font-size: 0.8rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  font-weight: 600;
+}
+.ia-product-counter-limit.warning {
+  background: #fef3c7;
+  color: var(--warning);
+}
+.ia-product-counter-limit.success {
+  background: #dcfce7;
+  color: var(--success);
+}
+.ia-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.ia-product-card {
+  border: 2px solid var(--border);
+  padding: 1rem;
+  cursor: pointer;
+  transition: all var(--transition);
+  position: relative;
+}
+.ia-product-card:hover {
+  border-color: var(--text);
+  transform: translateY(-2px);
+}
+.ia-product-card.selected {
+  border-color: var(--text);
+  background: var(--bg);
+}
+.ia-product-card.selected::after {
+  content: '✓';
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 24px;
+  height: 24px;
+  background: var(--text);
+  color: var(--surface);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.ia-product-card.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ia-product-card.disabled:hover {
+  border-color: var(--border);
+  transform: none;
+}
+.ia-product-img {
+  width: 100%;
+  height: 120px;
+  object-fit: contain;
+  margin-bottom: 0.75rem;
+  background: var(--bg);
+}
+.ia-product-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  line-height: 1.3;
+}
+.ia-product-price {
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.ia-products-loading {
+  text-align: center;
+  padding: 2rem;
+  color: var(--muted);
+}
+
+/* ── CHECKBOXES ── */
 .ia-checkbox-row {
   display: flex;
   gap: 0.75rem;
@@ -342,15 +543,66 @@ html, body {
 .ia-copy-btn:hover { background: transparent; color: var(--text); }
 .ia-copy-btn.copied { background: var(--success); border-color: var(--success); color: #fff; }
 
-.ia-warning {
-  background: #fef3c7;
-  border-left: 3px solid #d97706;
-  padding: 0.85rem 1rem;
-  font-size: 0.85rem;
-  margin: 1.5rem auto 0;
+.ia-timeline-card {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border: 2px solid #22c55e;
+  padding: 2rem;
   max-width: 600px;
-  text-align: left;
-  color: #78350f;
+  margin: 2rem auto;
+  text-align: center;
+}
+.ia-timeline-icon {
+  width: 60px;
+  height: 60px;
+  background: #22c55e;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+}
+.ia-timeline-icon svg { width: 28px; height: 28px; color: white; }
+.ia-timeline-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  color: #166534;
+}
+.ia-timeline-text {
+  font-size: 0.95rem;
+  color: #166534;
+  line-height: 1.6;
+}
+.ia-timeline-text strong { display: block; font-size: 1.1rem; margin-bottom: 0.5rem; }
+.ia-timeline-steps {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(34, 197, 94, 0.3);
+}
+.ia-timeline-step {
+  text-align: center;
+}
+.ia-timeline-step-num {
+  width: 28px;
+  height: 28px;
+  background: #22c55e;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin: 0 auto 0.5rem;
+}
+.ia-timeline-step-text {
+  font-size: 0.75rem;
+  color: #166534;
+  font-weight: 600;
 }
 
 @keyframes fadeUp {
@@ -365,6 +617,9 @@ html, body {
   .ia-progress-label { display: none; }
   .ia-actions { flex-direction: column-reverse; }
   .ia-btn { width: 100%; }
+  .ia-tier-benefits { grid-template-columns: repeat(2, 1fr); }
+  .ia-product-grid { grid-template-columns: repeat(2, 1fr); }
+  .ia-timeline-steps { flex-direction: column; gap: 1rem; }
 }
 </style>
 </head>
@@ -386,7 +641,7 @@ html, body {
       <div class="ia-benefit">
         <div class="ia-benefit-num">02</div>
         <h3>7% OFF FOR YOUR AUDIENCE</h3>
-        <p>Your followers get an exclusive discount they can&apos;t get anywhere else.</p>
+        <p>Your followers get an exclusive discount they can't get anywhere else.</p>
       </div>
       <div class="ia-benefit">
         <div class="ia-benefit-num">03</div>
@@ -413,6 +668,16 @@ html, body {
       <div class="ia-progress-line"></div>
       <div class="ia-progress-step" data-step="3">
         <div class="ia-progress-circle">3</div>
+        <div class="ia-progress-label">Content</div>
+      </div>
+      <div class="ia-progress-line"></div>
+      <div class="ia-progress-step" data-step="4">
+        <div class="ia-progress-circle">4</div>
+        <div class="ia-progress-label">Products</div>
+      </div>
+      <div class="ia-progress-line"></div>
+      <div class="ia-progress-step" data-step="5">
+        <div class="ia-progress-circle">5</div>
         <div class="ia-progress-label">Your Code</div>
       </div>
     </div>
@@ -421,7 +686,7 @@ html, body {
     <section class="ia-step active" data-step="1">
       <div class="ia-step-header">
         <h2 class="ia-step-title">First, the basics</h2>
-        <p class="ia-step-sub">We&apos;ll use these to set up your ambassador account.</p>
+        <p class="ia-step-sub">We'll use these to set up your ambassador account.</p>
       </div>
       <div class="ia-grid">
         <div class="ia-field">
@@ -455,6 +720,32 @@ html, body {
         <h2 class="ia-step-title">Tell us about your reach</h2>
         <p class="ia-step-sub">Helps us tailor commission tiers for top creators.</p>
       </div>
+      
+      <!-- Tier Calculator Widget -->
+      <div class="ia-tier-widget" id="iaTierWidget">
+        <div class="ia-tier-eyebrow">Your Tier Preview</div>
+        <div class="ia-tier-name" id="iaTierName">Enter Followers</div>
+        <div class="ia-tier-limit" id="iaTierLimit">—</div>
+        <div class="ia-tier-benefits">
+          <div class="ia-tier-benefit" data-tier="rising">
+            <div class="ia-tier-benefit-range">Under 50K</div>
+            <div class="ia-tier-benefit-value">2 Products</div>
+          </div>
+          <div class="ia-tier-benefit" data-tier="growing">
+            <div class="ia-tier-benefit-range">50K - 100K</div>
+            <div class="ia-tier-benefit-value">3 Products</div>
+          </div>
+          <div class="ia-tier-benefit" data-tier="established">
+            <div class="ia-tier-benefit-range">100K - 500K</div>
+            <div class="ia-tier-benefit-value">4 Products</div>
+          </div>
+          <div class="ia-tier-benefit" data-tier="top">
+            <div class="ia-tier-benefit-range">500K+</div>
+            <div class="ia-tier-benefit-value">5 Products</div>
+          </div>
+        </div>
+      </div>
+
       <div class="ia-grid">
         <div class="ia-field">
           <label class="ia-label" for="iaInstagram">Instagram Handle <span class="req">*</span></label>
@@ -466,11 +757,13 @@ html, body {
           <input class="ia-input" id="iaYoutube" type="text" placeholder="@channel or URL" maxlength="120">
         </div>
         <div class="ia-field">
-          <label class="ia-label" for="iaFollowers">Total Followers <span class="opt">(Optional)</span></label>
+          <label class="ia-label" for="iaFollowers">Total Followers <span class="req">*</span></label>
           <input class="ia-input" id="iaFollowers" type="number" min="0" placeholder="e.g. 12000">
+          <div class="ia-help">Enter your total social media following</div>
+          <div class="ia-error" data-error-for="followerCount"></div>
         </div>
         <div class="ia-field">
-          <label class="ia-label" for="iaNiche">Niche <span class="opt">(Optional)</span></label>
+          <label class="ia-label" for="iaNiche">Niche <span class="req">*</span></label>
           <select class="ia-select" id="iaNiche">
             <option value="">Select…</option>
             <option>Fashion & Style</option>
@@ -478,8 +771,11 @@ html, body {
             <option>Fitness & Wellness</option>
             <option>Beauty</option>
             <option>Travel</option>
+            <option>Tech & Gadgets</option>
+            <option>Food & Dining</option>
             <option>Other</option>
           </select>
+          <div class="ia-error" data-error-for="niche"></div>
         </div>
         <div class="ia-field full">
           <label class="ia-label" for="iaWhyJoin">Why Offcomfrt? <span class="opt">(Optional, max 1000 chars)</span></label>
@@ -495,6 +791,150 @@ html, body {
     <!-- STEP 3 -->
     <section class="ia-step" data-step="3">
       <div class="ia-step-header">
+        <h2 class="ia-step-title">Content & Shipping Details</h2>
+        <p class="ia-step-sub">Help us understand your content capacity and where to send products.</p>
+      </div>
+
+      <!-- Content Delivery Section -->
+      <div class="ia-section-label">Content Delivery Commitment</div>
+      <div class="ia-field">
+        <label class="ia-label" for="iaContentWeekly">How many pieces of content can you deliver weekly? <span class="req">*</span></label>
+        <input class="ia-input" id="iaContentWeekly" type="number" min="1" max="50" value="3" style="max-width: 150px;">
+        <div class="ia-help">Include reels, stories, posts, and other content types. This helps us set realistic monthly targets.</div>
+        <div class="ia-error" data-error-for="contentWeekly"></div>
+      </div>
+
+      <!-- Physical Details Section -->
+      <div class="ia-section-label">Physical Details (For Product Sizing)</div>
+      <div class="ia-grid">
+        <div class="ia-field">
+          <label class="ia-label" for="iaHeight">Height (cm) <span class="req">*</span></label>
+          <input class="ia-input" id="iaHeight" type="number" min="100" max="250" step="0.1" placeholder="e.g. 165">
+          <div class="ia-help">Used for product sizing and fit recommendations</div>
+          <div class="ia-error" data-error-for="heightCm"></div>
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaWeight">Weight (kg) <span class="req">*</span></label>
+          <input class="ia-input" id="iaWeight" type="number" min="30" max="300" step="0.1" placeholder="e.g. 60.5">
+          <div class="ia-help">Used for product sizing and fit recommendations</div>
+          <div class="ia-error" data-error-for="weightKg"></div>
+        </div>
+      </div>
+
+      <!-- Shipping Address Section -->
+      <div class="ia-section-label">Shipping Address</div>
+      <div class="ia-field full">
+        <label class="ia-label" for="iaShippingAddress">Full Address <span class="req">*</span></label>
+        <textarea class="ia-textarea" id="iaShippingAddress" maxlength="200" placeholder="House No., Street, Area, Colony..." style="min-height: 80px;"></textarea>
+        <div class="ia-error" data-error-for="shippingAddress"></div>
+      </div>
+      <div class="ia-grid">
+        <div class="ia-field">
+          <label class="ia-label" for="iaShippingCity">City <span class="req">*</span></label>
+          <input class="ia-input" id="iaShippingCity" type="text" maxlength="60" placeholder="e.g. Mumbai">
+          <div class="ia-error" data-error-for="shippingCity"></div>
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaShippingState">State <span class="req">*</span></label>
+          <select class="ia-select" id="iaShippingState">
+            <option value="">Select State…</option>
+            <option>Andhra Pradesh</option>
+            <option>Arunachal Pradesh</option>
+            <option>Assam</option>
+            <option>Bihar</option>
+            <option>Chhattisgarh</option>
+            <option>Delhi</option>
+            <option>Goa</option>
+            <option>Gujarat</option>
+            <option>Haryana</option>
+            <option>Himachal Pradesh</option>
+            <option>Jharkhand</option>
+            <option>Karnataka</option>
+            <option>Kerala</option>
+            <option>Madhya Pradesh</option>
+            <option>Maharashtra</option>
+            <option>Manipur</option>
+            <option>Meghalaya</option>
+            <option>Mizoram</option>
+            <option>Nagaland</option>
+            <option>Odisha</option>
+            <option>Punjab</option>
+            <option>Rajasthan</option>
+            <option>Sikkim</option>
+            <option>Tamil Nadu</option>
+            <option>Telangana</option>
+            <option>Tripura</option>
+            <option>Uttar Pradesh</option>
+            <option>Uttarakhand</option>
+            <option>West Bengal</option>
+          </select>
+          <div class="ia-error" data-error-for="shippingState"></div>
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaShippingPin">PIN Code <span class="req">*</span></label>
+          <input class="ia-input" id="iaShippingPin" type="text" inputmode="numeric" maxlength="6" placeholder="e.g. 400001" pattern="[0-9]{6}">
+          <div class="ia-error" data-error-for="shippingPin"></div>
+        </div>
+        <div class="ia-field">
+          <label class="ia-label" for="iaShippingLandmark">Landmark <span class="opt">(Optional)</span></label>
+          <input class="ia-input" id="iaShippingLandmark" type="text" maxlength="100" placeholder="e.g. Near Metro Station">
+        </div>
+      </div>
+      <div class="ia-field">
+        <label class="ia-label">Address Type <span class="req">*</span></label>
+        <div class="ia-radio-group">
+          <label class="ia-radio-option">
+            <input type="radio" name="addressType" value="home" checked>
+            <span>🏠 Home</span>
+          </label>
+          <label class="ia-radio-option">
+            <input type="radio" name="addressType" value="office">
+            <span>🏢 Office</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="ia-actions">
+        <button type="button" class="ia-btn secondary" data-prev="2">← Back</button>
+        <button type="button" class="ia-btn" data-next="4">Continue →</button>
+      </div>
+    </section>
+
+    <!-- STEP 4 -->
+    <section class="ia-step" data-step="4">
+      <div class="ia-step-header">
+        <h2 class="ia-step-title">Select Your Products</h2>
+        <p class="ia-step-sub">Choose up to <span id="iaMaxProducts">2</span> products based on your tier.</p>
+      </div>
+
+      <div class="ia-product-counter" id="iaProductCounter">
+        <div class="ia-product-counter-text">
+          <strong id="iaSelectedCount">0</strong> of <strong id="iaMaxCount">2</strong> products selected
+        </div>
+        <div class="ia-product-counter-limit warning" id="iaCounterStatus">
+          Select at least 1 product
+        </div>
+      </div>
+
+      <div class="ia-products-loading" id="iaProductsLoading">
+        Loading available products...
+      </div>
+
+      <div class="ia-product-grid" id="iaProductGrid" style="display: none;">
+        <!-- Products will be loaded here -->
+      </div>
+
+      <div class="ia-error" data-error-for="selectedProducts"></div>
+
+      <div class="ia-actions">
+        <button type="button" class="ia-btn secondary" data-prev="3">← Back</button>
+        <button type="button" class="ia-btn" data-next="5">Continue →</button>
+      </div>
+    </section>
+
+    <!-- STEP 5 -->
+    <section class="ia-step" data-step="5">
+      <div class="ia-step-header">
         <h2 class="ia-step-title">Pick your discount code</h2>
         <p class="ia-step-sub">This is what your audience will use at checkout. Letters &amp; numbers only.</p>
       </div>
@@ -502,7 +942,7 @@ html, body {
         <div class="ia-field full">
           <label class="ia-label" for="iaPreferredCode">Preferred Code <span class="req">*</span></label>
           <input class="ia-input" id="iaPreferredCode" type="text" maxlength="20" placeholder="e.g. RIYA10" style="text-transform: uppercase; letter-spacing: 0.05em;">
-          <div class="ia-help">4–20 characters. We&apos;ll auto-suffix if it&apos;s already taken.</div>
+          <div class="ia-help">4–20 characters. We'll auto-suffix if it's already taken.</div>
           <div class="ia-error" data-error-for="preferredCode"></div>
         </div>
         <div class="ia-field full">
@@ -519,7 +959,7 @@ html, body {
         </div>
       </div>
       <div class="ia-actions">
-        <button type="button" class="ia-btn secondary" data-prev="2">← Back</button>
+        <button type="button" class="ia-btn secondary" data-prev="4">← Back</button>
         <button type="button" class="ia-btn" id="iaSubmitBtn">Submit Application</button>
       </div>
     </section>
@@ -532,11 +972,39 @@ html, body {
         <polyline points="20 6 9 17 4 12"/>
       </svg>
     </div>
-    <h2>You&apos;re in.</h2>
-    <p>Welcome to the Offcomfrt ambassador family. Your code is reserved and your portal is live. Our team will activate your code at checkout within 24 hours.</p>
+    <h2>Application Submitted!</h2>
+    <p>Welcome to the Offcomfrt ambassador family. Your application is under review.</p>
+
+    <div class="ia-timeline-card">
+      <div class="ia-timeline-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+      </div>
+      <div class="ia-timeline-title">Review Timeline</div>
+      <div class="ia-timeline-text">
+        <strong>24-48 Business Hours</strong>
+        Our team will review your application and initiate your ambassador portal within this timeframe.
+      </div>
+      <div class="ia-timeline-steps">
+        <div class="ia-timeline-step">
+          <div class="ia-timeline-step-num">1</div>
+          <div class="ia-timeline-step-text">Application Review</div>
+        </div>
+        <div class="ia-timeline-step">
+          <div class="ia-timeline-step-num">2</div>
+          <div class="ia-timeline-step-text">Portal Activation</div>
+        </div>
+        <div class="ia-timeline-step">
+          <div class="ia-timeline-step-num">3</div>
+          <div class="ia-timeline-step-text">Email Confirmation</div>
+        </div>
+      </div>
+    </div>
 
     <div class="ia-code-card">
-      <div class="ia-code-card-eyebrow">Your Discount Code</div>
+      <div class="ia-code-card-eyebrow">Your Reserved Code</div>
       <div class="ia-code-display" id="iaResultCode">—</div>
       <div class="ia-code-card-help">Share this with your followers. They get 7% off, you earn 7% commission.</div>
     </div>
@@ -547,18 +1015,146 @@ html, body {
         <div class="ia-portal-url" id="iaResultUrl">—</div>
         <button type="button" class="ia-copy-btn" id="iaCopyUrlBtn">Copy</button>
       </div>
-      <div class="ia-help" style="margin-top: 0.75rem;">Bookmark this link — it&apos;s the only way back into your dashboard.</div>
+      <div class="ia-help" style="margin-top: 0.75rem;">Bookmark this link — you'll need it once your portal is activated.</div>
     </div>
 
-    <div class="ia-warning hidden" id="iaWarning"></div>
+    <p style="color: var(--muted); font-size: 0.9rem; max-width: 500px; margin: 2rem auto 0;">
+      You'll receive an email confirmation once your application is approved. Keep an eye on your inbox including spam folder.
+    </p>
   </div>
 
 </div>
 
 <script>
 const APPLY_API = 'https://exchange-return-tracking.onrender.com/api/influencer/apply';
+const PRODUCTS_API = 'https://exchange-return-tracking.onrender.com/api/influencer/products';
 
 let currentStep = 1;
+let selectedProducts = [];
+let availableProducts = [];
+let productLimit = 2;
+let currentTier = null;
+
+// ── Tier Calculation ──
+function calculateFollowerTier(followerCount) {
+  const count = parseInt(followerCount) || 0;
+  if (count < 50000) return { tier: 'Rising Star', tierKey: 'rising', limit: 2 };
+  if (count < 100000) return { tier: 'Growing Creator', tierKey: 'growing', limit: 3 };
+  if (count < 500000) return { tier: 'Established Influencer', tierKey: 'established', limit: 4 };
+  return { tier: 'Top Tier Creator', tierKey: 'top', limit: 5 };
+}
+
+function updateTierWidget() {
+  const followerCount = document.getElementById('iaFollowers').value;
+  const widget = document.getElementById('iaTierWidget');
+  const tierName = document.getElementById('iaTierName');
+  const tierLimit = document.getElementById('iaTierLimit');
+  
+  if (!followerCount || followerCount < 1000) {
+    widget.classList.remove('active');
+    tierName.textContent = 'Enter Followers';
+    tierName.className = 'ia-tier-name';
+    tierLimit.textContent = '—';
+    document.querySelectorAll('.ia-tier-benefit').forEach(el => el.classList.remove('highlight'));
+    return;
+  }
+  
+  const tier = calculateFollowerTier(followerCount);
+  currentTier = tier;
+  productLimit = tier.limit;
+  
+  widget.classList.add('active');
+  tierName.textContent = tier.tier;
+  tierName.className = `ia-tier-name ${tier.tierKey}`;
+  tierLimit.textContent = `You can request up to ${tier.limit} products`;
+  
+  document.querySelectorAll('.ia-tier-benefit').forEach(el => {
+    el.classList.toggle('highlight', el.dataset.tier === tier.tierKey);
+  });
+  
+  // Update step 4 if visible
+  if (currentStep >= 4) {
+    updateProductSelection();
+  }
+}
+
+// ── Product Loading ──
+async function loadProducts() {
+  const loading = document.getElementById('iaProductsLoading');
+  const grid = document.getElementById('iaProductGrid');
+  
+  try {
+    const res = await fetch(PRODUCTS_API);
+    const data = await res.json();
+    
+    if (data.success && data.products) {
+      availableProducts = data.products;
+      renderProducts();
+      loading.style.display = 'none';
+      grid.style.display = 'grid';
+    } else {
+      loading.textContent = 'Failed to load products. Please refresh.';
+    }
+  } catch (err) {
+    loading.textContent = 'Failed to load products. Please refresh.';
+  }
+}
+
+function renderProducts() {
+  const grid = document.getElementById('iaProductGrid');
+  grid.innerHTML = availableProducts.map(product => `
+    <div class="ia-product-card" data-id="${product.id}" onclick="toggleProduct('${product.id}')">
+      <img class="ia-product-img" src="${product.image || 'https://via.placeholder.com/200x120?text=No+Image'}" alt="${product.title}" onerror="this.src='https://via.placeholder.com/200x120?text=No+Image'">
+      <div class="ia-product-title">${product.title}</div>
+      <div class="ia-product-price">₹${parseFloat(product.price).toLocaleString('en-IN')}</div>
+    </div>
+  `).join('');
+  updateProductSelection();
+}
+
+function toggleProduct(productId) {
+  if (selectedProducts.includes(productId)) {
+    selectedProducts = selectedProducts.filter(id => id !== productId);
+  } else {
+    if (selectedProducts.length >= productLimit) {
+      alert(`Your tier allows only ${productLimit} products. Please deselect one first.`);
+      return;
+    }
+    selectedProducts.push(productId);
+  }
+  updateProductSelection();
+}
+
+function updateProductSelection() {
+  const selectedCount = document.getElementById('iaSelectedCount');
+  const maxCount = document.getElementById('iaMaxCount');
+  const counterStatus = document.getElementById('iaCounterStatus');
+  const maxProducts = document.getElementById('iaMaxProducts');
+  
+  maxCount.textContent = productLimit;
+  maxProducts.textContent = productLimit;
+  selectedCount.textContent = selectedProducts.length;
+  
+  document.querySelectorAll('.ia-product-card').forEach(card => {
+    const id = card.dataset.id;
+    const isSelected = selectedProducts.includes(id);
+    const isDisabled = !isSelected && selectedProducts.length >= productLimit;
+    
+    card.classList.toggle('selected', isSelected);
+    card.classList.toggle('disabled', isDisabled);
+  });
+  
+  if (selectedProducts.length === 0) {
+    counterStatus.textContent = 'Select at least 1 product';
+    counterStatus.className = 'ia-product-counter-limit warning';
+  } else if (selectedProducts.length === productLimit) {
+    counterStatus.textContent = `${selectedProducts.length} of ${productLimit} selected`;
+    counterStatus.className = 'ia-product-counter-limit success';
+  } else {
+    counterStatus.textContent = `${selectedProducts.length} of ${productLimit} selected`;
+    counterStatus.className = 'ia-product-counter-limit warning';
+  }
+}
 
 // ── Step navigation ──
 function setStep(n) {
@@ -573,6 +1169,11 @@ function setStep(n) {
   });
   lineEls.forEach((l, idx) => l.classList.toggle('complete', idx + 1 < n));
   window.scrollTo({ top: document.getElementById('iaCard').offsetTop - 30, behavior: 'smooth' });
+  
+  // Load products when entering step 4
+  if (n === 4 && availableProducts.length === 0) {
+    loadProducts();
+  }
 }
 
 document.querySelectorAll('[data-next]').forEach(btn => {
@@ -591,6 +1192,9 @@ codeInput.addEventListener('input', () => {
   const filtered = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (filtered !== codeInput.value) codeInput.value = filtered;
 });
+
+// ── Follower count change listener ──
+document.getElementById('iaFollowers').addEventListener('input', updateTierWidget);
 
 // ── Validation ──
 function setError(field, msg) {
@@ -617,8 +1221,30 @@ function validateStep(step) {
     if (!phone || phone.length < 10) { setError('phone', 'Please enter a valid 10-digit number'); ok = false; }
   } else if (step === 2) {
     const ig = document.getElementById('iaInstagram').value.trim();
+    const followers = document.getElementById('iaFollowers').value;
+    const niche = document.getElementById('iaNiche').value;
     if (!ig) { setError('instagramHandle', 'Instagram handle is required'); ok = false; }
+    if (!followers) { setError('followerCount', 'Follower count is required'); ok = false; }
+    if (!niche) { setError('niche', 'Please select a niche'); ok = false; }
   } else if (step === 3) {
+    const contentWeekly = document.getElementById('iaContentWeekly').value;
+    const height = document.getElementById('iaHeight').value;
+    const weight = document.getElementById('iaWeight').value;
+    const address = document.getElementById('iaShippingAddress').value.trim();
+    const city = document.getElementById('iaShippingCity').value.trim();
+    const state = document.getElementById('iaShippingState').value;
+    const pin = document.getElementById('iaShippingPin').value.trim();
+    
+    if (!contentWeekly || contentWeekly < 1) { setError('contentWeekly', 'Please enter content count'); ok = false; }
+    if (!height || height < 100) { setError('heightCm', 'Please enter a valid height'); ok = false; }
+    if (!weight || weight < 30) { setError('weightKg', 'Please enter a valid weight'); ok = false; }
+    if (!address) { setError('shippingAddress', 'Shipping address is required'); ok = false; }
+    if (!city) { setError('shippingCity', 'City is required'); ok = false; }
+    if (!state) { setError('shippingState', 'Please select a state'); ok = false; }
+    if (!pin || pin.length !== 6) { setError('shippingPin', 'Please enter a valid 6-digit PIN code'); ok = false; }
+  } else if (step === 4) {
+    if (selectedProducts.length === 0) { setError('selectedProducts', 'Please select at least 1 product'); ok = false; }
+  } else if (step === 5) {
     const code = document.getElementById('iaPreferredCode').value.trim();
     const terms = document.getElementById('iaTerms').checked;
     if (!code || code.length < 4) { setError('preferredCode', 'Code must be at least 4 characters'); ok = false; }
@@ -630,17 +1256,23 @@ function validateStep(step) {
 // ── Map server error fields to form steps ──
 const FIELD_TO_STEP = {
   name: 1, email: 1, phone: 1,
-  instagramHandle: 2,
-  preferredCode: 3
+  instagramHandle: 2, followerCount: 2, niche: 2,
+  contentWeekly: 3, heightCm: 3, weightKg: 3,
+  shippingAddress: 3, shippingCity: 3, shippingState: 3, shippingPin: 3,
+  selectedProducts: 4,
+  preferredCode: 5, terms: 5
 };
 
 // ── Submit ──
 document.getElementById('iaSubmitBtn').addEventListener('click', async () => {
-  if (!validateStep(3)) return;
+  if (!validateStep(5)) return;
 
   const submitBtn = document.getElementById('iaSubmitBtn');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Submitting…';
+
+  const followerCount = parseInt(document.getElementById('iaFollowers').value) || 0;
+  const tier = calculateFollowerTier(followerCount);
 
   const payload = {
     name: document.getElementById('iaName').value.trim(),
@@ -649,11 +1281,23 @@ document.getElementById('iaSubmitBtn').addEventListener('click', async () => {
     city: document.getElementById('iaCity').value.trim() || null,
     instagramHandle: document.getElementById('iaInstagram').value.trim(),
     youtubeHandle: document.getElementById('iaYoutube').value.trim() || null,
-    followerCount: document.getElementById('iaFollowers').value || null,
+    followerCount: followerCount,
+    followerTier: tier.tier,
     niche: document.getElementById('iaNiche').value || null,
     whyJoin: document.getElementById('iaWhyJoin').value.trim() || null,
     preferredCode: document.getElementById('iaPreferredCode').value.trim(),
-    payoutUpi: document.getElementById('iaPayoutUpi').value.trim() || null
+    payoutUpi: document.getElementById('iaPayoutUpi').value.trim() || null,
+    // New fields
+    contentWeeklyCount: parseInt(document.getElementById('iaContentWeekly').value) || 3,
+    heightCm: parseFloat(document.getElementById('iaHeight').value) || null,
+    weightKg: parseFloat(document.getElementById('iaWeight').value) || null,
+    shippingAddress: document.getElementById('iaShippingAddress').value.trim(),
+    shippingCity: document.getElementById('iaShippingCity').value.trim(),
+    shippingState: document.getElementById('iaShippingState').value,
+    shippingPin: document.getElementById('iaShippingPin').value.trim(),
+    shippingLandmark: document.getElementById('iaShippingLandmark').value.trim() || null,
+    addressType: document.querySelector('input[name="addressType"]:checked')?.value || 'home',
+    selectedProducts: selectedProducts
   };
 
   try {
@@ -682,11 +1326,6 @@ document.getElementById('iaSubmitBtn').addEventListener('click', async () => {
     document.getElementById('iaCard').style.display = 'none';
     document.getElementById('iaResultCode').textContent = data.referralCode || '—';
     document.getElementById('iaResultUrl').textContent = data.portalUrl || '—';
-    if (data.warning) {
-      const w = document.getElementById('iaWarning');
-      w.textContent = data.warning;
-      w.classList.remove('hidden');
-    }
     document.getElementById('iaSuccess').classList.add('show');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -714,6 +1353,9 @@ document.getElementById('iaCopyUrlBtn').addEventListener('click', async () => {
     alert('Could not copy. Please copy the URL manually.');
   }
 });
+
+// Initialize tier widget
+updateTierWidget();
 </script>
 
 </body>
