@@ -2419,12 +2419,13 @@ html, body {
                 </th>
                 <th>Name</th>
                 <th>Status</th>
+                <th>Tier</th>
+                <th>Followers</th>
                 <th>Phone</th>
                 <th>Referral Code</th>
-                <th>Commission %</th>
-                <th>Discount %</th>
-                <th>Usage Limit</th>
-                <th>Total Orders</th>
+                <th>Content/Wk</th>
+                <th>Products</th>
+                <th>Orders</th>
                 <th>Created</th>
                 <th>Portal Link</th>
                 <th>Actions</th>
@@ -3324,7 +3325,7 @@ function statusPill(inf) {
 function renderTable(list) {
   const tbody = document.getElementById('iaTableBody');
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="12"><div class="ia-empty"><h3>No Ambassadors${iaStatusFilter !== 'all' ? ' in this view' : ' Yet'}</h3><p>${iaStatusFilter !== 'all' ? 'Try a different filter.' : 'Click "Add Ambassador" or share the apply link to get started.'}</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13"><div class="ia-empty"><h3>No Ambassadors${iaStatusFilter !== 'all' ? ' in this view' : ' Yet'}</h3><p>${iaStatusFilter !== 'all' ? 'Try a different filter.' : 'Click "Add Ambassador" or share the apply link to get started.'}</p></div></td></tr>`;
     return;
   }
   tbody.innerHTML = list.map(inf => {
@@ -5638,7 +5639,7 @@ function promptModal(title, message, buttons) {
 // ═══════════════════════════════════════════════════════════════
 
 function viewInfluencerDetails(influencerId) {
-  const inf = state.influencers.find(i => i.id === influencerId);
+  const inf = influencersData.find(i => i.id === influencerId);
   if (!inf) return;
   
   showInfluencerDetailsModal(inf);
@@ -5722,7 +5723,7 @@ async function showInfluencerDetailsModal(inf) {
 
 function switchDetailTab(tab) {
   document.querySelectorAll('.ia-dt-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  const inf = state.influencers.find(i => i.id === document.querySelector('[data-current-influencer]')?.dataset.currentInfluencer) || window.currentDetailInfluencer;
+  const inf = influencersData.find(i => i.id === document.querySelector('[data-current-influencer]')?.dataset.currentInfluencer) || window.currentDetailInfluencer;
   if (!inf) return;
   window.currentDetailInfluencer = inf;
   
