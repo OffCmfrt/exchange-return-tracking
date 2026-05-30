@@ -654,6 +654,7 @@ body, html { background: var(--bg); }
       <p class="ip-header-name" id="ipName">—</p>
       <h1>Performance<br>Dashboard</h1>
       <div class="ip-code-badge" id="ipCodeBadge">CODE: ——</div>
+      <div class="ip-code-badge hidden" id="ipUsageLimit" style="margin-top: 0.5rem; font-size: 0.6rem;">Usage Limit: ——</div>
     </header>
 
     <!-- Pending Banner -->
@@ -922,6 +923,15 @@ async function initPortal() {
     document.getElementById('ipName').textContent = inf.name.toUpperCase();
     document.getElementById('ipCodeBadge').textContent = `CODE: ${inf.referralCode}`;
     document.getElementById('ipAuthWelcome').textContent = `Welcome, ${inf.name.split(' ')[0]}`;
+
+    // Display usage limit if available
+    if (inf.usageLimit !== null && inf.usageLimit !== undefined) {
+      document.getElementById('ipUsageLimit').textContent = `Usage Limit: ${inf.usageLimit} uses`;
+      document.getElementById('ipUsageLimit').classList.remove('hidden');
+    } else {
+      document.getElementById('ipUsageLimit').textContent = 'Usage Limit: Unlimited';
+      document.getElementById('ipUsageLimit').classList.remove('hidden');
+    }
 
     // Show pending application banner if applicable
     if (inf.status === 'pending') {
@@ -1317,26 +1327,22 @@ async function loadMonthlyReelTarget() {
     const month = now.getMonth() + 1;
     const year = now.getFullYear();
     
-    // Calculate target progress from shipments
-    const res = await fetch(`${PORTAL_API}/shipments/${token}`);
-    const data = await res.json();
+    // Fetch actual target from API
+    const targetRes = await fetch(`${PORTAL_API}/reel-targets/${token}?month=${month}&year=${year}`);
+    const targetData = await targetRes.json();
     
-    if (!data.success) return;
+    // Fetch shipments
+    const shipmentsRes = await fetch(`${PORTAL_API}/shipments/${token}`);
+    const shipmentsData = await shipmentsRes.json();
     
-    // Filter shipments for current month that are monthly targets
-    const monthlyShipments = (data.shipments || []).filter(s => {
-      const shipDate = new Date(s.created_at || s.sent_at);
-      return shipDate.getMonth() + 1 === month && shipDate.getFullYear() === year && s.is_monthly_target;
-    });
+    if (!targetData.success || !shipmentsData.success) return;
     
-    const submittedCount = monthlyShipments.filter(s => s.reel_status === 'received').length;
-    const pendingCount = monthlyShipments.filter(s => s.reel_status === 'pending').length;
-    const nowStr = new Date().toISOString().split('T')[0];
-    const overdueCount = monthlyShipments.filter(s => s.reel_status === 'pending' && s.reel_due_date < nowStr).length;
-    
-    // Default target (will be replaced when admin sets it)
-    const targetCount = 3; // Default
-    const completionPercentage = targetCount > 0 ? Math.round((submittedCount / targetCount) * 100) : 0;
+    // Use actual target count from database (fallback to 3 if not set)
+    const targetCount = targetData.progress?.targetCount || 3;
+    const submittedCount = targetData.progress?.submittedCount || 0;
+    const pendingCount = targetData.progress?.pendingCount || 0;
+    const overdueCount = targetData.progress?.overdueCount || 0;
+    const completionPercentage = targetData.progress?.completionPercentage || 0;
     
     // Update UI
     document.getElementById('ipTargetPeriod').textContent = `${getMonthName(month)} ${year}`;

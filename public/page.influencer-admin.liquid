@@ -473,6 +473,9 @@ html, body {
   background: transparent;
   transition: all var(--transition);
   white-space: nowrap;
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
 }
 .ia-action-btn.edit { border-color: var(--border); color: var(--muted); }
 .ia-action-btn.edit:hover { border-color: var(--text); color: var(--text); }
@@ -3446,7 +3449,7 @@ async function submitAdd() {
 
 // ─── EDIT ─────────────────────────────────────────────────────────────────────
 function openEditModal(id) {
-  const inf = influencersData.find(i => i.id === id);
+  const inf = influencersData.find(i => String(i.id) === String(id));
   if (!inf) return;
   document.getElementById('editId').value = id;
   document.getElementById('editName').value = inf.name;
@@ -3506,7 +3509,7 @@ async function submitEdit() {
 
 // ─── REMOVE ──────────────────────────────────────────────────────────────────
 async function removeInfluencer(id) {
-  const inf = influencersData.find(i => i.id === id);
+  const inf = influencersData.find(i => String(i.id) === String(id));
   if (!confirm(`Remove "${inf?.name || 'this ambassador'}"? Their tracking link will be deactivated.`)) return;
 
   try {
@@ -3623,7 +3626,7 @@ async function rejectInfluencer(id) {
 let currentDrawerInfluencer = null;
 
 function openPayoutsDrawer(id) {
-  const inf = (influencersData || []).find(i => i.id === id);
+  const inf = (influencersData || []).find(i => String(i.id) === String(id));
   if (!inf) return;
   currentDrawerInfluencer = inf;
   setText('iaPayoutDrawerName', inf.name);
@@ -3781,7 +3784,7 @@ let currentStatsId = null;
 let currentStatsRange = 'all';
 
 function viewInfluencerStats(id) {
-  const inf = influencersData.find(i => i.id === id);
+  const inf = influencersData.find(i => String(i.id) === String(id));
   if (!inf) return;
   
   currentStatsId = id;
@@ -4136,7 +4139,7 @@ async function bulkApprove() {
   }
   
   const pendingIds = selectedIds.filter(id => {
-    const inf = influencersData.find(i => i.id === id);
+    const inf = influencersData.find(i => String(i.id) === String(id));
     return inf && (inf.status === 'pending' || inf.status === 'rejected');
   });
   
@@ -4189,7 +4192,7 @@ async function bulkReject() {
   }
   
   const pendingIds = selectedIds.filter(id => {
-    const inf = influencersData.find(i => i.id === id);
+    const inf = influencersData.find(i => String(i.id) === String(id));
     return inf && inf.status === 'pending';
   });
   
@@ -5639,13 +5642,25 @@ function promptModal(title, message, buttons) {
 // ═══════════════════════════════════════════════════════════════
 
 function viewInfluencerDetails(influencerId) {
-  const inf = influencersData.find(i => i.id === influencerId);
-  if (!inf) return;
+  console.log('VIEW button clicked for influencer:', influencerId, 'type:', typeof influencerId);
+  console.log('Available IDs in data:', influencersData.map(i => ({ id: i.id, type: typeof i.id })));
   
+  // Convert to same type for comparison
+  const inf = influencersData.find(i => String(i.id) === String(influencerId));
+  if (!inf) {
+    console.error('Influencer not found:', influencerId);
+    console.log('Data array length:', influencersData.length);
+    return;
+  }
+  
+  console.log('Found influencer:', inf.name);
   showInfluencerDetailsModal(inf);
 }
 
-async function showInfluencerDetailsModal(inf) {
+// Global cache for influencer detail modal data
+let _detailModalData = { shipments: [], payouts: [], notes: [], analytics: null };
+
+async function showInfluencerDetailsModal(inf, initialTab = 'overview') {
   // Remove existing modal
   const existing = document.getElementById('iaDetailsModal');
   if (existing) existing.remove();
@@ -5655,17 +5670,34 @@ async function showInfluencerDetailsModal(inf) {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto;';
   
   // Fetch additional data
-  let shipments = [], payouts = [], performance = [], notes = [];
+  let shipments = [], payouts = [], notes = [], analytics = null;
   try {
-    const [shipRes, payRes, notesRes] = await Promise.all([
-      fetch(`${API}/influencer-admin/${inf.id}/shipments`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-      fetch(`${API}/influencer-admin/${inf.id}/payouts`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-      inf.id ? fetch(`${API}/influencer-admin/${inf.id}/notes`, { headers: { 'Authorization': `Bearer ${authToken}` } }).catch(() => null) : null
+    const shipmentUrl = `${API}/shipments/${inf.id}`;
+    const payoutUrl = `${API}/payouts/${inf.id}`;
+    const notesUrl = `${API}/${inf.id}/notes`;
+    const analyticsUrl = `${API}/analytics/${inf.id}`;
+    
+    const [shipRes, payRes, notesRes, analyticsRes] = await Promise.all([
+      fetch(shipmentUrl, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+      fetch(payoutUrl, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+      fetch(notesUrl, { headers: { 'Authorization': `Bearer ${authToken}` } }).catch(() => null),
+      fetch(analyticsUrl, { headers: { 'Authorization': `Bearer ${authToken}` } }).catch(() => null)
     ]);
     if (shipRes.ok) { const d = await shipRes.json(); shipments = d.shipments || []; }
+    else if (shipRes.status !== 404) { console.warn('Failed to load shipments:', shipRes.status); }
+    
     if (payRes.ok) { const d = await payRes.json(); payouts = d.payouts || []; }
+    else if (payRes.status !== 404) { console.warn('Failed to load payouts:', payRes.status); }
+    
     if (notesRes && notesRes.ok) { const d = await notesRes.json(); notes = d.notes || []; }
+    else if (notesRes && notesRes.status !== 404) { console.warn('Failed to load notes:', notesRes.status); }
+    
+    if (analyticsRes && analyticsRes.ok) { analytics = await analyticsRes.json(); }
+    else if (analyticsRes && analyticsRes.status !== 404) { console.warn('Failed to load analytics:', analyticsRes.status); }
   } catch (e) { console.error('Failed to load details', e); }
+  
+  // Cache data globally for tab switching
+  _detailModalData = { shipments, payouts, notes, analytics };
   
   const tierColors = { 'Rising Star': '#3b82f6', 'Growing Creator': '#22c55e', 'Established Influencer': '#a855f7', 'Top Tier Creator': '#f59e0b' };
   const tierColor = tierColors[inf.follower_tier] || '#6366f1';
@@ -5694,7 +5726,7 @@ async function showInfluencerDetailsModal(inf) {
         <button class="ia-dt-tab" data-tab="payouts" onclick="switchDetailTab('payouts')">Payouts</button>
         <button class="ia-dt-tab" data-tab="notes" onclick="switchDetailTab('notes')">Admin Notes</button>
       </div>
-      <div id="iaDetailsContent" style="padding:1.5rem;min-height:400px;">
+      <div id="iaDetailsContent" style="padding:1.5rem;min-height:400px;color:var(--text);">
         <!-- Content changes dynamically -->
       </div>
     </div>
@@ -5702,15 +5734,15 @@ async function showInfluencerDetailsModal(inf) {
       .ia-dt-tab { background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);padding:.75rem 1rem;font-size:.75rem;font-weight:600;letter-spacing:.05em;cursor:pointer;white-space:nowrap;transition:.2s; }
       .ia-dt-tab:hover { color:var(--text); }
       .ia-dt-tab.active { color:var(--text);border-bottom-color:var(--text); }
-      .ia-dt-card { background:var(--surface-2);border:1px solid var(--border);padding:1rem;margin-bottom:1rem; }
-      .ia-dt-card-title { font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:.75rem;font-weight:700; }
-      .ia-dt-row { display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--subtle);font-size:.85rem; }
+      .ia-dt-card { background:var(--surface-2);border:1px solid var(--border);padding:1rem;margin-bottom:1rem;color:var(--text); }
+      .ia-dt-card-title { font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--text);margin-bottom:.75rem;font-weight:700;opacity:0.7; }
+      .ia-dt-row { display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--subtle);font-size:.85rem;color:var(--text); }
       .ia-dt-row:last-child { border-bottom:none; }
-      .ia-dt-label { color:var(--muted); }
-      .ia-dt-value { font-weight:600; }
+      .ia-dt-label { color:var(--text);opacity:0.6; }
+      .ia-dt-value { font-weight:600;color:var(--text); }
       .ia-dt-progress { height:6px;background:var(--subtle);margin-top:.5rem;position:relative; }
       .ia-dt-progress-fill { height:100%;background:var(--success);transition:width .3s; }
-      .ia-dt-badge { display:inline-block;padding:.2rem .5rem;font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase; }
+      .ia-dt-badge { display:inline-block;padding:.2rem .5rem;font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text); }
       .ia-dt-btn { padding:.5rem 1rem;border:1px solid var(--border);background:transparent;color:var(--text);font-size:.7rem;font-weight:600;cursor:pointer;transition:.2s; }
       .ia-dt-btn:hover { background:var(--text);color:var(--bg); }
       .ia-dt-btn-primary { background:var(--text);color:var(--bg); }
@@ -5718,38 +5750,39 @@ async function showInfluencerDetailsModal(inf) {
   `;
   
   document.body.appendChild(modal);
-  renderDetailTab('overview', inf, { shipments, payouts, performance, notes });
+  window.currentDetailInfluencer = inf;
+  renderDetailTab(initialTab, inf, _detailModalData);
+  // Highlight correct tab
+  document.querySelectorAll('.ia-dt-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === initialTab));
 }
 
 function switchDetailTab(tab) {
   document.querySelectorAll('.ia-dt-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  const inf = influencersData.find(i => i.id === document.querySelector('[data-current-influencer]')?.dataset.currentInfluencer) || window.currentDetailInfluencer;
+  const inf = window.currentDetailInfluencer;
   if (!inf) return;
-  window.currentDetailInfluencer = inf;
-  
-  // Re-fetch data if needed
-  showInfluencerDetailsModal(inf);
-  setTimeout(() => {
-    const tabBtn = document.querySelector(`.ia-dt-tab[data-tab="${tab}"]`);
-    if (tabBtn) tabBtn.classList.add('active');
-    document.querySelectorAll('.ia-dt-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-    renderDetailTab(tab, inf);
-  }, 50);
+  renderDetailTab(tab, inf, _detailModalData);
 }
 
 function renderDetailTab(tab, inf, data = {}) {
   const content = document.getElementById('iaDetailsContent');
   if (!content) return;
-  window.currentDetailInfluencer = inf;
   
   const tierColors = { 'Rising Star': '#3b82f6', 'Growing Creator': '#22c55e', 'Established Influencer': '#a855f7', 'Top Tier Creator': '#f59e0b' };
   const tierColor = tierColors[inf.follower_tier] || '#6366f1';
-  const totalRevenue = (data.shipments || []).reduce((sum, s) => sum + (parseFloat(s.total_amount) || 0), 0);
-  const totalOrders = (data.shipments || []).length;
-  const pendingPayouts = (data.payouts || []).filter(p => p.status === 'pending').reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-  const paidPayouts = (data.payouts || []).filter(p => p.status === 'paid').reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  
+  // Use analytics data for orders/revenue if available
+  const analytics = data.analytics || {};
+  const summary = analytics.summary || {};
+  const totalRevenue = summary.totalRevenue || 0;
+  const totalOrders = summary.totalOrders || 0;
+  const estimatedEarnings = summary.estimatedEarnings || 0;
+  
+  // Use payouts from API response
+  const payoutItems = (data.analytics && data.analytics.payouts) ? data.analytics.payouts.items || [] : (data.payouts || []);
+  const pendingPayouts = payoutItems.filter(p => p.status === 'pending').reduce((sum, p) => sum + (parseFloat(p.amount_due || p.amount || 0)), 0);
+  const paidPayouts = payoutItems.filter(p => p.status === 'paid').reduce((sum, p) => sum + (parseFloat(p.amount_due || p.amount || 0)), 0);
   const monthlyTarget = inf.monthly_target || 12;
-  const contentDelivered = inf.content_weekly_count ? monthlyTarget : 0;
+  const shipmentItems = data.shipments || [];
   
   if (tab === 'overview') {
     content.innerHTML = `
@@ -5820,48 +5853,58 @@ function renderDetailTab(tab, inf, data = {}) {
         </div>` : ''}
       </div>`;
   } else if (tab === 'performance') {
+    const commRate = inf.commission_rate || 7;
+    const monthlyData = (analytics.monthly || []).slice(-6);
     content.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
         <div class="ia-dt-card">
           <div class="ia-dt-card-title">Performance Overview</div>
           <div class="ia-dt-row"><span class="ia-dt-label">Total Orders</span><span class="ia-dt-value">${totalOrders}</span></div>
           <div class="ia-dt-row"><span class="ia-dt-label">Total Revenue</span><span class="ia-dt-value">₹${totalRevenue.toLocaleString()}</span></div>
-          <div class="ia-dt-row"><span class="ia-dt-label">Commission Earned</span><span class="ia-dt-value">₹${(totalRevenue * 0.07).toLocaleString()}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Commission Earned</span><span class="ia-dt-value">₹${estimatedEarnings.toLocaleString()}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">AOV</span><span class="ia-dt-value">₹${(summary.aov || 0).toLocaleString()}</span></div>
         </div>
         <div class="ia-dt-card">
-          <div class="ia-dt-card-title">Target Progress</div>
-          <div class="ia-dt-row"><span class="ia-dt-label">Monthly Target</span><span class="ia-dt-value">${monthlyTarget} pieces</span></div>
-          <div class="ia-dt-row"><span class="ia-dt-label">Delivered</span><span class="ia-dt-value">${totalOrders} pieces</span></div>
-          <div class="ia-dt-progress"><div class="ia-dt-progress-fill" style="width:${Math.min(100, (totalOrders/monthlyTarget)*100)}%"></div></div>
-          <div style="font-size:.75rem;color:var(--muted);margin-top:.5rem;">${Math.round((totalOrders/monthlyTarget)*100)}% of monthly target</div>
+          <div class="ia-dt-card-title">Shipment Progress</div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Total Shipments</span><span class="ia-dt-value">${shipmentItems.length}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Reels Received</span><span class="ia-dt-value">${shipmentItems.filter(s => s.reel_status === 'received').length}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Pending</span><span class="ia-dt-value">${shipmentItems.filter(s => s.reel_status === 'pending').length}</span></div>
+          <div class="ia-dt-row"><span class="ia-dt-label">Overdue</span><span class="ia-dt-value">${shipmentItems.filter(s => s.reel_status === 'overdue').length}</span></div>
+          <div class="ia-dt-progress"><div class="ia-dt-progress-fill" style="width:${shipmentItems.length ? Math.round(shipmentItems.filter(s => s.reel_status === 'received').length / shipmentItems.length * 100) : 0}%"></div></div>
         </div>
+        ${monthlyData.length > 0 ? `
         <div class="ia-dt-card" style="grid-column:1/-1;">
-          <div class="ia-dt-card-title">Recent Orders</div>
-          ${(data.shipments || []).slice(0, 5).map(s => `
+          <div class="ia-dt-card-title">Monthly Breakdown (Last 6 Months)</div>
+          ${monthlyData.map(m => `
             <div class="ia-dt-row">
-              <span class="ia-dt-label">${s.created_at ? new Date(s.created_at).toLocaleDateString() : '-'}</span>
-              <span class="ia-dt-value">₹${parseFloat(s.total_amount || 0).toLocaleString()} - ${s.status || 'pending'}</span>
+              <span class="ia-dt-label">${m.month}</span>
+              <span class="ia-dt-value">${m.orders} orders | ₹${parseFloat(m.revenue || 0).toLocaleString()} | ₹${parseFloat(m.commission || 0).toLocaleString()} commission</span>
             </div>
-          `).join('') || '<div style="font-size:.85rem;color:var(--muted);">No orders yet</div>'}
-        </div>
+          `).join('')}
+        </div>` : `
+        <div class="ia-dt-card" style="grid-column:1/-1;">
+          <div class="ia-dt-card-title">Monthly Breakdown</div>
+          <div style="font-size:.85rem;color:var(--muted);text-align:center;padding:1rem;">No monthly data yet</div>
+        </div>`}
       </div>`;
   } else if (tab === 'shipments') {
     content.innerHTML = `
       <div class="ia-dt-card">
         <div style="display:flex;justify-content:space-between;margin-bottom:1rem;">
-          <div class="ia-dt-card-title" style="margin:0;">Shipment History (${data.shipments?.length || 0})</div>
+          <div class="ia-dt-card-title" style="margin:0;">Shipment History (${shipmentItems.length})</div>
         </div>
-        ${(data.shipments || []).map(s => `
+        ${shipmentItems.map(s => `
           <div style="padding:.75rem;background:var(--subtle);margin-bottom:.5rem;border:1px solid var(--border);">
             <div style="display:flex;justify-content:space-between;margin-bottom:.3rem;">
-              <span style="font-weight:600;font-size:.85rem;">${s.product_name || 'Product'}</span>
-              <span style="font-size:.7rem;padding:.2rem .5rem;background:${s.status === 'delivered' ? '#22c55e20' : s.status === 'shipped' ? '#3b82f620' : '#f59e0b20'};color:${s.status === 'delivered' ? '#22c55e' : s.status === 'shipped' ? '#3b82f6' : '#f59e0b'};">${s.status || 'pending'}</span>
+              <span style="font-weight:600;font-size:.85rem;">${s.product_title || s.product_name || 'Product'}</span>
+              <span style="font-size:.7rem;padding:.2rem .5rem;background:${s.reel_status === 'received' ? '#22c55e20' : s.reel_status === 'overdue' ? '#ef444420' : '#f59e0b20'};color:${s.reel_status === 'received' ? '#22c55e' : s.reel_status === 'overdue' ? '#ef4444' : '#f59e0b'};">${s.reel_status || 'pending'}</span>
             </div>
             <div style="font-size:.75rem;color:var(--muted);">
               ${s.delhivery_awb ? 'AWB: ' + s.delhivery_awb + ' | ' : ''}
-              Sent: ${s.created_at ? new Date(s.created_at).toLocaleDateString() : '-'}
+              Sent: ${s.sent_at ? new Date(s.sent_at).toLocaleDateString() : (s.created_at ? new Date(s.created_at).toLocaleDateString() : '-')}
+              ${s.reel_due_date ? ' | Due: ' + new Date(s.reel_due_date).toLocaleDateString() : ''}
             </div>
-            ${s.reel_status ? `<div style="font-size:.75rem;margin-top:.3rem;">Reel: ${s.reel_status}</div>` : ''}
+            ${s.reel_url ? `<div style="font-size:.75rem;margin-top:.3rem;"><a href="${s.reel_url}" target="_blank" style="color:#3b82f6;">View Reel</a></div>` : ''}
           </div>
         `).join('') || '<div style="text-align:center;padding:2rem;color:var(--muted);">No shipments yet</div>'}
       </div>`;
@@ -5876,10 +5919,10 @@ function renderDetailTab(tab, inf, data = {}) {
         </div>
         <div class="ia-dt-card">
           <div class="ia-dt-card-title">Payout History</div>
-          ${(data.payouts || []).map(p => `
+          ${payoutItems.map(p => `
             <div class="ia-dt-row">
-              <span class="ia-dt-label">${p.period || '-'}</span>
-              <span style="color:${p.status === 'paid' ? '#22c55e' : '#f59e0b'}">₹${parseFloat(p.amount || 0).toLocaleString()} ${p.status === 'paid' ? '✓' : '⏳'}</span>
+              <span class="ia-dt-label">${p.period_start ? new Date(p.period_start).toLocaleDateString() + ' - ' + new Date(p.period_end).toLocaleDateString() : (p.period || '-')}</span>
+              <span style="color:${p.status === 'paid' ? '#22c55e' : '#f59e0b'}">₹${parseFloat(p.amount_due || p.amount || 0).toLocaleString()} ${p.status === 'paid' ? '✓' : '⏳'}</span>
             </div>
           `).join('') || '<div style="font-size:.85rem;color:var(--muted);">No payouts yet</div>'}
         </div>
@@ -5911,7 +5954,7 @@ async function addDetailNote(influencerId) {
   const note = prompt('Enter admin note:');
   if (!note) return;
   try {
-    const res = await fetch(`${API}/influencer-admin/${influencerId}/notes`, {
+    const res = await fetch(`${API}/${influencerId}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
       body: JSON.stringify({ note })

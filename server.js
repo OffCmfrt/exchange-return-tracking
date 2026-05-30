@@ -6794,7 +6794,9 @@ app.get('/api/influencer/auth/:token', async (req, res) => {
                 name: influencer.name,
                 referralCode: influencer.referral_code,
                 hasPhone: !!influencer.phone,
-                status: influencer.status || (influencer.is_active ? 'active' : 'suspended')
+                status: influencer.status || (influencer.is_active ? 'active' : 'suspended'),
+                usageLimit: influencer.usage_limit || null,
+                discountValue: influencer.discount_value || influencer.commission_rate || 7
             }
         });
     } catch (error) {
@@ -7661,6 +7663,39 @@ app.get('/api/influencer/shipments/:token', async (req, res) => {
     } catch (error) {
         console.error('Influencer shipments error:', error);
         res.status(500).json({ error: 'Failed to fetch shipments' });
+    }
+});
+
+// Influencer get monthly reel target
+app.get('/api/influencer/reel-targets/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { month, year } = req.query;
+        
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        
+        const now = new Date();
+        const targetMonth = month ? parseInt(month) : now.getMonth() + 1;
+        const targetYear = year ? parseInt(year) : now.getFullYear();
+        
+        // Get target from database
+        const targets = await getReelTargetsByInfluencer(influencer.id, {
+            month: targetMonth,
+            year: targetYear
+        });
+        
+        // Get progress for this target
+        const progress = await getReelTargetProgress(influencer.id, targetMonth, targetYear);
+        
+        res.json({
+            success: true,
+            target: targets.length > 0 ? targets[0] : null,
+            progress
+        });
+    } catch (error) {
+        console.error('Influencer reel targets error:', error);
+        res.status(500).json({ error: 'Failed to fetch reel targets' });
     }
 });
 
