@@ -1088,13 +1088,20 @@ async function loadProducts() {
 
 function renderProducts() {
   const grid = document.getElementById('iaProductGrid');
-  grid.innerHTML = availableProducts.map(product => `
-    <div class="ia-product-card" data-id="${product.id}" onclick="toggleProduct('${product.id}')">
-      <img class="ia-product-img" src="${product.image || 'https://via.placeholder.com/200x120?text=No+Image'}" alt="${product.title}" onerror="this.src='https://via.placeholder.com/200x120?text=No+Image'">
-      <div class="ia-product-title">${product.title}</div>
-      <div class="ia-product-price">₹${parseFloat(product.price).toLocaleString('en-IN')}</div>
-    </div>
-  `).join('');
+  grid.innerHTML = availableProducts.map(product => {
+    const sizesHtml = product.sizes && product.sizes.length > 0
+      ? `<div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem;">${product.sizes.map(s => `<span style="font-size: 0.6rem; padding: 0.15rem 0.4rem; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--muted);">${s.title}</span>`).join('')}</div>`
+      : '';
+    return `
+      <div class="ia-product-card" data-id="${product.id}" onclick="toggleProduct('${product.id}')" style="position: relative;">
+        <span style="position: absolute; top: 0.4rem; right: 0.4rem; font-size: 0.55rem; padding: 0.15rem 0.4rem; background: #dcfce7; color: #16a34a; border-radius: 3px; font-weight: 600;">IN STOCK</span>
+        <img class="ia-product-img" src="${product.image || 'https://via.placeholder.com/200x120?text=No+Image'}" alt="${product.title}" onerror="this.src='https://via.placeholder.com/200x120?text=No+Image'">
+        <div class="ia-product-title">${product.title}</div>
+        <div class="ia-product-price">₹${parseFloat(product.price).toLocaleString('en-IN')}</div>
+        ${sizesHtml}
+      </div>
+    `;
+  }).join('');
   updateProductSelection();
 }
 

@@ -7156,16 +7156,27 @@ app.post('/api/influencer/apply', async (req, res) => {
 app.get('/api/influencer/products', async (req, res) => {
     try {
         const data = await shopifyAPI(`products.json?limit=50&fields=id,title,image,variants`);
-        const products = (data.products || []).map(p => {
-            const variant = p.variants && p.variants.length > 0 ? p.variants[0] : null;
-            return {
-                id: String(p.id),
-                title: p.title,
-                image: p.image ? p.image.src : null,
-                price: variant ? variant.price : '0.00',
-                available: variant ? variant.inventory_quantity > 0 : true
-            };
-        });
+        const products = (data.products || [])
+            .map(p => {
+                // Filter to only variants with stock > 0
+                const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
+                if (availableVariants.length === 0) return null; // Skip products with no stock
+                
+                const firstVariant = availableVariants[0];
+                return {
+                    id: String(p.id),
+                    title: p.title,
+                    image: p.image ? p.image.src : null,
+                    price: firstVariant ? firstVariant.price : '0.00',
+                    available: true,
+                    sizes: availableVariants.map(v => ({
+                        id: String(v.id),
+                        title: v.title || 'Default',
+                        stock: v.inventory_quantity
+                    }))
+                };
+            })
+            .filter(Boolean); // Remove null (out-of-stock) products
         return res.json({ success: true, products });
     } catch (error) {
         console.error('Products fetch error:', error);
