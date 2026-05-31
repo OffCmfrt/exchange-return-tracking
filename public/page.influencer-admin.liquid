@@ -2208,13 +2208,15 @@ html, body {
     <div class="ia-auth-card">
       <p class="ia-auth-logo">Offcomfrt · Admin</p>
       <h2>Manager Access</h2>
-      <div class="ia-form-group">
-        <label for="iaPassword">System Password</label>
-        <input type="password" id="iaPassword" class="ia-input" placeholder="Enter password" autocomplete="current-password">
-      </div>
-      <button class="ia-btn ia-btn-primary" style="width:100%;justify-content:center;" id="iaLoginBtn" onclick="handleLogin()">
-        Authenticate
-      </button>
+      <form onsubmit="event.preventDefault(); handleLogin();" autocomplete="on">
+        <div class="ia-form-group">
+          <label for="iaPassword">System Password</label>
+          <input type="password" id="iaPassword" class="ia-input" placeholder="Enter password" autocomplete="current-password">
+        </div>
+        <button type="submit" class="ia-btn ia-btn-primary" style="width:100%;justify-content:center;" id="iaLoginBtn">
+          Authenticate
+        </button>
+      </form>
       <p id="iaLoginErr" class="ia-auth-err">Invalid password. Try again.</p>
     </div>
   </div>

@@ -7836,21 +7836,21 @@ app.post('/api/influencer-admin/reel-targets', authenticateAdmin, async (req, re
 // Admin: Browse Shopify products
 app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req, res) => {
     try {
-        const { search, limit = 20, page = 1 } = req.query;
+        const { search, limit = 20 } = req.query;
         
         // Validate Shopify config before making call
         if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
             return res.status(500).json({ error: 'Shopify not configured', success: false, products: [] });
         }
         
-        let endpoint = `products.json?limit=${Math.min(parseInt(limit), 50)}&page=${parseInt(page)}&fields=id,title,handle,body_html,images,variants,product_type,vendor,tags`;
-        if (search) {
-            endpoint += `&title=${encodeURIComponent(search)}`;
-        }
+        // Shopify REST API 2024-01 does NOT support &page= (uses cursor pagination)
+        // Fetch more products to allow client-side title filtering
+        const fetchLimit = search ? 100 : Math.min(parseInt(limit), 50);
+        let endpoint = `products.json?limit=${fetchLimit}&fields=id,title,handle,body_html,images,variants,product_type,vendor,tags&status=active`;
         
         const shopifyData = await shopifyAPI(endpoint);
         
-        const products = (shopifyData.products || [])
+        let products = (shopifyData.products || [])
             .map(p => {
                 // Only include variants with inventory > 0
                 const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
@@ -7881,11 +7881,23 @@ app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req,
             // Only return products that have at least one available variant
             .filter(p => p.variants.length > 0);
         
+        // Client-side search filter (Shopify REST doesn't support title search natively)
+        if (search) {
+            const q = search.toLowerCase();
+            products = products.filter(p => 
+                p.title.toLowerCase().includes(q) || 
+                (p.handle && p.handle.toLowerCase().includes(q)) ||
+                (p.productType && p.productType.toLowerCase().includes(q))
+            );
+        }
+        
+        // Limit results
+        products = products.slice(0, parseInt(limit));
+        
         res.json({
             success: true,
             products,
             pagination: {
-                currentPage: parseInt(page),
                 hasNextPage: products.length >= parseInt(limit),
                 totalProducts: products.length
             }
@@ -8101,7 +8113,7 @@ app.get('/api/influencer/product-requests/:token', async (req, res) => {
 app.get('/api/influencer/:token/shopify-products', async (req, res) => {
     try {
         const { token } = req.params;
-        const { search, limit = 20, page = 1 } = req.query;
+        const { search, limit = 20 } = req.query;
         
         // Validate Shopify config before making call
         if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
@@ -8114,14 +8126,13 @@ app.get('/api/influencer/:token/shopify-products', async (req, res) => {
             return res.status(401).json({ error: 'Invalid token', success: false, products: [] });
         }
         
-        let endpoint = `products.json?limit=${Math.min(parseInt(limit), 50)}&page=${parseInt(page)}&fields=id,title,handle,body_html,images,variants,product_type,vendor,tags`;
-        if (search) {
-            endpoint += `&title=${encodeURIComponent(search)}`;
-        }
+        // Shopify REST API 2024-01 does NOT support &page= (uses cursor pagination)
+        const fetchLimit = search ? 100 : Math.min(parseInt(limit), 50);
+        let endpoint = `products.json?limit=${fetchLimit}&fields=id,title,handle,body_html,images,variants,product_type,vendor,tags&status=active`;
         
         const shopifyData = await shopifyAPI(endpoint);
         
-        const products = (shopifyData.products || [])
+        let products = (shopifyData.products || [])
             .map(p => {
                 // Only include variants with inventory > 0
                 const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
@@ -8152,11 +8163,23 @@ app.get('/api/influencer/:token/shopify-products', async (req, res) => {
             // Only return products that have at least one available variant
             .filter(p => p.variants.length > 0);
         
+        // Client-side search filter
+        if (search) {
+            const q = search.toLowerCase();
+            products = products.filter(p => 
+                p.title.toLowerCase().includes(q) || 
+                (p.handle && p.handle.toLowerCase().includes(q)) ||
+                (p.productType && p.productType.toLowerCase().includes(q))
+            );
+        }
+        
+        // Limit results
+        products = products.slice(0, parseInt(limit));
+        
         res.json({
             success: true,
             products,
             pagination: {
-                currentPage: parseInt(page),
                 hasNextPage: products.length >= parseInt(limit),
                 totalProducts: products.length
             }
