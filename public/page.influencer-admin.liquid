@@ -2209,6 +2209,10 @@ html, body {
       <p class="ia-auth-logo">Offcomfrt · Admin</p>
       <h2>Manager Access</h2>
       <form onsubmit="event.preventDefault(); handleLogin();" autocomplete="on">
+        <div class="ia-form-group" style="display:none;">
+          <label for="iaUsername">Username</label>
+          <input type="text" id="iaUsername" class="ia-input" value="admin" autocomplete="username" tabindex="-1">
+        </div>
         <div class="ia-form-group">
           <label for="iaPassword">System Password</label>
           <input type="password" id="iaPassword" class="ia-input" placeholder="Enter password" autocomplete="current-password">
@@ -5286,7 +5290,7 @@ async function rejectProductRequest(requestId) {
 // Load all shipments - Complete implementation
 async function loadAllShipments() {
   try {
-    const res = await fetch(`${API}/shipments`, {
+    const res = await fetch(`${API}/shipments/all`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     const data = await res.json();
@@ -5331,6 +5335,54 @@ async function loadAllShipments() {
 
 // Open add shipment modal
 // Open Add Shipment Modal - Complete manual shipment creation
+
+// Initiate shipment from a product selected during application
+function initiateShipmentFromProduct(influencerId, productTitle, productImageUrl) {
+  // Close the details modal
+  const detailsModal = document.getElementById('iaDetailsModal');
+  if (detailsModal) detailsModal.remove();
+  
+  // Open the add shipment modal and pre-fill fields
+  openAddShipmentModal();
+  
+  // Wait for modal to render, then pre-fill
+  setTimeout(() => {
+    // Pre-select the influencer
+    const infSelect = document.getElementById('asInfluencer');
+    if (infSelect) {
+      // Wait for options to load
+      const checkOptions = setInterval(() => {
+        const option = Array.from(infSelect.options).find(o => o.value === String(influencerId));
+        if (option) {
+          infSelect.value = String(influencerId);
+          clearInterval(checkOptions);
+        }
+      }, 200);
+      setTimeout(() => clearInterval(checkOptions), 3000);
+    }
+    
+    // Pre-fill product title
+    const titleInput = document.getElementById('asProductTitle');
+    if (titleInput) titleInput.value = productTitle || '';
+    
+    // Pre-fill shipping address from influencer data
+    const inf = influencersData.find(i => String(i.id) === String(influencerId));
+    if (inf) {
+      const nameInput = document.getElementById('asFullName');
+      if (nameInput) nameInput.value = inf.name || '';
+      const addr1 = document.getElementById('asAddress1');
+      if (addr1) addr1.value = inf.shipping_address || '';
+      const cityInput = document.getElementById('asCity');
+      if (cityInput) cityInput.value = inf.shipping_city || '';
+      const stateInput = document.getElementById('asState');
+      if (stateInput) stateInput.value = inf.shipping_state || '';
+      const pinInput = document.getElementById('asPincode');
+      if (pinInput) pinInput.value = inf.shipping_pin || '';
+      const phoneInput = document.getElementById('asPhone');
+      if (phoneInput) phoneInput.value = inf.phone || '';
+    }
+  }, 300);
+}
 function openAddShipmentModal() {
   const modal = document.createElement('div');
   modal.id = 'srAddShipmentModal';
@@ -5542,7 +5594,7 @@ function getStatusBadge(status) {
 // View shipment details modal
 async function viewShipmentDetails(shipmentId) {
   try {
-    const res = await fetch(`${API}/shipments/${shipmentId}`, {
+    const res = await fetch(`${API}/shipment-detail/${shipmentId}`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     const data = await res.json();
@@ -5889,7 +5941,28 @@ function renderDetailTab(tab, inf, data = {}) {
         </div>
         <div class="ia-dt-card" style="grid-column:1/-1;">
           <div class="ia-dt-card-title">Selected Products (${selectedProds.length})</div>
-          ${selectedProds.length > 0 ? '<div style="font-size:.85rem;color:var(--muted);">' + selectedProds.join(', ') + '</div>' : '<div style="font-size:.85rem;color:var(--muted);">No products selected</div>'}
+          ${selectedProds.length > 0 ? `
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-top:.5rem;">
+              ${selectedProds.map((p, idx) => {
+                const isObj = typeof p === 'object' && p !== null;
+                const title = isObj ? (p.title || 'Unknown Product') : p;
+                const image = isObj ? p.image : null;
+                const productId = isObj ? p.id : p;
+                return `
+                  <div style="border:1px solid var(--border);padding:.75rem;background:var(--surface-2);">
+                    ${image ? `<img src="${image}" alt="${title}" style="width:100%;height:100px;object-fit:cover;margin-bottom:.5rem;border:1px solid var(--border);">` : `<div style="width:100%;height:100px;background:var(--subtle);display:flex;align-items:center;justify-content:center;margin-bottom:.5rem;border:1px solid var(--border);font-size:.7rem;color:var(--muted);">No Image</div>`}
+                    <div style="font-size:.8rem;font-weight:600;margin-bottom:.5rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${title}">${title}</div>
+                    ${isObj && p.price ? `<div style="font-size:.7rem;color:var(--muted);margin-bottom:.5rem;">Rs. ${parseFloat(p.price).toLocaleString('en-IN')}</div>` : ''}
+                    <button onclick="initiateShipmentFromProduct('${inf.id}', '${title.replace(/'/g, "\\'").replace(/"/g, '&quot;')}', '${image || ''}')" 
+                      style="width:100%;padding:.4rem;font-size:.65rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;background:var(--text);color:var(--bg);border:1px solid var(--text);cursor:pointer;"
+                      ${inf.status !== 'active' ? 'disabled title="Approve influencer first"' : ''}>
+                      Initiate Shipment
+                    </button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          ` : '<div style="font-size:.85rem;color:var(--muted);">No products selected</div>'}
         </div>
         ${inf.why_join ? `
         <div class="ia-dt-card" style="grid-column:1/-1;">
