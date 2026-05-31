@@ -7169,6 +7169,31 @@ app.post('/api/influencer/apply', async (req, res) => {
             selectedProducts: JSON.stringify(selectedProducts)
         });
 
+        // ── Auto-create product requests for selected products ──
+        try {
+            for (const product of selectedProducts) {
+                await createProductRequest({
+                    influencerId: influencer.id,
+                    productTitle: product.title || product.productTitle || 'Unknown Product',
+                    productImageUrl: product.image || product.imageUrl || product.productImageUrl || null,
+                    shopifyProductId: product.id || product.shopifyProductId || null,
+                    shopifyVariantId: product.variantId || product.shopifyVariantId || null,
+                    reason: `Selected during application - Tier: ${appTierInfo.tier}`,
+                    shippingFullName: String(name).trim(),
+                    shippingAddressLine1: String(shippingAddress).trim(),
+                    shippingAddressLine2: shippingLandmark ? String(shippingLandmark).trim() : null,
+                    shippingCity: String(shippingCity).trim(),
+                    shippingState: String(shippingState).trim(),
+                    shippingPincode: String(shippingPin).trim(),
+                    shippingPhone: cleanPhone
+                });
+            }
+            console.log(`Created ${selectedProducts.length} product request(s) for influencer ${influencer.id}`);
+        } catch (productRequestError) {
+            console.error('Failed to create product requests (non-blocking):', productRequestError);
+            // Don't fail the application if product request creation fails
+        }
+
         // ── Create DRAFT Shopify price rule (no discount_code attached yet) ──
         let shopifyWarning = null;
         try {

@@ -5016,7 +5016,7 @@ async function searchShopifyProducts(page = 1) {
         return `
           <div style="border: 1px solid var(--border); background: var(--surface); overflow: hidden; display: flex; flex-direction: column; transition: border-color 0.2s;" onmouseenter="this.style.borderColor='var(--text)'" onmouseleave="this.style.borderColor='var(--border)'">
             <div style="position: relative;">
-              ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 220px; object-fit: cover;">` : '<div style="width: 100%; height: 220px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
+              ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 220px; object-fit: contain; background: var(--subtle);">` : '<div style="width: 100%; height: 220px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
               <div style="position: absolute; top: 0.5rem; right: 0.5rem; background: ${totalStock > 10 ? 'var(--success, #22c55e)' : totalStock > 3 ? '#f59e0b' : '#ef4444'}; color: white; padding: 0.2rem 0.5rem; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">${totalStock} in stock</div>
             </div>
             <div style="padding: 1rem; flex: 1; display: flex; flex-direction: column;">
@@ -5077,7 +5077,7 @@ function assignProductToInfluencer(product) {
         <button onclick="closeAssignProductModal()" style="background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 1.5rem; line-height: 1;">&times;</button>
       </div>
       
-      ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 200px; object-fit: cover; margin-bottom: 1rem; border: 1px solid var(--border);">` : ''}
+      ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 200px; object-fit: contain; background: var(--subtle); margin-bottom: 1rem; border: 1px solid var(--border);">` : ''}
       
       <div style="padding: 1rem; background: var(--subtle); margin-bottom: 1.5rem; border-left: 3px solid var(--text);">
         <p style="font-size: 0.85rem; font-weight: 600; margin: 0;">Product: ${productTitle}</p>
@@ -5976,7 +5976,7 @@ function renderDetailTab(tab, inf, data = {}) {
                 const productId = isObj ? p.id : p;
                 return `
                   <div style="border:1px solid var(--border);padding:.75rem;background:var(--surface-2);">
-                    ${image ? `<img src="${image}" alt="${title}" style="width:100%;height:100px;object-fit:cover;margin-bottom:.5rem;border:1px solid var(--border);">` : `<div style="width:100%;height:100px;background:var(--subtle);display:flex;align-items:center;justify-content:center;margin-bottom:.5rem;border:1px solid var(--border);font-size:.7rem;color:var(--muted);">No Image</div>`}
+                    ${image ? `<img src="${image}" alt="${title}" style="width:100%;height:100px;object-fit:contain;background:var(--subtle);margin-bottom:.5rem;border:1px solid var(--border);">` : `<div style="width:100%;height:100px;background:var(--subtle);display:flex;align-items:center;justify-content:center;margin-bottom:.5rem;border:1px solid var(--border);font-size:.7rem;color:var(--muted);">No Image</div>`}
                     <div style="font-size:.8rem;font-weight:600;margin-bottom:.5rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${title}">${title}</div>
                     ${isObj && p.price ? `<div style="font-size:.7rem;color:var(--muted);margin-bottom:.5rem;">Rs. ${parseFloat(p.price).toLocaleString('en-IN')}</div>` : ''}
                     <button onclick="initiateShipmentFromProduct('${inf.id}', '${title.replace(/'/g, "\\'").replace(/"/g, '&quot;')}', '${image || ''}')" 

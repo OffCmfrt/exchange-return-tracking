@@ -1667,7 +1667,7 @@ async function searchInventoryProducts(page = 1) {
       return `
         <div style="border: 1px solid var(--border); background: var(--bg); overflow: hidden; display: flex; flex-direction: column; transition: border-color 0.2s, transform 0.2s;" onmouseenter="this.style.borderColor='var(--text)';this.style.transform='translateY(-2px)'" onmouseleave="this.style.borderColor='var(--border)';this.style.transform='translateY(0)'">
           <div style="position: relative;">
-            ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 200px; object-fit: cover; background: var(--subtle);">` : '<div style="width: 100%; height: 200px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.7rem;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
+            ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 200px; object-fit: contain; background: var(--subtle);">` : '<div style="width: 100%; height: 200px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.7rem;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
             <div style="position: absolute; top: 0.4rem; right: 0.4rem; background: ${totalStock > 10 ? 'var(--success, #22c55e)' : totalStock > 3 ? '#f59e0b' : '#ef4444'}; color: white; padding: 0.15rem 0.4rem; font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">${totalStock} left</div>
           </div>
           <div style="padding: 0.75rem; flex: 1; display: flex; flex-direction: column;">
@@ -1728,7 +1728,7 @@ function openProductRequestModalWithProduct(productTitle, imageUrl, variants) {
         <button onclick="closeProductRequestModal()" style="background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 1.5rem; line-height: 1;">&times;</button>
       </div>
       
-      ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 180px; object-fit: cover; margin-bottom: 1rem; border: 1px solid var(--border);">` : ''}
+      ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 180px; object-fit: contain; background: var(--subtle); margin-bottom: 1rem; border: 1px solid var(--border);">` : ''}
       
       <div class="ip-auth-group">
         <label for="prProductTitle" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Product</label>
