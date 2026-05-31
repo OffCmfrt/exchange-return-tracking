@@ -1103,6 +1103,55 @@ async function shopifyAPI(endpoint, options = {}) {
     return data;
 }
 
+// ==================== FETCH ALL SHOPIFY PRODUCTS (CURSOR PAGINATION) ====================
+
+// In-memory product cache (refreshes every 5 minutes)
+let _shopifyProductCache = { data: null, timestamp: 0 };
+const PRODUCT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function fetchAllShopifyProducts(forceRefresh = false) {
+    // Return cached data if still fresh
+    if (!forceRefresh && _shopifyProductCache.data && (Date.now() - _shopifyProductCache.timestamp < PRODUCT_CACHE_TTL)) {
+        return _shopifyProductCache.data;
+    }
+    
+    let allProducts = [];
+    let endpoint = `products.json?limit=250&status=active&fields=id,title,handle,body_html,images,image,variants,product_type,vendor,tags`;
+    let pageCount = 0;
+    const MAX_PAGES = 20; // Safety limit (250 * 20 = 5000 products max)
+    
+    while (endpoint && pageCount < MAX_PAGES) {
+        const data = await shopifyAPI(endpoint);
+        const products = data.products || [];
+        allProducts = allProducts.concat(products);
+        pageCount++;
+        
+        // Follow cursor pagination via nextUrl from Link header
+        if (data.nextUrl) {
+            endpoint = data.nextUrl; // shopifyAPI handles full URLs
+        } else {
+            break;
+        }
+    }
+    
+    console.log(`[Shopify] Fetched ${allProducts.length} total active products across ${pageCount} page(s)`);
+    
+    // Cache the results
+    _shopifyProductCache = { data: allProducts, timestamp: Date.now() };
+    return allProducts;
+}
+
+// Filter products to only those with inventory > 0
+function filterProductsWithInventory(products) {
+    return products
+        .map(p => {
+            const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
+            if (availableVariants.length === 0) return null;
+            return { ...p, variants: availableVariants };
+        })
+        .filter(Boolean);
+}
+
 // ==================== SHOPIFY DISCOUNT CODE HELPERS ====================
 
 async function createShopifyDiscountCode(code, value, valueType, usageLimit, title) {
@@ -7152,21 +7201,25 @@ app.post('/api/influencer/apply', async (req, res) => {
     }
 });
 
-// GET /api/influencer/products - Fetch available products from Shopify
+// GET /api/influencer/products - Fetch ALL available products from Shopify with pagination
 app.get('/api/influencer/products', async (req, res) => {
     try {
-        const data = await shopifyAPI(`products.json?limit=50&fields=id,title,image,variants`);
-        const products = (data.products || [])
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+        const search = (req.query.search || '').trim().toLowerCase();
+        
+        // Fetch ALL active products from Shopify (uses cache)
+        const allProducts = await fetchAllShopifyProducts();
+        
+        // Filter to only products with inventory > 0
+        let products = filterProductsWithInventory(allProducts)
             .map(p => {
-                // Filter to only variants with stock > 0
-                const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
-                if (availableVariants.length === 0) return null; // Skip products with no stock
-                
+                const availableVariants = p.variants;
                 const firstVariant = availableVariants[0];
                 return {
                     id: String(p.id),
                     title: p.title,
-                    image: p.image ? p.image.src : null,
+                    image: p.image ? p.image.src : (p.images && p.images.length > 0 ? p.images[0].src : null),
                     price: firstVariant ? firstVariant.price : '0.00',
                     available: true,
                     sizes: availableVariants.map(v => ({
@@ -7175,12 +7228,33 @@ app.get('/api/influencer/products', async (req, res) => {
                         stock: v.inventory_quantity
                     }))
                 };
-            })
-            .filter(Boolean); // Remove null (out-of-stock) products
-        return res.json({ success: true, products });
+            });
+        
+        // Apply search filter if provided
+        if (search) {
+            products = products.filter(p => p.title.toLowerCase().includes(search));
+        }
+        
+        const totalProducts = products.length;
+        const totalPages = Math.ceil(totalProducts / limit);
+        const startIdx = (page - 1) * limit;
+        const paginatedProducts = products.slice(startIdx, startIdx + limit);
+        
+        return res.json({
+            success: true,
+            products: paginatedProducts,
+            pagination: {
+                page,
+                limit,
+                totalProducts,
+                totalPages,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1
+            }
+        });
     } catch (error) {
         console.error('Products fetch error:', error);
-        res.status(500).json({ error: 'Failed to fetch products', products: [] });
+        res.status(500).json({ error: 'Failed to fetch products', products: [], pagination: { page: 1, totalProducts: 0, totalPages: 0 } });
     }
 });
 
@@ -7953,24 +8027,22 @@ app.post('/api/influencer-admin/reel-targets', authenticateAdmin, async (req, re
 // Admin: Browse Shopify products
 app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req, res) => {
     try {
-        const { search, limit = 20 } = req.query;
+        const { search, limit = 20, page = 1 } = req.query;
+        const parsedLimit = Math.min(50, Math.max(1, parseInt(limit) || 20));
+        const parsedPage = Math.max(1, parseInt(page) || 1);
         
         // Validate Shopify config before making call
         if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
             return res.status(500).json({ error: 'Shopify not configured', success: false, products: [] });
         }
         
-        // Shopify REST API 2024-01 does NOT support &page= (uses cursor pagination)
-        // Fetch more products to allow client-side title filtering
-        const fetchLimit = search ? 100 : Math.min(parseInt(limit), 50);
-        let endpoint = `products.json?limit=${fetchLimit}&fields=id,title,handle,body_html,images,variants,product_type,vendor,tags&status=active`;
+        // Fetch ALL active products from Shopify (uses cache)
+        const allProducts = await fetchAllShopifyProducts();
         
-        const shopifyData = await shopifyAPI(endpoint);
-        
-        let products = (shopifyData.products || [])
+        // Filter to only products with inventory
+        let products = filterProductsWithInventory(allProducts)
             .map(p => {
-                // Only include variants with inventory > 0
-                const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
+                const availableVariants = p.variants;
                 return {
                     id: p.id,
                     shopifyId: p.id,
@@ -7994,11 +8066,9 @@ app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req,
                     vendor: p.vendor,
                     tags: p.tags || []
                 };
-            })
-            // Only return products that have at least one available variant
-            .filter(p => p.variants.length > 0);
+            });
         
-        // Client-side search filter (Shopify REST doesn't support title search natively)
+        // Client-side search filter
         if (search) {
             const q = search.toLowerCase();
             products = products.filter(p => 
@@ -8008,15 +8078,21 @@ app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req,
             );
         }
         
-        // Limit results
-        products = products.slice(0, parseInt(limit));
+        const totalProducts = products.length;
+        const totalPages = Math.ceil(totalProducts / parsedLimit);
+        const startIdx = (parsedPage - 1) * parsedLimit;
+        const paginatedProducts = products.slice(startIdx, startIdx + parsedLimit);
         
         res.json({
             success: true,
-            products,
+            products: paginatedProducts,
             pagination: {
-                hasNextPage: products.length >= parseInt(limit),
-                totalProducts: products.length
+                page: parsedPage,
+                limit: parsedLimit,
+                totalProducts,
+                totalPages,
+                hasNextPage: parsedPage < totalPages,
+                hasPrevPage: parsedPage > 1
             }
         });
     } catch (error) {
@@ -8230,7 +8306,9 @@ app.get('/api/influencer/product-requests/:token', async (req, res) => {
 app.get('/api/influencer/:token/shopify-products', async (req, res) => {
     try {
         const { token } = req.params;
-        const { search, limit = 20 } = req.query;
+        const { search, limit = 20, page = 1 } = req.query;
+        const parsedLimit = Math.min(50, Math.max(1, parseInt(limit) || 20));
+        const parsedPage = Math.max(1, parseInt(page) || 1);
         
         // Validate Shopify config before making call
         if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
@@ -8243,16 +8321,13 @@ app.get('/api/influencer/:token/shopify-products', async (req, res) => {
             return res.status(401).json({ error: 'Invalid token', success: false, products: [] });
         }
         
-        // Shopify REST API 2024-01 does NOT support &page= (uses cursor pagination)
-        const fetchLimit = search ? 100 : Math.min(parseInt(limit), 50);
-        let endpoint = `products.json?limit=${fetchLimit}&fields=id,title,handle,body_html,images,variants,product_type,vendor,tags&status=active`;
+        // Fetch ALL active products from Shopify (uses cache)
+        const allProducts = await fetchAllShopifyProducts();
         
-        const shopifyData = await shopifyAPI(endpoint);
-        
-        let products = (shopifyData.products || [])
+        // Filter to only products with inventory
+        let products = filterProductsWithInventory(allProducts)
             .map(p => {
-                // Only include variants with inventory > 0
-                const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
+                const availableVariants = p.variants;
                 return {
                     id: p.id,
                     shopifyId: p.id,
@@ -8276,9 +8351,7 @@ app.get('/api/influencer/:token/shopify-products', async (req, res) => {
                     vendor: p.vendor,
                     tags: p.tags || []
                 };
-            })
-            // Only return products that have at least one available variant
-            .filter(p => p.variants.length > 0);
+            });
         
         // Client-side search filter
         if (search) {
@@ -8290,15 +8363,21 @@ app.get('/api/influencer/:token/shopify-products', async (req, res) => {
             );
         }
         
-        // Limit results
-        products = products.slice(0, parseInt(limit));
+        const totalProducts = products.length;
+        const totalPages = Math.ceil(totalProducts / parsedLimit);
+        const startIdx = (parsedPage - 1) * parsedLimit;
+        const paginatedProducts = products.slice(startIdx, startIdx + parsedLimit);
         
         res.json({
             success: true,
-            products,
+            products: paginatedProducts,
             pagination: {
-                hasNextPage: products.length >= parseInt(limit),
-                totalProducts: products.length
+                page: parsedPage,
+                limit: parsedLimit,
+                totalProducts,
+                totalPages,
+                hasNextPage: parsedPage < totalPages,
+                hasPrevPage: parsedPage > 1
             }
         });
     } catch (error) {

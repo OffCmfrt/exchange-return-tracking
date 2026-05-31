@@ -2558,8 +2558,8 @@ html, body {
               <span style="font-size: 0.65rem; color: var(--success, #22c55e); margin-top: 0.25rem; display: block;">Only showing products with available stock</span>
             </div>
             <div style="display: flex; gap: 0.5rem; align-items: center;">
-              <input type="text" id="srProductSearch" class="ia-input" placeholder="Search products..." style="width: 250px; font-size: 0.8rem;" onkeyup="if(event.key==='Enter') searchShopifyProducts()">
-              <button class="ia-btn ia-btn-primary" onclick="searchShopifyProducts()" style="padding: 0.6rem 1.2rem; font-size: 0.7rem; white-space: nowrap;">Search</button>
+              <input type="text" id="srProductSearch" class="ia-input" placeholder="Search products..." style="width: 250px; font-size: 0.8rem;" onkeyup="if(event.key==='Enter') searchShopifyProducts(1)">
+              <button class="ia-btn ia-btn-primary" onclick="searchShopifyProducts(1)" style="padding: 0.6rem 1.2rem; font-size: 0.7rem; white-space: nowrap;">Search</button>
             </div>
           </div>
 
@@ -2570,6 +2570,14 @@ html, body {
               <p style="font-size: 0.8rem;">Search for products from Shopify inventory</p>
               <p style="font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem;">Products will auto-load when you open this tab</p>
             </div>
+          </div>
+
+          <!-- Pagination Controls -->
+          <div id="srProductPagination" style="display: none; margin-top: 1.25rem; padding: 1rem; background: var(--subtle); display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+            <button class="ia-btn" id="srPrevPage" onclick="searchShopifyProducts(srCurrentPage - 1)" style="padding: 0.5rem 1.2rem; font-size: 0.7rem;">&larr; Previous</button>
+            <span id="srPageInfo" style="font-size: 0.75rem; color: var(--muted); font-weight: 600;">Page 1 of 1</span>
+            <button class="ia-btn ia-btn-primary" id="srNextPage" onclick="searchShopifyProducts(srCurrentPage + 1)" style="padding: 0.5rem 1.2rem; font-size: 0.7rem;">Next &rarr;</button>
+            <span id="srTotalProducts" style="font-size: 0.65rem; color: var(--muted); width: 100%; text-align: center;"></span>
           </div>
         </div>
 
@@ -4977,15 +4985,21 @@ function getMonthName(monthNum) {
   return months[parseInt(monthNum) - 1];
 }
 
-// Search Shopify products
-async function searchShopifyProducts() {
+// Search Shopify products with pagination
+let srCurrentPage = 1;
+const SR_PRODUCTS_PER_PAGE = 12;
+
+async function searchShopifyProducts(page = 1) {
   const search = document.getElementById('srProductSearch').value;
   const grid = document.getElementById('srProductGrid');
+  const paginationEl = document.getElementById('srProductPagination');
   
+  srCurrentPage = page;
   grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><div class="ia-spinner" style="margin: 0 auto 1rem;"></div><p style="font-size: 0.8rem;">Loading available inventory...</p></div>';
+  if (paginationEl) paginationEl.style.display = 'none';
   
   try {
-    const res = await fetch(`${API}/shopify-products?search=${encodeURIComponent(search)}&limit=20`, {
+    const res = await fetch(`${API}/shopify-products?search=${encodeURIComponent(search)}&limit=${SR_PRODUCTS_PER_PAGE}&page=${page}`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
     const data = await res.json();
@@ -4996,7 +5010,7 @@ async function searchShopifyProducts() {
         const totalStock = p.totalStock || 0;
         const variantCount = p.variants.length;
         const sizesHtml = p.variants.map(v => 
-          `<span style="display: inline-block; padding: 0.2rem 0.5rem; font-size: 0.65rem; border: 1px solid var(--border); margin: 0.15rem; background: var(--bg); font-weight: 500;" title="Stock: ${v.inventoryQuantity}">${v.title} <span style=\"color: var(--success, #22c55e); font-size: 0.6rem;\">(${v.inventoryQuantity})</span></span>`
+          `<span style="display: inline-block; padding: 0.2rem 0.5rem; font-size: 0.65rem; border: 1px solid var(--border); margin: 0.15rem; background: var(--bg); font-weight: 500;" title="Stock: ${v.inventoryQuantity}">${v.title} <span style="color: var(--success, #22c55e); font-size: 0.6rem;">(${v.inventoryQuantity})</span></span>`
         ).join('');
         
         return `
@@ -5020,6 +5034,18 @@ async function searchShopifyProducts() {
           </div>
         `;
       }).join('');
+      
+      // Update pagination
+      if (data.pagination && paginationEl) {
+        const { totalProducts, totalPages, hasNextPage, hasPrevPage } = data.pagination;
+        paginationEl.style.display = 'flex';
+        document.getElementById('srPageInfo').textContent = `Page ${page} of ${totalPages}`;
+        document.getElementById('srTotalProducts').textContent = `${totalProducts} products with stock available`;
+        document.getElementById('srPrevPage').disabled = !hasPrevPage;
+        document.getElementById('srPrevPage').style.opacity = hasPrevPage ? '1' : '0.4';
+        document.getElementById('srNextPage').disabled = !hasNextPage;
+        document.getElementById('srNextPage').style.opacity = hasNextPage ? '1' : '0.4';
+      }
     } else {
       grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg><p style="font-size: 0.8rem;">No available products found</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">All products are currently out of stock or no matches for your search</p></div>';
     }

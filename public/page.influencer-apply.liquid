@@ -916,12 +916,23 @@ html, body {
         </div>
       </div>
 
+      <div style="margin-bottom: 1rem;">
+        <input type="text" id="iaProductSearch" class="ia-input" placeholder="Search products by name..." style="width: 100%; font-size: 0.8rem; padding: 0.6rem 1rem;" oninput="debounceProductSearch()">
+      </div>
+
       <div class="ia-products-loading" id="iaProductsLoading">
         Loading available products...
       </div>
 
       <div class="ia-product-grid" id="iaProductGrid" style="display: none;">
         <!-- Products will be loaded here -->
+      </div>
+
+      <div id="iaProductPagination" style="display: none; margin-top: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.75rem; flex-wrap: wrap;">
+        <button type="button" id="iaPrevPage" class="ia-btn secondary" style="padding: 0.4rem 1rem; font-size: 0.75rem;" onclick="loadProducts(currentProductPage - 1)">&larr; Prev</button>
+        <span id="iaPageInfo" style="font-size: 0.75rem; color: var(--muted);">Page 1 of 1</span>
+        <button type="button" id="iaNextPage" class="ia-btn secondary" style="padding: 0.4rem 1rem; font-size: 0.75rem;" onclick="loadProducts(currentProductPage + 1)">Next &rarr;</button>
+        <span id="iaTotalProducts" style="font-size: 0.7rem; color: var(--muted); width: 100%; text-align: center; margin-top: 0.25rem;"></span>
       </div>
 
       <div class="ia-error" data-error-for="selectedProducts"></div>
@@ -1064,13 +1075,33 @@ function updateTierWidget() {
   }
 }
 
-// ── Product Loading ──
-async function loadProducts() {
+// ── Product Loading with Pagination ──
+let currentProductPage = 1;
+let productSearchTimeout = null;
+const PRODUCTS_PER_PAGE = 12;
+
+function debounceProductSearch() {
+  if (productSearchTimeout) clearTimeout(productSearchTimeout);
+  productSearchTimeout = setTimeout(() => {
+    currentProductPage = 1;
+    loadProducts(1);
+  }, 400);
+}
+
+async function loadProducts(page = 1) {
   const loading = document.getElementById('iaProductsLoading');
   const grid = document.getElementById('iaProductGrid');
+  const paginationEl = document.getElementById('iaProductPagination');
+  const search = (document.getElementById('iaProductSearch')?.value || '').trim();
+  
+  currentProductPage = page;
+  loading.style.display = 'block';
+  grid.style.display = 'none';
+  if (paginationEl) paginationEl.style.display = 'none';
   
   try {
-    const res = await fetch(PRODUCTS_API);
+    const url = `${PRODUCTS_API}?page=${page}&limit=${PRODUCTS_PER_PAGE}&search=${encodeURIComponent(search)}`;
+    const res = await fetch(url);
     const data = await res.json();
     
     if (data.success && data.products) {
@@ -1078,8 +1109,20 @@ async function loadProducts() {
       renderProducts();
       loading.style.display = 'none';
       grid.style.display = 'grid';
+      
+      // Update pagination controls
+      if (data.pagination && paginationEl) {
+        const { totalProducts, totalPages, hasNextPage, hasPrevPage } = data.pagination;
+        paginationEl.style.display = 'flex';
+        document.getElementById('iaPageInfo').textContent = `Page ${page} of ${totalPages}`;
+        document.getElementById('iaTotalProducts').textContent = `${totalProducts} products available`;
+        document.getElementById('iaPrevPage').disabled = !hasPrevPage;
+        document.getElementById('iaPrevPage').style.opacity = hasPrevPage ? '1' : '0.4';
+        document.getElementById('iaNextPage').disabled = !hasNextPage;
+        document.getElementById('iaNextPage').style.opacity = hasNextPage ? '1' : '0.4';
+      }
     } else {
-      loading.textContent = 'Failed to load products. Please refresh.';
+      loading.textContent = 'No products found. Try a different search.';
     }
   } catch (err) {
     loading.textContent = 'Failed to load products. Please refresh.';
@@ -1172,7 +1215,7 @@ function setStep(n) {
   
   // Load products when entering step 4
   if (n === 4 && availableProducts.length === 0) {
-    loadProducts();
+    loadProducts(1);
   }
 }
 

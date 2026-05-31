@@ -1574,7 +1574,10 @@ async function loadMyProductRequests() {
 }
 
 // Browse inventory (placeholder)
-// Browse Inventory - Complete product browsing modal
+// Browse Inventory - Complete product browsing modal with pagination
+let ipInventoryPage = 1;
+const IP_PRODUCTS_PER_PAGE = 12;
+
 async function browseInventory() {
   const modal = document.createElement('div');
   modal.id = 'ipBrowseInventoryModal';
@@ -1592,8 +1595,8 @@ async function browseInventory() {
       
       <div style="margin-bottom: 1.5rem;">
         <div style="display: flex; gap: 0.75rem;">
-          <input type="text" id="ipInventorySearch" class="ip-auth-input" placeholder="Search available products..." style="flex: 1; font-size: 0.85rem;" onkeyup="if(event.key==='Enter') searchInventoryProducts()">
-          <button onclick="searchInventoryProducts()" style="padding: 0.8rem 1.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; white-space: nowrap;">Search</button>
+          <input type="text" id="ipInventorySearch" class="ip-auth-input" placeholder="Search available products..." style="flex: 1; font-size: 0.85rem;" onkeyup="if(event.key==='Enter') searchInventoryProducts(1)">
+          <button onclick="searchInventoryProducts(1)" style="padding: 0.8rem 1.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; white-space: nowrap;">Search</button>
         </div>
       </div>
       
@@ -1602,6 +1605,14 @@ async function browseInventory() {
           <div style="width: 32px; height: 32px; border: 2px solid var(--muted); border-top-color: var(--text); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
           <p style="font-size: 0.8rem;">Loading available products...</p>
         </div>
+      </div>
+      
+      <!-- Pagination Controls -->
+      <div id="ipInventoryPagination" style="display: none; margin-top: 1rem; padding: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 0.75rem; flex-wrap: wrap;">
+        <button id="ipPrevPage" onclick="searchInventoryProducts(ipInventoryPage - 1)" style="padding: 0.4rem 1rem; background: var(--bg); border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; font-weight: 600;">&larr; Prev</button>
+        <span id="ipPageInfo" style="font-size: 0.7rem; color: var(--muted); font-weight: 600;">Page 1 of 1</span>
+        <button id="ipNextPage" onclick="searchInventoryProducts(ipInventoryPage + 1)" style="padding: 0.4rem 1rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; font-weight: 600;">Next &rarr;</button>
+        <span id="ipTotalProducts" style="font-size: 0.6rem; color: var(--muted); width: 100%; text-align: center;"></span>
       </div>
       
       <div style="padding: 0.75rem 1rem; background: var(--subtle); margin-top: 1.5rem; border-left: 3px solid var(--text);">
@@ -1614,7 +1625,8 @@ async function browseInventory() {
   document.body.appendChild(modal);
   
   // Auto-load products
-  searchInventoryProducts();
+  ipInventoryPage = 1;
+  searchInventoryProducts(1);
 }
 
 function closeBrowseInventoryModal() {
@@ -1622,14 +1634,18 @@ function closeBrowseInventoryModal() {
   if (modal) modal.remove();
 }
 
-async function searchInventoryProducts() {
+async function searchInventoryProducts(page = 1) {
   const search = document.getElementById('ipInventorySearch').value;
   const grid = document.getElementById('ipInventoryGrid');
+  const paginationEl = document.getElementById('ipInventoryPagination');
+  
+  ipInventoryPage = page;
   
   try {
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><div style="width: 32px; height: 32px; border: 2px solid var(--muted); border-top-color: var(--text); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div><p style="font-size: 0.8rem;">Searching available products...</p></div>';
+    if (paginationEl) paginationEl.style.display = 'none';
     
-    const res = await fetch(`${API_BASE}/influencer/${token}/shopify-products?search=${encodeURIComponent(search)}&limit=20`);
+    const res = await fetch(`${API_BASE}/influencer/${token}/shopify-products?search=${encodeURIComponent(search)}&limit=${IP_PRODUCTS_PER_PAGE}&page=${page}`);
     const data = await res.json();
     
     if (!data.success || !data.products || data.products.length === 0) {
@@ -1668,9 +1684,21 @@ async function searchInventoryProducts() {
         </div>
       `;
     }).join('');
+    
+    // Update pagination controls
+    if (data.pagination && paginationEl) {
+      const { totalProducts, totalPages, hasNextPage, hasPrevPage } = data.pagination;
+      paginationEl.style.display = 'flex';
+      document.getElementById('ipPageInfo').textContent = `Page ${page} of ${totalPages}`;
+      document.getElementById('ipTotalProducts').textContent = `${totalProducts} products available`;
+      document.getElementById('ipPrevPage').disabled = !hasPrevPage;
+      document.getElementById('ipPrevPage').style.opacity = hasPrevPage ? '1' : '0.4';
+      document.getElementById('ipNextPage').disabled = !hasNextPage;
+      document.getElementById('ipNextPage').style.opacity = hasNextPage ? '1' : '0.4';
+    }
   } catch (e) {
     console.error('Search inventory error:', e);
-    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--danger, #ef4444);"><p style="font-size: 0.8rem;">Failed to load products</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">Please check your connection</p><button onclick="searchInventoryProducts()" style="margin-top: 1rem; padding: 0.5rem 1.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Retry</button></div>';
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--danger, #ef4444);"><p style="font-size: 0.8rem;">Failed to load products</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">Please check your connection</p><button onclick="searchInventoryProducts(1)" style="margin-top: 1rem; padding: 0.5rem 1.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Retry</button></div>';
   }
 }
 
