@@ -2546,19 +2546,23 @@ html, body {
 
         <!-- Tab 2: Product Inventory (Shopify) -->
         <div id="sr-tab-inventory" class="sr-tab-content" style="display: none;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-            <span style="font-size: 0.75rem; color: var(--muted);">Browse Shopify products and assign to ambassadors</span>
-            <div style="display: flex; gap: 0.5rem;">
-              <input type="text" id="srProductSearch" class="ia-input" placeholder="Search products..." style="width: 250px;" onkeyup="if(event.key==='Enter') searchShopifyProducts()">
-              <button class="ia-btn ia-btn-primary" onclick="searchShopifyProducts()" style="padding: 0.5rem 1rem; font-size: 0.7rem;">Search</button>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <span style="font-size: 0.75rem; color: var(--muted); display: block;">Browse available inventory and assign to ambassadors</span>
+              <span style="font-size: 0.65rem; color: var(--success, #22c55e); margin-top: 0.25rem; display: block;">Only showing products with available stock</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input type="text" id="srProductSearch" class="ia-input" placeholder="Search products..." style="width: 250px; font-size: 0.8rem;" onkeyup="if(event.key==='Enter') searchShopifyProducts()">
+              <button class="ia-btn ia-btn-primary" onclick="searchShopifyProducts()" style="padding: 0.6rem 1.2rem; font-size: 0.7rem; white-space: nowrap;">Search</button>
             </div>
           </div>
 
           <!-- Product Grid -->
-          <div id="srProductGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+          <div id="srProductGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.25rem;">
             <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-              <p>Search for products from Shopify inventory</p>
+              <p style="font-size: 0.8rem;">Search for products from Shopify inventory</p>
+              <p style="font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem;">Products will auto-load when you open this tab</p>
             </div>
           </div>
         </div>
@@ -4338,6 +4342,8 @@ function switchSRTab(tabName, btnEl) {
   // Load tab data
   if (tabName === 'monthly-targets') {
     loadMonthlyTargets();
+  } else if (tabName === 'inventory') {
+    searchShopifyProducts();
   } else if (tabName === 'product-requests') {
     loadProductRequests();
   } else if (tabName === 'all-shipments') {
@@ -4968,6 +4974,9 @@ function getMonthName(monthNum) {
 // Search Shopify products
 async function searchShopifyProducts() {
   const search = document.getElementById('srProductSearch').value;
+  const grid = document.getElementById('srProductGrid');
+  
+  grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><div class="ia-spinner" style="margin: 0 auto 1rem;"></div><p style="font-size: 0.8rem;">Loading available inventory...</p></div>';
   
   try {
     const res = await fetch(`${API}/shopify-products?search=${encodeURIComponent(search)}&limit=20`, {
@@ -4975,79 +4984,111 @@ async function searchShopifyProducts() {
     });
     const data = await res.json();
     
-    if (data.success) {
-      const grid = document.getElementById('srProductGrid');
-      if (data.products.length === 0) {
-        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><p>No products found</p></div>';
-        return;
-      }
-      
+    if (data.success && data.products && data.products.length > 0) {
       grid.innerHTML = data.products.map(p => {
         const imageUrl = p.images[0]?.src || '';
+        const totalStock = p.totalStock || 0;
+        const variantCount = p.variants.length;
+        const sizesHtml = p.variants.map(v => 
+          `<span style="display: inline-block; padding: 0.2rem 0.5rem; font-size: 0.65rem; border: 1px solid var(--border); margin: 0.15rem; background: var(--bg); font-weight: 500;" title="Stock: ${v.inventoryQuantity}">${v.title} <span style=\"color: var(--success, #22c55e); font-size: 0.6rem;\">(${v.inventoryQuantity})</span></span>`
+        ).join('');
+        
         return `
-          <div style="border: 1px solid var(--border); background: var(--surface); overflow: hidden;">
-            ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 200px; object-fit: cover;">` : '<div style="width: 100%; height: 200px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted);">No Image</div>'}
-            <div style="padding: 1rem;">
-              <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem;">${p.title}</div>
-              <div style="font-size: 0.75rem; color: var(--muted); margin-bottom: 0.75rem;">₹${p.variants[0]?.price || '0'}</div>
-              <button class="ia-btn ia-btn-primary" onclick="assignProductToInfluencer(${p.id}, '${p.title.replace(/'/g, "\\'")}', '${imageUrl}')" style="width: 100%; padding: 0.5rem; font-size: 0.7rem;">
+          <div style="border: 1px solid var(--border); background: var(--surface); overflow: hidden; display: flex; flex-direction: column; transition: border-color 0.2s;" onmouseenter="this.style.borderColor='var(--text)'" onmouseleave="this.style.borderColor='var(--border)'">
+            <div style="position: relative;">
+              ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 220px; object-fit: cover;">` : '<div style="width: 100%; height: 220px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
+              <div style="position: absolute; top: 0.5rem; right: 0.5rem; background: ${totalStock > 10 ? 'var(--success, #22c55e)' : totalStock > 3 ? '#f59e0b' : '#ef4444'}; color: white; padding: 0.2rem 0.5rem; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">${totalStock} in stock</div>
+            </div>
+            <div style="padding: 1rem; flex: 1; display: flex; flex-direction: column;">
+              <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.4rem; line-height: 1.3;">${p.title}</div>
+              <div style="font-size: 0.75rem; color: var(--muted); margin-bottom: 0.5rem;">${p.productType || 'Apparel'} ${p.vendor ? '&middot; ' + p.vendor : ''}</div>
+              <div style="font-size: 0.9rem; font-weight: 700; margin-bottom: 0.75rem;">&#8377;${p.variants[0]?.price || '0'}</div>
+              <div style="margin-bottom: 0.75rem;">
+                <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 0.4rem; font-weight: 600;">Available Sizes (${variantCount})</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0;">${sizesHtml}</div>
+              </div>
+              <button class="ia-btn ia-btn-primary" onclick='assignProductToInfluencer(${JSON.stringify(p).replace(/'/g, "&apos;")})' style="width: 100%; padding: 0.6rem; font-size: 0.7rem; margin-top: auto; letter-spacing: 0.1em;">
                 Assign to Ambassador
               </button>
             </div>
           </div>
         `;
       }).join('');
+    } else {
+      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg><p style="font-size: 0.8rem;">No available products found</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">All products are currently out of stock or no matches for your search</p></div>';
     }
   } catch (e) {
     console.error('Search Shopify products error:', e);
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--danger, #ef4444);"><p style="font-size: 0.8rem;">Failed to load products</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">Please check your connection and try again</p><button onclick="searchShopifyProducts()" class="ia-btn" style="margin-top: 1rem; padding: 0.5rem 1.5rem; font-size: 0.7rem;">Retry</button></div>';
   }
 }
 
 // Assign product to influencer with complete modal
-function assignProductToInfluencer(productId, productTitle, imageUrl) {
+function assignProductToInfluencer(product) {
+  const productId = product.id;
+  const productTitle = product.title;
+  const imageUrl = product.images[0]?.src || '';
+  const variants = product.variants || [];
+  
   const modal = document.createElement('div');
   modal.id = 'srAssignModal';
-  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem; backdrop-filter: blur(4px);';
+  
+  const sizeOptionsHtml = variants.length > 1 
+    ? variants.map((v, i) => `<option value="${v.id}" ${i === 0 ? 'selected' : ''}>${v.title} - Stock: ${v.inventoryQuantity}</option>`).join('')
+    : `<option value="${variants[0]?.id}" selected>${variants[0]?.title || 'Default'} - Stock: ${variants[0]?.inventoryQuantity || 0}</option>`;
   
   modal.innerHTML = `
     <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
-      <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1.5rem;">Assign Product & Create Shipment</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin: 0;">Assign Product & Create Shipment</h3>
+        <button onclick="closeAssignProductModal()" style="background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 1.5rem; line-height: 1;">&times;</button>
+      </div>
       
       ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 200px; object-fit: cover; margin-bottom: 1rem; border: 1px solid var(--border);">` : ''}
       
       <div style="padding: 1rem; background: var(--subtle); margin-bottom: 1.5rem; border-left: 3px solid var(--text);">
         <p style="font-size: 0.85rem; font-weight: 600; margin: 0;">Product: ${productTitle}</p>
+        <p style="font-size: 0.7rem; color: var(--muted); margin: 0.3rem 0 0;">${product.productType || ''} ${product.vendor ? '&middot; ' + product.vendor : ''}</p>
       </div>
       
       <div class="ia-form-group">
-        <label for="apInfluencer">Select Influencer *</label>
-        <select id="apInfluencer" class="ia-input" required>
+        <label for="apSize" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Select Size/Variant *</label>
+        <select id="apSize" class="ia-input" required style="font-size: 0.85rem;">
+          ${sizeOptionsHtml}
+        </select>
+        <span style="font-size: 0.65rem; color: var(--success, #22c55e); margin-top: 0.3rem; display: block;">Only showing variants with available stock</span>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="apInfluencer" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Select Influencer *</label>
+        <select id="apInfluencer" class="ia-input" required style="font-size: 0.85rem;">
           <option value="">Choose influencer...</option>
         </select>
       </div>
       
       <div class="ia-form-group">
-        <label for="apReelDueDate">Reel Due Date *</label>
-        <input type="date" id="apReelDueDate" class="ia-input" required min="${new Date().toISOString().split('T')[0]}">
+        <label for="apReelDueDate" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Reel Due Date *</label>
+        <input type="date" id="apReelDueDate" class="ia-input" required min="${new Date().toISOString().split('T')[0]}" style="font-size: 0.85rem;">
       </div>
       
       <div class="ia-form-group">
-        <label for="apIsMonthlyTarget">Mark as Monthly Target? *</label>
-        <select id="apIsMonthlyTarget" class="ia-input">
+        <label for="apIsMonthlyTarget" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Mark as Monthly Target? *</label>
+        <select id="apIsMonthlyTarget" class="ia-input" style="font-size: 0.85rem;">
           <option value="true">Yes - Counts towards monthly reel quota</option>
           <option value="false">No - One-time shipment</option>
         </select>
       </div>
       
       <div class="ia-form-group">
-        <label for="apNotes">Admin Notes (Optional)</label>
-        <textarea id="apNotes" class="ia-input" rows="3" placeholder="Campaign details, special instructions..." style="resize: vertical;"></textarea>
+        <label for="apNotes" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Admin Notes (Optional)</label>
+        <textarea id="apNotes" class="ia-input" rows="3" placeholder="Campaign details, special instructions..." style="resize: vertical; font-size: 0.85rem;"></textarea>
       </div>
       
-      <div style="padding: 1rem; background: #4facfe20; border-left: 3px solid #4facfe; margin-top: 1rem;">
-        <p style="font-size: 0.75rem; color: #4facfe; margin: 0; font-weight: 600;">ℹ️ This will:</p>
-        <ul style="font-size: 0.7rem; color: var(--muted); margin: 0.5rem 0 0 1rem; line-height: 1.6;">
-          <li>Create a shipment record in database</li>
+      <div style="padding: 1rem; background: #4facfe10; border-left: 3px solid #4facfe; margin-top: 1rem;">
+        <p style="font-size: 0.7rem; color: #4facfe; margin: 0; font-weight: 600;">This will:</p>
+        <ul style="font-size: 0.65rem; color: var(--muted); margin: 0.5rem 0 0 1rem; line-height: 1.8;">
+          <li>Create a shipment record with selected size</li>
           <li>Mark as "pending" status</li>
           <li>Notify influencer in their portal</li>
           <li>Track reel submission deadline</li>
@@ -5055,8 +5096,8 @@ function assignProductToInfluencer(productId, productTitle, imageUrl) {
       </div>
       
       <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-        <button onclick="closeAssignProductModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
-        <button onclick="saveProductShipment('${productTitle.replace(/'/g, "\\'")}', '${imageUrl}')" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Create Shipment</button>
+        <button onclick="closeAssignProductModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; transition: all 0.2s;" onmouseenter="this.style.background='var(--subtle)'" onmouseleave="this.style.background='transparent'">Cancel</button>
+        <button onclick="saveProductShipment('${productTitle.replace(/'/g, "\\'")}', '${imageUrl}')" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; transition: opacity 0.2s;" onmouseenter="this.style.opacity='0.85'" onmouseleave="this.style.opacity='1'">Create Shipment</button>
       </div>
     </div>
   `;
@@ -5095,6 +5136,9 @@ async function saveProductShipment(productTitle, imageUrl) {
   const reelDueDate = document.getElementById('apReelDueDate').value;
   const isMonthlyTarget = document.getElementById('apIsMonthlyTarget').value === 'true';
   const notes = document.getElementById('apNotes').value.trim();
+  const sizeSelect = document.getElementById('apSize');
+  const selectedSize = sizeSelect ? sizeSelect.options[sizeSelect.selectedIndex]?.text.split(' - ')[0] : '';
+  const selectedVariantId = sizeSelect ? sizeSelect.value : '';
   
   if (!influencerId) {
     alert('Please select an influencer');
@@ -5114,10 +5158,12 @@ async function saveProductShipment(productTitle, imageUrl) {
       },
       body: JSON.stringify({
         influencerId,
-        productTitle,
+        productTitle: selectedSize && selectedSize !== 'Default' ? `${productTitle} (${selectedSize})` : productTitle,
         productImageUrl: imageUrl || null,
         reelDueDate,
         isMonthlyTarget,
+        variantId: selectedVariantId || null,
+        size: selectedSize || null,
         notes: notes || null
       })
     });
@@ -5127,11 +5173,8 @@ async function saveProductShipment(productTitle, imageUrl) {
     if (data.success) {
       showToast('Shipment created successfully!');
       closeAssignProductModal();
-      // Refresh current tab data
-      const activeTab = document.querySelector('.sr-tab.active');
-      if (activeTab && activeTab.dataset.tab === 'inventory') {
-        // Stay on inventory
-      }
+      // Refresh product grid to update stock counts
+      searchShopifyProducts();
     } else {
       alert(data.error || 'Failed to create shipment');
     }

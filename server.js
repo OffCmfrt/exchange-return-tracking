@@ -7827,35 +7827,48 @@ app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req,
     try {
         const { search, limit = 20, page = 1 } = req.query;
         
-        let endpoint = `products.json?limit=${Math.min(parseInt(limit), 50)}&page=${parseInt(page)}`;
+        // Validate Shopify config before making call
+        if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
+            return res.status(500).json({ error: 'Shopify not configured', success: false, products: [] });
+        }
+        
+        let endpoint = `products.json?limit=${Math.min(parseInt(limit), 50)}&page=${parseInt(page)}&fields=id,title,handle,body_html,images,variants,product_type,vendor,tags`;
         if (search) {
             endpoint += `&title=${encodeURIComponent(search)}`;
         }
         
         const shopifyData = await shopifyAPI(endpoint);
         
-        const products = (shopifyData.products || []).map(p => ({
-            id: p.id,
-            shopifyId: p.id,
-            title: p.title,
-            handle: p.handle,
-            description: p.body_html ? p.body_html.replace(/<[^>]*>/g, '').substring(0, 200) : '',
-            images: (p.images || []).slice(0, 3).map(img => ({
-                src: img.src,
-                alt: img.alt || p.title
-            })),
-            variants: (p.variants || []).map(v => ({
-                id: v.id,
-                title: v.title,
-                price: v.price,
-                sku: v.sku,
-                inventoryQuantity: v.inventory_quantity || 0,
-                available: v.available || true
-            })),
-            productType: p.product_type,
-            vendor: p.vendor,
-            tags: p.tags || []
-        }));
+        const products = (shopifyData.products || [])
+            .map(p => {
+                // Only include variants with inventory > 0
+                const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
+                return {
+                    id: p.id,
+                    shopifyId: p.id,
+                    title: p.title,
+                    handle: p.handle,
+                    description: p.body_html ? p.body_html.replace(/<[^>]*>/g, '').substring(0, 200) : '',
+                    images: (p.images || []).slice(0, 3).map(img => ({
+                        src: img.src,
+                        alt: img.alt || p.title
+                    })),
+                    variants: availableVariants.map(v => ({
+                        id: v.id,
+                        title: v.title,
+                        price: v.price,
+                        sku: v.sku,
+                        inventoryQuantity: v.inventory_quantity,
+                        available: true
+                    })),
+                    totalStock: availableVariants.reduce((sum, v) => sum + v.inventory_quantity, 0),
+                    productType: p.product_type,
+                    vendor: p.vendor,
+                    tags: p.tags || []
+                };
+            })
+            // Only return products that have at least one available variant
+            .filter(p => p.variants.length > 0);
         
         res.json({
             success: true,
@@ -7863,12 +7876,12 @@ app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req,
             pagination: {
                 currentPage: parseInt(page),
                 hasNextPage: products.length >= parseInt(limit),
-                totalProducts: shopifyData.products?.length || 0
+                totalProducts: products.length
             }
         });
     } catch (error) {
-        console.error('Shopify products fetch error:', error);
-        res.status(502).json({ error: 'Failed to fetch Shopify products' });
+        console.error('Shopify products fetch error:', error.message, error.stack);
+        res.status(502).json({ error: 'Failed to fetch Shopify products', details: error.message, success: false, products: [] });
     }
 });
 
@@ -8079,41 +8092,54 @@ app.get('/api/influencer/:token/shopify-products', async (req, res) => {
         const { token } = req.params;
         const { search, limit = 20, page = 1 } = req.query;
         
+        // Validate Shopify config before making call
+        if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
+            return res.status(500).json({ error: 'Shopify not configured', success: false, products: [] });
+        }
+        
         // Verify influencer exists
         const influencer = await getInfluencerByToken(token);
         if (!influencer) {
-            return res.status(401).json({ error: 'Invalid token' });
+            return res.status(401).json({ error: 'Invalid token', success: false, products: [] });
         }
         
-        let endpoint = `products.json?limit=${Math.min(parseInt(limit), 50)}&page=${parseInt(page)}`;
+        let endpoint = `products.json?limit=${Math.min(parseInt(limit), 50)}&page=${parseInt(page)}&fields=id,title,handle,body_html,images,variants,product_type,vendor,tags`;
         if (search) {
             endpoint += `&title=${encodeURIComponent(search)}`;
         }
         
         const shopifyData = await shopifyAPI(endpoint);
         
-        const products = (shopifyData.products || []).map(p => ({
-            id: p.id,
-            shopifyId: p.id,
-            title: p.title,
-            handle: p.handle,
-            description: p.body_html ? p.body_html.replace(/<[^>]*>/g, '').substring(0, 200) : '',
-            images: (p.images || []).slice(0, 3).map(img => ({
-                src: img.src,
-                alt: img.alt || p.title
-            })),
-            variants: (p.variants || []).map(v => ({
-                id: v.id,
-                title: v.title,
-                price: v.price,
-                sku: v.sku,
-                inventoryQuantity: v.inventory_quantity || 0,
-                available: v.available || true
-            })),
-            productType: p.product_type,
-            vendor: p.vendor,
-            tags: p.tags || []
-        }));
+        const products = (shopifyData.products || [])
+            .map(p => {
+                // Only include variants with inventory > 0
+                const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
+                return {
+                    id: p.id,
+                    shopifyId: p.id,
+                    title: p.title,
+                    handle: p.handle,
+                    description: p.body_html ? p.body_html.replace(/<[^>]*>/g, '').substring(0, 200) : '',
+                    images: (p.images || []).slice(0, 3).map(img => ({
+                        src: img.src,
+                        alt: img.alt || p.title
+                    })),
+                    variants: availableVariants.map(v => ({
+                        id: v.id,
+                        title: v.title,
+                        price: v.price,
+                        sku: v.sku,
+                        inventoryQuantity: v.inventory_quantity,
+                        available: true
+                    })),
+                    totalStock: availableVariants.reduce((sum, v) => sum + v.inventory_quantity, 0),
+                    productType: p.product_type,
+                    vendor: p.vendor,
+                    tags: p.tags || []
+                };
+            })
+            // Only return products that have at least one available variant
+            .filter(p => p.variants.length > 0);
         
         res.json({
             success: true,
@@ -8121,17 +8147,16 @@ app.get('/api/influencer/:token/shopify-products', async (req, res) => {
             pagination: {
                 currentPage: parseInt(page),
                 hasNextPage: products.length >= parseInt(limit),
-                totalProducts: shopifyData.products?.length || 0
+                totalProducts: products.length
             }
         });
     } catch (error) {
-        console.error('Shopify products fetch error:', error);
-        console.error('Error details:', error.message, error.stack);
-        console.error('Shopify config - Token exists:', !!process.env.SHOPIFY_ACCESS_TOKEN, 'Shop exists:', !!process.env.SHOPIFY_STORE);
+        console.error('Shopify products fetch error:', error.message, error.stack);
         res.status(502).json({ 
             error: 'Failed to fetch Shopify products',
             details: error.message,
-            shopConfigured: !!(process.env.SHOPIFY_ACCESS_TOKEN && process.env.SHOPIFY_STORE)
+            success: false,
+            products: []
         });
     }
 });

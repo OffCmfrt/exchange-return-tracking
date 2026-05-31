@@ -1429,80 +1429,9 @@ async function loadAssignedReels() {
   }
 }
 
-// Open product request modal
+// Open product request modal - redirects to browse inventory for proper size selection
 function openProductRequestModal() {
-  const modal = document.createElement('div');
-  modal.id = 'ipProductRequestModal';
-  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
-  
-  modal.innerHTML = `
-    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
-      <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1.5rem;">Request Product</h3>
-      
-      <div class="ip-auth-group">
-        <label for="prProductTitle">Product Title *</label>
-        <input type="text" id="prProductTitle" class="ip-auth-input" placeholder="e.g. Classic Black T-Shirt" required>
-      </div>
-      
-      <div class="ip-auth-group">
-        <label for="prProductImage">Product Image URL (optional)</label>
-        <input type="text" id="prProductImage" class="ip-auth-input" placeholder="https://...">
-      </div>
-      
-      <div class="ip-auth-group">
-        <label for="prReason">Why do you need this product? * (min 10 characters)</label>
-        <textarea id="prReason" class="ip-auth-input" rows="4" placeholder="I need this product for my upcoming reel about..." required style="resize: vertical;"></textarea>
-      </div>
-      
-      <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
-        <p style="font-size: 0.7rem; color: var(--muted); margin-bottom: 1rem;">Shipping Address</p>
-        
-        <div class="ip-auth-group">
-          <label for="prFullName">Full Name *</label>
-          <input type="text" id="prFullName" class="ip-auth-input" placeholder="Rahul Sharma" required>
-        </div>
-        
-        <div class="ip-auth-group">
-          <label for="prAddress1">Address Line 1 *</label>
-          <input type="text" id="prAddress1" class="ip-auth-input" placeholder="123 Main Street" required>
-        </div>
-        
-        <div class="ip-auth-group">
-          <label for="prAddress2">Address Line 2 (optional)</label>
-          <input type="text" id="prAddress2" class="ip-auth-input" placeholder="Apt 4B">
-        </div>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-          <div class="ip-auth-group">
-            <label for="prCity">City *</label>
-            <input type="text" id="prCity" class="ip-auth-input" placeholder="Mumbai" required>
-          </div>
-          <div class="ip-auth-group">
-            <label for="prState">State *</label>
-            <input type="text" id="prState" class="ip-auth-input" placeholder="Maharashtra" required>
-          </div>
-        </div>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-          <div class="ip-auth-group">
-            <label for="prPincode">Pincode * (6 digits)</label>
-            <input type="text" id="prPincode" class="ip-auth-input" placeholder="400001" maxlength="6" required>
-          </div>
-          <div class="ip-auth-group">
-            <label for="prPhone">Phone * (10 digits)</label>
-            <input type="text" id="prPhone" class="ip-auth-input" placeholder="9876543210" maxlength="10" required>
-          </div>
-        </div>
-      </div>
-      
-      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-        <button onclick="closeProductRequestModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
-        <button onclick="submitProductRequest()" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Submit Request</button>
-      </div>
-    </div>
-  `;
-  
-  document.body.appendChild(modal);
+  browseInventory();
 }
 
 function closeProductRequestModal() {
@@ -1513,7 +1442,8 @@ function closeProductRequestModal() {
 // Submit product request
 async function submitProductRequest() {
   const productTitle = document.getElementById('prProductTitle').value.trim();
-  const productImageUrl = document.getElementById('prProductImage').value.trim();
+  const sizeSelect = document.getElementById('prSize');
+  const selectedSize = sizeSelect ? sizeSelect.value : '';
   const reason = document.getElementById('prReason').value.trim();
   const shippingFullName = document.getElementById('prFullName').value.trim();
   const shippingAddressLine1 = document.getElementById('prAddress1').value.trim();
@@ -1528,8 +1458,24 @@ async function submitProductRequest() {
     alert('Product title must be at least 3 characters');
     return;
   }
+  if (!selectedSize) {
+    alert('Please select a size');
+    return;
+  }
   if (!reason || reason.length < 10) {
     alert('Please provide a detailed reason (min 10 characters)');
+    return;
+  }
+  if (!shippingFullName) {
+    alert('Please enter your full name');
+    return;
+  }
+  if (!shippingAddressLine1) {
+    alert('Please enter your address');
+    return;
+  }
+  if (!shippingCity || !shippingState) {
+    alert('Please enter your city and state');
     return;
   }
   if (!shippingPincode || shippingPincode.length !== 6) {
@@ -1546,9 +1492,10 @@ async function submitProductRequest() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        productTitle,
-        productImageUrl: productImageUrl || null,
+        productTitle: selectedSize ? `${productTitle} (${selectedSize})` : productTitle,
+        productImageUrl: null,
         reason,
+        size: selectedSize,
         shippingFullName,
         shippingAddressLine1,
         shippingAddressLine2: shippingAddressLine2 || null,
@@ -1631,32 +1578,37 @@ async function loadMyProductRequests() {
 async function browseInventory() {
   const modal = document.createElement('div');
   modal.id = 'ipBrowseInventoryModal';
-  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 1.5rem; backdrop-filter: blur(4px);';
   
   modal.innerHTML = `
-    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 900px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 950px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-        <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin: 0;">Browse Inventory</h3>
+        <div>
+          <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin: 0;">Browse Available Inventory</h3>
+          <p style="font-size: 0.65rem; color: var(--success, #22c55e); margin: 0.3rem 0 0;">Showing only products with available stock</p>
+        </div>
         <button onclick="closeBrowseInventoryModal()" style="background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 1.5rem; line-height: 1;">&times;</button>
       </div>
       
       <div style="margin-bottom: 1.5rem;">
-        <div style="display: flex; gap: 1rem;">
-          <input type="text" id="ipInventorySearch" class="ip-auth-input" placeholder="Search products..." style="flex: 1;" onkeyup="if(event.key==='Enter') searchInventoryProducts()">
-          <button onclick="searchInventoryProducts()" style="padding: 0.8rem 1.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Search</button>
+        <div style="display: flex; gap: 0.75rem;">
+          <input type="text" id="ipInventorySearch" class="ip-auth-input" placeholder="Search available products..." style="flex: 1; font-size: 0.85rem;" onkeyup="if(event.key==='Enter') searchInventoryProducts()">
+          <button onclick="searchInventoryProducts()" style="padding: 0.8rem 1.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; white-space: nowrap;">Search</button>
         </div>
       </div>
       
-      <div id="ipInventoryGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; max-height: 500px; overflow-y: auto; padding: 0.5rem;">
+      <div id="ipInventoryGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1.25rem; max-height: 520px; overflow-y: auto; padding: 0.5rem;">
         <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);">
-          <p>Loading products...</p>
+          <div style="width: 32px; height: 32px; border: 2px solid var(--muted); border-top-color: var(--text); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+          <p style="font-size: 0.8rem;">Loading available products...</p>
         </div>
       </div>
       
-      <div style="padding: 1rem; background: var(--subtle); margin-top: 1.5rem; border-left: 3px solid var(--text);">
-        <p style="font-size: 0.7rem; color: var(--muted); margin: 0;">💡 Click "Request" on any product to submit a request to admin with your reason and shipping details.</p>
+      <div style="padding: 0.75rem 1rem; background: var(--subtle); margin-top: 1.5rem; border-left: 3px solid var(--text);">
+        <p style="font-size: 0.65rem; color: var(--muted); margin: 0;">Click "Request" on any product, select your size, and submit a request with your reason and shipping details.</p>
       </div>
     </div>
+    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
   `;
   
   document.body.appendChild(modal);
@@ -1675,13 +1627,13 @@ async function searchInventoryProducts() {
   const grid = document.getElementById('ipInventoryGrid');
   
   try {
-    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><p>Searching...</p></div>';
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><div style="width: 32px; height: 32px; border: 2px solid var(--muted); border-top-color: var(--text); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div><p style="font-size: 0.8rem;">Searching available products...</p></div>';
     
     const res = await fetch(`${API_BASE}/influencer/${token}/shopify-products?search=${encodeURIComponent(search)}&limit=20`);
     const data = await res.json();
     
     if (!data.success || !data.products || data.products.length === 0) {
-      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><p>No products found</p></div>';
+      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg><p style="font-size: 0.8rem;">No available products found</p><p style="font-size: 0.7rem; margin-top: 0.5rem;">All products are out of stock or no matches</p></div>';
       return;
     }
     
@@ -1690,14 +1642,26 @@ async function searchInventoryProducts() {
       const price = p.variants[0]?.price || '0';
       const title = p.title;
       const productId = p.id;
+      const totalStock = p.totalStock || 0;
+      const variantCount = p.variants.length;
+      const sizesHtml = p.variants.map(v => 
+        `<span style="display: inline-block; padding: 0.15rem 0.4rem; font-size: 0.6rem; border: 1px solid var(--border); margin: 0.1rem; background: var(--bg); font-weight: 500;">${v.title}</span>`
+      ).join('');
       
       return `
-        <div style="border: 1px solid var(--border); background: var(--bg); overflow: hidden; display: flex; flex-direction: column;">
-          ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 180px; object-fit: cover; background: var(--subtle);">` : '<div style="width: 100%; height: 180px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.7rem;">No Image</div>'}
+        <div style="border: 1px solid var(--border); background: var(--bg); overflow: hidden; display: flex; flex-direction: column; transition: border-color 0.2s, transform 0.2s;" onmouseenter="this.style.borderColor='var(--text)';this.style.transform='translateY(-2px)'" onmouseleave="this.style.borderColor='var(--border)';this.style.transform='translateY(0)'">
+          <div style="position: relative;">
+            ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 200px; object-fit: cover; background: var(--subtle);">` : '<div style="width: 100%; height: 200px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.7rem;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
+            <div style="position: absolute; top: 0.4rem; right: 0.4rem; background: ${totalStock > 10 ? 'var(--success, #22c55e)' : totalStock > 3 ? '#f59e0b' : '#ef4444'}; color: white; padding: 0.15rem 0.4rem; font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">${totalStock} left</div>
+          </div>
           <div style="padding: 0.75rem; flex: 1; display: flex; flex-direction: column;">
-            <div style="font-weight: 600; font-size: 0.75rem; margin-bottom: 0.4rem; line-height: 1.3; flex: 1;">${portalEsc(title)}</div>
-            <div style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0.75rem;">₹${price}</div>
-            <button onclick="requestProductFromInventory(${productId}, '${title.replace(/'/g, "\\'")}', '${imageUrl}')" style="width: 100%; padding: 0.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">
+            <div style="font-weight: 600; font-size: 0.75rem; margin-bottom: 0.3rem; line-height: 1.3; flex: 1;">${portalEsc(title)}</div>
+            <div style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0.5rem;">&#8377;${price}</div>
+            <div style="margin-bottom: 0.6rem;">
+              <div style="font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 0.3rem; font-weight: 600;">Available Sizes</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 0;">${sizesHtml}</div>
+            </div>
+            <button onclick='requestProductFromInventory(${JSON.stringify({id: productId, title: title, imageUrl: imageUrl, variants: p.variants}).replace(/'/g, "&apos;")})' style="width: 100%; padding: 0.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-top: auto; transition: opacity 0.2s;" onmouseenter="this.style.opacity='0.85'" onmouseleave="this.style.opacity='1'">
               Request This Product
             </button>
           </div>
@@ -1706,85 +1670,100 @@ async function searchInventoryProducts() {
     }).join('');
   } catch (e) {
     console.error('Search inventory error:', e);
-    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--danger);"><p>Failed to load products</p></div>';
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--danger, #ef4444);"><p style="font-size: 0.8rem;">Failed to load products</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">Please check your connection</p><button onclick="searchInventoryProducts()" style="margin-top: 1rem; padding: 0.5rem 1.5rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Retry</button></div>';
   }
 }
 
-function requestProductFromInventory(productId, productTitle, imageUrl) {
+function requestProductFromInventory(product) {
   // Close inventory modal
   closeBrowseInventoryModal();
   
-  // Open product request modal with pre-filled data
+  // Open product request modal with pre-filled data and size selection
   setTimeout(() => {
-    openProductRequestModalWithProduct(productTitle, imageUrl);
+    openProductRequestModalWithProduct(product.title, product.imageUrl, product.variants || []);
   }, 200);
 }
 
-function openProductRequestModalWithProduct(productTitle, imageUrl) {
+function openProductRequestModalWithProduct(productTitle, imageUrl, variants) {
   const modal = document.createElement('div');
   modal.id = 'ipProductRequestModal';
-  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem;';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 1.5rem; backdrop-filter: blur(4px);';
+  
+  const sizeOptionsHtml = variants && variants.length > 0
+    ? variants.map((v, i) => `<option value="${v.title}" ${i === 0 ? 'selected' : ''}>${v.title} (${v.inventoryQuantity} available)</option>`).join('')
+    : '<option value="">No sizes available</option>';
   
   modal.innerHTML = `
     <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
-      <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1.5rem;">Request Product</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin: 0;">Request Product</h3>
+        <button onclick="closeProductRequestModal()" style="background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 1.5rem; line-height: 1;">&times;</button>
+      </div>
       
-      ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 150px; object-fit: cover; margin-bottom: 1rem; border: 1px solid var(--border);">` : ''}
+      ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 180px; object-fit: cover; margin-bottom: 1rem; border: 1px solid var(--border);">` : ''}
       
       <div class="ip-auth-group">
-        <label for="prProductTitle">Product Title *</label>
-        <input type="text" id="prProductTitle" class="ip-auth-input" value="${portalEsc(productTitle)}" readonly style="background: var(--subtle); cursor: not-allowed;">
+        <label for="prProductTitle" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Product</label>
+        <input type="text" id="prProductTitle" class="ip-auth-input" value="${portalEsc(productTitle)}" readonly style="background: var(--subtle); cursor: not-allowed; font-size: 0.85rem;">
       </div>
       
       <div class="ip-auth-group">
-        <label for="prReason">Why do you need this product? * (min 10 characters)</label>
-        <textarea id="prReason" class="ip-auth-input" rows="4" placeholder="I need this product for my upcoming reel about..." required style="resize: vertical;"></textarea>
+        <label for="prSize" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Select Size *</label>
+        <select id="prSize" class="ip-auth-input" required style="font-size: 0.85rem;">
+          ${sizeOptionsHtml}
+        </select>
+        <span style="font-size: 0.6rem; color: var(--success, #22c55e); margin-top: 0.25rem; display: block;">Only showing sizes currently in stock</span>
+      </div>
+      
+      <div class="ip-auth-group">
+        <label for="prReason" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Why do you need this product? * (min 10 characters)</label>
+        <textarea id="prReason" class="ip-auth-input" rows="3" placeholder="I need this product for my upcoming reel about..." required style="resize: vertical; font-size: 0.85rem;"></textarea>
       </div>
       
       <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
-        <p style="font-size: 0.7rem; color: var(--muted); margin-bottom: 1rem;">Shipping Address</p>
+        <p style="font-size: 0.7rem; color: var(--muted); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Shipping Address</p>
         
         <div class="ip-auth-group">
-          <label for="prFullName">Full Name *</label>
-          <input type="text" id="prFullName" class="ip-auth-input" placeholder="Rahul Sharma" required>
+          <label for="prFullName" style="font-size: 0.7rem; font-weight: 600;">Full Name *</label>
+          <input type="text" id="prFullName" class="ip-auth-input" placeholder="Rahul Sharma" required style="font-size: 0.85rem;">
         </div>
         
         <div class="ip-auth-group">
-          <label for="prAddress1">Address Line 1 *</label>
-          <input type="text" id="prAddress1" class="ip-auth-input" placeholder="123 Main Street" required>
+          <label for="prAddress1" style="font-size: 0.7rem; font-weight: 600;">Address Line 1 *</label>
+          <input type="text" id="prAddress1" class="ip-auth-input" placeholder="123 Main Street" required style="font-size: 0.85rem;">
         </div>
         
         <div class="ip-auth-group">
-          <label for="prAddress2">Address Line 2 (optional)</label>
-          <input type="text" id="prAddress2" class="ip-auth-input" placeholder="Apt 4B">
+          <label for="prAddress2" style="font-size: 0.7rem; font-weight: 600;">Address Line 2 (optional)</label>
+          <input type="text" id="prAddress2" class="ip-auth-input" placeholder="Apt 4B" style="font-size: 0.85rem;">
         </div>
         
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="ip-auth-group">
-            <label for="prCity">City *</label>
-            <input type="text" id="prCity" class="ip-auth-input" placeholder="Mumbai" required>
+            <label for="prCity" style="font-size: 0.7rem; font-weight: 600;">City *</label>
+            <input type="text" id="prCity" class="ip-auth-input" placeholder="Mumbai" required style="font-size: 0.85rem;">
           </div>
           <div class="ip-auth-group">
-            <label for="prState">State *</label>
-            <input type="text" id="prState" class="ip-auth-input" placeholder="Maharashtra" required>
+            <label for="prState" style="font-size: 0.7rem; font-weight: 600;">State *</label>
+            <input type="text" id="prState" class="ip-auth-input" placeholder="Maharashtra" required style="font-size: 0.85rem;">
           </div>
         </div>
         
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="ip-auth-group">
-            <label for="prPincode">Pincode * (6 digits)</label>
-            <input type="text" id="prPincode" class="ip-auth-input" placeholder="400001" maxlength="6" required>
+            <label for="prPincode" style="font-size: 0.7rem; font-weight: 600;">Pincode * (6 digits)</label>
+            <input type="text" id="prPincode" class="ip-auth-input" placeholder="400001" maxlength="6" required style="font-size: 0.85rem;">
           </div>
           <div class="ip-auth-group">
-            <label for="prPhone">Phone * (10 digits)</label>
-            <input type="text" id="prPhone" class="ip-auth-input" placeholder="9876543210" maxlength="10" required>
+            <label for="prPhone" style="font-size: 0.7rem; font-weight: 600;">Phone * (10 digits)</label>
+            <input type="text" id="prPhone" class="ip-auth-input" placeholder="9876543210" maxlength="10" required style="font-size: 0.85rem;">
           </div>
         </div>
       </div>
       
       <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-        <button onclick="closeProductRequestModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
-        <button onclick="submitProductRequest()" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Submit Request</button>
+        <button onclick="closeProductRequestModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; transition: all 0.2s;" onmouseenter="this.style.background='var(--subtle)'" onmouseleave="this.style.background='transparent'">Cancel</button>
+        <button onclick="submitProductRequest()" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; transition: opacity 0.2s;" onmouseenter="this.style.opacity='0.85'" onmouseleave="this.style.opacity='1'">Submit Request</button>
       </div>
     </div>
   `;
