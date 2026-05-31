@@ -5812,8 +5812,18 @@ async function showInfluencerDetailsModal(inf, initialTab = 'overview') {
     if (payRes.ok) { const d = await payRes.json(); payouts = d.payouts || []; }
     else if (payRes.status !== 404) { console.warn('Failed to load payouts:', payRes.status); }
     
-    if (notesRes && notesRes.ok) { const d = await notesRes.json(); notes = d.notes || []; }
-    else if (notesRes && notesRes.status !== 404) { console.warn('Failed to load notes:', notesRes.status); }
+    if (notesRes && notesRes.ok) { 
+      const d = await notesRes.json(); 
+      notes = d.notes || [];
+      console.log('[Notes] Loaded', notes.length, 'notes for influencer', inf.id);
+    }
+    else if (notesRes) { 
+      console.warn('[Notes] Failed to load notes:', notesRes.status, notesRes.statusText);
+      const errorText = await notesRes.text().catch(() => '');
+      console.warn('[Notes] Error response:', errorText);
+    } else {
+      console.warn('[Notes] Request failed completely');
+    }
     
     if (analyticsRes && analyticsRes.ok) { analytics = await analyticsRes.json(); }
     else if (analyticsRes && analyticsRes.status !== 404) { console.warn('Failed to load analytics:', analyticsRes.status); }
@@ -5999,6 +6009,10 @@ function renderDetailTab(tab, inf, data = {}) {
   } else if (tab === 'performance') {
     const commRate = inf.commission_rate || 7;
     const monthlyData = (analytics.monthly || []).slice(-6);
+    
+    // Get recent conversions/orders from analytics data
+    const recentOrders = (analytics.recentOrders || analytics.recentConversions || []).slice(0, 10);
+    
     content.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
         <div class="ia-dt-card">
@@ -6028,8 +6042,35 @@ function renderDetailTab(tab, inf, data = {}) {
         </div>` : `
         <div class="ia-dt-card" style="grid-column:1/-1;">
           <div class="ia-dt-card-title">Monthly Breakdown</div>
-          <div style="font-size:.85rem;color:var(--muted);text-align:center;padding:1rem;">No monthly data yet</div>
+          <div style="font-size:.85rem;color:var(--muted);">No monthly data available</div>
         </div>`}
+        
+        <!-- Recent Orders Section -->
+        <div class="ia-dt-card" style="grid-column:1/-1;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <div class="ia-dt-card-title" style="margin:0;">Recent Orders</div>
+            <button class="ia-dt-btn" onclick="viewInfluencerStats('${inf.id}')" style="font-size:.65rem;padding:.3rem .6rem;">View All</button>
+          </div>
+          ${recentOrders.length > 0 ? `
+            <div style="display:flex;flex-direction:column;gap:.5rem;">
+              ${recentOrders.map(order => `
+                <div style="padding:.75rem;background:var(--subtle);border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                  <div>
+                    <div style="font-weight:600;font-size:.85rem;margin-bottom:.2rem;">Order ${order.orderName || order.name || '-'}</div>
+                    <div style="font-size:.75rem;color:var(--muted);">
+                      ${order.date ? new Date(order.date).toLocaleDateString() : '-'} • ${order.customerName || 'Guest'}
+                      ${order.discountCode ? ' • Code: ' + order.discountCode : ''}
+                    </div>
+                  </div>
+                  <div style="text-align:right;">
+                    <div style="font-weight:700;font-size:.95rem;">₹${parseFloat(order.total || 0).toLocaleString()}</div>
+                    <div style="font-size:.65rem;color:var(--muted);">${order.currency || 'INR'}</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<div style="text-align:center;padding:2rem;color:var(--muted);">No orders found</div>'}
+        </div>
       </div>`;
   } else if (tab === 'shipments') {
     content.innerHTML = `
@@ -6072,6 +6113,10 @@ function renderDetailTab(tab, inf, data = {}) {
         </div>
       </div>`;
   } else if (tab === 'notes') {
+    console.log('[Notes Tab] Rendering with data:', {
+      notesCount: (data.notes || []).length,
+      notes: data.notes
+    });
     content.innerHTML = `
       <div class="ia-dt-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">

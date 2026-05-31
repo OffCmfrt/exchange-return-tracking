@@ -6775,12 +6775,21 @@ app.patch('/api/influencer-admin/payouts/item/:payoutId', authenticateAdmin, asy
 app.get('/api/influencer-admin/:id/notes', authenticateAdmin, async (req, res) => {
     try {
         const { id } = req.params;
+        console.log('[Notes API] Fetching notes for influencer:', id, 'type:', typeof id);
+        
         const { data: notes, error } = await supabase
             .from('admin_notes')
             .select('*')
             .eq('influencer_id', id)
             .order('created_at', { ascending: false });
-        if (error) throw error;
+        if (error) {
+            console.error('[Notes API] Supabase error:', error);
+            throw error;
+        }
+        console.log('[Notes API] Found', notes?.length || 0, 'notes');
+        if (notes && notes.length > 0) {
+            console.log('[Notes API] Latest note:', notes[0]);
+        }
         res.json({ success: true, notes: notes || [] });
     } catch (error) {
         console.error('Get notes error:', error);
@@ -7681,6 +7690,31 @@ async function getAnalyticsForInfluencer(influencer, range = 'all') {
         else totalPendingAmount += parseFloat(p.amount_due || 0);
     });
 
+    // Recent orders (last 10)
+    let recentOrdersQuery = supabaseAdmin
+        .from('influencer_orders')
+        .select('shopify_order_id, order_name, total_price, currency, financial_status, customer_name, order_created_at, referral_code')
+        .eq('influencer_id', influencer.id)
+        .is('cancelled_at', null)
+        .in('financial_status', ['paid', 'partially_paid', 'pending', 'authorized'])
+        .order('order_created_at', { ascending: false })
+        .limit(10);
+    
+    if (createdAtMin) {
+        recentOrdersQuery = recentOrdersQuery.gte('order_created_at', createdAtMin);
+    }
+    
+    const { data: recentOrderRows } = await recentOrdersQuery;
+    const recentOrders = (recentOrderRows || []).map(r => ({
+        id: r.shopify_order_id,
+        orderName: r.order_name,
+        total: parseFloat(r.total_price).toFixed(2),
+        currency: r.currency || 'INR',
+        date: r.order_created_at,
+        customerName: r.customer_name || 'Guest',
+        discountCode: r.referral_code
+    }));
+
     return {
         influencer: {
             id: influencer.id,
@@ -7697,6 +7731,7 @@ async function getAnalyticsForInfluencer(influencer, range = 'all') {
             commissionRate: displayedCommissionRate
         },
         monthly,
+        recentOrders,
         shipments: {
             total: enrichedShipments.length,
             pending,
