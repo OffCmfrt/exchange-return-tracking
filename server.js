@@ -7172,13 +7172,14 @@ app.post('/api/influencer/apply', async (req, res) => {
         // ── Auto-create product requests for selected products ──
         try {
             for (const product of selectedProducts) {
+                const selectedSize = product.size || 'Not specified';
                 await createProductRequest({
                     influencerId: influencer.id,
                     productTitle: product.title || product.productTitle || 'Unknown Product',
                     productImageUrl: product.image || product.imageUrl || product.productImageUrl || null,
                     shopifyProductId: product.id || product.shopifyProductId || null,
                     shopifyVariantId: product.variantId || product.shopifyVariantId || null,
-                    reason: `Selected during application - Tier: ${appTierInfo.tier}`,
+                    reason: `Selected during application - Tier: ${appTierInfo.tier} | Size: ${selectedSize}`,
                     shippingFullName: String(name).trim(),
                     shippingAddressLine1: String(shippingAddress).trim(),
                     shippingAddressLine2: shippingLandmark ? String(shippingLandmark).trim() : null,

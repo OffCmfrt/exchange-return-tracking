@@ -1135,6 +1135,16 @@ function renderProducts() {
     const sizesHtml = product.sizes && product.sizes.length > 0
       ? `<div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem;">${product.sizes.map(s => `<span style="font-size: 0.6rem; padding: 0.15rem 0.4rem; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--muted);">${s.title}</span>`).join('')}</div>`
       : '';
+    
+    const sizeSelectHtml = product.sizes && product.sizes.length > 1
+      ? `<div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border);">
+          <label style="font-size: 0.65rem; color: var(--muted); display: block; margin-bottom: 0.25rem;">Select Size:</label>
+          <select class="ia-size-select" data-product-id="${product.id}" onclick="event.stopPropagation()" onchange="updateProductSize('${product.id}', this.value)" style="width: 100%; padding: 0.4rem; font-size: 0.7rem; border: 1px solid var(--border); background: var(--bg); cursor: pointer;">
+            ${product.sizes.map((s, i) => `<option value="${s.title}" ${i === 0 ? 'selected' : ''}>${s.title}</option>`).join('')}
+          </select>
+        </div>`
+      : '';
+    
     return `
       <div class="ia-product-card" data-id="${product.id}" onclick="toggleProduct('${product.id}')" style="position: relative;">
         <span style="position: absolute; top: 0.4rem; right: 0.4rem; font-size: 0.55rem; padding: 0.15rem 0.4rem; background: #dcfce7; color: #16a34a; border-radius: 3px; font-weight: 600;">IN STOCK</span>
@@ -1142,6 +1152,7 @@ function renderProducts() {
         <div class="ia-product-title">${product.title}</div>
         <div class="ia-product-price">₹${parseFloat(product.price).toLocaleString('en-IN')}</div>
         ${sizesHtml}
+        ${sizeSelectHtml}
       </div>
     `;
   }).join('');
@@ -1160,9 +1171,20 @@ function toggleProduct(productId) {
     // Store full product object (id, title, image) for admin visibility
     const product = availableProducts.find(p => p.id === productId);
     if (product) {
-      selectedProducts.push({ id: product.id, title: product.title, image: product.image, price: product.price });
+      // Get selected size from dropdown
+      const sizeSelect = document.querySelector(`.ia-size-select[data-product-id="${productId}"]`);
+      const selectedSize = sizeSelect ? sizeSelect.value : (product.sizes && product.sizes[0] ? product.sizes[0].title : 'Default');
+      
+      selectedProducts.push({ 
+        id: product.id, 
+        title: product.title, 
+        image: product.image, 
+        price: product.price,
+        size: selectedSize,
+        variantId: product.sizes && product.sizes[0] ? product.sizes[0].id : null
+      });
     } else {
-      selectedProducts.push({ id: productId, title: 'Unknown', image: null });
+      selectedProducts.push({ id: productId, title: 'Unknown', image: null, size: 'Default' });
     }
   }
   updateProductSelection();
@@ -1185,6 +1207,12 @@ function updateProductSelection() {
     
     card.classList.toggle('selected', isSelected);
     card.classList.toggle('disabled', isDisabled);
+    
+    // Show/hide size select based on selection state
+    const sizeSelect = card.querySelector('.ia-size-select');
+    if (sizeSelect) {
+      sizeSelect.style.display = isSelected ? 'block' : 'none';
+    }
   });
   
   if (selectedProducts.length === 0) {
@@ -1196,6 +1224,22 @@ function updateProductSelection() {
   } else {
     counterStatus.textContent = `${selectedProducts.length} of ${productLimit} selected`;
     counterStatus.className = 'ia-product-counter-limit warning';
+  }
+}
+
+function updateProductSize(productId, size) {
+  // Update the size in selectedProducts array
+  const productIdx = selectedProducts.findIndex(p => (typeof p === 'object' ? p.id : p) === productId);
+  if (productIdx >= 0) {
+    selectedProducts[productIdx].size = size;
+    // Also update variantId if available
+    const product = availableProducts.find(p => p.id === productId);
+    if (product && product.sizes) {
+      const sizeObj = product.sizes.find(s => s.title === size);
+      if (sizeObj) {
+        selectedProducts[productIdx].variantId = sizeObj.id;
+      }
+    }
   }
 }
 
