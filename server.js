@@ -225,7 +225,8 @@ const {
     createProductRequest,
     getProductRequests,
     updateProductRequest,
-    getProductRequestById
+    getProductRequestById,
+    convertFromSnakeCase
 } = require('./config/db-helpers');
 const supabase = require('./config/supabase');
 
