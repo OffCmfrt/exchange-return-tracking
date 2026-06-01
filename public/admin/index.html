@@ -3851,11 +3851,11 @@
         document.getElementById('modify-customerName').value = currentRequest.customerName || '';
         document.getElementById('modify-customerPhone').value = currentRequest.customerPhone || '';
         
-        // Pre-fill shipping address
-        document.getElementById('modify-newAddress').value = currentRequest.newAddress || '';
-        document.getElementById('modify-newCity').value = currentRequest.newCity || '';
-        document.getElementById('modify-newState').value = currentRequest.newState || '';
-        document.getElementById('modify-newPincode').value = currentRequest.newPincode || '';
+        // Pre-fill shipping address (fallback to shippingAddress if newAddress fields are empty)
+        document.getElementById('modify-newAddress').value = currentRequest.newAddress || currentRequest.shippingAddress || '';
+        document.getElementById('modify-newCity').value = currentRequest.newCity || currentRequest.shippingCity || '';
+        document.getElementById('modify-newState').value = currentRequest.newState || currentRequest.shippingState || '';
+        document.getElementById('modify-newPincode').value = currentRequest.newPincode || currentRequest.shippingPincode || '';
         
         // Pre-fill exchange items
         const itemsContainer = document.getElementById('modify-items-container');
