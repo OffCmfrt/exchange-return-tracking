@@ -7484,17 +7484,100 @@ app.get('/api/influencer-admin/shipments/all', authenticateAdmin, async (req, re
     }
 });
 
-// Create shipment for specific influencer (admin)
+// Create shipment from product inventory (admin)
+app.post('/api/influencer-admin/shipments', authenticateAdmin, async (req, res) => {
+    try {
+        const {
+            influencerId,
+            products, // Array of {productTitle, productImageUrl, shopifyProductId, variantId, size, quantity}
+            sentAt,
+            reelDueDate, // Optional for inventory-based shipments
+            isMonthlyTarget,
+            notes
+        } = req.body;
+        
+        // Validate required fields
+        if (!influencerId || !products || !Array.isArray(products) || products.length === 0) {
+            return res.status(400).json({ error: 'influencerId and products array are required' });
+        }
+        
+        if (!sentAt) {
+            return res.status(400).json({ error: 'sentAt is required' });
+        }
+        
+        // Reel due date is optional for inventory-based shipments
+        // If not provided, set to null
+        
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+        
+        // Check if influencer has shipping address in database
+        const hasShippingAddress = influencer.shipping_address || influencer.city;
+        
+        // If no shipping address and not provided in request, return error
+        if (!hasShippingAddress && !req.body.shippingAddress) {
+            return res.status(400).json({ 
+                error: 'No shipping address found. Please provide shipping address or update influencer profile.',
+                needsAddress: true,
+                influencer: {
+                    id: influencer.id,
+                    name: influencer.name,
+                    phone: influencer.phone,
+                    existingAddress: influencer.shipping_address,
+                    existingCity: influencer.city,
+                    existingState: influencer.shipping_state,
+                    existingPincode: influencer.shipping_pin,
+                    existingPhone: influencer.phone
+                }
+            });
+        }
+        
+        // Create shipments for each product
+        const createdShipments = [];
+        
+        for (const product of products) {
+            const productTitle = product.size ? `${product.productTitle} (${product.size})` : product.productTitle;
+            
+            const shipment = await createShipment({
+                influencerId: influencerId,
+                productTitle: productTitle,
+                productImageUrl: product.productImageUrl || null,
+                shopifyProductId: product.shopifyProductId || null,
+                sentAt: sentAt,
+                reelDueDate: reelDueDate || null, // Optional
+                notes: notes || null
+            });
+            
+            createdShipments.push(shipment);
+        }
+        
+        res.json({ 
+            success: true, 
+            shipments: createdShipments,
+            message: createdShipments.length > 1 
+                ? `${createdShipments.length} shipments created successfully` 
+                : 'Shipment created successfully'
+        });
+    } catch (error) {
+        console.error('Create shipment from inventory error:', error);
+        res.status(500).json({ error: 'Failed to create shipment' });
+    }
+});
+
+// Create shipment for specific influencer (admin) - DEPRECATED, use /api/influencer-admin/shipments instead
 app.post('/api/influencer-admin/shipments/:influencerId', authenticateAdmin, async (req, res) => {
     try {
         const { influencerId } = req.params;
         const { productTitle, productImageUrl, shopifyProductId, sentAt, reelDueDate, notes } = req.body;
-        if (!productTitle || !sentAt || !reelDueDate) {
-            return res.status(400).json({ error: 'productTitle, sentAt, and reelDueDate are required' });
+        if (!productTitle || !sentAt) {
+            return res.status(400).json({ error: 'productTitle and sentAt are required' });
         }
+        // reelDueDate is now optional
         const influencer = await getInfluencerById(influencerId);
         if (!influencer) return res.status(404).json({ error: 'Influencer not found' });
-        const shipment = await createShipment({ influencerId, productTitle, productImageUrl, shopifyProductId, sentAt, reelDueDate, notes });
+        const shipment = await createShipment({ influencerId, productTitle, productImageUrl, shopifyProductId, sentAt, reelDueDate: reelDueDate || null, notes });
         res.json({ success: true, shipment });
     } catch (error) {
         console.error('Create shipment error:', error);

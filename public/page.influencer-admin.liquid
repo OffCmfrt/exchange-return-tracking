@@ -2563,6 +2563,20 @@ html, body {
             </div>
           </div>
 
+          <!-- Bulk Selection Toolbar -->
+          <div id="srBulkToolbar" style="display: none; padding: 1rem; background: var(--subtle); border: 1px solid var(--border); margin-bottom: 1.25rem; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+                <input type="checkbox" id="srSelectAll" onchange="toggleSelectAll()" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--text, #000);">
+                Select All
+              </label>
+              <span id="srSelectedCount" style="font-size: 0.75rem; color: var(--muted);">0 products selected</span>
+            </div>
+            <button class="ia-btn ia-btn-primary" onclick="openBulkAssignModal()" id="srBulkAssignBtn" disabled style="padding: 0.6rem 1.5rem; font-size: 0.75rem; opacity: 0.5; cursor: not-allowed;">
+              Assign Selected to Ambassador
+            </button>
+          </div>
+
           <!-- Product Grid -->
           <div id="srProductGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.25rem;">
             <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);">
@@ -4993,10 +5007,14 @@ async function searchShopifyProducts(page = 1) {
   const search = document.getElementById('srProductSearch').value;
   const grid = document.getElementById('srProductGrid');
   const paginationEl = document.getElementById('srProductPagination');
+  const toolbarEl = document.getElementById('srBulkToolbar');
   
   srCurrentPage = page;
+  // Reset selections on new search
+  window.srSelectedProducts = new Set();
   grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><div class="ia-spinner" style="margin: 0 auto 1rem;"></div><p style="font-size: 0.8rem;">Loading available inventory...</p></div>';
   if (paginationEl) paginationEl.style.display = 'none';
+  if (toolbarEl) toolbarEl.style.display = 'none';
   
   try {
     const res = await fetch(`${API}/shopify-products?search=${encodeURIComponent(search)}&limit=${SR_PRODUCTS_PER_PAGE}&page=${page}`, {
@@ -5005,6 +5023,9 @@ async function searchShopifyProducts(page = 1) {
     const data = await res.json();
     
     if (data.success && data.products && data.products.length > 0) {
+      // Store products globally for bulk selection
+      window.srCurrentProducts = data.products;
+      
       grid.innerHTML = data.products.map(p => {
         const imageUrl = p.images[0]?.src || '';
         const totalStock = p.totalStock || 0;
@@ -5014,7 +5035,10 @@ async function searchShopifyProducts(page = 1) {
         ).join('');
         
         return `
-          <div style="border: 1px solid var(--border); background: var(--surface); overflow: hidden; display: flex; flex-direction: column; transition: border-color 0.2s;" onmouseenter="this.style.borderColor='var(--text)'" onmouseleave="this.style.borderColor='var(--border)'">
+          <div style="border: 1px solid var(--border); background: var(--surface); overflow: hidden; display: flex; flex-direction: column; transition: border-color 0.2s; position: relative;" onmouseenter="this.style.borderColor='var(--text)'" onmouseleave="this.style.borderColor='var(--border)'" id="product-card-${p.id}">
+            <div style="position: absolute; top: 0.5rem; left: 0.5rem; z-index: 10;">
+              <input type="checkbox" id="select-product-${p.id}" value="${p.id}" onchange="toggleProductSelection(${p.id})" style="width: 20px; height: 20px; cursor: pointer; accent-color: var(--text, #000);">
+            </div>
             <div style="position: relative;">
               ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 220px; object-fit: contain; background: var(--subtle);">` : '<div style="width: 100%; height: 220px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
               <div style="position: absolute; top: 0.5rem; right: 0.5rem; background: ${totalStock > 10 ? 'var(--success, #22c55e)' : totalStock > 3 ? '#f59e0b' : '#ef4444'}; color: white; padding: 0.2rem 0.5rem; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">${totalStock} in stock</div>
@@ -5027,13 +5051,18 @@ async function searchShopifyProducts(page = 1) {
                 <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 0.4rem; font-weight: 600;">Available Sizes (${variantCount})</div>
                 <div style="display: flex; flex-wrap: wrap; gap: 0;">${sizesHtml}</div>
               </div>
-              <button class="ia-btn ia-btn-primary" onclick='assignProductToInfluencer(${JSON.stringify(p).replace(/'/g, "&apos;")})' style="width: 100%; padding: 0.6rem; font-size: 0.7rem; margin-top: auto; letter-spacing: 0.1em;">
-                Assign to Ambassador
-              </button>
+              <div style="display: flex; gap: 0.5rem; margin-top: auto;">
+                <button class="ia-btn" onclick='assignProductToInfluencer(${JSON.stringify(p).replace(/'/g, "&apos;")})' style="flex: 1; padding: 0.6rem; font-size: 0.7rem; letter-spacing: 0.1em;">
+                  Assign Single
+                </button>
+              </div>
             </div>
           </div>
         `;
       }).join('');
+      
+      // Show bulk toolbar
+      if (toolbarEl) toolbarEl.style.display = 'flex';
       
       // Update pagination
       if (data.pagination && paginationEl) {
@@ -5055,8 +5084,14 @@ async function searchShopifyProducts(page = 1) {
   }
 }
 
+// Global variable to store current product being assigned
+let currentAssignProduct = null;
+
 // Assign product to influencer with complete modal
 function assignProductToInfluencer(product) {
+  // Store product globally for access in save function
+  currentAssignProduct = product;
+  
   const productId = product.id;
   const productTitle = product.title;
   const imageUrl = product.images[0]?.src || '';
@@ -5100,8 +5135,50 @@ function assignProductToInfluencer(product) {
       </div>
       
       <div class="ia-form-group">
-        <label for="apReelDueDate" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Reel Due Date *</label>
-        <input type="date" id="apReelDueDate" class="ia-input" required min="${new Date().toISOString().split('T')[0]}" style="font-size: 0.85rem;">
+        <label for="apReelDueDate" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Reel Due Date (Optional)</label>
+        <input type="date" id="apReelDueDate" class="ia-input" min="${new Date().toISOString().split('T')[0]}" style="font-size: 0.85rem;">
+        <span style="font-size: 0.65rem; color: var(--muted); margin-top: 0.3rem; display: block;">Leave blank for inventory-based shipments without reel requirement</span>
+      </div>
+      
+      <div style="padding: 1rem; background: #4facfe10; border-left: 3px solid #4facfe; margin: 1rem 0;">
+        <p style="font-size: 0.7rem; color: #4facfe; margin: 0; font-weight: 600;">Shipping Address</p>
+        <p style="font-size: 0.65rem; color: var(--muted); margin: 0.3rem 0 0;">Will be auto-filled from influencer profile. Edit if needed.</p>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+        <div class="ia-form-group">
+          <label for="apShipName" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Full Name *</label>
+          <input type="text" id="apShipName" class="ia-input" required style="font-size: 0.85rem;">
+        </div>
+        <div class="ia-form-group">
+          <label for="apShipPhone" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Phone *</label>
+          <input type="text" id="apShipPhone" class="ia-input" required maxlength="10" pattern="[0-9]{10}" style="font-size: 0.85rem;">
+        </div>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="apShipAddress1" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Address Line 1 *</label>
+        <input type="text" id="apShipAddress1" class="ia-input" required style="font-size: 0.85rem;">
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="apShipAddress2" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Address Line 2 (Optional)</label>
+        <input type="text" id="apShipAddress2" class="ia-input" style="font-size: 0.85rem;">
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+        <div class="ia-form-group">
+          <label for="apShipCity" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">City *</label>
+          <input type="text" id="apShipCity" class="ia-input" required style="font-size: 0.85rem;">
+        </div>
+        <div class="ia-form-group">
+          <label for="apShipState" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">State *</label>
+          <input type="text" id="apShipState" class="ia-input" required style="font-size: 0.85rem;">
+        </div>
+        <div class="ia-form-group">
+          <label for="apShipPincode" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Pincode *</label>
+          <input type="text" id="apShipPincode" class="ia-input" required maxlength="6" pattern="[0-9]{6}" style="font-size: 0.85rem;">
+        </div>
       </div>
       
       <div class="ia-form-group">
@@ -5145,6 +5222,376 @@ function closeAssignProductModal() {
   if (modal) modal.remove();
 }
 
+// Initialize selected products set
+window.srSelectedProducts = new Set();
+
+// Toggle individual product selection
+function toggleProductSelection(productId) {
+  const checkbox = document.getElementById(`select-product-${productId}`);
+  const card = document.getElementById(`product-card-${productId}`);
+  
+  if (checkbox.checked) {
+    window.srSelectedProducts.add(productId);
+    card.style.borderColor = 'var(--text, #000)';
+    card.style.boxShadow = '0 0 0 2px var(--text, #000)';
+  } else {
+    window.srSelectedProducts.delete(productId);
+    card.style.borderColor = 'var(--border)';
+    card.style.boxShadow = 'none';
+  }
+  
+  updateSelectionUI();
+}
+
+// Toggle select all products
+function toggleSelectAll() {
+  const selectAllCheckbox = document.getElementById('srSelectAll');
+  const products = window.srCurrentProducts || [];
+  
+  if (selectAllCheckbox.checked) {
+    // Select all products
+    products.forEach(p => {
+      window.srSelectedProducts.add(p.id);
+      const checkbox = document.getElementById(`select-product-${p.id}`);
+      const card = document.getElementById(`product-card-${p.id}`);
+      if (checkbox) checkbox.checked = true;
+      if (card) {
+        card.style.borderColor = 'var(--text, #000)';
+        card.style.boxShadow = '0 0 0 2px var(--text, #000)';
+      }
+    });
+  } else {
+    // Deselect all products
+    products.forEach(p => {
+      window.srSelectedProducts.delete(p.id);
+      const checkbox = document.getElementById(`select-product-${p.id}`);
+      const card = document.getElementById(`product-card-${p.id}`);
+      if (checkbox) checkbox.checked = false;
+      if (card) {
+        card.style.borderColor = 'var(--border)';
+        card.style.boxShadow = 'none';
+      }
+    });
+  }
+  
+  updateSelectionUI();
+}
+
+// Update selection UI (count and button state)
+function updateSelectionUI() {
+  const count = window.srSelectedProducts.size;
+  const countEl = document.getElementById('srSelectedCount');
+  const btn = document.getElementById('srBulkAssignBtn');
+  const selectAllCheckbox = document.getElementById('srSelectAll');
+  const products = window.srCurrentProducts || [];
+  
+  if (countEl) countEl.textContent = `${count} product${count !== 1 ? 's' : ''} selected`;
+  
+  if (btn) {
+    if (count > 0) {
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.style.cursor = 'pointer';
+    } else {
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      btn.style.cursor = 'not-allowed';
+    }
+  }
+  
+  // Update select all checkbox state
+  if (selectAllCheckbox && products.length > 0) {
+    selectAllCheckbox.checked = count === products.length;
+  }
+}
+
+// Open bulk assign modal for multiple products
+function openBulkAssignModal() {
+  const selectedIds = Array.from(window.srSelectedProducts);
+  
+  if (selectedIds.length === 0) {
+    alert('Please select at least one product');
+    return;
+  }
+  
+  const products = (window.srCurrentProducts || []).filter(p => selectedIds.includes(p.id));
+  
+  // Store products globally for save function
+  window.srBulkProducts = products;
+  
+  const modal = document.createElement('div');
+  modal.id = 'srBulkAssignModal';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem; backdrop-filter: blur(4px);';
+  
+  // Create product list HTML
+  const productListHtml = products.map(p => {
+    const imageUrl = p.images[0]?.src || '';
+    return `
+      <div style="display: flex; gap: 1rem; padding: 0.75rem; background: var(--subtle); margin-bottom: 0.5rem; align-items: center;">
+        ${imageUrl ? `<img src="${imageUrl}" style="width: 50px; height: 50px; object-fit: contain; background: var(--bg);">` : '<div style="width: 50px; height: 50px; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 0.6rem;">No img</div>'}
+        <div style="flex: 1;">
+          <p style="font-size: 0.8rem; font-weight: 600; margin: 0;">${p.title}</p>
+          <p style="font-size: 0.7rem; color: var(--muted); margin: 0.2rem 0 0;">&#8377;${p.variants[0]?.price || '0'} · ${p.totalStock} in stock</p>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  modal.innerHTML = `
+    <div style="background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 700px; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h3 style="font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin: 0;">Assign ${products.length} Products & Create Shipment</h3>
+        <button onclick="closeBulkAssignModal()" style="background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 1.5rem; line-height: 1;">&times;</button>
+      </div>
+      
+      <div style="padding: 1rem; background: var(--subtle); margin-bottom: 1.5rem; border-left: 3px solid var(--text); max-height: 200px; overflow-y: auto;">
+        <p style="font-size: 0.75rem; font-weight: 600; margin: 0 0 0.75rem;">Selected Products:</p>
+        ${productListHtml}
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="bulkInfluencer" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Select Ambassador *</label>
+        <select id="bulkInfluencer" class="ia-input" required style="font-size: 0.85rem;">
+          <option value="">Choose ambassador...</option>
+        </select>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="bulkSentAt" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Sent Date *</label>
+        <input type="date" id="bulkSentAt" class="ia-input" required value="${new Date().toISOString().split('T')[0]}" style="font-size: 0.85rem;">
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="bulkReelDueDate" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Reel Due Date (Optional)</label>
+        <input type="date" id="bulkReelDueDate" class="ia-input" min="${new Date().toISOString().split('T')[0]}" style="font-size: 0.85rem;">
+        <span style="font-size: 0.65rem; color: var(--muted); margin-top: 0.3rem; display: block;">Leave blank for inventory-based shipments without reel requirement</span>
+      </div>
+      
+      <div style="padding: 1rem; background: #4facfe10; border-left: 3px solid #4facfe; margin: 1rem 0;">
+        <p style="font-size: 0.7rem; color: #4facfe; margin: 0; font-weight: 600;">Shipping Address</p>
+        <p style="font-size: 0.65rem; color: var(--muted); margin: 0.3rem 0 0;">Will auto-fill when you select an ambassador. You can edit if needed.</p>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+        <div class="ia-form-group">
+          <label for="bulkShipName" style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.3rem; display: block;">Full Name *</label>
+          <input type="text" id="bulkShipName" class="ia-input" required style="font-size: 0.8rem;">
+        </div>
+        <div class="ia-form-group">
+          <label for="bulkShipPhone" style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.3rem; display: block;">Phone Number *</label>
+          <input type="tel" id="bulkShipPhone" class="ia-input" required pattern="[0-9]{10}" maxlength="10" style="font-size: 0.8rem;">
+        </div>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="bulkShipAddress1" style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.3rem; display: block;">Address Line 1 *</label>
+        <input type="text" id="bulkShipAddress1" class="ia-input" required style="font-size: 0.8rem;">
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="bulkShipAddress2" style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.3rem; display: block;">Address Line 2 (Optional)</label>
+        <input type="text" id="bulkShipAddress2" class="ia-input" style="font-size: 0.8rem;">
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+        <div class="ia-form-group">
+          <label for="bulkShipCity" style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.3rem; display: block;">City *</label>
+          <input type="text" id="bulkShipCity" class="ia-input" required style="font-size: 0.8rem;">
+        </div>
+        <div class="ia-form-group">
+          <label for="bulkShipState" style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.3rem; display: block;">State *</label>
+          <input type="text" id="bulkShipState" class="ia-input" required style="font-size: 0.8rem;">
+        </div>
+        <div class="ia-form-group">
+          <label for="bulkShipPincode" style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.3rem; display: block;">Pincode *</label>
+          <input type="text" id="bulkShipPincode" class="ia-input" required pattern="[0-9]{6}" maxlength="6" style="font-size: 0.8rem;">
+        </div>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="bulkIsMonthlyTarget" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Mark as Monthly Target? *</label>
+        <select id="bulkIsMonthlyTarget" class="ia-input" style="font-size: 0.85rem;">
+          <option value="true">Yes - Counts towards monthly reel quota</option>
+          <option value="false" selected>No - Regular shipment only</option>
+        </select>
+      </div>
+      
+      <div class="ia-form-group">
+        <label for="bulkNotes" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block;">Notes (Optional)</label>
+        <textarea id="bulkNotes" class="ia-input" rows="2" placeholder="Any special instructions..." style="font-size: 0.8rem; resize: vertical;"></textarea>
+      </div>
+      
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+        <button onclick="closeBulkAssignModal()" style="flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Cancel</button>
+        <button onclick="saveBulkShipment()" style="flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600;">Create Shipment for ${products.length} Products</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Load influencers
+  loadInfluencersForBulkShipment();
+}
+
+function closeBulkAssignModal() {
+  const modal = document.getElementById('srBulkAssignModal');
+  if (modal) modal.remove();
+}
+
+async function loadInfluencersForBulkShipment() {
+  try {
+    const res = await fetch(`${API}/list`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    
+    if (data.success || Array.isArray(data)) {
+      const influencers = Array.isArray(data) ? data : (data.influencers || []);
+      const select = document.getElementById('bulkInfluencer');
+      select.innerHTML = '<option value="">Choose ambassador...</option>' + 
+        influencers.map(i => `<option value="${i.id}">${i.name || i.handle || 'Influencer'}</option>`).join('');
+      
+      // Add event listener to auto-fill address
+      select.addEventListener('change', function() {
+        const selectedInfluencer = influencers.find(i => i.id == this.value);
+        if (selectedInfluencer) {
+          document.getElementById('bulkShipName').value = selectedInfluencer.name || '';
+          document.getElementById('bulkShipPhone').value = selectedInfluencer.phone || '';
+          document.getElementById('bulkShipAddress1').value = selectedInfluencer.shipping_address || '';
+          document.getElementById('bulkShipAddress2').value = '';
+          document.getElementById('bulkShipCity').value = selectedInfluencer.city || '';
+          document.getElementById('bulkShipState').value = selectedInfluencer.shipping_state || '';
+          document.getElementById('bulkShipPincode').value = selectedInfluencer.shipping_pin || '';
+        } else {
+          // Clear all fields
+          document.getElementById('bulkShipName').value = '';
+          document.getElementById('bulkShipPhone').value = '';
+          document.getElementById('bulkShipAddress1').value = '';
+          document.getElementById('bulkShipAddress2').value = '';
+          document.getElementById('bulkShipCity').value = '';
+          document.getElementById('bulkShipState').value = '';
+          document.getElementById('bulkShipPincode').value = '';
+        }
+      });
+    }
+  } catch (e) {
+    console.error('Load influencers error:', e);
+  }
+}
+
+async function saveBulkShipment() {
+  const influencerId = document.getElementById('bulkInfluencer').value;
+  const sentAt = document.getElementById('bulkSentAt').value;
+  const reelDueDate = document.getElementById('bulkReelDueDate').value || null; // Optional
+  const isMonthlyTarget = document.getElementById('bulkIsMonthlyTarget').value === 'true';
+  const notes = document.getElementById('bulkNotes').value.trim() || null;
+  
+  // Shipping address fields
+  const shippingFullName = document.getElementById('bulkShipName').value.trim();
+  const shippingPhone = document.getElementById('bulkShipPhone').value.trim();
+  const shippingAddressLine1 = document.getElementById('bulkShipAddress1').value.trim();
+  const shippingAddressLine2 = document.getElementById('bulkShipAddress2').value.trim();
+  const shippingCity = document.getElementById('bulkShipCity').value.trim();
+  const shippingState = document.getElementById('bulkShipState').value.trim();
+  const shippingPincode = document.getElementById('bulkShipPincode').value.trim();
+  
+  const products = window.srBulkProducts || [];
+  
+  if (!influencerId) {
+    alert('Please select an ambassador');
+    return;
+  }
+  if (!sentAt) {
+    alert('Please select a sent date');
+    return;
+  }
+  if (products.length === 0) {
+    alert('No products selected');
+    return;
+  }
+  
+  // Validate shipping address
+  if (!shippingFullName) {
+    alert('Please enter full name');
+    return;
+  }
+  if (!shippingPhone || shippingPhone.length !== 10) {
+    alert('Please enter a valid 10-digit phone number');
+    return;
+  }
+  if (!shippingAddressLine1) {
+    alert('Please enter address');
+    return;
+  }
+  if (!shippingCity) {
+    alert('Please enter city');
+    return;
+  }
+  if (!shippingState) {
+    alert('Please enter state');
+    return;
+  }
+  if (!shippingPincode || shippingPincode.length !== 6) {
+    alert('Please enter a valid 6-digit pincode');
+    return;
+  }
+  
+  // Prepare products array for API
+  const productsArray = products.map(p => ({
+    productTitle: p.title,
+    productImageUrl: p.images[0]?.src || '',
+    shopifyProductId: p.id.toString(),
+    variantId: p.variants[0]?.id?.toString() || '',
+    size: p.variants[0]?.title || '',
+    quantity: 1
+  }));
+  
+  try {
+    const res = await fetch(`${API}/influencer-admin/shipments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        influencerId,
+        products: productsArray,
+        sentAt,
+        reelDueDate,
+        isMonthlyTarget,
+        notes,
+        shippingFullName,
+        shippingPhone,
+        shippingAddressLine1,
+        shippingAddressLine2,
+        shippingCity,
+        shippingState,
+        shippingPincode
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast(`Shipment created successfully for ${products.length} product${products.length > 1 ? 's' : ''}!`);
+      closeBulkAssignModal();
+      
+      // Clear selections
+      window.srSelectedProducts.clear();
+      updateSelectionUI();
+      
+      // Optional: Refresh product grid
+      searchShopifyProducts(srCurrentPage);
+    } else {
+      alert(data.error || 'Failed to create shipment');
+    }
+  } catch (e) {
+    console.error('Bulk shipment error:', e);
+    alert('Network error. Please try again.');
+  }
+}
+
 async function loadInfluencersForShipment() {
   try {
     const res = await fetch(`${API}/list`, {
@@ -5157,6 +5604,30 @@ async function loadInfluencersForShipment() {
       const select = document.getElementById('apInfluencer');
       select.innerHTML = '<option value="">Choose influencer...</option>' + 
         influencers.map(i => `<option value="${i.id}">${i.name || i.handle || 'Influencer'}</option>`).join('');
+      
+      // Add event listener to auto-fill address when influencer is selected
+      select.addEventListener('change', function() {
+        const selectedInfluencer = influencers.find(i => i.id == this.value);
+        if (selectedInfluencer) {
+          // Auto-fill shipping address from influencer profile
+          document.getElementById('apShipName').value = selectedInfluencer.name || '';
+          document.getElementById('apShipPhone').value = selectedInfluencer.phone || '';
+          document.getElementById('apShipAddress1').value = selectedInfluencer.shipping_address || '';
+          document.getElementById('apShipAddress2').value = '';
+          document.getElementById('apShipCity').value = selectedInfluencer.city || '';
+          document.getElementById('apShipState').value = selectedInfluencer.shipping_state || '';
+          document.getElementById('apShipPincode').value = selectedInfluencer.shipping_pin || '';
+        } else {
+          // Clear fields if no influencer selected
+          document.getElementById('apShipName').value = '';
+          document.getElementById('apShipPhone').value = '';
+          document.getElementById('apShipAddress1').value = '';
+          document.getElementById('apShipAddress2').value = '';
+          document.getElementById('apShipCity').value = '';
+          document.getElementById('apShipState').value = '';
+          document.getElementById('apShipPincode').value = '';
+        }
+      });
     }
   } catch (e) {
     console.error('Load influencers error:', e);
@@ -5165,19 +5636,42 @@ async function loadInfluencersForShipment() {
 
 async function saveProductShipment(productTitle, imageUrl) {
   const influencerId = document.getElementById('apInfluencer').value;
-  const reelDueDate = document.getElementById('apReelDueDate').value;
+  const reelDueDate = document.getElementById('apReelDueDate').value; // Now optional
   const isMonthlyTarget = document.getElementById('apIsMonthlyTarget').value === 'true';
   const notes = document.getElementById('apNotes').value.trim();
   const sizeSelect = document.getElementById('apSize');
   const selectedSize = sizeSelect ? sizeSelect.options[sizeSelect.selectedIndex]?.text.split(' - ')[0] : '';
   const selectedVariantId = sizeSelect ? sizeSelect.value : '';
   
+  // Shipping address fields
+  const shippingFullName = document.getElementById('apShipName').value.trim();
+  const shippingPhone = document.getElementById('apShipPhone').value.trim();
+  const shippingAddressLine1 = document.getElementById('apShipAddress1').value.trim();
+  const shippingAddressLine2 = document.getElementById('apShipAddress2').value.trim();
+  const shippingCity = document.getElementById('apShipCity').value.trim();
+  const shippingState = document.getElementById('apShipState').value.trim();
+  const shippingPincode = document.getElementById('apShipPincode').value.trim();
+  
   if (!influencerId) {
     alert('Please select an influencer');
     return;
   }
-  if (!reelDueDate) {
-    alert('Please select a reel due date');
+  
+  // Validate shipping address
+  if (!shippingFullName || !shippingPhone || !shippingAddressLine1 || !shippingCity || !shippingState || !shippingPincode) {
+    alert('Please fill in all required shipping address fields');
+    return;
+  }
+  
+  // Validate phone format
+  if (!/^[0-9]{10}$/.test(shippingPhone)) {
+    alert('Please enter a valid 10-digit phone number');
+    return;
+  }
+  
+  // Validate pincode format
+  if (!/^[0-9]{6}$/.test(shippingPincode)) {
+    alert('Please enter a valid 6-digit pincode');
     return;
   }
   
@@ -5190,12 +5684,23 @@ async function saveProductShipment(productTitle, imageUrl) {
       },
       body: JSON.stringify({
         influencerId,
-        productTitle: selectedSize && selectedSize !== 'Default' ? `${productTitle} (${selectedSize})` : productTitle,
-        productImageUrl: imageUrl || null,
-        reelDueDate,
+        products: [{
+          productTitle: productTitle,
+          productImageUrl: imageUrl || null,
+          shopifyProductId: currentAssignProduct?.id || null,
+          variantId: selectedVariantId || null,
+          size: selectedSize || null
+        }],
+        sentAt: new Date().toISOString(),
+        reelDueDate: reelDueDate || null, // Optional
         isMonthlyTarget,
-        variantId: selectedVariantId || null,
-        size: selectedSize || null,
+        shippingFullName,
+        shippingAddressLine1,
+        shippingAddressLine2: shippingAddressLine2 || null,
+        shippingCity,
+        shippingState,
+        shippingPincode,
+        shippingPhone,
         notes: notes || null
       })
     });
@@ -5203,7 +5708,7 @@ async function saveProductShipment(productTitle, imageUrl) {
     const data = await res.json();
     
     if (data.success) {
-      showToast('Shipment created successfully!');
+      showToast(data.message || 'Shipment created successfully!');
       closeAssignProductModal();
       // Refresh product grid to update stock counts
       searchShopifyProducts();
