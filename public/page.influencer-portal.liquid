@@ -600,6 +600,139 @@ body, html { background: var(--bg); }
 .ip-ledger-empty h3 { font-size: 1rem; margin-bottom: 0.5rem; color: var(--text); }
 .ip-ledger-empty p { font-size: 0.85rem; }
 
+/* ── MESSAGES ── */
+.ip-message-item {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.ip-message-item:hover {
+  background: var(--surface-2);
+}
+
+.ip-message-item.unread {
+  border-left: 2px solid var(--text);
+  background: var(--surface-2);
+}
+
+.ip-message-item.broadcast {
+  border-left: 2px solid #3b82f6;
+}
+
+.ip-message-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.ip-message-sender {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ip-message-time {
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+.ip-message-subject {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.ip-message-content {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ip-message-badge {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  background: #3b82f6;
+  color: white;
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-left: 0.5rem;
+}
+
+.ip-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.55rem;
+  font-weight: 700;
+  border-radius: 8px;
+  margin-left: 0.4rem;
+}
+
+.ip-input {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  border-radius: 2px;
+  transition: border-color var(--transition);
+}
+
+.ip-input:focus {
+  outline: none;
+  border-color: var(--text);
+}
+
+.ip-btn {
+  padding: 0.6rem 1.25rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  transition: all var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ip-btn:hover {
+  border-color: var(--text);
+}
+
+.ip-btn-primary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+.ip-btn-primary:hover {
+  background: transparent;
+  color: var(--text);
+}
+
+.ip-btn-small {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.6rem;
+}
+
 @media (max-width: 700px) {
   .ip-stats-grid { grid-template-columns: 1fr 1fr; }
   .ip-payout-summary { grid-template-columns: 1fr; }
@@ -669,6 +802,10 @@ body, html { background: var(--bg); }
       <button class="ip-tab-btn" data-tab="payouts" onclick="setTab('payouts')">Payouts</button>
       <button class="ip-tab-btn" data-tab="shipments" onclick="setTab('shipments')">Shipments & Reels</button>
       <button class="ip-tab-btn" data-tab="leaderboard" onclick="setTab('leaderboard')">Leaderboard</button>
+      <button class="ip-tab-btn" data-tab="messages" onclick="setTab('messages')">
+        Messages
+        <span class="ip-unread-badge hidden" id="ipUnreadBadge">0</span>
+      </button>
     </div>
 
     <!-- Performance View (stats + feed) -->
@@ -880,6 +1017,54 @@ body, html { background: var(--bg); }
     </footer>
   </div>
 
+  <!-- Messages View -->
+  <div id="ipMessagesView" style="display:none;">
+    <div class="ip-section">
+      <div class="ip-section-header">
+        <h3>Messages</h3>
+        <button class="ip-btn ip-btn-small" onclick="openComposeMessage()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Compose
+        </button>
+      </div>
+
+      <!-- Compose Message Area (hidden by default) -->
+      <div id="ipComposeArea" class="hidden" style="padding: 1.5rem; border-bottom: 1px solid var(--border);">
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: block; margin-bottom: 0.5rem;">Subject (Optional)</label>
+          <input type="text" id="ipMessageSubject" class="ip-input" placeholder="Enter subject...">
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: block; margin-bottom: 0.5rem;">Message *</label>
+          <textarea id="ipMessageContent" class="ip-input" rows="5" placeholder="Type your message to admin..." style="resize: vertical;"></textarea>
+        </div>
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+          <button class="ip-btn ip-btn-small" onclick="closeComposeMessage()">Cancel</button>
+          <button class="ip-btn ip-btn-primary ip-btn-small" onclick="sendInfluencerMessage()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+            Send
+          </button>
+        </div>
+      </div>
+
+      <!-- Messages List -->
+      <div id="ipMessagesList" style="padding: 0;">
+        <div class="ip-empty">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 1rem;">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <p>No messages yet</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -1000,9 +1185,17 @@ function setTab(tab) {
   document.getElementById('ipPayoutsView').style.display = tab === 'payouts' ? '' : 'none';
   document.getElementById('ipShipmentsView').style.display = tab === 'shipments' ? '' : 'none';
   document.getElementById('ipLeaderboardView').style.display = tab === 'leaderboard' ? '' : 'none';
+  document.getElementById('ipMessagesView').style.display = tab === 'messages' ? '' : 'none';
+  
   if (tab === 'payouts') loadPayouts();
   if (tab === 'shipments') loadPortalShipments();
   if (tab === 'leaderboard') loadPortalLeaderboard();
+  if (tab === 'messages') {
+    loadMessages();
+    startMessagePolling();
+  } else {
+    stopMessagePolling();
+  }
 }
 
 async function loadPayouts() {
@@ -1813,6 +2006,196 @@ setTab = function(tab) {
     loadMyProductRequests();
   }
 };
+
+// ==================== MESSAGING SYSTEM ====================
+
+// Message state
+let messagePollingInterval = null;
+let currentAuthToken = token;
+
+// Load messages
+async function loadMessages() {
+  try {
+    const authToken = currentAuthToken || token;
+    if (!authToken) return;
+
+    const response = await fetch(`https://exchange-return-tracking.onrender.com/api/influencer/messages?token=${authToken}`);
+    const data = await response.json();
+    
+    if (data.success) {
+      renderMessages(data.messages);
+      updateUnreadBadge();
+    }
+  } catch (error) {
+    console.error('Failed to load messages:', error);
+  }
+}
+
+// Render messages
+function renderMessages(messages) {
+  const container = document.getElementById('ipMessagesList');
+  
+  if (!messages || messages.length === 0) {
+    container.innerHTML = `
+      <div class="ip-empty">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 1rem;">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <p>No messages yet</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = messages.map(msg => {
+    const isIncoming = msg.sender_type === 'admin';
+    const isBroadcast = msg.is_broadcast;
+    const isUnread = !msg.is_read && isIncoming;
+    const timeAgo = getTimeAgo(msg.created_at);
+    
+    return `
+      <div class="ip-message-item ${isUnread ? 'unread' : ''} ${isBroadcast ? 'broadcast' : ''}" onclick="markAsRead('${msg.message_id}')">
+        <div class="ip-message-meta">
+          <div class="ip-message-sender">
+            ${isBroadcast ? '<span class="ip-message-badge">Broadcast</span>' : ''}
+            ${isIncoming ? 'Admin' : 'You'}
+          </div>
+          <span class="ip-message-time">${timeAgo}</span>
+        </div>
+        ${msg.subject ? `<div class="ip-message-subject">${escapeHtml(msg.subject)}</div>` : ''}
+        <div class="ip-message-content">${escapeHtml(msg.content)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Open compose message
+function openComposeMessage() {
+  document.getElementById('ipComposeArea').classList.remove('hidden');
+}
+
+// Close compose message
+function closeComposeMessage() {
+  document.getElementById('ipComposeArea').classList.add('hidden');
+  document.getElementById('ipMessageSubject').value = '';
+  document.getElementById('ipMessageContent').value = '';
+}
+
+// Send message to admin
+async function sendInfluencerMessage() {
+  const subject = document.getElementById('ipMessageSubject').value;
+  const content = document.getElementById('ipMessageContent').value;
+
+  if (!content.trim()) {
+    alert('Please enter a message');
+    return;
+  }
+
+  try {
+    const authToken = currentAuthToken || token;
+    
+    const response = await fetch('https://exchange-return-tracking.onrender.com/api/influencer/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: authToken,
+        subject: subject || null,
+        content
+      })
+    });
+
+    const data = await response.json();
+    
+    if (data.success) {
+      closeComposeMessage();
+      loadMessages();
+      showToast('Message sent');
+    } else {
+      showToast(data.error || 'Failed to send message', true);
+    }
+  } catch (error) {
+    console.error('Failed to send message:', error);
+    showToast('Failed to send message', true);
+  }
+}
+
+// Mark message as read
+async function markAsRead(messageId) {
+  try {
+    const authToken = currentAuthToken || token;
+    
+    await fetch(`https://exchange-return-tracking.onrender.com/api/influencer/messages/${messageId}/read`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: authToken })
+    });
+    
+    // Refresh messages
+    loadMessages();
+  } catch (error) {
+    console.error('Failed to mark as read:', error);
+  }
+}
+
+// Update unread badge
+async function updateUnreadBadge() {
+  try {
+    const authToken = currentAuthToken || token;
+    if (!authToken) return;
+
+    const response = await fetch(`https://exchange-return-tracking.onrender.com/api/influencer/messages/unread-count?token=${authToken}`);
+    const data = await response.json();
+    
+    if (data.success && data.count > 0) {
+      const badge = document.getElementById('ipUnreadBadge');
+      badge.textContent = data.count > 99 ? '99+' : data.count;
+      badge.classList.remove('hidden');
+    } else {
+      document.getElementById('ipUnreadBadge')?.classList.add('hidden');
+    }
+  } catch (error) {
+    console.error('Failed to get unread count:', error);
+  }
+}
+
+// Start message polling
+function startMessagePolling() {
+  if (messagePollingInterval) {
+    clearInterval(messagePollingInterval);
+  }
+  
+  messagePollingInterval = setInterval(() => {
+    loadMessages();
+  }, 30000); // 30 seconds
+}
+
+// Stop message polling
+function stopMessagePolling() {
+  if (messagePollingInterval) {
+    clearInterval(messagePollingInterval);
+    messagePollingInterval = null;
+  }
+}
+
+// Helper: Time ago
+function getTimeAgo(dateString) {
+  const now = new Date();
+  const date = new Date(dateString);
+  const seconds = Math.floor((now - date) / 1000);
+  
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+// Helper: Escape HTML
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 </script>
 </body>
 </html>

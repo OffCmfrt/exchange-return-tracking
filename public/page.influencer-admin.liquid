@@ -2151,6 +2151,150 @@ html, body {
 .btn-row { display: flex; gap: 1rem; margin-top: 1.5rem; }
 .btn-flex { flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; }
 .btn-flex-primary { flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; }
+
+/* ── MESSAGES ── */
+.ia-message-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.25rem;
+  transition: all var(--transition);
+}
+
+.ia-message-card:hover {
+  border-color: var(--border-hover);
+}
+
+.ia-message-card.broadcast {
+  border-left: 3px solid #3b82f6;
+}
+
+.ia-message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.ia-message-sender {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.ia-message-time {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.ia-message-subject {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.ia-message-content {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.ia-badge-broadcast {
+  background: #3b82f6;
+  color: white;
+  padding: 0.2rem 0.5rem;
+  border-radius: 2px;
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+/* Modal styles */
+.ia-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.ia-modal.active {
+  display: flex;
+}
+
+.ia-modal-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: fadeUp 0.3s ease;
+}
+
+.ia-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.ia-modal-body {
+  padding: 1.5rem;
+}
+
+.ia-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.ia-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color var(--transition);
+}
+
+.ia-modal-close:hover {
+  color: var(--text);
+}
+
+.ia-form-group {
+  margin-bottom: 1.25rem;
+}
+
+.ia-form-group label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.ia-empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: var(--muted);
+}
+
+.ia-empty-state svg {
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.ia-empty-state p {
+  font-size: 0.85rem;
+}
 </style>
 </head>
 <body>
@@ -2204,6 +2348,11 @@ html, body {
  <div class="ia-nav-item" onclick="showPage('leaderboard', this)">
  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 21h8m-4-4v4m-4.5-9.5L12 3l4.5 8.5M7 12h10"/></svg>
  Leaderboard
+ </div>
+ <div class="ia-nav-item" onclick="showPage('messages', this)">
+ <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+ Messages
+ <span class="ia-nav-badge hidden" id="iaNavMessagesBadge">0</span>
  </div>
  </nav>
  <div class="ia-sidebar-footer">
@@ -2928,6 +3077,103 @@ html, body {
  </div>
  </aside>
  </div>
+
+<!-- Messages Page -->
+<div class="ia-content hidden" id="page-messages">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h2 class="ia-lb-page-title">Message Center</h2>
+    <button class="ia-btn ia-btn-primary" onclick="openNewMessageModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="12" y1="5" x2="12" y2="19"/>
+        <line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      New Message
+    </button>
+  </div>
+
+  <!-- Message Filters -->
+  <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+    <button class="ia-tab-btn active" onclick="filterMessages('all', this)">All Messages</button>
+    <button class="ia-tab-btn" onclick="filterMessages('direct', this)">Direct</button>
+    <button class="ia-tab-btn" onclick="filterMessages('broadcast', this)">Broadcasts</button>
+  </div>
+
+  <!-- Influencer Filter Dropdown -->
+  <div style="margin-bottom: 1.5rem;">
+    <select id="messageInfluencerFilter" onchange="filterByInfluencer()" style="width: 100%; max-width: 300px; padding: 0.6rem 2rem 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font-size: 0.8rem;">
+      <option value="">All Influencers</option>
+    </select>
+  </div>
+
+  <!-- Messages List -->
+  <div id="messagesList" style="display: flex; flex-direction: column; gap: 0.75rem;">
+    <div class="ia-empty-state">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <p>No messages yet</p>
+    </div>
+  </div>
+</div>
+
+<!-- New Message Modal -->
+<div class="ia-modal" id="newMessageModal">
+  <div class="ia-modal-content" style="max-width: 600px;">
+    <div class="ia-modal-header">
+      <h3>Send Message</h3>
+      <button class="ia-modal-close" onclick="closeNewMessageModal()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="ia-modal-body">
+      <!-- Message Type Toggle -->
+      <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+        <label style="flex: 1; cursor: pointer;">
+          <input type="radio" name="messageType" value="direct" checked onchange="toggleMessageType()" style="margin-right: 0.5rem;">
+          Direct Message
+        </label>
+        <label style="flex: 1; cursor: pointer;">
+          <input type="radio" name="messageType" value="broadcast" onchange="toggleMessageType()" style="margin-right: 0.5rem;">
+          Broadcast to All
+        </label>
+      </div>
+
+      <!-- Recipient Select (hidden for broadcast) -->
+      <div class="ia-form-group" id="recipientSelectGroup">
+        <label>Select Influencer</label>
+        <select id="messageRecipient" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text);">
+          <option value="">Loading...</option>
+        </select>
+      </div>
+
+      <!-- Subject -->
+      <div class="ia-form-group">
+        <label>Subject (Optional)</label>
+        <input type="text" id="messageSubject" placeholder="Enter subject..." style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text);">
+      </div>
+
+      <!-- Message Content -->
+      <div class="ia-form-group">
+        <label>Message *</label>
+        <textarea id="messageContent" rows="6" placeholder="Type your message..." required style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); resize: vertical; font-family: inherit;"></textarea>
+      </div>
+    </div>
+    <div class="ia-modal-footer">
+      <button class="ia-btn" onclick="closeNewMessageModal()">Cancel</button>
+      <button class="ia-btn ia-btn-primary" onclick="sendMessage()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+        Send Message
+      </button>
+    </div>
+  </div>
+</div>
+
 <div id="iaToast" class="ia-toast"></div>
 </div>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>">
@@ -4108,9 +4354,19 @@ function showPage(pageName, navItem) {
  document.getElementById('page-ambassadors').style.display = 'none';
  document.getElementById('page-shipments-reels').style.display = 'none';
  document.getElementById('page-leaderboard').style.display = 'none';
+ document.getElementById('page-messages').classList.add('hidden');
  
  // Show selected page
- document.getElementById(`page-${pageName}`).style.display = 'block';
+ if (pageName === 'messages') {
+   document.getElementById('page-messages').classList.remove('hidden');
+ } else {
+   document.getElementById(`page-${pageName}`).style.display = 'block';
+ }
+ 
+ // Stop polling when leaving messages page
+ if (pageName !== 'messages') {
+   stopMessagePolling();
+ }
  
  // Load page-specific data
  if (pageName === 'shipments-reels') {
@@ -4122,6 +4378,8 @@ function showPage(pageName, navItem) {
  loadProductRequests();
  } else if (pageName === 'leaderboard') {
  loadFullLeaderboard('30d');
+ } else if (pageName === 'messages') {
+ showMessagesPage();
  }
 }
 // ─── SHIPMENTS & REELS TAB SWITCHING ─────────────────────────────────────────
@@ -5960,6 +6218,238 @@ async function addDetailNote(influencerId) {
  if (res.ok) { showToast('Note added'); switchDetailTab('notes'); }
  else showToast('Failed to add note', true);
  } catch (e) { showToast('Network error', true); }
+}
+
+// ==================== MESSAGING SYSTEM ====================
+
+// Message state
+let currentMessageFilter = 'all';
+let allInfluencersData = [];
+let messagePollingInterval = null;
+
+// Show messages page
+function showMessagesPage() {
+  loadMessages();
+  loadInfluencerDropdown();
+  startMessagePolling();
+}
+
+// Load messages from API
+async function loadMessages() {
+  try {
+    const influencerId = document.getElementById('messageInfluencerFilter')?.value || '';
+    const type = currentMessageFilter;
+    
+    const response = await fetch(`https://exchange-return-tracking.onrender.com/api/admin/messages?influencerId=${influencerId}&type=${type}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await response.json();
+    
+    if (data.success) {
+      renderMessages(data.messages);
+    }
+  } catch (error) {
+    console.error('Failed to load messages:', error);
+  }
+}
+
+// Render messages list
+function renderMessages(messages) {
+  const container = document.getElementById('messagesList');
+  
+  if (!messages || messages.length === 0) {
+    container.innerHTML = `
+      <div class="ia-empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <p>No messages yet</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = messages.map(msg => {
+    const isIncoming = msg.sender_type === 'influencer';
+    const isBroadcast = msg.is_broadcast;
+    const influencerName = msg.influencers?.name || 'Unknown';
+    const timeAgo = getTimeAgo(msg.created_at);
+    
+    return `
+      <div class="ia-message-card ${isIncoming ? 'incoming' : 'outgoing'} ${isBroadcast ? 'broadcast' : ''}">
+        <div class="ia-message-header">
+          <div class="ia-message-sender">
+            ${isBroadcast ? '<span class="ia-badge ia-badge-broadcast">BROADCAST</span>' : ''}
+            <strong>${isIncoming ? influencerName : 'Admin'}</strong>
+            ${!isBroadcast && isIncoming ? `<span class="ia-muted">→ Admin</span>` : ''}
+            ${!isBroadcast && !isIncoming ? `<span class="ia-muted">→ ${influencerName}</span>` : ''}
+          </div>
+          <span class="ia-message-time">${timeAgo}</span>
+        </div>
+        ${msg.subject ? `<div class="ia-message-subject">${escapeHtml(msg.subject)}</div>` : ''}
+        <div class="ia-message-content">${escapeHtml(msg.content)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Open new message modal
+async function openNewMessageModal() {
+  document.getElementById('newMessageModal').classList.add('active');
+  await loadInfluencerDropdown();
+}
+
+// Close new message modal
+function closeNewMessageModal() {
+  document.getElementById('newMessageModal').classList.remove('active');
+  document.getElementById('messageSubject').value = '';
+  document.getElementById('messageContent').value = '';
+}
+
+// Toggle message type (direct vs broadcast)
+function toggleMessageType() {
+  const isBroadcast = document.querySelector('input[name="messageType"]:checked').value === 'broadcast';
+  const recipientGroup = document.getElementById('recipientSelectGroup');
+  
+  if (isBroadcast) {
+    recipientGroup.classList.add('hidden');
+  } else {
+    recipientGroup.classList.remove('hidden');
+  }
+}
+
+// Load influencer dropdown
+async function loadInfluencerDropdown() {
+  try {
+    const response = await fetch(`${API}/list`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await response.json();
+    
+    if (data.success) {
+      allInfluencersData = data.influencers;
+      
+      // Update message modal dropdown
+      const select = document.getElementById('messageRecipient');
+      select.innerHTML = data.influencers.map(inf => 
+        `<option value="${inf.id}">${inf.name} (${inf.referral_code})</option>`
+      ).join('');
+      
+      // Update filter dropdown
+      const filterSelect = document.getElementById('messageInfluencerFilter');
+      if (filterSelect) {
+        filterSelect.innerHTML = '<option value="">All Influencers</option>' + 
+          data.influencers.map(inf => 
+            `<option value="${inf.id}">${inf.name} (${inf.referral_code})</option>`
+          ).join('');
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load influencers:', error);
+  }
+}
+
+// Send message
+async function sendMessage() {
+  const isBroadcast = document.querySelector('input[name="messageType"]:checked').value === 'broadcast';
+  const recipientId = document.getElementById('messageRecipient').value;
+  const subject = document.getElementById('messageSubject').value;
+  const content = document.getElementById('messageContent').value;
+
+  if (!content.trim()) {
+    alert('Please enter a message');
+    return;
+  }
+
+  if (!isBroadcast && !recipientId) {
+    alert('Please select a recipient');
+    return;
+  }
+
+  try {
+    const response = await fetch('https://exchange-return-tracking.onrender.com/api/admin/messages', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        recipientType: 'influencer',
+        recipientId: isBroadcast ? null : recipientId,
+        subject: subject || null,
+        content,
+        isBroadcast
+      })
+    });
+
+    const data = await response.json();
+    
+    if (data.success) {
+      closeNewMessageModal();
+      loadMessages();
+      showToast('Message sent successfully');
+    } else {
+      showToast(data.error || 'Failed to send message', true);
+    }
+  } catch (error) {
+    console.error('Failed to send message:', error);
+    showToast('Failed to send message', true);
+  }
+}
+
+// Filter messages
+function filterMessages(type, btn) {
+  currentMessageFilter = type;
+  
+  // Update active button
+  document.querySelectorAll('#page-messages .ia-tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  
+  loadMessages();
+}
+
+// Filter by influencer
+function filterByInfluencer() {
+  loadMessages();
+}
+
+// Start polling for new messages
+function startMessagePolling() {
+  if (messagePollingInterval) {
+    clearInterval(messagePollingInterval);
+  }
+  
+  messagePollingInterval = setInterval(() => {
+    loadMessages();
+  }, 30000); // 30 seconds
+}
+
+// Stop polling
+function stopMessagePolling() {
+  if (messagePollingInterval) {
+    clearInterval(messagePollingInterval);
+    messagePollingInterval = null;
+  }
+}
+
+// Helper: Time ago
+function getTimeAgo(dateString) {
+  const now = new Date();
+  const date = new Date(dateString);
+  const seconds = Math.floor((now - date) / 1000);
+  
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+// Helper: Escape HTML
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 </script>
 <!-- Load bulk shipment functions from external file -->

@@ -226,7 +226,12 @@ const {
     getProductRequests,
     updateProductRequest,
     getProductRequestById,
-    convertFromSnakeCase
+    convertFromSnakeCase,
+    createMessage,
+    getAdminMessages,
+    getInfluencerMessages,
+    markMessageAsRead,
+    getUnreadMessageCount
 } = require('./config/db-helpers');
 const supabase = require('./config/supabase');
 
@@ -8723,6 +8728,159 @@ app.post('/api/influencer-admin/shipments/:shipmentId/reel-status', authenticate
 });
 
 // (Manual shipment route moved above /:influencerId to prevent route conflict)
+
+// ==================== MESSAGING SYSTEM ====================
+
+// ── Admin Messaging Endpoints ──
+
+// Send message (admin to influencer or broadcast)
+app.post('/api/admin/messages', authenticateAdmin, async (req, res) => {
+    try {
+        const { recipientType, recipientId, subject, content, isBroadcast } = req.body;
+        
+        if (!content) {
+            return res.status(400).json({ error: 'Message content is required' });
+        }
+
+        if (!isBroadcast && !recipientId) {
+            return res.status(400).json({ error: 'Recipient is required for direct messages' });
+        }
+
+        const message = await createMessage({
+            senderType: 'admin',
+            senderId: null,
+            recipientType: isBroadcast ? 'all' : recipientType,
+            recipientId: isBroadcast ? null : recipientId,
+            subject,
+            content,
+            isBroadcast: isBroadcast || false
+        });
+
+        res.json({ success: true, message });
+    } catch (error) {
+        console.error('Admin send message error:', error);
+        res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
+// Get all messages (with optional influencer filter)
+app.get('/api/admin/messages', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId, type } = req.query;
+        const messages = await getAdminMessages({ influencerId, type });
+        res.json({ success: true, messages });
+    } catch (error) {
+        console.error('Admin get messages error:', error);
+        res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+});
+
+// Mark message as read (admin side)
+app.post('/api/admin/messages/:messageId/read', authenticateAdmin, async (req, res) => {
+    try {
+        const message = await markMessageAsRead(req.params.messageId);
+        res.json({ success: true, message });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to mark as read' });
+    }
+});
+
+// ── Influencer Messaging Endpoints ──
+
+// Send message (influencer to admin)
+app.post('/api/influencer/messages', async (req, res) => {
+    try {
+        const { token, content, subject } = req.body;
+        
+        if (!token || !content) {
+            return res.status(400).json({ error: 'Token and content are required' });
+        }
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid authentication' });
+        }
+
+        const message = await createMessage({
+            senderType: 'influencer',
+            senderId: influencer.id,
+            recipientType: 'admin',
+            recipientId: null,
+            subject,
+            content,
+            isBroadcast: false
+        });
+
+        res.json({ success: true, message });
+    } catch (error) {
+        console.error('Influencer send message error:', error);
+        res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
+// Get influencer's messages
+app.get('/api/influencer/messages', async (req, res) => {
+    try {
+        const { token, unreadOnly } = req.query;
+        
+        if (!token) {
+            return res.status(400).json({ error: 'Token is required' });
+        }
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid authentication' });
+        }
+
+        const messages = await getInfluencerMessages(influencer.id, { unreadOnly: unreadOnly === 'true' });
+        res.json({ success: true, messages });
+    } catch (error) {
+        console.error('Influencer get messages error:', error);
+        res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+});
+
+// Mark message as read (influencer side)
+app.post('/api/influencer/messages/:messageId/read', async (req, res) => {
+    try {
+        const { token } = req.body;
+        
+        if (!token) {
+            return res.status(400).json({ error: 'Token is required' });
+        }
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid authentication' });
+        }
+
+        const message = await markMessageAsRead(req.params.messageId);
+        res.json({ success: true, message });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to mark as read' });
+    }
+});
+
+// Get unread message count
+app.get('/api/influencer/messages/unread-count', async (req, res) => {
+    try {
+        const { token } = req.query;
+        
+        if (!token) {
+            return res.status(400).json({ error: 'Token is required' });
+        }
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid authentication' });
+        }
+
+        const count = await getUnreadMessageCount(influencer.id);
+        res.json({ success: true, count });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get unread count' });
+    }
+});
 
 // ==================== ERROR HANDLING ====================
 

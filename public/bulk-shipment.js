@@ -97,14 +97,27 @@ function openBulkAssignModal() {
   modal.id = 'srBulkAssignModal';
   modal.className = 'modal-overlay';
   
-  const productListHtml = products.map(p => {
+  const productListHtml = products.map((p, index) => {
     const imageUrl = p.images[0]?.src || '';
+    const variants = p.variants || [];
+    
+    // Build size options for this product
+    const sizeOptionsHtml = variants.length > 1 
+      ? variants.map((v, i) => `<option value="${v.id}" data-size="${v.title}" ${i === 0 ? 'selected' : ''}>${v.title} - Stock: ${v.inventoryQuantity}</option>`).join('')
+      : `<option value="${variants[0]?.id}" data-size="${variants[0]?.title || 'Default'}" selected>${variants[0]?.title || 'Default'} - Stock: ${variants[0]?.inventoryQuantity || 0}</option>`;
+    
     return `
-      <div class="product-item">
+      <div class="product-item" style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);">
         ${imageUrl ? `<img src="${imageUrl}" class="product-thumb">` : '<div class="product-thumb" style="display: flex; align-items: center; justify-content: center; font-size: 0.6rem;">No img</div>'}
-        <div class="product-info">
+        <div class="product-info" style="flex: 1;">
           <p class="product-name">${p.title}</p>
           <p class="product-meta">&#8377;${p.variants[0]?.price || '0'} · ${p.totalStock} in stock</p>
+          <div class="ia-form-group" style="margin-top: 0.5rem; margin-bottom: 0;">
+            <label for="bulkSize_${p.id}" class="form-label-sm" style="font-size: 0.65rem;">Select Size *</label>
+            <select id="bulkSize_${p.id}" class="ia-input form-input-sm" data-product-id="${p.id}">
+              ${sizeOptionsHtml}
+            </select>
+          </div>
         </div>
       </div>
     `;
@@ -270,14 +283,22 @@ async function saveBulkShipment() {
   if (!shippingState) { alert('Please enter state'); return; }
   if (!shippingPincode || shippingPincode.length !== 6) { alert('Please enter a valid 6-digit pincode'); return; }
   
-  const productsArray = products.map(p => ({
-    productTitle: p.title,
-    productImageUrl: p.images[0]?.src || '',
-    shopifyProductId: p.id.toString(),
-    variantId: p.variants[0]?.id?.toString() || '',
-    size: p.variants[0]?.title || '',
-    quantity: 1
-  }));
+  const productsArray = products.map(p => {
+    const sizeSelect = document.getElementById(`bulkSize_${p.id}`);
+    const selectedVariantId = sizeSelect ? sizeSelect.value : (p.variants[0]?.id?.toString() || '');
+    const selectedSize = sizeSelect && sizeSelect.options[sizeSelect.selectedIndex] 
+      ? sizeSelect.options[sizeSelect.selectedIndex].getAttribute('data-size') 
+      : (p.variants[0]?.title || '');
+    
+    return {
+      productTitle: p.title,
+      productImageUrl: p.images[0]?.src || '',
+      shopifyProductId: p.id.toString(),
+      variantId: selectedVariantId,
+      size: selectedSize,
+      quantity: 1
+    };
+  });
   
   try {
     const res = await fetch(`${API}/shipments`, {

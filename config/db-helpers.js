@@ -839,7 +839,14 @@ module.exports = {
     createProductRequest,
     getProductRequests,
     updateProductRequest,
-    getProductRequestById
+    getProductRequestById,
+    
+    // Messaging Helpers
+    createMessage,
+    getAdminMessages,
+    getInfluencerMessages,
+    markMessageAsRead,
+    getUnreadMessageCount
 };
 
 // ── Influencer Product Shipments ──
@@ -1201,4 +1208,121 @@ async function getProductRequestById(requestId) {
         throw error;
     }
     return data;
+}
+
+// ── Messaging Helpers ──
+
+/**
+ * Create a new message (admin to influencer, influencer to admin, or broadcast)
+ */
+async function createMessage(messageData) {
+    const supabase = require('./supabase');
+    const messageId = 'MSG-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substr(2, 5).toUpperCase();
+    
+    const insertRow = {
+        message_id: messageId,
+        sender_type: messageData.senderType, // 'admin' or 'influencer'
+        sender_id: messageData.senderId || null,
+        recipient_type: messageData.recipientType, // 'admin', 'influencer', 'all'
+        recipient_id: messageData.recipientId || null,
+        subject: messageData.subject || null,
+        content: messageData.content,
+        is_broadcast: messageData.isBroadcast || false,
+        is_read: false
+    };
+
+    const { data, error } = await supabase
+        .from('influencer_messages')
+        .insert([insertRow])
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Get all messages for admin view (with optional filters)
+ */
+async function getAdminMessages(filters = {}) {
+    const supabase = require('./supabase');
+    let query = supabase
+        .from('influencer_messages')
+        .select(`
+            *,
+            influencers (
+                id, name, referral_code, email
+            )
+        `);
+
+    if (filters.influencerId) {
+        query = query.or(`sender_id.eq.${filters.influencerId},recipient_id.eq.${filters.influencerId}`);
+    }
+
+    if (filters.type === 'broadcast') {
+        query = query.eq('is_broadcast', true);
+    } else if (filters.type === 'direct') {
+        query = query.eq('is_broadcast', false);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
+}
+
+/**
+ * Get messages for a specific influencer
+ */
+async function getInfluencerMessages(influencerId, filters = {}) {
+    const supabase = require('./supabase');
+    let query = supabase
+        .from('influencer_messages')
+        .select('*')
+        .or(`and(sender_type.eq.influencer,sender_id.eq.${influencerId}),and(recipient_type.eq.influencer,recipient_id.eq.${influencerId}),is_broadcast.eq.true`);
+
+    if (filters.unreadOnly) {
+        query = query.eq('is_read', false).neq('sender_type', 'influencer');
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
+}
+
+/**
+ * Mark a message as read
+ */
+async function markMessageAsRead(messageId) {
+    const supabase = require('./supabase');
+    const { data, error } = await supabase
+        .from('influencer_messages')
+        .update({ 
+            is_read: true, 
+            read_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        })
+        .eq('message_id', messageId)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Get unread message count for an influencer
+ */
+async function getUnreadMessageCount(influencerId) {
+    const supabase = require('./supabase');
+    const { count, error } = await supabase
+        .from('influencer_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('recipient_type', 'influencer')
+        .eq('recipient_id', influencerId)
+        .eq('is_read', false);
+
+    if (error) throw error;
+    return count || 0;
 }
