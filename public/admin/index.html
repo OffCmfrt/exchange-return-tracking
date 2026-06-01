@@ -4249,7 +4249,7 @@
             saveBtn.innerHTML = '<span class="save-spinner"></span>Saving...';
             
             // Send update request
-            const response = await fetch(`${API_URL}/api/admin/update-request/${modifyModalData.requestId}`, {
+            const response = await fetch(`${API_URL}/admin/update-request/${modifyModalData.requestId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
