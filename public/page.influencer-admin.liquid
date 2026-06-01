@@ -2930,6 +2930,8 @@ html, body {
  </div>
 <div id="iaToast" class="ia-toast"></div>
 </div>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>">
+
 <script>
 const API = 'https://exchange-return-tracking.onrender.com/api/influencer-admin';
 let authToken = null; // JWT stored in memory only (not localStorage)
@@ -5159,9 +5161,16 @@ async function rejectProductRequest(requestId) {
 // Load all shipments - Complete implementation
 async function loadAllShipments() {
  try {
- const res = await fetch(`${API}/shipments/all`, {
+ const url = `${API}/shipments/all`;
+ console.log('Loading shipments from:', url);
+ console.log('API base:', API);
+ const res = await fetch(url, {
  headers: { 'Authorization': `Bearer ${authToken}` }
  });
+ console.log('Response status:', res.status);
+ if (!res.ok) {
+ console.error('Failed to load shipments:', res.statusText);
+ }
  const data = await res.json();
  
  if (data.success) {

@@ -255,6 +255,11 @@ app.use(express.json({
 }));
 app.use(express.static('public'));
 
+// Serve favicon.ico to prevent 404
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).end(); // No content
+});
+
 // In-memory storage for OAuth tokens and payment processing
 const storage = {
     accessToken: null,
@@ -7512,7 +7517,15 @@ app.post('/api/influencer-admin/shipments', authenticateAdmin, async (req, res) 
             sentAt,
             reelDueDate, // Optional for inventory-based shipments
             isMonthlyTarget,
-            notes
+            notes,
+            // Shipping address fields
+            shippingFullName,
+            shippingAddressLine1,
+            shippingAddressLine2,
+            shippingCity,
+            shippingState,
+            shippingPincode,
+            shippingPhone
         } = req.body;
         
         // Validate required fields
@@ -7568,6 +7581,57 @@ app.post('/api/influencer-admin/shipments', authenticateAdmin, async (req, res) 
                 reelDueDate: reelDueDate || null, // Optional
                 notes: notes || null
             });
+            
+            // Auto-book via Delhivery if shipping address is provided
+            let delhiveryResult = null;
+            const shipFullName = shippingFullName || influencer.shipping_name || influencer.name;
+            const shipAddress1 = shippingAddressLine1 || influencer.shipping_address;
+            const shipAddress2 = shippingAddressLine2 || influencer.shipping_address_line2;
+            const shipCity = shippingCity || influencer.city;
+            const shipState = shippingState || influencer.shipping_state;
+            const shipPincode = shippingPincode || influencer.shipping_pin;
+            const shipPhone = shippingPhone || influencer.phone;
+            
+            if (shipFullName && shipAddress1 && shipCity && shipState && shipPincode && shipPhone) {
+                try {
+                    console.log(`[Shipment ${shipment.id}] Creating Delhivery forward order...`);
+                    
+                    const delhiveryShipmentData = {
+                        requestId: `INF-${String(shipment.id).padStart(6, '0')}`,
+                        customerName: shipFullName,
+                        customerAddress: shipAddress1 + (shipAddress2 ? ', ' + shipAddress2 : ''),
+                        customerCity: shipCity,
+                        customerState: shipState,
+                        customerPincode: shipPincode,
+                        customerPhone: shipPhone,
+                        items: [{ name: productTitle, quantity: 1, price: 0 }]
+                    };
+                    
+                    delhiveryResult = await createDelhiveryForwardOrder(delhiveryShipmentData, null);
+                    
+                    // Update shipment with Delhivery details
+                    if (delhiveryResult && delhiveryResult.waybill) {
+                        console.log(`[Shipment ${shipment.id}] ✅ Delhivery AWB: ${delhiveryResult.waybill}`);
+                        
+                        const { updateShipment } = require('./config/db-helpers');
+                        await updateShipment(shipment.id, {
+                            tracking_awb: delhiveryResult.waybill,
+                            carrier: 'delhivery',
+                            delhivery_shipment_id: delhiveryResult.shipment_id
+                        });
+                        
+                        shipment.tracking_awb = delhiveryResult.waybill;
+                        shipment.carrier = 'delhivery';
+                        shipment.delhivery_shipment_id = delhiveryResult.shipment_id;
+                    }
+                } catch (delhiveryError) {
+                    console.error(`[Shipment ${shipment.id}] ❌ Delhivery booking failed:`, delhiveryError.message);
+                    // Don't fail the entire request if Delhivery fails
+                    // The shipment is still created in the database
+                }
+            } else {
+                console.warn(`[Shipment ${shipment.id}] ⚠️ Skipping Delhivery booking - incomplete shipping address`);
+            }
             
             createdShipments.push(shipment);
         }

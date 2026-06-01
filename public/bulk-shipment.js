@@ -280,7 +280,7 @@ async function saveBulkShipment() {
   }));
   
   try {
-    const res = await fetch(`${API}/influencer-admin/shipments`, {
+    const res = await fetch(`${API}/shipments`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
