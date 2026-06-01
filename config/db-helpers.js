@@ -1250,7 +1250,7 @@ async function getAdminMessages(filters = {}) {
         .from('influencer_messages')
         .select(`
             *,
-            influencers (
+            influencers!influencer_messages_sender_id_fkey (
                 id, name, referral_code, email
             )
         `);
@@ -1267,7 +1267,38 @@ async function getAdminMessages(filters = {}) {
 
     const { data, error } = await query.order('created_at', { ascending: false });
     
-    if (error) throw error;
+    if (error) {
+        console.error('getAdminMessages query error:', error);
+        // Fallback: query without join if FK name is incorrect
+        let fallbackQuery = supabase.from('influencer_messages').select('*');
+        
+        if (filters.influencerId) {
+            fallbackQuery = fallbackQuery.or(`sender_id.eq.${filters.influencerId},recipient_id.eq.${filters.influencerId}`);
+        }
+        if (filters.type === 'broadcast') {
+            fallbackQuery = fallbackQuery.eq('is_broadcast', true);
+        } else if (filters.type === 'direct') {
+            fallbackQuery = fallbackQuery.eq('is_broadcast', false);
+        }
+        
+        const { data: fallbackData, error: fallbackError } = await fallbackQuery.order('created_at', { ascending: false });
+        if (fallbackError) throw fallbackError;
+        
+        // Manually enrich with influencer data
+        const enriched = await Promise.all((fallbackData || []).map(async (msg) => {
+            if (msg.sender_type === 'influencer' && msg.sender_id) {
+                const { data: inf } = await supabase.from('influencers').select('id, name, referral_code, email').eq('id', msg.sender_id).single();
+                return { ...msg, influencers: inf };
+            } else if (msg.recipient_type === 'influencer' && msg.recipient_id) {
+                const { data: inf } = await supabase.from('influencers').select('id, name, referral_code, email').eq('id', msg.recipient_id).single();
+                return { ...msg, influencers: inf };
+            }
+            return msg;
+        }));
+        
+        return enriched;
+    }
+    
     return data || [];
 }
 

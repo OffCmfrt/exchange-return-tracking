@@ -263,6 +263,7 @@ html, body {
  letter-spacing: 0.1em;
 }
 .ia-content { padding: 2rem 1.5rem; flex: 1; max-width: 100%; overflow-x: auto; }
+#page-messages { padding-top: 0; }
 /* ── STAT STRIP ── */
 .ia-stat-strip {
  display: grid;
@@ -6272,7 +6273,7 @@ function renderMessages(messages) {
   container.innerHTML = messages.map(msg => {
     const isIncoming = msg.sender_type === 'influencer';
     const isBroadcast = msg.is_broadcast;
-    const influencerName = msg.influencers?.name || 'Unknown';
+    const influencerName = msg.influencers?.name || (isBroadcast ? 'All Influencers' : (isIncoming ? 'Influencer' : 'Influencer'));
     const timeAgo = getTimeAgo(msg.created_at);
     
     return `
@@ -6280,9 +6281,10 @@ function renderMessages(messages) {
         <div class="ia-message-header">
           <div class="ia-message-sender">
             ${isBroadcast ? '<span class="ia-badge ia-badge-broadcast">BROADCAST</span>' : ''}
-            <strong>${isIncoming ? influencerName : 'Admin'}</strong>
+            <strong>${isBroadcast ? 'Admin' : (isIncoming ? influencerName : 'Admin')}</strong>
             ${!isBroadcast && isIncoming ? `<span class="ia-muted">→ Admin</span>` : ''}
             ${!isBroadcast && !isIncoming ? `<span class="ia-muted">→ ${influencerName}</span>` : ''}
+            ${isBroadcast ? `<span class="ia-muted">→ All Influencers</span>` : ''}
           </div>
           <span class="ia-message-time">${timeAgo}</span>
         </div>

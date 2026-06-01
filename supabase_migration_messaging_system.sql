@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS influencer_messages (
   id BIGSERIAL PRIMARY KEY,
   message_id VARCHAR(50) UNIQUE NOT NULL,
   sender_type VARCHAR(20) NOT NULL CHECK (sender_type IN ('admin', 'influencer')),
-  sender_id BIGINT, -- NULL for admin, influencer.id for influencers
+  sender_id BIGINT REFERENCES influencers(id), -- NULL for admin, influencer.id for influencers
   recipient_type VARCHAR(20) NOT NULL CHECK (recipient_type IN ('admin', 'influencer', 'all')),
   recipient_id BIGINT, -- NULL for broadcast (all), influencer.id for specific
   subject VARCHAR(255),
