@@ -5311,6 +5311,7 @@ app.put('/api/admin/update-request/:requestId', authenticateAdmin, async (req, r
     const { items, customerPhone, newAddress, newCity, newPincode, newState, customerName } = req.body;
     
     console.log(`[ADMIN UPDATE] ${requestId} — Exchange details modification started`);
+    console.log(`[ADMIN UPDATE] ${requestId} — Request body:`, { items: items?.length, customerPhone, newAddress, newCity, newState, newPincode, customerName });
     
     try {
         // Validate request exists
@@ -5318,6 +5319,14 @@ app.put('/api/admin/update-request/:requestId', authenticateAdmin, async (req, r
         if (!existingRequest) {
             console.log(`[ADMIN UPDATE] ${requestId} — Request not found`);
             return res.status(404).json({ error: 'Request not found' });
+        }
+        
+        // Only allow modifications for exchange requests
+        if (existingRequest.type !== 'exchange') {
+            console.log(`[ADMIN UPDATE] ${requestId} — Not an exchange request (type: ${existingRequest.type})`);
+            return res.status(400).json({ 
+                error: 'Can only modify exchange requests' 
+            });
         }
         
         // Only allow modifications for requests that haven't been shipped yet
@@ -5359,11 +5368,21 @@ app.put('/api/admin/update-request/:requestId', authenticateAdmin, async (req, r
         if (newState !== undefined) updateData.new_state = newState;
         if (customerName !== undefined) updateData.customer_name = customerName;
         
+        // Verify at least one field is being updated
+        if (Object.keys(updateData).length === 0) {
+            console.log(`[ADMIN UPDATE] ${requestId} — No fields to update`);
+            return res.status(400).json({ 
+                error: 'No valid fields to update' 
+            });
+        }
+        
         // Add audit trail
         const timestamp = new Date().toISOString();
         updateData.admin_notes = `[${timestamp}] Exchange details modified by admin\n` + 
             (existingRequest.admin_notes || '');
         updateData.updated_at = timestamp;
+        
+        console.log(`[ADMIN UPDATE] ${requestId} — Update data:`, updateData);
         
         // Perform update
         const { data, error } = await supabase

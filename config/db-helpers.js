@@ -369,6 +369,7 @@ function convertFromSnakeCase(data) {
         shippingAddress: data.shipping_address,
         newAddress: data.new_address,
         newCity: data.new_city,
+        newState: data.new_state,
         newPincode: data.new_pincode,
         paymentId: data.payment_id,
         paymentAmount: data.payment_amount,
