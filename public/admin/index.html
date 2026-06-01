@@ -3842,6 +3842,77 @@
     let productSearchCache = {};
     let productSearchTimeout = null;
 
+    // Helper function to parse address components from full address string
+    function parseAddressComponents(address) {
+        if (!address) return { city: '', state: '', pincode: '' };
+        
+        const result = { city: '', state: '', pincode: '' };
+        
+        // Try to extract 6-digit pincode
+        const pincodeMatch = address.match(/(\d{6})/);
+        if (pincodeMatch) {
+            result.pincode = pincodeMatch[1];
+        }
+        
+        // Split by comma and try to extract state and city
+        const parts = address.split(',').map(p => p.trim());
+        
+        // Indian address format typically: street, locality, city, state, pincode, country
+        // Looking from the end: country (optional), pincode, state, city
+        if (parts.length >= 2) {
+            // State is usually second-to-last or third-to-last element (before pincode)
+            const stateCandidates = ['Uttar Pradesh', 'Maharashtra', 'Karnataka', 'Tamil Nadu', 
+                'Gujarat', 'Rajasthan', 'West Bengal', 'Delhi', 'Haryana', 'Punjab', 
+                'Bihar', 'Madhya Pradesh', 'Kerala', 'Andhra Pradesh', 'Telangana', 
+                'Odisha', 'Assam', 'Jharkhand', 'Chhattisgarh', 'Uttarakhand', 'Himachal Pradesh',
+                'Goa', 'Tripura', 'Meghalaya', 'Manipur', 'Nagaland', 'Arunachal Pradesh', 
+                'Mizoram', 'Sikkim', 'Chandigarh', 'Puducherry'];
+            
+            // Check parts from end to find state
+            for (let i = parts.length - 1; i >= 0; i--) {
+                const part = parts[i].trim();
+                
+                // Skip if it's the pincode
+                if (/^\d{6}$/.test(part)) continue;
+                
+                // Check if this part matches a known state
+                const stateMatch = stateCandidates.find(s => 
+                    part.toLowerCase().includes(s.toLowerCase()) || 
+                    s.toLowerCase().includes(part.toLowerCase())
+                );
+                
+                if (stateMatch && !result.state) {
+                    result.state = stateMatch;
+                    // City is typically the part before state
+                    if (i > 0 && !result.city) {
+                        result.city = parts[i - 1].trim();
+                        // Remove "India" or country names if present
+                        if (result.city.toLowerCase() === 'india') {
+                            result.city = i > 1 ? parts[i - 2].trim() : '';
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            // If state not found by matching, use heuristics
+            if (!result.state && parts.length >= 3) {
+                // Assume format: ..., city, state, pincode
+                const lastPart = parts[parts.length - 1].trim();
+                if (!/^\d{6}$/.test(lastPart) && lastPart.toLowerCase() !== 'india') {
+                    // Last part might be state
+                    result.state = lastPart;
+                    // Second to last might be city
+                    if (!result.city) {
+                        result.city = parts[parts.length - 2].trim();
+                    }
+                }
+            }
+        }
+        
+        return result;
+    }
+
     function openModifyModal() {
         if (!currentRequest) return;
         
@@ -3851,11 +3922,29 @@
         document.getElementById('modify-customerName').value = currentRequest.customerName || '';
         document.getElementById('modify-customerPhone').value = currentRequest.customerPhone || '';
         
-        // Pre-fill shipping address (fallback to shippingAddress if newAddress fields are empty)
+        // Pre-fill shipping address
+        // Try new address fields first, then fallback to shipping address fields
         document.getElementById('modify-newAddress').value = currentRequest.newAddress || currentRequest.shippingAddress || '';
-        document.getElementById('modify-newCity').value = currentRequest.newCity || currentRequest.shippingCity || '';
-        document.getElementById('modify-newState').value = currentRequest.newState || currentRequest.shippingState || '';
-        document.getElementById('modify-newPincode').value = currentRequest.newPincode || currentRequest.shippingPincode || '';
+        
+        // For city, state, pincode: try new fields first, then shipping fields, then parse from full address
+        let city = currentRequest.newCity || currentRequest.shippingCity || '';
+        let state = currentRequest.newState || currentRequest.shippingState || '';
+        let pincode = currentRequest.newPincode || currentRequest.shippingPincode || '';
+        
+        // If fields are still empty, try to parse from the full address
+        if (!city || !state || !pincode) {
+            const fullAddress = currentRequest.newAddress || currentRequest.shippingAddress || '';
+            if (fullAddress) {
+                const parsed = parseAddressComponents(fullAddress);
+                if (!city && parsed.city) city = parsed.city;
+                if (!state && parsed.state) state = parsed.state;
+                if (!pincode && parsed.pincode) pincode = parsed.pincode;
+            }
+        }
+        
+        document.getElementById('modify-newCity').value = city;
+        document.getElementById('modify-newState').value = state;
+        document.getElementById('modify-newPincode').value = pincode;
         
         // Pre-fill exchange items
         const itemsContainer = document.getElementById('modify-items-container');

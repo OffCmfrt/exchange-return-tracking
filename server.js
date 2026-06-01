@@ -3418,6 +3418,9 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         // Fetch Order for details
         let shopifyOrder = null;
         let originalAddressFormatted = '';
+        let shippingCity = '';
+        let shippingState = '';
+        let shippingPincode = '';
         try {
             // 1. Try exact match
             let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&status=any&limit=1`);
@@ -3441,6 +3444,11 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 originalAddressFormatted = [
                     addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country
                 ].filter(Boolean).join(', ');
+                
+                // Also extract individual address components
+                shippingCity = addr.city || '';
+                shippingState = addr.province || '';
+                shippingPincode = addr.zip || '';
             }
         } catch (err) {
             console.error(`[${requestId}] Failed to fetch Shopify order for submission:`, err);
@@ -3608,6 +3616,9 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 images: imageUrls,
                 type: 'exchange',
                 shippingAddress: originalAddressFormatted,
+                shippingCity: shippingCity,
+                shippingState: shippingState,
+                shippingPincode: shippingPincode,
                 awbNumber,
                 shipmentId,
                 pickupDate,
@@ -3724,6 +3735,11 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 originalAddressFormatted = [
                     addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country
                 ].filter(Boolean).join(', ');
+                
+                // Also extract individual address components
+                shippingCity = addr.city || '';
+                shippingState = addr.province || '';
+                shippingPincode = addr.zip || '';
             }
         } catch (err) {
             console.error('Failed to fetch Shopify order for submission:', err);
@@ -3886,6 +3902,9 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 images: imageUrls,
                 type: 'return',
                 shippingAddress: originalAddressFormatted,
+                shippingCity: shippingCity,
+                shippingState: shippingState,
+                shippingPincode: shippingPincode,
                 awbNumber,
                 shipmentId,
                 pickupDate,
@@ -5492,9 +5511,13 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
         }
 
         // ── Insert into DB ────────────────────────────────────────────────────
-        const shippingAddress = order.fulfillments && order.fulfillments[0] && order.fulfillments[0].destination
-            ? `${order.fulfillments[0].destination.address1 || ''}, ${order.fulfillments[0].destination.city || ''} - ${order.fulfillments[0].destination.zip || ''}`
+        const destination = order.fulfillments && order.fulfillments[0] && order.fulfillments[0].destination;
+        const shippingAddress = destination
+            ? `${destination.address1 || ''}, ${destination.city || ''} - ${destination.zip || ''}`
             : '';
+        const shippingCity = destination ? destination.city || '' : '';
+        const shippingState = destination ? destination.province || '' : '';
+        const shippingPincode = destination ? destination.zip || '' : '';
 
         await createRequest({
             requestId,
@@ -5509,6 +5532,9 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
             comments: comments || '',
             items: parsedItems,
             shippingAddress,
+            shippingCity,
+            shippingState,
+            shippingPincode,
             awbNumber,
             shipmentId,
             pickupDate,
