@@ -581,21 +581,22 @@ html, body {
 }
 /* ── MODAL ── */
 .ia-modal-overlay {
- position: fixed; inset: 0;
- background: rgba(0,0,0,0.9);
+ position: fixed !important; inset: 0 !important;
+ background: rgba(0,0,0,0.85) !important;
  backdrop-filter: blur(8px);
  display: none; align-items: center; justify-content: center;
- z-index: 9998 !important;
+ z-index: 99999 !important;
  padding: 1rem;
 }
 .ia-modal-overlay.open { display: flex !important; }
 .ia-modal {
- background: var(--surface);
- border: 1px solid var(--border);
+ background: #0a0a0a;
+ border: 1px solid #1f1f1f;
  width: 100%; max-width: 520px;
  max-height: 90vh;
  overflow-y: auto;
  padding: 2rem;
+ color: #ffffff;
 }
 .ia-modal-header {
  display: flex; align-items: center; justify-content: space-between;
@@ -3758,40 +3759,50 @@ async function submitAdd() {
 }
 // ─── EDIT ─────────────────────────────────────────────────────────────────────
 function openEditModal(id) {
- console.log('openEditModal called with id:', id, 'type:', typeof id);
+ console.log('═══ openEditModal called ═══ id:', id, 'type:', typeof id);
  console.log('influencersData length:', influencersData.length);
  const inf = influencersData.find(i => String(i.id) === String(id));
  if (!inf) {
-  console.error('openEditModal: influencer NOT found for id', id);
-  console.log('Available IDs:', influencersData.map(i => i.id));
-  alert('Could not find ambassador data. Check console for details.');
+  console.error('INFLUENCER NOT FOUND. Available IDs:', influencersData.map(i => i.id));
+  alert('Could not find ambassador data for ID: ' + id);
   return;
  }
- try {
-  document.getElementById('editId').value = id;
-  document.getElementById('editName').value = inf.name || '';
-  document.getElementById('editPhone').value = inf.phone || '';
-  document.getElementById('editCode').value = inf.referral_code || '';
-  document.getElementById('editCommission').value = parseFloat(inf.commission_rate || 7).toFixed(1);
-  const displayedCommission = inf.displayed_commission_rate !== undefined && inf.displayed_commission_rate !== null ? inf.displayed_commission_rate : (inf.commission_rate || 7);
-  document.getElementById('editDisplayedCommission').value = parseFloat(displayedCommission).toFixed(1);
-  const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 7);
-  document.getElementById('editDiscountValue').value = parseFloat(discountVal).toFixed(1);
-  document.getElementById('editUsageLimit').value = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : '';
-  document.getElementById('editShippingAddress').value = inf.shipping_address || '';
-  document.getElementById('editShippingLandmark').value = inf.shipping_landmark || '';
-  document.getElementById('editShippingCity').value = inf.shipping_city || '';
-  document.getElementById('editShippingState').value = inf.shipping_state || '';
-  document.getElementById('editShippingPin').value = inf.shipping_pin || '';
-  document.getElementById('editError').classList.remove('show');
- } catch(e) { console.error('openEditModal field error:', e); }
+ console.log('Found influencer:', inf.name, inf);
+ const fields = {
+  editId: id,
+  editName: inf.name || '',
+  editPhone: inf.phone || '',
+  editCode: inf.referral_code || '',
+  editCommission: parseFloat(inf.commission_rate || 7).toFixed(1),
+  editDisplayedCommission: parseFloat(inf.displayed_commission_rate != null ? inf.displayed_commission_rate : (inf.commission_rate || 7)).toFixed(1),
+  editDiscountValue: parseFloat(inf.discount_value != null ? inf.discount_value : (inf.commission_rate || 7)).toFixed(1),
+  editUsageLimit: inf.usage_limit != null ? inf.usage_limit : '',
+  editShippingAddress: inf.shipping_address || '',
+  editShippingLandmark: inf.shipping_landmark || '',
+  editShippingCity: inf.shipping_city || '',
+  editShippingState: inf.shipping_state || '',
+  editShippingPin: inf.shipping_pin || ''
+ };
+ for (const [elId, val] of Object.entries(fields)) {
+  const el = document.getElementById(elId);
+  if (el) { el.value = val; } else { console.warn('Field not found:', elId); }
+ }
+ const errEl = document.getElementById('editError');
+ if (errEl) errEl.classList.remove('show');
  const modalEl = document.getElementById('iaEditModal');
- console.log('Modal element:', modalEl);
+ console.log('Modal element found:', !!modalEl, modalEl);
  if (modalEl) {
+  modalEl.style.display = 'flex';
+  modalEl.style.position = 'fixed';
+  modalEl.style.inset = '0';
+  modalEl.style.zIndex = '99999';
+  modalEl.style.alignItems = 'center';
+  modalEl.style.justifyContent = 'center';
+  modalEl.style.background = 'rgba(0,0,0,0.85)';
   modalEl.classList.add('open');
-  console.log('Modal opened, classList:', modalEl.className);
+  console.log('═══ MODAL FORCED OPEN ═══');
  } else {
-  console.error('iaEditModal element NOT found in DOM!');
+  console.error('iaEditModal NOT FOUND IN DOM!');
   alert('Edit modal element not found in page!');
  }
 }
@@ -3870,8 +3881,24 @@ async function copyLink(url, id) {
  }
 }
 // ─── MODAL UTILS ─────────────────────────────────────────────────────────────
-function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function openModal(id) {
+ const el = document.getElementById(id);
+ if (!el) { console.error('openModal: element', id, 'not found'); return; }
+ el.classList.add('open');
+ el.style.display = 'flex';
+ el.style.position = 'fixed';
+ el.style.inset = '0';
+ el.style.zIndex = '99999';
+ el.style.alignItems = 'center';
+ el.style.justifyContent = 'center';
+ console.log('openModal:', id, '→', el.style.display, el.className);
+}
+function closeModal(id) {
+ const el = document.getElementById(id);
+ if (!el) return;
+ el.classList.remove('open');
+ el.style.display = 'none';
+}
 function handleOverlayClick(e, id) { if (e.target === e.currentTarget) closeModal(id); }
 // ─── TOAST ───────────────────────────────────────────────────────────────────
 // ─── TOAST ───────────────────────────────────────────────────────────────────
