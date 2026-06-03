@@ -4187,6 +4187,11 @@ app.post('/api/track-order', async (req, res) => {
                 shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=5`);
             }
         } catch (apiError) {
+            // Handle 404 gracefully - order simply doesn't exist
+            if (apiError.message.includes('404')) {
+                console.log(`Order ${orderNumber} not found in Shopify`);
+                return res.status(404).json({ error: 'Order not found' });
+            }
             console.error('Shopify API Error:', apiError.message);
             return res.status(500).json({ error: 'Failed to fetch order from Shopify' });
         }
