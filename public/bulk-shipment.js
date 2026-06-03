@@ -242,8 +242,8 @@ async function loadInfluencersForBulkShipment() {
           document.getElementById('bulkShipName').value = selectedInfluencer.name || '';
           document.getElementById('bulkShipPhone').value = selectedInfluencer.phone || '';
           document.getElementById('bulkShipAddress1').value = selectedInfluencer.shipping_address || '';
-          document.getElementById('bulkShipAddress2').value = '';
-          document.getElementById('bulkShipCity').value = selectedInfluencer.city || '';
+          document.getElementById('bulkShipAddress2').value = selectedInfluencer.shipping_landmark || '';
+          document.getElementById('bulkShipCity').value = selectedInfluencer.shipping_city || selectedInfluencer.city || '';
           document.getElementById('bulkShipState').value = selectedInfluencer.shipping_state || '';
           document.getElementById('bulkShipPincode').value = selectedInfluencer.shipping_pin || '';
         } else {

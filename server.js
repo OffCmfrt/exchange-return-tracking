@@ -6229,7 +6229,7 @@ app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
 app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, referralCode, commissionRate, discountValue, displayedCommissionRate, usageLimit, phone } = req.body;
+        const { name, referralCode, commissionRate, discountValue, displayedCommissionRate, usageLimit, phone, shippingAddress, shippingLandmark, shippingCity, shippingState, shippingPin } = req.body;
 
         // Get existing influencer to check for Shopify sync
         const existingInfluencer = await getInfluencerById(id);
@@ -6245,7 +6245,12 @@ app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res
             discountValue,
             displayedCommissionRate,
             usageLimit,
-            phone
+            phone,
+            shippingAddress,
+            shippingLandmark,
+            shippingCity,
+            shippingState,
+            shippingPin
         });
 
         // Sync with Shopify if discount code details changed
@@ -8131,6 +8136,62 @@ app.get('/api/influencer/shipments/:token', async (req, res) => {
     } catch (error) {
         console.error('Influencer shipments error:', error);
         res.status(500).json({ error: 'Failed to fetch shipments' });
+    }
+});
+
+// Influencer get/update own shipping address
+app.get('/api/influencer/shipping-address/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+
+        res.json({
+            success: true,
+            shippingAddress: {
+                shipping_address: influencer.shipping_address || '',
+                shipping_landmark: influencer.shipping_landmark || '',
+                shipping_city: influencer.shipping_city || '',
+                shipping_state: influencer.shipping_state || '',
+                shipping_pin: influencer.shipping_pin || '',
+                address_type: influencer.address_type || 'home'
+            }
+        });
+    } catch (error) {
+        console.error('Get shipping address error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipping address' });
+    }
+});
+
+app.patch('/api/influencer/shipping-address/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+
+        const { shippingAddress, shippingLandmark, shippingCity, shippingState, shippingPin, addressType } = req.body;
+
+        // Validate required fields
+        if (!shippingAddress || !shippingCity || !shippingState || !shippingPin) {
+            return res.status(400).json({ error: 'Complete shipping address is required' });
+        }
+        if (shippingPin && shippingPin.length !== 6) {
+            return res.status(400).json({ error: 'PIN code must be 6 digits' });
+        }
+
+        const updated = await updateInfluencer(influencer.id, {
+            shippingAddress: String(shippingAddress).trim(),
+            shippingLandmark: shippingLandmark ? String(shippingLandmark).trim() : null,
+            shippingCity: String(shippingCity).trim(),
+            shippingState: String(shippingState).trim(),
+            shippingPin: String(shippingPin).trim(),
+            addressType: addressType || 'home'
+        });
+
+        res.json({ success: true, message: 'Shipping address updated', shippingAddress: updated });
+    } catch (error) {
+        console.error('Update shipping address error:', error);
+        res.status(500).json({ error: 'Failed to update shipping address' });
     }
 });
 

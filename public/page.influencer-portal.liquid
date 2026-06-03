@@ -736,6 +736,7 @@ body, html { background: var(--bg); }
 @media (max-width: 700px) {
   .ip-stats-grid { grid-template-columns: 1fr 1fr; }
   .ip-payout-summary { grid-template-columns: 1fr; }
+  .ip-address-grid { grid-template-columns: 1fr !important; }
   .ip-tab-btn { font-size: 0.55rem; padding: 0.75rem 0.5rem; letter-spacing: 0.15em; }
 }
 @media (max-width: 420px) {
@@ -806,6 +807,7 @@ body, html { background: var(--bg); }
         Messages
         <span class="ip-unread-badge hidden" id="ipUnreadBadge">0</span>
       </button>
+      <button class="ip-tab-btn" data-tab="settings" onclick="setTab('settings')">Settings</button>
     </div>
 
     <!-- Performance View (stats + feed) -->
@@ -1065,6 +1067,69 @@ body, html { background: var(--bg); }
     </div>
   </div>
 
+  <!-- Settings View -->
+  <div id="ipSettingsView" style="display:none;">
+    <div class="ip-section">
+      <div class="ip-section-header">
+        <h3>Shipping Address</h3>
+        <button class="ip-btn ip-btn-small" id="ipEditAddressBtn" onclick="toggleAddressEdit(true)" style="display:none;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          Edit Address
+        </button>
+      </div>
+
+      <!-- Address Display -->
+      <div id="ipAddressDisplay" style="padding: 1.5rem;">
+        <div style="color: var(--muted); font-size: 0.75rem;">Loading address...</div>
+      </div>
+
+      <!-- Address Edit Form (hidden by default) -->
+      <div id="ipAddressEditForm" style="display:none; padding: 1.5rem; border-top: 1px solid var(--border);">
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: block; margin-bottom: 0.5rem;">Address Type</label>
+          <select id="ipAddressType" class="ip-input" style="width: 100%;">
+            <option value="home">Home</option>
+            <option value="office">Office</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: block; margin-bottom: 0.5rem;">Address Line *</label>
+          <input type="text" id="ipShipAddress" class="ip-input" placeholder="House/Flat No., Street, Area">
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: block; margin-bottom: 0.5rem;">Landmark (optional)</label>
+          <input type="text" id="ipShipLandmark" class="ip-input" placeholder="Near landmark">
+        </div>
+        <div class="ip-address-grid" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div>
+            <label style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: block; margin-bottom: 0.5rem;">City *</label>
+            <input type="text" id="ipShipCity" class="ip-input" placeholder="e.g. Mumbai">
+          </div>
+          <div>
+            <label style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: block; margin-bottom: 0.5rem;">State *</label>
+            <input type="text" id="ipShipState" class="ip-input" placeholder="e.g. Maharashtra">
+          </div>
+          <div>
+            <label style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: block; margin-bottom: 0.5rem;">Pincode *</label>
+            <input type="text" id="ipShipPincode" class="ip-input" placeholder="e.g. 400001" maxlength="6">
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+          <button class="ip-btn ip-btn-small" onclick="toggleAddressEdit(false)">Cancel</button>
+          <button class="ip-btn ip-btn-primary ip-btn-small" id="ipSaveAddressBtn" onclick="saveShippingAddress()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Save Address
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -1186,10 +1251,12 @@ function setTab(tab) {
   document.getElementById('ipShipmentsView').style.display = tab === 'shipments' ? '' : 'none';
   document.getElementById('ipLeaderboardView').style.display = tab === 'leaderboard' ? '' : 'none';
   document.getElementById('ipMessagesView').style.display = tab === 'messages' ? '' : 'none';
+  document.getElementById('ipSettingsView').style.display = tab === 'settings' ? '' : 'none';
   
   if (tab === 'payouts') loadPayouts();
   if (tab === 'shipments') loadPortalShipments();
   if (tab === 'leaderboard') loadPortalLeaderboard();
+  if (tab === 'settings') loadShippingAddress();
   if (tab === 'messages') {
     loadMessages();
     startMessagePolling();
@@ -2006,6 +2073,113 @@ setTab = function(tab) {
     loadMyProductRequests();
   }
 };
+
+// ==================== SHIPPING ADDRESS SETTINGS ====================
+
+let _cachedAddressData = null;
+
+async function loadShippingAddress() {
+  const display = document.getElementById('ipAddressDisplay');
+  const editBtn = document.getElementById('ipEditAddressBtn');
+  display.innerHTML = '<div style="color: var(--muted); font-size: 0.75rem;">Loading address...</div>';
+  try {
+    const res = await fetch(`${PORTAL_API}/shipping-address/${token}`);
+    const data = await res.json();
+    if (!data.success) { display.innerHTML = '<div style="color: var(--muted);">Failed to load address.</div>'; return; }
+    _cachedAddressData = data.shippingAddress;
+    renderAddressDisplay(data.shippingAddress);
+    editBtn.style.display = '';
+  } catch (err) {
+    display.innerHTML = '<div style="color: var(--muted);">Connection error.</div>';
+  }
+}
+
+function renderAddressDisplay(addr) {
+  const display = document.getElementById('ipAddressDisplay');
+  const hasAddress = addr.shipping_address || addr.shipping_city || addr.shipping_state || addr.shipping_pin;
+  if (!hasAddress) {
+    display.innerHTML = `
+      <div style="text-align: center; padding: 2rem; color: var(--muted);">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 0.75rem; opacity: 0.5;">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+          <circle cx="12" cy="10" r="3"/>
+        </svg>
+        <p style="font-size: 0.8rem;">No shipping address saved yet.</p>
+        <button class="ip-btn ip-btn-small" onclick="toggleAddressEdit(true)" style="margin-top: 1rem;">Add Address</button>
+      </div>`;
+    return;
+  }
+  const typeLabel = addr.address_type === 'office' ? '\ud83c\udfe2 Office' : '\ud83c\udfe0 Home';
+  display.innerHTML = `
+    <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 0.75rem;">${typeLabel}</div>
+    <div style="font-size: 0.85rem; line-height: 1.8; color: var(--text);">
+      <div style="font-weight: 600;">${addr.shipping_address || ''}</div>
+      ${addr.shipping_landmark ? `<div style="color: var(--muted); font-size: 0.8rem;">Near: ${addr.shipping_landmark}</div>` : ''}
+      <div>${addr.shipping_city || ''}${addr.shipping_city && addr.shipping_state ? ', ' : ''}${addr.shipping_state || ''} ${addr.shipping_pin || ''}</div>
+    </div>`;
+}
+
+function toggleAddressEdit(show) {
+  const form = document.getElementById('ipAddressEditForm');
+  const display = document.getElementById('ipAddressDisplay');
+  const editBtn = document.getElementById('ipEditAddressBtn');
+  if (show) {
+    // Populate form with current data
+    const addr = _cachedAddressData || {};
+    document.getElementById('ipAddressType').value = addr.address_type || 'home';
+    document.getElementById('ipShipAddress').value = addr.shipping_address || '';
+    document.getElementById('ipShipLandmark').value = addr.shipping_landmark || '';
+    document.getElementById('ipShipCity').value = addr.shipping_city || '';
+    document.getElementById('ipShipState').value = addr.shipping_state || '';
+    document.getElementById('ipShipPincode').value = addr.shipping_pin || '';
+    form.style.display = '';
+    editBtn.style.display = 'none';
+  } else {
+    form.style.display = 'none';
+    editBtn.style.display = '';
+  }
+}
+
+async function saveShippingAddress() {
+  const btn = document.getElementById('ipSaveAddressBtn');
+  const shippingAddress = document.getElementById('ipShipAddress').value.trim();
+  const shippingLandmark = document.getElementById('ipShipLandmark').value.trim();
+  const shippingCity = document.getElementById('ipShipCity').value.trim();
+  const shippingState = document.getElementById('ipShipState').value.trim();
+  const shippingPin = document.getElementById('ipShipPincode').value.trim();
+  const addressType = document.getElementById('ipAddressType').value;
+
+  if (!shippingAddress || !shippingCity || !shippingState || !shippingPin) {
+    showToast('Please fill all required address fields', true);
+    return;
+  }
+  if (!/^\d{6}$/.test(shippingPin)) {
+    showToast('Pincode must be 6 digits', true);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  try {
+    const res = await fetch(`${PORTAL_API}/shipping-address/${token}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shippingAddress, shippingLandmark, shippingCity, shippingState, shippingPin, addressType })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Shipping address updated \u2713');
+      toggleAddressEdit(false);
+      await loadShippingAddress();
+    } else {
+      showToast(data.error || 'Failed to save address', true);
+    }
+  } catch (err) {
+    showToast('Connection error', true);
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Save Address';
+}
 
 // ==================== MESSAGING SYSTEM ====================
 

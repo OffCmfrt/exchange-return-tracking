@@ -3033,6 +3033,31 @@ html, body {
  <p class="ia-form-hint">Max uses (blank = unlimited)</p>
  </div>
  </div>
+ <div style="border-top:1px solid var(--border);padding-top:1rem;margin-top:0.5rem;">
+ <p style="font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:0.75rem;font-weight:700;">Shipping Address</p>
+ <div class="ia-form-group">
+ <label for="editShippingAddress">Address Line 1</label>
+ <input type="text" id="editShippingAddress" class="ia-input" placeholder="House/Flat No., Street">
+ </div>
+ <div class="ia-form-group">
+ <label for="editShippingLandmark">Landmark (optional)</label>
+ <input type="text" id="editShippingLandmark" class="ia-input" placeholder="Near landmark">
+ </div>
+ <div class="ia-form-row">
+ <div class="ia-form-group">
+ <label for="editShippingCity">City</label>
+ <input type="text" id="editShippingCity" class="ia-input" placeholder="e.g. Mumbai">
+ </div>
+ <div class="ia-form-group">
+ <label for="editShippingState">State</label>
+ <input type="text" id="editShippingState" class="ia-input" placeholder="e.g. Maharashtra">
+ </div>
+ <div class="ia-form-group">
+ <label for="editShippingPin">Pincode</label>
+ <input type="text" id="editShippingPin" class="ia-input" placeholder="e.g. 400001" maxlength="6">
+ </div>
+ </div>
+ </div>
  <p id="editError" class="ia-modal-error">Failed to update. Please try again.</p>
  <div class="ia-modal-actions">
  <button class="ia-btn ia-btn-ghost" onclick="closeModal('iaEditModal')">Cancel</button>
@@ -3753,6 +3778,12 @@ function openEditModal(id) {
  document.getElementById('editDiscountValue').value = parseFloat(discountVal).toFixed(1);
  // Handle usage_limit (show empty if null/unlimited)
  document.getElementById('editUsageLimit').value = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : '';
+ // Shipping address fields
+ document.getElementById('editShippingAddress').value = inf.shipping_address || '';
+ document.getElementById('editShippingLandmark').value = inf.shipping_landmark || '';
+ document.getElementById('editShippingCity').value = inf.shipping_city || '';
+ document.getElementById('editShippingState').value = inf.shipping_state || '';
+ document.getElementById('editShippingPin').value = inf.shipping_pin || '';
  document.getElementById('editError').classList.remove('show');
  openModal('iaEditModal');
 }
@@ -3767,6 +3798,11 @@ async function submitEdit() {
  const displayedCommissionRate = parseFloat(document.getElementById('editDisplayedCommission').value) || commissionRate;
  const discountValue = document.getElementById('editDiscountValue').value ? parseFloat(document.getElementById('editDiscountValue').value) : commissionRate;
  const usageLimit = document.getElementById('editUsageLimit').value.trim();
+ const shippingAddress = document.getElementById('editShippingAddress').value.trim();
+ const shippingLandmark = document.getElementById('editShippingLandmark').value.trim();
+ const shippingCity = document.getElementById('editShippingCity').value.trim();
+ const shippingState = document.getElementById('editShippingState').value.trim();
+ const shippingPin = document.getElementById('editShippingPin').value.trim();
  if (!name || !referralCode || !phone) { errEl.textContent = 'All fields are required.'; errEl.classList.add('show'); return; }
  btn.disabled = true; btn.textContent = 'Saving…';
  errEl.classList.remove('show');
@@ -3774,7 +3810,7 @@ async function submitEdit() {
  const res = await fetch(`${API}/update/${id}`, {
  method: 'PATCH',
  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
- body: JSON.stringify({ name, referralCode, commissionRate, displayedCommissionRate, discountValue, usageLimit, phone })
+ body: JSON.stringify({ name, referralCode, commissionRate, displayedCommissionRate, discountValue, usageLimit, phone, shippingAddress, shippingLandmark, shippingCity, shippingState, shippingPin })
  });
  if (res.ok) {
  closeModal('iaEditModal');
@@ -5531,7 +5567,7 @@ async function loadProductRequests() {
  <div style="font-size: 0.7rem; color: var(--muted);">${r.influencers?.referral_code || ''}</div>
  </td>
  <td>${r.product_title}</td>
- <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${r.reason}">${r.reason}</td>
+ <td style="max-width: 280px; word-wrap: break-word; white-space: normal; line-height: 1.4; font-size: 0.75rem;">${r.reason}</td>
  <td style="font-size: 0.75rem;">${r.shipping_city}, ${r.shipping_state}</td>
  <td>${statusBadge}</td>
  <td style="font-size: 0.75rem;">${new Date(r.created_at).toLocaleDateString()}</td>
@@ -5801,6 +5837,20 @@ async function loadInfluencersForAddShipment() {
  const select = document.getElementById('asInfluencer');
  select.innerHTML = '<option value="">Choose influencer...</option>' + 
  influencers.map(i => `<option value="${i.id}">${i.name || i.handle || 'Influencer'}</option>`).join('');
+
+ // Auto-fill shipping address when influencer is selected
+ select.addEventListener('change', function() {
+   const sel = influencers.find(i => i.id == this.value);
+   if (sel) {
+     document.getElementById('asFullName').value = sel.name || '';
+     document.getElementById('asPhone').value = sel.phone || '';
+     document.getElementById('asAddress1').value = sel.shipping_address || '';
+     document.getElementById('asAddress2').value = sel.shipping_landmark || '';
+     document.getElementById('asCity').value = sel.shipping_city || sel.city || '';
+     document.getElementById('asState').value = sel.shipping_state || '';
+     document.getElementById('asPincode').value = sel.shipping_pin || '';
+   }
+ });
  }
  } catch (e) { }
 }
@@ -6171,6 +6221,12 @@ function renderDetailTab(tab, inf, data = {}) {
  <div class="ia-dt-row"><span class="ia-dt-label">Phone</span><span class="ia-dt-value">${inf.phone || '-'}</span></div>
  <div class="ia-dt-row"><span class="ia-dt-label">City</span><span class="ia-dt-value">${inf.city || '-'}</span></div>
  <div class="ia-dt-row"><span class="ia-dt-label">Referral Code</span><span class="ia-dt-value">${inf.referral_code}</span></div>
+ </div>
+ <div class="ia-dt-card">
+ <div class="ia-dt-card-title">Shipping Address</div>
+ <div style="font-size:.85rem;line-height:1.6;">
+ ${inf.shipping_address ? `${inf.address_type === 'office' ? '\ud83c\udfe2 Office' : '\ud83c\udfe0 Home'}<br>${inf.shipping_address}${inf.shipping_landmark ? '<br>Near: ' + inf.shipping_landmark : ''}<br>${inf.shipping_city || ''}${inf.shipping_city && inf.shipping_state ? ', ' : ''}${inf.shipping_state || ''} ${inf.shipping_pin || ''}` : '<span style="color:var(--muted);">No address saved</span>'}
+ </div>
  </div>
  <div class="ia-dt-card">
  <div class="ia-dt-card-title">Social Media & Reach</div>

@@ -527,6 +527,18 @@ async function createInfluencer(influencerData) {
     if (influencerData.payoutUpi !== undefined) insertRow.payout_upi = influencerData.payoutUpi;
     if (influencerData.payoutNotes !== undefined) insertRow.payout_notes = influencerData.payoutNotes;
     if (influencerData.appliedAt !== undefined) insertRow.applied_at = influencerData.appliedAt;
+    if (influencerData.contentWeeklyCount !== undefined) insertRow.content_weekly_count = influencerData.contentWeeklyCount;
+    if (influencerData.monthlyTarget !== undefined) insertRow.monthly_target = influencerData.monthlyTarget;
+    if (influencerData.followerTier !== undefined) insertRow.follower_tier = influencerData.followerTier;
+    if (influencerData.heightCm !== undefined) insertRow.height_cm = influencerData.heightCm;
+    if (influencerData.weightKg !== undefined) insertRow.weight_kg = influencerData.weightKg;
+    if (influencerData.shippingAddress !== undefined) insertRow.shipping_address = influencerData.shippingAddress;
+    if (influencerData.shippingCity !== undefined) insertRow.shipping_city = influencerData.shippingCity;
+    if (influencerData.shippingState !== undefined) insertRow.shipping_state = influencerData.shippingState;
+    if (influencerData.shippingPin !== undefined) insertRow.shipping_pin = influencerData.shippingPin;
+    if (influencerData.shippingLandmark !== undefined) insertRow.shipping_landmark = influencerData.shippingLandmark;
+    if (influencerData.addressType !== undefined) insertRow.address_type = influencerData.addressType;
+    if (influencerData.selectedProducts !== undefined) insertRow.selected_products = influencerData.selectedProducts;
 
     const { data, error } = await supabase
         .from('influencers')
@@ -566,6 +578,19 @@ async function updateInfluencer(id, updates) {
     if (updates.payoutUpi !== undefined) updateData.payout_upi = updates.payoutUpi;
     if (updates.payoutNotes !== undefined) updateData.payout_notes = updates.payoutNotes;
     if (updates.approvedAt !== undefined) updateData.approved_at = updates.approvedAt;
+
+    // ── Shipping address fields ──
+    if (updates.shippingAddress !== undefined) updateData.shipping_address = updates.shippingAddress;
+    if (updates.shippingCity !== undefined) updateData.shipping_city = updates.shippingCity;
+    if (updates.shippingState !== undefined) updateData.shipping_state = updates.shippingState;
+    if (updates.shippingPin !== undefined) updateData.shipping_pin = updates.shippingPin;
+    if (updates.shippingLandmark !== undefined) updateData.shipping_landmark = updates.shippingLandmark;
+    if (updates.addressType !== undefined) updateData.address_type = updates.addressType;
+    if (updates.heightCm !== undefined) updateData.height_cm = updates.heightCm;
+    if (updates.weightKg !== undefined) updateData.weight_kg = updates.weightKg;
+    if (updates.contentWeeklyCount !== undefined) updateData.content_weekly_count = updates.contentWeeklyCount;
+    if (updates.monthlyTarget !== undefined) updateData.monthly_target = updates.monthlyTarget;
+    if (updates.followerTier !== undefined) updateData.follower_tier = updates.followerTier;
 
     const { data, error } = await supabase
         .from('influencers')
