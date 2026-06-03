@@ -3763,28 +3763,26 @@ async function submitAdd() {
 }
 // ─── EDIT ─────────────────────────────────────────────────────────────────────
 function openEditModal(id) {
- const inf = influencersData.find(i => String(i.id) === String(id));
- if (!inf) return;
- document.getElementById('editId').value = id;
- document.getElementById('editName').value = inf.name;
- document.getElementById('editPhone').value = inf.phone || '';
- document.getElementById('editCode').value = inf.referral_code;
- document.getElementById('editCommission').value = parseFloat(inf.commission_rate || 7).toFixed(1);
- // Handle displayed_commission_rate (use displayed_commission_rate if exists, fallback to commission_rate)
- const displayedCommission = inf.displayed_commission_rate !== undefined && inf.displayed_commission_rate !== null ? inf.displayed_commission_rate : (inf.commission_rate || 7);
- document.getElementById('editDisplayedCommission').value = parseFloat(displayedCommission).toFixed(1);
- // Handle discount_value (use discount_value if exists, fallback to commission_rate)
- const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 7);
- document.getElementById('editDiscountValue').value = parseFloat(discountVal).toFixed(1);
- // Handle usage_limit (show empty if null/unlimited)
- document.getElementById('editUsageLimit').value = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : '';
- // Shipping address fields
- document.getElementById('editShippingAddress').value = inf.shipping_address || '';
- document.getElementById('editShippingLandmark').value = inf.shipping_landmark || '';
- document.getElementById('editShippingCity').value = inf.shipping_city || '';
- document.getElementById('editShippingState').value = inf.shipping_state || '';
- document.getElementById('editShippingPin').value = inf.shipping_pin || '';
- document.getElementById('editError').classList.remove('show');
+ try {
+  const inf = influencersData.find(i => String(i.id) === String(id));
+  if (!inf) { console.warn('openEditModal: influencer not found for id', id); return; }
+  document.getElementById('editId').value = id;
+  document.getElementById('editName').value = inf.name || '';
+  document.getElementById('editPhone').value = inf.phone || '';
+  document.getElementById('editCode').value = inf.referral_code || '';
+  document.getElementById('editCommission').value = parseFloat(inf.commission_rate || 7).toFixed(1);
+  const displayedCommission = inf.displayed_commission_rate !== undefined && inf.displayed_commission_rate !== null ? inf.displayed_commission_rate : (inf.commission_rate || 7);
+  document.getElementById('editDisplayedCommission').value = parseFloat(displayedCommission).toFixed(1);
+  const discountVal = inf.discount_value !== undefined && inf.discount_value !== null ? inf.discount_value : (inf.commission_rate || 7);
+  document.getElementById('editDiscountValue').value = parseFloat(discountVal).toFixed(1);
+  document.getElementById('editUsageLimit').value = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : '';
+  document.getElementById('editShippingAddress').value = inf.shipping_address || '';
+  document.getElementById('editShippingLandmark').value = inf.shipping_landmark || '';
+  document.getElementById('editShippingCity').value = inf.shipping_city || '';
+  document.getElementById('editShippingState').value = inf.shipping_state || '';
+  document.getElementById('editShippingPin').value = inf.shipping_pin || '';
+  document.getElementById('editError').classList.remove('show');
+ } catch(e) { console.error('openEditModal error:', e); }
  openModal('iaEditModal');
 }
 async function submitEdit() {
