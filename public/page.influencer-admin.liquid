@@ -2681,7 +2681,7 @@ html, body {
  </div>
 <div style="display: flex; gap: 1rem; margin-bottom: 2rem; align-items: center;">
  <div class="ia-form-group" style="margin: 0;">
- <label style="font-size: 0.65rem; color: var(--muted); margin-bottom: 0.3rem;">Month</label>
+ <label for="srTargetMonth" style="font-size: 0.65rem; color: var(--muted); margin-bottom: 0.3rem;">Month</label>
  <select id="srTargetMonth" class="ia-input" onchange="loadMonthlyTargets()">
  <option value="1">January</option>
  <option value="2">February</option>
@@ -2698,7 +2698,7 @@ html, body {
  </select>
  </div>
  <div class="ia-form-group" style="margin: 0;">
- <label style="font-size: 0.65rem; color: var(--muted); margin-bottom: 0.3rem;">Year</label>
+ <label for="srTargetYear" style="font-size: 0.65rem; color: var(--muted); margin-bottom: 0.3rem;">Year</label>
  <input type="number" id="srTargetYear" class="ia-input" value="2026" onchange="loadMonthlyTargets()" style="width: 100px;">
  </div>
  </div>
@@ -3674,7 +3674,7 @@ function renderTable(list) {
  } else if (status === 'rejected') {
  actions += `<button class="ia-action-btn approve" onclick="approveInfluencer(${inf.id})">Reactivate</button><button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Delete</button>`;
  } else {
- actions += `<button class="ia-action-btn payouts" onclick="openPayoutsDrawer(${inf.id})">Payouts</button><button class="ia-action-btn edit" onclick="openEditModal(${inf.id})">Edit</button><button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Remove</button>`;
+ actions += `<button class="ia-action-btn payouts" onclick="openPayoutsDrawer(${inf.id})">Payouts</button><button class="ia-action-btn edit" onclick="openEditModal('${inf.id}')">Edit</button><button class="ia-action-btn remove" onclick="removeInfluencer(${inf.id})">Remove</button>`;
  }
  return `
  <tr class="ia-row-enter" id="row-${inf.id}">
