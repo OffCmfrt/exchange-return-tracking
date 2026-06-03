@@ -2027,6 +2027,55 @@ html, body {
 }
 .ia-share-apply:hover { border-color: var(--text); background: var(--surface-2); }
 .ia-share-apply.copied { border-color: var(--success); color: var(--success); }
+/* ── SORT DROPDOWN ── */
+.ia-sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 0.65rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.ia-sort-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ia-sort-options {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.ia-sort-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.7rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.ia-sort-btn:hover { border-color: var(--text); color: var(--text); }
+.ia-sort-btn.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.ia-sort-btn .ia-sort-arrow { font-size: 0.6rem; line-height: 1; }
+@media (max-width: 768px) {
+  .ia-sort-bar { flex-direction: column; align-items: flex-start; }
+  .ia-sort-options { width: 100%; }
+  .ia-sort-btn { font-size: 0.65rem; padding: 0.25rem 0.5rem; }
+}
 /* ── PAYOUTS DRAWER ── */
 .ia-drawer-overlay {
  position: fixed; inset: 0;
@@ -2475,6 +2524,21 @@ html, body {
  </button>
  </div>
  </div>
+<!-- Sort Bar -->
+<div class="ia-sort-bar">
+ <span class="ia-sort-label">Sort By</span>
+ <div class="ia-sort-options">
+   <button class="ia-sort-btn active" data-sort="orders-desc" onclick="setSort('orders-desc', this)">Orders <span class="ia-sort-arrow">↓</span></button>
+   <button class="ia-sort-btn" data-sort="orders-asc" onclick="setSort('orders-asc', this)">Orders <span class="ia-sort-arrow">↑</span></button>
+   <button class="ia-sort-btn" data-sort="name-asc" onclick="setSort('name-asc', this)">Name A–Z</button>
+   <button class="ia-sort-btn" data-sort="name-desc" onclick="setSort('name-desc', this)">Name Z–A</button>
+   <button class="ia-sort-btn" data-sort="date-desc" onclick="setSort('date-desc', this)">Newest First</button>
+   <button class="ia-sort-btn" data-sort="date-asc" onclick="setSort('date-asc', this)">Oldest First</button>
+   <button class="ia-sort-btn" data-sort="commission-desc" onclick="setSort('commission-desc', this)">Commission <span class="ia-sort-arrow">↓</span></button>
+   <button class="ia-sort-btn" data-sort="followers-desc" onclick="setSort('followers-desc', this)">Followers <span class="ia-sort-arrow">↓</span></button>
+   <button class="ia-sort-btn" data-sort="status" onclick="setSort('status', this)">Status</button>
+ </div>
+</div>
 <div class="ia-filter-bar" id="iaFilterBar">
  <button class="ia-filter-btn active" data-filter="all" onclick="setStatusFilter('all')">
  All <span class="ia-filter-count" id="fcAll">0</span>
@@ -3453,6 +3517,44 @@ function renderStats(list) {
 }
 // ─── STATUS FILTER ───────────────────────────────────────────────────────────
 let iaStatusFilter = 'all';
+let iaSortMode = 'orders-desc';
+function setSort(mode, btn) {
+ iaSortMode = mode;
+ document.querySelectorAll('.ia-sort-btn').forEach(b => b.classList.remove('active'));
+ if (btn) btn.classList.add('active');
+ renderTable(filteredInfluencers());
+}
+function applySorting(list) {
+ const sorted = [...list];
+ const [field, dir] = iaSortMode.split('-');
+ const asc = dir === 'asc' ? 1 : -1;
+ switch (field) {
+   case 'orders':
+     sorted.sort((a, b) => asc * ((a.usage_count || 0) - (b.usage_count || 0)));
+     break;
+   case 'name':
+     sorted.sort((a, b) => asc * (a.name || '').localeCompare(b.name || ''));
+     break;
+   case 'date':
+     sorted.sort((a, b) => asc * (new Date(a.created_at) - new Date(b.created_at)));
+     break;
+   case 'commission':
+     sorted.sort((a, b) => asc * ((a.commission_rate || a.discount_value || 0) - (b.commission_rate || b.discount_value || 0)));
+     break;
+   case 'followers':
+     sorted.sort((a, b) => asc * ((Number(a.follower_count) || 0) - (Number(b.follower_count) || 0)));
+     break;
+   case 'status':
+     const order = { active: 0, pending: 1, suspended: 2, rejected: 3 };
+     sorted.sort((a, b) => {
+       const sa = a.status || (a.is_active ? 'active' : 'suspended');
+       const sb = b.status || (b.is_active ? 'active' : 'suspended');
+       return (order[sa] ?? 9) - (order[sb] ?? 9);
+     });
+     break;
+ }
+ return sorted;
+}
 function setStatusFilter(filter) {
  iaStatusFilter = filter;
  document.querySelectorAll('.ia-filter-btn').forEach(btn => {
@@ -3513,7 +3615,7 @@ function filteredInfluencers() {
  );
  }
  
- return list;
+ return applySorting(list);
 }
 function statusPill(inf) {
  const s = inf.status || (inf.is_active ? 'active' : 'suspended');
