@@ -6152,10 +6152,49 @@ app.get('/', (req, res) => {
 app.get('/api/influencer-admin/list', authenticateAdmin, async (req, res) => {
     try {
         const influencers = await getAllInfluencers();
+        // DEBUG: Log first influencer's shipping fields to diagnose address loading
+        if (influencers && influencers.length > 0) {
+            const sample = influencers[0];
+            console.log('[DEBUG] First influencer shipping fields from DB:', {
+                id: sample.id,
+                name: sample.name,
+                shipping_address: sample.shipping_address,
+                shipping_city: sample.shipping_city,
+                shipping_state: sample.shipping_state,
+                shipping_pin: sample.shipping_pin,
+                shipping_landmark: sample.shipping_landmark,
+                address_type: sample.address_type
+            });
+        }
         res.json({ success: true, influencers });
     } catch (error) {
         console.error('List influencers error:', error);
         res.status(500).json({ error: 'Failed to fetch influencers' });
+    }
+});
+
+// Get single influencer details (for edit modal - fresh DB read)
+app.get('/api/influencer-admin/detail/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+        console.log('[DEBUG] Single influencer detail shipping fields from DB:', {
+            id: influencer.id,
+            name: influencer.name,
+            shipping_address: influencer.shipping_address,
+            shipping_city: influencer.shipping_city,
+            shipping_state: influencer.shipping_state,
+            shipping_pin: influencer.shipping_pin,
+            shipping_landmark: influencer.shipping_landmark,
+            address_type: influencer.address_type
+        });
+        res.json({ success: true, influencer });
+    } catch (error) {
+        console.error('Detail influencer error:', error);
+        res.status(500).json({ error: 'Failed to fetch influencer' });
     }
 });
 
