@@ -3657,8 +3657,9 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         if (reuseRequestId) requestId = reuseRequestId;
 
         console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
-        const message = `Hello ${customerName}, your exchange request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
-        sendWhatsAppNotification(customerPhone, message, 'exchange', requestId).catch(err => console.error(err));
+        // WhatsApp notification disabled for exchange requests
+        // const message = `Hello ${customerName}, your exchange request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
+        // sendWhatsAppNotification(customerPhone, message, 'exchange', requestId).catch(err => console.error(err));
 
         res.json({
             success: true,
@@ -3943,8 +3944,9 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         if (reuseRequestId) requestId = reuseRequestId;
 
         console.log(`[${requestId}] ✅ Return Request Submitted Successfully`);
-        const message = `Hello ${customerName}, your return request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
-        sendWhatsAppNotification(customerPhone, message, 'return', requestId).catch(err => console.error(err));
+        // WhatsApp notification disabled for return requests
+        // const message = `Hello ${customerName}, your return request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
+        // sendWhatsAppNotification(customerPhone, message, 'return', requestId).catch(err => console.error(err));
 
         res.json({
             success: true,
