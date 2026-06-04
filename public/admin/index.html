@@ -2124,37 +2124,6 @@
         }
     }
 
-    /**
-     * Parse city, state, pincode from a concatenated address string.
-     * Expected format: "...street, City, State, Pincode, Country"
-     * Returns { city, state, pincode } or null values if not parseable.
-     */
-    function parseAddressFields(addressStr) {
-        if (!addressStr || typeof addressStr !== 'string') return { city: '', state: '', pincode: '' };
-        const parts = addressStr.split(',').map(s => s.trim()).filter(Boolean);
-        let pincode = '', state = '', city = '';
-        // Try to find a 6-digit pincode from the end
-        for (let i = parts.length - 1; i >= 0; i--) {
-            if (/^\d{6}$/.test(parts[i])) { pincode = parts[i]; break; }
-        }
-        // State is the part just before pincode (or last part if no pincode found)
-        const pinIdx = pincode ? parts.indexOf(pincode) : -1;
-        if (pinIdx > 0) {
-            state = parts[pinIdx - 1];
-            // Remove trailing country name like "India" from state
-            if (state.toLowerCase() === 'india' && pinIdx > 1) { state = parts[pinIdx - 2]; }
-            city = parts[pinIdx - 2] || '';
-            if (city.toLowerCase() === 'india') city = parts[pinIdx - 3] || '';
-        } else if (parts.length >= 3) {
-            // No pincode found, try last 3 parts as city, state, country
-            state = parts[parts.length - 2];
-            if (state.toLowerCase() === 'india') state = parts[parts.length - 3];
-            city = parts[parts.length - 3] || '';
-            if (city.toLowerCase() === 'india') city = parts[parts.length - 4] || '';
-        }
-        return { city: city || '', state: state || '', pincode: pincode || '' };
-    }
-
     function displayRequestDetails(data) {
         const modalContent = document.getElementById('modalContent');
         
@@ -2164,26 +2133,8 @@
         // Debug: Log incoming data status
         console.log('displayRequestDetails called with status:', data.status, 'full data keys:', Object.keys(data));
 
-        // Resolve address fields with fallback to parsing the address string
         const newAddr = data.newAddress || '';
-        const newCity = data.newCity || '';
-        const newState = data.newState || '';
-        const newPincode = data.newPincode || '';
         const shipAddr = data.shippingAddress || '';
-        const shipCity = data.shippingCity || '';
-        const shipState = data.shippingState || '';
-        const shipPincode = data.shippingPincode || '';
-
-        // Parse from address string when individual fields are missing
-        const parsedNew = (!newCity && !newState && !newPincode && newAddr) ? parseAddressFields(newAddr) : { city: '', state: '', pincode: '' };
-        const parsedShip = (!shipCity && !shipState && !shipPincode && shipAddr) ? parseAddressFields(shipAddr) : { city: '', state: '', pincode: '' };
-
-        const dispNewCity = newCity || parsedNew.city;
-        const dispNewState = newState || parsedNew.state;
-        const dispNewPincode = newPincode || parsedNew.pincode;
-        const dispShipCity = shipCity || parsedShip.city;
-        const dispShipState = shipState || parsedShip.state;
-        const dispShipPincode = shipPincode || parsedShip.pincode;
 
         modalContent.innerHTML = `
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
@@ -2227,19 +2178,17 @@
             <!-- Shipping / Exchange Address Section -->
             <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; border-left: 4px solid ${data.type === 'exchange' ? '#f59e0b' : '#3b82f6'};">
                 <p style="font-weight: 500; margin-bottom: 0.5rem;">${data.type === 'exchange' ? 'Exchange Delivery Address' : 'Shipping Address'}</p>
-                ${data.newAddress || dispNewCity || dispNewState || dispNewPincode ? `
+                ${newAddr ? `
                     <p style="font-size: 0.85rem; color: #059669; font-weight: 600; margin-bottom: 0.25rem;">✏️ Modified Address</p>
                     <p style="font-size: 0.9rem;"><strong>Name:</strong> ${data.customerName || 'N/A'}</p>
-                    <p style="font-size: 0.9rem;"><strong>Address:</strong> ${newAddr || 'N/A'}</p>
-                    <p style="font-size: 0.9rem;"><strong>City:</strong> ${dispNewCity || 'N/A'}, <strong>State:</strong> ${dispNewState || 'N/A'} — <strong>Pincode:</strong> ${dispNewPincode || 'N/A'}</p>
+                    <p style="font-size: 0.9rem;"><strong>Address:</strong> ${newAddr}</p>
                     <p style="font-size: 0.9rem;"><strong>Phone:</strong> ${data.customerPhone || 'N/A'}</p>
                     ${shipAddr ? `<details style="margin-top: 0.5rem;"><summary style="font-size: 0.8rem; color: var(--gray-dark); cursor: pointer;">View original address</summary>
-                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.25rem; padding: 0.5rem; background: #f3f4f6; border-radius: 4px;">${shipAddr}${dispShipCity ? ', ' + dispShipCity : ''}${dispShipState ? ', ' + dispShipState : ''} — ${dispShipPincode || ''}</p>
+                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.25rem; padding: 0.5rem; background: #f3f4f6; border-radius: 4px;">${shipAddr}</p>
                     </details>` : ''}
                 ` : shipAddr ? `
                     <p style="font-size: 0.9rem;"><strong>Name:</strong> ${data.customerName || 'N/A'}</p>
                     <p style="font-size: 0.9rem;"><strong>Address:</strong> ${shipAddr}</p>
-                    <p style="font-size: 0.9rem;"><strong>City:</strong> ${dispShipCity || 'N/A'}, <strong>State:</strong> ${dispShipState || 'N/A'} — <strong>Pincode:</strong> ${dispShipPincode || 'N/A'}</p>
                     <p style="font-size: 0.9rem;"><strong>Phone:</strong> ${data.customerPhone || 'N/A'}</p>
                 ` : `
                     <p style="font-size: 0.9rem; color: var(--gray-dark);">No shipping address on file</p>
@@ -3939,77 +3888,6 @@
     let productSearchCache = {};
     let productSearchTimeout = null;
 
-    // Helper function to parse address components from full address string
-    function parseAddressComponents(address) {
-        if (!address) return { city: '', state: '', pincode: '' };
-        
-        const result = { city: '', state: '', pincode: '' };
-        
-        // Try to extract 6-digit pincode
-        const pincodeMatch = address.match(/(\d{6})/);
-        if (pincodeMatch) {
-            result.pincode = pincodeMatch[1];
-        }
-        
-        // Split by comma and try to extract state and city
-        const parts = address.split(',').map(p => p.trim());
-        
-        // Indian address format typically: street, locality, city, state, pincode, country
-        // Looking from the end: country (optional), pincode, state, city
-        if (parts.length >= 2) {
-            // State is usually second-to-last or third-to-last element (before pincode)
-            const stateCandidates = ['Uttar Pradesh', 'Maharashtra', 'Karnataka', 'Tamil Nadu', 
-                'Gujarat', 'Rajasthan', 'West Bengal', 'Delhi', 'Haryana', 'Punjab', 
-                'Bihar', 'Madhya Pradesh', 'Kerala', 'Andhra Pradesh', 'Telangana', 
-                'Odisha', 'Assam', 'Jharkhand', 'Chhattisgarh', 'Uttarakhand', 'Himachal Pradesh',
-                'Goa', 'Tripura', 'Meghalaya', 'Manipur', 'Nagaland', 'Arunachal Pradesh', 
-                'Mizoram', 'Sikkim', 'Chandigarh', 'Puducherry'];
-            
-            // Check parts from end to find state
-            for (let i = parts.length - 1; i >= 0; i--) {
-                const part = parts[i].trim();
-                
-                // Skip if it's the pincode
-                if (/^\d{6}$/.test(part)) continue;
-                
-                // Check if this part matches a known state
-                const stateMatch = stateCandidates.find(s => 
-                    part.toLowerCase().includes(s.toLowerCase()) || 
-                    s.toLowerCase().includes(part.toLowerCase())
-                );
-                
-                if (stateMatch && !result.state) {
-                    result.state = stateMatch;
-                    // City is typically the part before state
-                    if (i > 0 && !result.city) {
-                        result.city = parts[i - 1].trim();
-                        // Remove "India" or country names if present
-                        if (result.city.toLowerCase() === 'india') {
-                            result.city = i > 1 ? parts[i - 2].trim() : '';
-                        }
-                    }
-                    break;
-                }
-            }
-            
-            // If state not found by matching, use heuristics
-            if (!result.state && parts.length >= 3) {
-                // Assume format: ..., city, state, pincode
-                const lastPart = parts[parts.length - 1].trim();
-                if (!/^\d{6}$/.test(lastPart) && lastPart.toLowerCase() !== 'india') {
-                    // Last part might be state
-                    result.state = lastPart;
-                    // Second to last might be city
-                    if (!result.city) {
-                        result.city = parts[parts.length - 2].trim();
-                    }
-                }
-            }
-        }
-        
-        return result;
-    }
-
     function openModifyModal() {
         if (!currentRequest) return;
         
@@ -4019,29 +3897,8 @@
         document.getElementById('modify-customerName').value = currentRequest.customerName || '';
         document.getElementById('modify-customerPhone').value = currentRequest.customerPhone || '';
         
-        // Pre-fill shipping address
-        // Try new address fields first, then fallback to shipping address fields
+        // Pre-fill shipping address (full address string only)
         document.getElementById('modify-newAddress').value = currentRequest.newAddress || currentRequest.shippingAddress || '';
-        
-        // For city, state, pincode: try new fields first, then shipping fields, then parse from full address
-        let city = currentRequest.newCity || currentRequest.shippingCity || '';
-        let state = currentRequest.newState || currentRequest.shippingState || '';
-        let pincode = currentRequest.newPincode || currentRequest.shippingPincode || '';
-        
-        // If fields are still empty, try to parse from the full address
-        if (!city || !state || !pincode) {
-            const fullAddress = currentRequest.newAddress || currentRequest.shippingAddress || '';
-            if (fullAddress) {
-                const parsed = parseAddressComponents(fullAddress);
-                if (!city && parsed.city) city = parsed.city;
-                if (!state && parsed.state) state = parsed.state;
-                if (!pincode && parsed.pincode) pincode = parsed.pincode;
-            }
-        }
-        
-        document.getElementById('modify-newCity').value = city;
-        document.getElementById('modify-newState').value = state;
-        document.getElementById('modify-newPincode').value = pincode;
         
         // Pre-fill exchange items
         const itemsContainer = document.getElementById('modify-items-container');
@@ -4300,12 +4157,9 @@
             
             // Validate address
             const newAddress = document.getElementById('modify-newAddress').value.trim();
-            const newCity = document.getElementById('modify-newCity').value.trim();
-            const newState = document.getElementById('modify-newState').value.trim();
-            const newPincode = document.getElementById('modify-newPincode').value.trim();
             
-            if (!newAddress || !newCity || !newState || !/^[0-9]{6}$/.test(newPincode)) {
-                alert('Please fill in all address fields correctly');
+            if (!newAddress) {
+                alert('Please fill in the address');
                 return;
             }
             
@@ -4356,9 +4210,6 @@
                     items,
                     customerPhone,
                     newAddress,
-                    newCity,
-                    newState,
-                    newPincode,
                     customerName: document.getElementById('modify-customerName').value.trim()
                 })
             });
@@ -5217,23 +5068,9 @@
                 </h3>
 
                 <div class="form-group">
-                    <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Address Line 1 <span style="color: #ef4444;">*</span></label>
-                    <textarea id="modify-newAddress" class="form-control" rows="3" placeholder="House No., Street, Locality"></textarea>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-                    <div class="form-group">
-                        <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">City <span style="color: #ef4444;">*</span></label>
-                        <input type="text" id="modify-newCity" class="form-control" placeholder="City">
-                    </div>
-                    <div class="form-group">
-                        <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">State <span style="color: #ef4444;">*</span></label>
-                        <input type="text" id="modify-newState" class="form-control" placeholder="State">
-                    </div>
-                    <div class="form-group">
-                        <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Pincode <span style="color: #ef4444;">*</span></label>
-                        <input type="text" id="modify-newPincode" class="form-control" placeholder="6-digit pincode" pattern="[0-9]{6}" maxlength="6">
-                    </div>
+                    <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Full Address <span style="color: #ef4444;">*</span></label>
+                    <textarea id="modify-newAddress" class="form-control" rows="3" placeholder="House No., Street, Locality, City, State, Pincode"></textarea>
+                    <p style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">Enter the complete address including city, state and pincode</p>
                 </div>
             </div>
 
