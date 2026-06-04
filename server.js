@@ -1486,7 +1486,7 @@ async function getShiprocketToken() {
 }
 
 async function shiprocketAPI(endpoint, options = {}, retries = 2) {
-    const token = await getShiprocketToken();
+    let token = await getShiprocketToken();
 
     for (let i = 0; i <= retries; i++) {
         try {
@@ -1501,10 +1501,18 @@ async function shiprocketAPI(endpoint, options = {}, retries = 2) {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                // Retry on 5xx errors (like the user experienced)
+                // On 401, invalidate token and retry with a fresh one
+                if (response.status === 401) {
+                    console.warn(`[Shiprocket 401] Token expired for ${endpoint}. Refreshing token...`);
+                    shiprocketToken = null;
+                    shiprocketTokenExpiry = null;
+                    token = await getShiprocketToken();
+                    if (i < retries) continue;
+                }
+                // Retry on 5xx errors
                 if (response.status >= 500 && i < retries) {
                     console.warn(`[Shiprocket Retry] Status ${response.status} for ${endpoint}. Attempt ${i + 1}/${retries + 1}.`);
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // 1s, 2s... delay
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
                     continue;
                 }
                 throw new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
@@ -4360,11 +4368,17 @@ app.post('/api/track-order', async (req, res) => {
             }
         }
 
-        res.json(response);
+        if (!res.headersSent) {
+            res.json(response);
+        } else {
+            console.warn('Response already sent (client may have disconnected)');
+        }
 
     } catch (error) {
         console.error('Track order error:', error);
-        res.status(500).json({ error: 'Failed to track order. Please try again.' });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to track order. Please try again.' });
+        }
     }
 });
 
