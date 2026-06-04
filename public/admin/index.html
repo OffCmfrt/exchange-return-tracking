@@ -1625,6 +1625,10 @@
     let fetchedRequests = [];
     let selectedRequests = new Set();
 
+    // Store discount section HTML on load so we can recreate it if removed from DOM
+    const _discountEl = document.getElementById('discountCodeSection');
+    const DISCOUNT_SECTION_HTML = _discountEl ? _discountEl.outerHTML : '';
+
     // Export to Excel (CSV)
     function exportToExcel() {
         if (!fetchedRequests || fetchedRequests.length === 0) {
@@ -2394,24 +2398,7 @@
                 }
             }
 
-            // Show discount code section for delivered returns
-            const discountSection = document.getElementById('discountCodeSection');
-            if (discountSection) {
-                if (data.status === 'delivered' && data.type === 'return') {
-                    discountSection.classList.remove('hidden');
-                    
-                    // Populate WhatsApp phone with customer's phone
-                    const whatsappPhoneInput = document.getElementById('whatsappPhone');
-                    if (whatsappPhoneInput && data.customerPhone) {
-                        whatsappPhoneInput.value = data.customerPhone;
-                    }
-                    
-                    // Set up real-time preview
-                    setupWhatsAppPreview();
-                } else {
-                    discountSection.classList.add('hidden');
-                }
-            }
+            // Discount code section handled below (outside status block)
 
             // Show manual received button for all active shipment statuses AND pending (as fallback)
             if (manualReceivedBtn) {
@@ -2508,6 +2495,45 @@
             }
         } else {
             modalActions.classList.add('hidden');
+        }
+
+        // ── Discount code section: ALWAYS runs regardless of status ──
+        // This ensures the section is never stuck hidden from a previous view
+        let discountSection = document.getElementById('discountCodeSection');
+        
+        // Safety: if element was removed from DOM, recreate it
+        if (!discountSection) {
+            console.warn('[Discount] discountCodeSection element missing from DOM, recreating...');
+            const modalContentParent = document.querySelector('#detailsModal .modal-content');
+            if (modalContentParent) {
+                const temp = document.createElement('div');
+                temp.innerHTML = DISCOUNT_SECTION_HTML;
+                discountSection = temp.firstElementChild;
+                // Insert before modalActions
+                const actionsEl = document.getElementById('modalActions');
+                if (actionsEl) {
+                    modalContentParent.insertBefore(discountSection, actionsEl);
+                } else {
+                    modalContentParent.appendChild(discountSection);
+                }
+            }
+        }
+        
+        if (discountSection) {
+            if (data.status === 'delivered' && data.type === 'return') {
+                discountSection.classList.remove('hidden');
+                
+                // Populate WhatsApp phone with customer's phone
+                const whatsappPhoneInput = document.getElementById('whatsappPhone');
+                if (whatsappPhoneInput && data.customerPhone) {
+                    whatsappPhoneInput.value = data.customerPhone;
+                }
+                
+                // Set up real-time preview
+                setupWhatsAppPreview();
+            } else {
+                discountSection.classList.add('hidden');
+            }
         }
     }
 
