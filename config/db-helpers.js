@@ -1278,7 +1278,7 @@ async function getAdminMessages(filters = {}) {
         .from('influencer_messages')
         .select(`
             *,
-            influencers!influencer_messages_sender_id_fkey (
+            influencers!fk_influencer_messages_sender (
                 id, name, referral_code, email
             )
         `);
