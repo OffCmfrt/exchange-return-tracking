@@ -1468,7 +1468,7 @@
             </select>
         </div>
 
-        <!-- Premium Discount Code Creation Panel (only for delivered returns) -->
+        <!-- Premium Discount Code Creation Panel (shown for all statuses) -->
         <div id="discountCodeSection" class="hidden" style="margin-top: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
             <!-- Header -->
             <div style="background: rgba(255,255,255,0.1); padding: 1rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.2);">
@@ -2124,6 +2124,37 @@
         }
     }
 
+    /**
+     * Parse city, state, pincode from a concatenated address string.
+     * Expected format: "...street, City, State, Pincode, Country"
+     * Returns { city, state, pincode } or null values if not parseable.
+     */
+    function parseAddressFields(addressStr) {
+        if (!addressStr || typeof addressStr !== 'string') return { city: '', state: '', pincode: '' };
+        const parts = addressStr.split(',').map(s => s.trim()).filter(Boolean);
+        let pincode = '', state = '', city = '';
+        // Try to find a 6-digit pincode from the end
+        for (let i = parts.length - 1; i >= 0; i--) {
+            if (/^\d{6}$/.test(parts[i])) { pincode = parts[i]; break; }
+        }
+        // State is the part just before pincode (or last part if no pincode found)
+        const pinIdx = pincode ? parts.indexOf(pincode) : -1;
+        if (pinIdx > 0) {
+            state = parts[pinIdx - 1];
+            // Remove trailing country name like "India" from state
+            if (state.toLowerCase() === 'india' && pinIdx > 1) { state = parts[pinIdx - 2]; }
+            city = parts[pinIdx - 2] || '';
+            if (city.toLowerCase() === 'india') city = parts[pinIdx - 3] || '';
+        } else if (parts.length >= 3) {
+            // No pincode found, try last 3 parts as city, state, country
+            state = parts[parts.length - 2];
+            if (state.toLowerCase() === 'india') state = parts[parts.length - 3];
+            city = parts[parts.length - 3] || '';
+            if (city.toLowerCase() === 'india') city = parts[parts.length - 4] || '';
+        }
+        return { city: city || '', state: state || '', pincode: pincode || '' };
+    }
+
     function displayRequestDetails(data) {
         const modalContent = document.getElementById('modalContent');
         
@@ -2132,6 +2163,27 @@
         
         // Debug: Log incoming data status
         console.log('displayRequestDetails called with status:', data.status, 'full data keys:', Object.keys(data));
+
+        // Resolve address fields with fallback to parsing the address string
+        const newAddr = data.newAddress || '';
+        const newCity = data.newCity || '';
+        const newState = data.newState || '';
+        const newPincode = data.newPincode || '';
+        const shipAddr = data.shippingAddress || '';
+        const shipCity = data.shippingCity || '';
+        const shipState = data.shippingState || '';
+        const shipPincode = data.shippingPincode || '';
+
+        // Parse from address string when individual fields are missing
+        const parsedNew = (!newCity && !newState && !newPincode && newAddr) ? parseAddressFields(newAddr) : { city: '', state: '', pincode: '' };
+        const parsedShip = (!shipCity && !shipState && !shipPincode && shipAddr) ? parseAddressFields(shipAddr) : { city: '', state: '', pincode: '' };
+
+        const dispNewCity = newCity || parsedNew.city;
+        const dispNewState = newState || parsedNew.state;
+        const dispNewPincode = newPincode || parsedNew.pincode;
+        const dispShipCity = shipCity || parsedShip.city;
+        const dispShipState = shipState || parsedShip.state;
+        const dispShipPincode = shipPincode || parsedShip.pincode;
 
         modalContent.innerHTML = `
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
@@ -2175,19 +2227,19 @@
             <!-- Shipping / Exchange Address Section -->
             <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; border-left: 4px solid ${data.type === 'exchange' ? '#f59e0b' : '#3b82f6'};">
                 <p style="font-weight: 500; margin-bottom: 0.5rem;">${data.type === 'exchange' ? 'Exchange Delivery Address' : 'Shipping Address'}</p>
-                ${data.newAddress || data.newCity || data.newState || data.newPincode ? `
+                ${data.newAddress || dispNewCity || dispNewState || dispNewPincode ? `
                     <p style="font-size: 0.85rem; color: #059669; font-weight: 600; margin-bottom: 0.25rem;">✏️ Modified Address</p>
                     <p style="font-size: 0.9rem;"><strong>Name:</strong> ${data.customerName || 'N/A'}</p>
-                    <p style="font-size: 0.9rem;"><strong>Address:</strong> ${data.newAddress || 'N/A'}</p>
-                    <p style="font-size: 0.9rem;"><strong>City:</strong> ${data.newCity || 'N/A'}, <strong>State:</strong> ${data.newState || 'N/A'} — <strong>Pincode:</strong> ${data.newPincode || 'N/A'}</p>
+                    <p style="font-size: 0.9rem;"><strong>Address:</strong> ${newAddr || 'N/A'}</p>
+                    <p style="font-size: 0.9rem;"><strong>City:</strong> ${dispNewCity || 'N/A'}, <strong>State:</strong> ${dispNewState || 'N/A'} — <strong>Pincode:</strong> ${dispNewPincode || 'N/A'}</p>
                     <p style="font-size: 0.9rem;"><strong>Phone:</strong> ${data.customerPhone || 'N/A'}</p>
-                    ${data.shippingAddress ? `<details style="margin-top: 0.5rem;"><summary style="font-size: 0.8rem; color: var(--gray-dark); cursor: pointer;">View original address</summary>
-                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.25rem; padding: 0.5rem; background: #f3f4f6; border-radius: 4px;">${data.shippingAddress}${data.shippingCity ? ', ' + data.shippingCity : ''}${data.shippingState ? ', ' + data.shippingState : ''} — ${data.shippingPincode || ''}</p>
+                    ${shipAddr ? `<details style="margin-top: 0.5rem;"><summary style="font-size: 0.8rem; color: var(--gray-dark); cursor: pointer;">View original address</summary>
+                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.25rem; padding: 0.5rem; background: #f3f4f6; border-radius: 4px;">${shipAddr}${dispShipCity ? ', ' + dispShipCity : ''}${dispShipState ? ', ' + dispShipState : ''} — ${dispShipPincode || ''}</p>
                     </details>` : ''}
-                ` : data.shippingAddress ? `
+                ` : shipAddr ? `
                     <p style="font-size: 0.9rem;"><strong>Name:</strong> ${data.customerName || 'N/A'}</p>
-                    <p style="font-size: 0.9rem;"><strong>Address:</strong> ${data.shippingAddress}</p>
-                    <p style="font-size: 0.9rem;"><strong>City:</strong> ${data.shippingCity || 'N/A'}, <strong>State:</strong> ${data.shippingState || 'N/A'} — <strong>Pincode:</strong> ${data.shippingPincode || 'N/A'}</p>
+                    <p style="font-size: 0.9rem;"><strong>Address:</strong> ${shipAddr}</p>
+                    <p style="font-size: 0.9rem;"><strong>City:</strong> ${dispShipCity || 'N/A'}, <strong>State:</strong> ${dispShipState || 'N/A'} — <strong>Pincode:</strong> ${dispShipPincode || 'N/A'}</p>
                     <p style="font-size: 0.9rem;"><strong>Phone:</strong> ${data.customerPhone || 'N/A'}</p>
                 ` : `
                     <p style="font-size: 0.9rem; color: var(--gray-dark);">No shipping address on file</p>
@@ -2542,20 +2594,17 @@
         }
         
         if (discountSection) {
-            if (data.status === 'delivered' && data.type === 'return') {
-                discountSection.classList.remove('hidden');
-                
-                // Populate WhatsApp phone with customer's phone
-                const whatsappPhoneInput = document.getElementById('whatsappPhone');
-                if (whatsappPhoneInput && data.customerPhone) {
-                    whatsappPhoneInput.value = data.customerPhone;
-                }
-                
-                // Set up real-time preview
-                setupWhatsAppPreview();
-            } else {
-                discountSection.classList.add('hidden');
+            // Show discount code section for all statuses
+            discountSection.classList.remove('hidden');
+            
+            // Populate WhatsApp phone with customer's phone
+            const whatsappPhoneInput = document.getElementById('whatsappPhone');
+            if (whatsappPhoneInput && data.customerPhone) {
+                whatsappPhoneInput.value = data.customerPhone;
             }
+            
+            // Set up real-time preview
+            setupWhatsAppPreview();
         }
     }
 
