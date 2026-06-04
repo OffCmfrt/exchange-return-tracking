@@ -2172,6 +2172,28 @@
                 ${data.paymentId ? `<p style="font-size: 0.9rem; margin-top: 0.5rem; color: #166534;"><strong>Payment ID:</strong> ${data.paymentId} (₹${data.paymentAmount})</p>` : ''}
             </div>
 
+            <!-- Shipping / Exchange Address Section -->
+            <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; border-left: 4px solid ${data.type === 'exchange' ? '#f59e0b' : '#3b82f6'};">
+                <p style="font-weight: 500; margin-bottom: 0.5rem;">${data.type === 'exchange' ? 'Exchange Delivery Address' : 'Shipping Address'}</p>
+                ${data.newAddress || data.newCity || data.newState || data.newPincode ? `
+                    <p style="font-size: 0.85rem; color: #059669; font-weight: 600; margin-bottom: 0.25rem;">✏️ Modified Address</p>
+                    <p style="font-size: 0.9rem;"><strong>Name:</strong> ${data.customerName || 'N/A'}</p>
+                    <p style="font-size: 0.9rem;"><strong>Address:</strong> ${data.newAddress || 'N/A'}</p>
+                    <p style="font-size: 0.9rem;"><strong>City:</strong> ${data.newCity || 'N/A'}, <strong>State:</strong> ${data.newState || 'N/A'} — <strong>Pincode:</strong> ${data.newPincode || 'N/A'}</p>
+                    <p style="font-size: 0.9rem;"><strong>Phone:</strong> ${data.customerPhone || 'N/A'}</p>
+                    ${data.shippingAddress ? `<details style="margin-top: 0.5rem;"><summary style="font-size: 0.8rem; color: var(--gray-dark); cursor: pointer;">View original address</summary>
+                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.25rem; padding: 0.5rem; background: #f3f4f6; border-radius: 4px;">${data.shippingAddress}${data.shippingCity ? ', ' + data.shippingCity : ''}${data.shippingState ? ', ' + data.shippingState : ''} — ${data.shippingPincode || ''}</p>
+                    </details>` : ''}
+                ` : data.shippingAddress ? `
+                    <p style="font-size: 0.9rem;"><strong>Name:</strong> ${data.customerName || 'N/A'}</p>
+                    <p style="font-size: 0.9rem;"><strong>Address:</strong> ${data.shippingAddress}</p>
+                    <p style="font-size: 0.9rem;"><strong>City:</strong> ${data.shippingCity || 'N/A'}, <strong>State:</strong> ${data.shippingState || 'N/A'} — <strong>Pincode:</strong> ${data.shippingPincode || 'N/A'}</p>
+                    <p style="font-size: 0.9rem;"><strong>Phone:</strong> ${data.customerPhone || 'N/A'}</p>
+                ` : `
+                    <p style="font-size: 0.9rem; color: var(--gray-dark);">No shipping address on file</p>
+                `}
+            </div>
+
             ${data.type === 'exchange' && !['shipped', 'delivered', 'resolved'].includes(data.status) ? `
             <button onclick="openModifyModal()" class="btn btn-warning" style="margin-top: 1rem; width: 100%; padding: 0.875rem; font-weight: 600; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3); transition: all 0.3s ease;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -1707,21 +1707,29 @@ async function createShiprocketForwardOrder(requestData) {
         let billingAddress = requestData.newAddress;
         let billingCity = requestData.newCity;
         let billingPincode = requestData.newPincode;
-        let billingState = '';
+        let billingState = requestData.newState;
 
-        if (!billingAddress) {
-            if (shopifyOrder && shopifyOrder.shipping_address) {
+        // If any modified address field is missing, fall back to original shipping address
+        if (!billingAddress || !billingState || !billingCity || !billingPincode) {
+            if (requestData.shippingAddress && (!billingAddress || !billingCity)) {
+                // Use stored original address components first
+                billingAddress = billingAddress || requestData.shippingAddress;
+                billingCity = billingCity || requestData.shippingCity || '';
+                billingState = billingState || requestData.shippingState || '';
+                billingPincode = billingPincode || requestData.shippingPincode || '';
+            }
+            if (!billingAddress && shopifyOrder && shopifyOrder.shipping_address) {
                 billingAddress = shopifyOrder.shipping_address.address1;
-                billingCity = shopifyOrder.shipping_address.city;
-                billingPincode = shopifyOrder.shipping_address.zip;
-                billingState = shopifyOrder.shipping_address.province;
-            } else if (requestData.shippingAddress) {
+                billingCity = billingCity || shopifyOrder.shipping_address.city;
+                billingPincode = billingPincode || shopifyOrder.shipping_address.zip;
+                billingState = billingState || shopifyOrder.shipping_address.province;
+            } else if (!billingAddress && requestData.shippingAddress) {
                 // FALLBACK: Parse from concatenated string: "Addr1, Addr2, City, State, Pincode, Country"
                 const parts = requestData.shippingAddress.split(',').map(p => p.trim());
                 billingAddress = parts.slice(0, -4).join(', ') || parts[0];
-                billingCity = parts[parts.length - 4] || '';
-                billingState = parts[parts.length - 3] || '';
-                billingPincode = parts[parts.length - 2] || '';
+                billingCity = billingCity || parts[parts.length - 4] || '';
+                billingState = billingState || parts[parts.length - 3] || '';
+                billingPincode = billingPincode || parts[parts.length - 2] || '';
 
                 // Last ditch: regex for pincode if not found
                 if (!billingPincode.match(/^\d{6}$/)) {
@@ -1730,6 +1738,10 @@ async function createShiprocketForwardOrder(requestData) {
                 }
             }
         }
+        // Final fallback: ensure no field is undefined
+        billingState = billingState || '';
+        billingCity = billingCity || '';
+        billingPincode = billingPincode || '';
 
         // 3. Determine Customer Details
         let customerName = requestData.customerName;
@@ -2262,15 +2274,15 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         console.log(`   City: ${warehouseLocation.city}, ${warehouseLocation.state} ${warehouseLocation.pin_code || warehouseLocation.pincode}`);
         console.log(`   Phone: ${warehouseLocation.phone}`);
 
-        // Customer details (TO customer) - use new_* fields for exchange address
+        // Customer details (TO customer) - use new_* fields for exchange address, fall back to original
         let customerName = requestData.newName || requestData.customerName || 'Customer';
-        let customerAddress = requestData.newAddress || '';
-        let customerCity = requestData.newCity || '';
-        let customerState = requestData.newState || '';
-        let customerPincode = requestData.newPincode || '';
+        let customerAddress = requestData.newAddress || requestData.shippingAddress || '';
+        let customerCity = requestData.newCity || requestData.shippingCity || '';
+        let customerState = requestData.newState || requestData.shippingState || '';
+        let customerPincode = requestData.newPincode || requestData.shippingPincode || '';
         let customerPhone = requestData.customerPhone || requestData.newPhone || '9999999999';
 
-        // If we don't have exchange address in requestData, try to get from Shopify
+        // If we still don't have address, try to get from Shopify order
         if (!customerAddress && shopifyOrder) {
             const address = shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address);
             if (address) {
@@ -2640,6 +2652,7 @@ async function createShopifyExchangeOrder(requestData) {
             shippingAddress = {
                 address1: requestData.newAddress,
                 city: requestData.newCity,
+                province: requestData.newState,
                 zip: requestData.newPincode,
                 country: 'India',
                 first_name: requestData.customerName?.split(' ')[0] || originalOrder.customer?.first_name || 'Customer',
@@ -5524,13 +5537,14 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
         }
 
         // ── Insert into DB ────────────────────────────────────────────────────
-        const destination = order.fulfillments && order.fulfillments[0] && order.fulfillments[0].destination;
-        const shippingAddress = destination
-            ? `${destination.address1 || ''}, ${destination.city || ''} - ${destination.zip || ''}`
+        // Use shipping_address (primary) or fulfillment destination (fallback)
+        const addr = order.shipping_address || (order.fulfillments && order.fulfillments[0] && order.fulfillments[0].destination);
+        const shippingAddress = addr
+            ? [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country].filter(Boolean).join(', ')
             : '';
-        const shippingCity = destination ? destination.city || '' : '';
-        const shippingState = destination ? destination.province || '' : '';
-        const shippingPincode = destination ? destination.zip || '' : '';
+        const shippingCity = addr ? (addr.city || '') : '';
+        const shippingState = addr ? (addr.province || '') : '';
+        const shippingPincode = addr ? (addr.zip || '') : '';
 
         await createRequest({
             requestId,
