@@ -866,6 +866,9 @@ module.exports = {
     updateProductRequest,
     getProductRequestById,
     
+    // Utility
+    convertFromSnakeCase,
+    
     // Messaging Helpers
     createMessage,
     getAdminMessages,
