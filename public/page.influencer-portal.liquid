@@ -1170,6 +1170,7 @@ async function initPortal() {
 
     // Store data temporarily 
     const inf = authData.influencer;
+    _cachedInfluencerName = inf.name || null;
     document.getElementById('ipName').textContent = inf.name.toUpperCase();
     document.getElementById('ipCodeBadge').textContent = `CODE: ${inf.referralCode}`;
     document.getElementById('ipAuthWelcome').textContent = `Welcome, ${inf.name.split(' ')[0]}`;
@@ -1206,6 +1207,7 @@ async function initPortal() {
 
 async function handleLogin() {
   const phone = document.getElementById('ipPhone').value.trim();
+  _cachedInfluencerPhone = phone;
   const btn = document.getElementById('ipLoginBtn');
   const errEl = document.getElementById('ipAuthErr');
 
@@ -2055,6 +2057,75 @@ function openProductRequestModalWithProduct(productTitle, imageUrl, variants) {
   `;
   
   document.body.appendChild(modal);
+  
+  // Auto-fill shipping address from saved profile
+  autoFillProductRequestAddress();
+}
+
+async function autoFillProductRequestAddress() {
+  let addr = _cachedAddressData;
+  if (!addr) {
+    try {
+      const res = await fetch(`${PORTAL_API}/shipping-address/${token}`);
+      const data = await res.json();
+      if (data.success && data.shippingAddress) {
+        addr = data.shippingAddress;
+        _cachedAddressData = addr;
+      }
+    } catch (e) { console.error('Failed to fetch address for auto-fill:', e); return; }
+  }
+  if (!addr) return;
+  
+  // Check if we have any address data to fill
+  const hasAddress = addr.shipping_address || addr.shipping_city || addr.shipping_state || addr.shipping_pin;
+  if (!hasAddress) return;
+  
+  const nameEl = document.getElementById('prFullName');
+  const addr1El = document.getElementById('prAddress1');
+  const addr2El = document.getElementById('prAddress2');
+  const cityEl = document.getElementById('prCity');
+  const stateEl = document.getElementById('prState');
+  const pinEl = document.getElementById('prPincode');
+  const phoneEl = document.getElementById('prPhone');
+  
+  // Fill name from cached influencer profile
+  if (nameEl && _cachedInfluencerName) nameEl.value = _cachedInfluencerName;
+  
+  // Fill phone from cached login phone
+  if (phoneEl && _cachedInfluencerPhone) phoneEl.value = _cachedInfluencerPhone;
+  
+  if (addr1El && addr.shipping_address) addr1El.value = addr.shipping_address;
+  if (addr2El && addr.shipping_landmark) addr2El.value = addr.shipping_landmark;
+  if (cityEl && addr.shipping_city) cityEl.value = addr.shipping_city;
+  if (stateEl && addr.shipping_state) stateEl.value = addr.shipping_state;
+  if (pinEl && addr.shipping_pin) pinEl.value = addr.shipping_pin;
+  
+  // Parse city/state/pincode from address string if fields are still empty
+  const addr1 = addr.shipping_address || '';
+  let city = addr.shipping_city || '';
+  let state = addr.shipping_state || '';
+  let pincode = addr.shipping_pin || '';
+  
+  if (addr1 && (!city || !state || !pincode)) {
+    const parts = addr1.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 3) {
+      const pinIdx = parts.findIndex(p => /^\d{6}$/.test(p));
+      if (pinIdx > 0) {
+        if (!pincode) pincode = parts[pinIdx];
+        if (!state && pinIdx >= 2) state = parts[pinIdx - 1];
+        if (!city && pinIdx >= 3) city = parts[pinIdx - 2];
+      } else {
+        const last = parts[parts.length - 1];
+        const isCountry = /^(india|IN)$/i.test(last);
+        const endIdx = isCountry ? parts.length - 2 : parts.length - 1;
+        if (!state && endIdx >= 1) state = parts[endIdx];
+        if (!city && endIdx >= 2) city = parts[endIdx - 1];
+      }
+    }
+    if (cityEl && city) cityEl.value = city;
+    if (stateEl && state) stateEl.value = state;
+    if (pinEl && pincode) pinEl.value = pincode;
+  }
 }
 
 // Helper: Get month name
@@ -2077,6 +2148,8 @@ setTab = function(tab) {
 // ==================== SHIPPING ADDRESS SETTINGS ====================
 
 let _cachedAddressData = null;
+let _cachedInfluencerName = null;
+let _cachedInfluencerPhone = null;
 
 async function loadShippingAddress() {
   const display = document.getElementById('ipAddressDisplay');

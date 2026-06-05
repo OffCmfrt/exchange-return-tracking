@@ -2283,11 +2283,12 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         console.log(`   Phone: ${warehouseLocation.phone}`);
 
         // Customer details (TO customer) - use new_* fields for exchange address, fall back to original
+        // Note: Influencer flows pass customerAddress/customerCity/etc, exchange flows use shippingAddress/newAddress
         let customerName = requestData.newName || requestData.customerName || 'Customer';
-        let customerAddress = requestData.newAddress || requestData.shippingAddress || '';
-        let customerCity = requestData.newCity || requestData.shippingCity || '';
-        let customerState = requestData.newState || requestData.shippingState || '';
-        let customerPincode = requestData.newPincode || requestData.shippingPincode || '';
+        let customerAddress = requestData.newAddress || requestData.shippingAddress || requestData.customerAddress || '';
+        let customerCity = requestData.newCity || requestData.shippingCity || requestData.customerCity || '';
+        let customerState = requestData.newState || requestData.shippingState || requestData.customerState || '';
+        let customerPincode = requestData.newPincode || requestData.shippingPincode || requestData.customerPincode || '';
         let customerPhone = requestData.customerPhone || requestData.newPhone || '9999999999';
 
         // Parser: extract city/state/pincode from combined address string if missing
@@ -2325,6 +2326,48 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
                 customerPhone = customerPhone || address.phone || shopifyOrder?.phone || '9999999999';
                 console.log(`[Shopify Fallback] Filled from Shopify: city=${customerCity}, state=${customerState}, pin=${customerPincode}`);
             }
+        }
+
+        // Deep fallback: if address is STILL empty, try to fetch Shopify order using order_number from DB
+        if (!customerAddress) {
+            const orderNum = requestData.orderNumber || requestData.order_number;
+            if (orderNum && !shopifyOrder) {
+                console.log(`[Address Recovery] Address empty, attempting Shopify fetch for order: ${orderNum}`);
+                try {
+                    let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNum)}&status=any&limit=1`);
+                    if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                        const altName = orderNum.startsWith('#') ? orderNum.substring(1) : `#${orderNum}`;
+                        shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                    }
+                    const fetchedOrder = shopifyData.orders && shopifyData.orders[0];
+                    if (fetchedOrder) {
+                        const addr = fetchedOrder.shipping_address || (fetchedOrder.customer && fetchedOrder.customer.default_address);
+                        if (addr) {
+                            customerName = `${addr.first_name || ''} ${addr.last_name || ''}`.trim() || customerName;
+                            customerAddress = ((addr.address1 || '') + ' ' + (addr.address2 || '')).trim().substring(0, 190);
+                            customerCity = customerCity || addr.city || '';
+                            customerState = customerState || addr.province || '';
+                            customerPincode = customerPincode || addr.zip || '';
+                            customerPhone = (customerPhone && customerPhone !== '9999999999') ? customerPhone : (addr.phone || fetchedOrder.phone || '9999999999');
+                            console.log(`[Address Recovery] ✅ Recovered from Shopify: ${customerAddress}, ${customerCity}, ${customerState} ${customerPincode}`);
+                        }
+                    } else {
+                        console.warn(`[Address Recovery] ⚠️ Order ${orderNum} not found in Shopify`);
+                    }
+                } catch (shopifyErr) {
+                    console.error(`[Address Recovery] ❌ Shopify fetch failed:`, shopifyErr.message);
+                }
+            }
+        }
+
+        // Final validation: ensure address is not empty before sending to Delhivery
+        if (!customerAddress) {
+            console.error(`[${requestData.requestId}] ❌ Customer address is EMPTY after all resolution attempts`);
+            console.error(`   requestData keys: ${Object.keys(requestData).join(', ')}`);
+            console.error(`   orderNumber: ${requestData.orderNumber || requestData.order_number || 'N/A'}`);
+            console.error(`   newAddress: ${requestData.newAddress || 'N/A'}`);
+            console.error(`   shippingAddress: ${requestData.shippingAddress || 'N/A'}`);
+            return null;
         }
 
         // Validate phone number
