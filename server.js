@@ -2361,7 +2361,8 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         let totalQuantity = 0;
         let totalAmount = 0;
         let productsDesc = [];
-        for (const item of items) {
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
             const isDifferentProduct = item.replacementProductId && item.replacementProductId !== item.productId;
             const title = item.replacementProductTitle || item.name;
             const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
@@ -2376,13 +2377,20 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
             totalQuantity += quantity;
             totalAmount += (price * quantity);
             productsDesc.push(productName);
+
+            // Generate unique SKU - use product ID first, fallback to sanitized product name
+            // This prevents Delhivery from merging different products with the same SKU
+            const rawSku = item.replacementVariantId || item.variantId || item.id || '';
+            const sku = rawSku
+                ? String(rawSku) + '-EXCH'
+                : productName.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').substring(0, 30).toUpperCase() + '-EXCH';
             
             products.push({
                 name: sanitizeAddress(productName),
                 quantity: quantity,
                 price: price,
                 selling_price: price,
-                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH',
+                sku: sku,
                 hsn_code: '9965'  // Default HSN for apparel/general goods
             });
         }
@@ -2402,8 +2410,7 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         console.log(`🔢 Seller GST: ${sellerGstTin}`);
 
         // Build payload for Delhivery CMU API - FORWARD direction
-        // pickup_location = warehouse (where we're sending FROM)
-        // customer = shipping address (where we're sending TO)
+        // Single shipment with all products listed individually
         const payload = {
             shipments: [{
                 order: forwardOrderId,
@@ -2414,20 +2421,20 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
                 state: sanitizeAddress(customerState),
                 country: "India",
                 phone: customerPhone,
-                payment_mode: "Prepaid",  // Forward shipment is prepaid
+                payment_mode: "Prepaid",
                 cod_amount: 0,
                 order_date: new Date().toISOString().split('T')[0],
-                total_amount: totalAmount,  // Total order value (shows in dashboard)
-                quantity: totalQuantity,    // Total quantity (shows in dashboard)
-                weight: pkgWeight,          // Weight in grams (shows in dashboard)
+                total_amount: totalAmount,
+                quantity: totalQuantity,
+                weight: pkgWeight,
                 shipment_width: pkgWidth,
                 shipment_height: pkgHeight,
                 shipment_length: pkgLength,
-                products_desc: productsDesc.join(', '),  // Product description on label
+                products_desc: productsDesc.join(', '),
                 hsn_code: '9965',
                 pickup_location: pickupLocationNickname,
-                seller_gst_tin: sellerGstTin,  // Mandatory for GST compliance
-                products: products  // Detailed product list
+                seller_gst_tin: sellerGstTin,
+                products: products
             }],
             pickup_location: {
                 name: pickupLocationNickname,
@@ -2460,19 +2467,24 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
             return null;
         }
 
-        // Extract waybill and shipment details
-        const waybill = data.packages?.[0]?.waybill;
-        const shipmentId = data.packages?.[0]?.shipment_id || forwardOrderId;
-
-        if (waybill) {
+        // Extract waybill(s) and shipment details - support multiple packages for multi-product orders
+        const packages = data.packages || [];
+        const waybills = packages.map(pkg => pkg.waybill).filter(Boolean);
+        const shipmentIds = packages.map(pkg => pkg.shipment_id || forwardOrderId);
+        
+        if (waybills.length > 0) {
             console.log(`✅ Delhivery Forward Success!`);
-            console.log(`   Waybill: ${waybill}`);
-            console.log(`   Order ID: ${forwardOrderId}`);
-            
+            waybills.forEach((wb, i) => {
+                console.log(`   Package ${i + 1} - Waybill: ${wb}, Order: ${packages[i]?.refnum || forwardOrderId}`);
+            });
+                    
             return {
-                waybill,
-                shipment_id: shipmentId,
-                order_id: forwardOrderId
+                waybill: waybills[0],  // Primary waybill (first package)
+                waybills: waybills,    // All waybills for multi-product orders
+                shipment_id: shipmentIds[0],
+                shipment_ids: shipmentIds,
+                order_id: forwardOrderId,
+                package_count: packages.length
             };
         } else {
             console.error('❌ Delhivery did not return waybill');
@@ -7782,6 +7794,9 @@ app.post('/api/influencer-admin/shipments', authenticateAdmin, async (req, res) 
         
                 if (delhiveryResult && delhiveryResult.waybill) {
                     console.log(`[Shipment ${shipment.id}] \u2705 Delhivery AWB: ${delhiveryResult.waybill}`);
+                    if (delhiveryResult.waybills && delhiveryResult.waybills.length > 1) {
+                        console.log(`[Shipment ${shipment.id}] \ud83d\udce6 Multi-product: ${delhiveryResult.waybills.length} packages - AWBs: ${delhiveryResult.waybills.join(', ')}`);
+                    }
         
                     const { updateShipment } = require('./config/db-helpers');
                     await updateShipment(shipment.id, {
