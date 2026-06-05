@@ -3293,13 +3293,13 @@ function renderMessages(messages) {
 
 // Open new message modal
 async function openNewMessageModal() {
-  document.getElementById('newMessageModal').classList.add('active');
+  openModal('newMessageModalOverlay');
   await loadInfluencerDropdown();
 }
 
 // Close new message modal
 function closeNewMessageModal() {
-  document.getElementById('newMessageModal').classList.remove('active');
+  closeModal('newMessageModalOverlay');
   document.getElementById('messageSubject').value = '';
   document.getElementById('messageContent').value = '';
 }
