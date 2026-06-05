@@ -371,7 +371,6 @@ html, body {
 }
 .ia-table-wrap {
  border: 1px solid var(--border);
- overflow-x: auto;
  overflow-y: visible;
  -webkit-overflow-scrolling: touch;
  position: relative;
@@ -392,7 +391,7 @@ html, body {
 }
 .ia-table {
  width: 100%;
- min-width: 980px;
+ table-layout: fixed;
  border-collapse: collapse;
 }
 .ia-table thead tr {
@@ -1293,7 +1292,7 @@ html, body {
  padding: 1.25rem 1.5rem;
  }
  .ia-table {
- min-width: 900px;
+ table-layout: fixed;
  }
  .ia-table th, .ia-table td {
  padding: 0.75rem 0.6rem;
@@ -1306,9 +1305,9 @@ html, body {
  font-size: 1.8rem;
  }
  
- /* Ensure table can scroll horizontally */
+ /* Table fits within container */
  .ia-table-wrap {
- overflow-x: auto;
+ overflow-x: hidden;
  -webkit-overflow-scrolling: touch;
  }
  
@@ -1356,7 +1355,7 @@ html, body {
  padding: 1.25rem 1rem;
  }
  .ia-table {
- min-width: 750px;
+ table-layout: fixed;
  }
  .ia-table th, .ia-table td {
  padding: 0.7rem 0.55rem;
@@ -1370,26 +1369,16 @@ html, body {
  font-size: 0.55rem;
  }
  
- /* Subtle scroll hint */
+ /* Table fits within container */
  .ia-table-wrap::after {
- content: '→ Scroll for more';
+ content: '';
  position: absolute;
  right: 0;
- top: 50%;
- transform: translateY(-50%);
- background: linear-gradient(to left, var(--bg) 20%, transparent);
- padding: 0.5rem 1rem 0.5rem 2rem;
- font-size: 0.65rem;
- color: var(--muted);
- letter-spacing: 0.1em;
- text-transform: uppercase;
+ top: 0;
+ bottom: 0;
+ width: 30px;
+ background: linear-gradient(to left, var(--bg), transparent);
  pointer-events: none;
- animation: scrollHint 2s ease-in-out infinite;
- }
- 
- @keyframes scrollHint {
- 0%, 100% { opacity: 0.5; }
- 50% { opacity: 1; }
  }
 }
 /* Mobile / Tablet (≤900px) */
@@ -1451,7 +1440,7 @@ html, body {
  }
  
  .ia-table {
- min-width: 100%;
+ width: 100%;
  }
  
  /* Hide table header on mobile */
@@ -1538,18 +1527,18 @@ html, body {
  
  /* Ensure no horizontal overflow at page level */
  .ia-wrap, .ia-layout, .ia-main {
- overflow-x: auto;
+ overflow-x: visible;
  }
  
  /* Premium responsive table - card layout on mobile */
  .ia-table-wrap {
- overflow-x: auto;
+ overflow-x: visible;
  border: none;
  }
  
  /* Card layout for table rows */
  .ia-table {
- min-width: 100%;
+ width: 100%;
  }
  
  .ia-table thead {
@@ -2533,7 +2522,6 @@ html, body {
    <button class="ia-sort-btn" data-sort="date-desc" onclick="setSort('date-desc', this)">Newest First</button>
    <button class="ia-sort-btn" data-sort="date-asc" onclick="setSort('date-asc', this)">Oldest First</button>
    <button class="ia-sort-btn" data-sort="commission-desc" onclick="setSort('commission-desc', this)">Commission <span class="ia-sort-arrow">↓</span></button>
-   <button class="ia-sort-btn" data-sort="followers-desc" onclick="setSort('followers-desc', this)">Followers <span class="ia-sort-arrow">↓</span></button>
    <button class="ia-sort-btn" data-sort="status" onclick="setSort('status', this)">Status</button>
  </div>
 </div>
@@ -2639,11 +2627,8 @@ html, body {
  </th>
  <th>Name</th>
  <th>Status</th>
- <th>Tier</th>
- <th>Followers</th>
  <th>Phone</th>
  <th>Referral Code</th>
- <th>Content/Wk</th>
  <th>Products</th>
  <th>Orders</th>
  <th>Created</th>

@@ -240,9 +240,6 @@ function applySorting(list) {
    case 'commission':
      sorted.sort((a, b) => asc * ((a.commission_rate || a.discount_value || 0) - (b.commission_rate || b.discount_value || 0)));
      break;
-   case 'followers':
-     sorted.sort((a, b) => asc * ((Number(a.follower_count) || 0) - (Number(b.follower_count) || 0)));
-     break;
    case 'status':
      const order = { active: 0, pending: 1, suspended: 2, rejected: 3 };
      sorted.sort((a, b) => {
@@ -324,7 +321,7 @@ function statusPill(inf) {
 function renderTable(list) {
  const tbody = document.getElementById('iaTableBody');
  if (list.length === 0) {
- tbody.innerHTML = `<tr><td colspan="13"><div class="ia-empty"><h3>No Ambassadors${iaStatusFilter !== 'all' ? ' in this view' : ' Yet'}</h3><p>${iaStatusFilter !== 'all' ? 'Try a different filter.' : 'Click "Add Ambassador" or share the apply link to get started.'}</p></div></td></tr>`;
+ tbody.innerHTML = `<tr><td colspan="10"><div class="ia-empty"><h3>No Ambassadors${iaStatusFilter !== 'all' ? ' in this view' : ' Yet'}</h3><p>${iaStatusFilter !== 'all' ? 'Try a different filter.' : 'Click "Add Ambassador" or share the apply link to get started.'}</p></div></td></tr>`;
  return;
  }
  tbody.innerHTML = list.map(inf => {
@@ -334,11 +331,6 @@ function renderTable(list) {
  const usageLimit = inf.usage_limit !== null && inf.usage_limit !== undefined ? inf.usage_limit : 'Unlimited';
  const status = inf.status || (inf.is_active ? 'active' : 'suspended');
  const isSelected = selectedInfluencers.has(inf.id);
- const tierColors = { 'Rising Star': '#3b82f6', 'Growing Creator': '#22c55e', 'Established Influencer': '#a855f7', 'Top Tier Creator': '#f59e0b' };
- const tierColor = tierColors[inf.follower_tier] || '#6366f1';
- const tierBadge = inf.follower_tier ? `<span class="ia-dt-badge" style="background:${tierColor}20;color:${tierColor};padding:.15rem .4rem;font-size:.6rem;">${inf.follower_tier}</span>` : '-';
- const followerCount = inf.follower_count ? Number(inf.follower_count).toLocaleString() : '-';
- const contentWeekly = inf.content_weekly_count || '-';
  const selectedProds = inf.selected_products ? (typeof inf.selected_products === 'string' ? JSON.parse(inf.selected_products) : inf.selected_products) : [];
  const productsCount = selectedProds.length || '-';
  let actions;
@@ -359,11 +351,8 @@ function renderTable(list) {
  </td>
  <td class="td-name" data-label="Name">${esc(inf.name)}</td>
  <td data-label="Status">${statusPill(inf)}</td>
- <td data-label="Tier">${tierBadge}</td>
- <td data-label="Followers" style="font-size:0.8rem;">${followerCount}</td>
  <td class="td-phone" style="font-size:0.75rem;color:var(--muted);" data-label="Phone">${esc(inf.phone || '—')}</td>
  <td data-label="Code"><span class="td-code" style="${!inf.shopify_price_rule_id ? 'border-color:var(--danger);color:var(--danger);' : ''}">${esc(inf.referral_code)}${!inf.shopify_price_rule_id ? ' <span title="Shopify discount code not synced">⚠️</span>' : ''}</span></td>
- <td data-label="Content/Wk" style="font-size:0.8rem;">${contentWeekly}</td>
  <td data-label="Products" style="font-size:0.8rem;">${productsCount}</td>
  <td class="td-orders" style="font-weight: 600; color: ${inf.usage_count > 0 ? 'var(--success)' : 'var(--muted)'};" data-label="Orders">${inf.usage_count !== undefined && inf.usage_count !== null ? inf.usage_count : '—'}</td>
  <td class="td-date" data-label="Created">${created}</td>
