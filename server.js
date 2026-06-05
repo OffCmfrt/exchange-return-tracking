@@ -7793,6 +7793,19 @@ app.post('/api/influencer-admin/shipments', authenticateAdmin, async (req, res) 
                     shipment.tracking_awb = delhiveryResult.waybill;
                     shipment.carrier = 'delhivery';
                     shipment.delhivery_shipment_id = delhiveryResult.shipment_id;
+
+                    // Save shipping address back to influencer DB for future auto-fill
+                    if (!influencer.shipping_address || influencer.shipping_address !== shipAddress1) {
+                        const { updateInfluencer } = require('./config/db-helpers');
+                        await updateInfluencer(influencerId, {
+                            shippingAddress: shipAddress1,
+                            shippingCity: shipCity,
+                            shippingState: shipState,
+                            shippingPin: shipPincode,
+                            shippingLandmark: shipAddress2 || null
+                        }).catch(err => console.warn(`[Shipment ${shipment.id}] Could not save address to influencer:`, err.message));
+                        console.log(`[Shipment ${shipment.id}] \ud83d\udcbe Saved shipping address to influencer DB`);
+                    }
                 }
             } catch (delhiveryError) {
                 console.error(`[Shipment ${shipment.id}] \u274c Delhivery booking failed:`, delhiveryError.message);

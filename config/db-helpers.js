@@ -932,6 +932,9 @@ async function updateShipment(shipmentId, updates) {
     if (updates.reelUrl !== undefined) updateData.reel_url = updates.reelUrl;
     if (updates.reelReceivedAt !== undefined) updateData.reel_received_at = updates.reelReceivedAt;
     if (updates.notes !== undefined) updateData.notes = updates.notes;
+    if (updates.tracking_awb !== undefined) updateData.tracking_awb = updates.tracking_awb;
+    if (updates.carrier !== undefined) updateData.carrier = updates.carrier;
+    if (updates.delhivery_shipment_id !== undefined) updateData.delhivery_shipment_id = updates.delhivery_shipment_id;
     if (updates.reelStatus === 'received' && !updates.reelReceivedAt) {
         updateData.reel_received_at = new Date().toISOString();
     }
