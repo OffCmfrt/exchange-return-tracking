@@ -4655,14 +4655,17 @@ app.get('/api/admin/requests', authenticateAdmin, async (req, res) => {
     try {
         const { status, type, date, search, page, limit, carrier } = req.query;
 
-        const result = await getAllRequests({ status, type, date, search, page, limit, carrier });
-        
-        // Get stats for analytics dashboard
-        const stats = await getRequestStats();
+        // Run in parallel to reduce latency and avoid timeouts
+        const [result, stats] = await Promise.all([
+            getAllRequests({ status, type, date, search, page, limit, carrier }),
+            getRequestStats()
+        ]);
 
+        if (res.headersSent) return;
         res.json({ requests: result.data, pagination: result.pagination, stats });
     } catch (error) {
         console.error('Get requests error:', error);
+        if (res.headersSent) return;
         res.status(500).json({ error: 'Failed to fetch requests' });
     }
 });
