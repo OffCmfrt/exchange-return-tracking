@@ -4,6 +4,8 @@ const API = 'https://exchange-return-tracking.onrender.com/api/influencer-admin'
 let authToken = null; // JWT stored in memory only (not localStorage)
 let influencersData = [];
 let selectedInfluencers = new Set();
+let selectedProductRequests = new Set();
+let productRequestsData = [];
 let searchFilters = {
  name: '',
  code: '',
@@ -2372,21 +2374,29 @@ async function loadProductRequests() {
  const data = await res.json();
  
  if (data.success) {
+ productRequestsData = data.requests;
  const tbody = document.getElementById('srRequestsTableBody');
  if (data.requests.length === 0) {
- tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 3rem; color: var(--muted);">No requests found</td></tr>';
+ tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 3rem; color: var(--muted);">No requests found</td></tr>';
+ updatePrBulkBar();
  return;
  }
  
  tbody.innerHTML = data.requests.map(r => {
  const statusBadge = getStatusBadge(r.status);
- const actions = r.status === 'pending' ? `
+ const isPending = r.status === 'pending';
+ const checked = selectedProductRequests.has(r.id) ? 'checked' : '';
+ const checkbox = isPending
+ ? `<input type="checkbox" class="pr-row-checkbox" value="${r.id}" ${checked} onchange="toggleProductRequest('${r.id}', this)" style="cursor: pointer;">`
+ : '';
+ const actions = isPending ? `
  <button class="ia-btn ia-btn-primary" onclick="approveProductRequest('${r.id}')" style="padding: 0.3rem 0.6rem; font-size: 0.65rem; margin-right: 0.3rem;">Approve</button>
  <button class="ia-btn" onclick="rejectProductRequest('${r.id}')" style="padding: 0.3rem 0.6rem; font-size: 0.65rem; color: var(--danger); border-color: var(--danger);">Reject</button>
- ` : '<span style="font-size: 0.7rem; color: var(--muted);">—</span>';
+ ` : '<span style="font-size: 0.7rem; color: var(--muted);">\u2014</span>';
  
  return `
  <tr>
+ <td style="text-align: center;">${checkbox}</td>
  <td>
  <div style="font-weight: 600;">${r.influencers?.name || 'Unknown'}</div>
  <div style="font-size: 0.7rem; color: var(--muted);">${r.influencers?.referral_code || ''}</div>
@@ -2400,8 +2410,116 @@ async function loadProductRequests() {
  </tr>
  `;
  }).join('');
+ 
+ updatePrBulkBar();
  }
  } catch (e) { }
+}
+
+// Toggle single product request selection
+function toggleProductRequest(id, checkbox) {
+ if (checkbox.checked) {
+ selectedProductRequests.add(id);
+ } else {
+ selectedProductRequests.delete(id);
+ }
+ updatePrBulkBar();
+}
+
+// Toggle all visible pending product requests
+function toggleAllProductRequests(masterCheckbox) {
+ const pendingIds = productRequestsData.filter(r => r.status === 'pending').map(r => r.id);
+ if (masterCheckbox.checked) {
+ pendingIds.forEach(id => selectedProductRequests.add(id));
+ } else {
+ pendingIds.forEach(id => selectedProductRequests.delete(id));
+ }
+ document.querySelectorAll('.pr-row-checkbox').forEach(cb => {
+ cb.checked = masterCheckbox.checked;
+ });
+ updatePrBulkBar();
+}
+
+// Clear all product request selections
+function clearProductRequestSelection() {
+ selectedProductRequests.clear();
+ document.querySelectorAll('.pr-row-checkbox').forEach(cb => cb.checked = false);
+ const master = document.getElementById('prSelectAllCheckbox');
+ if (master) master.checked = false;
+ updatePrBulkBar();
+}
+
+// Update bulk action bar visibility and count
+function updatePrBulkBar() {
+ const bar = document.getElementById('prBulkActionBar');
+ const countEl = document.getElementById('prBulkCount');
+ if (!bar || !countEl) return;
+ const count = selectedProductRequests.size;
+ if (count > 0) {
+ bar.style.display = 'flex';
+ countEl.textContent = `${count} selected`;
+ // Group selected by influencer+address to show combined shipment info
+ const groups = {};
+ productRequestsData.filter(r => selectedProductRequests.has(r.id)).forEach(r => {
+ const addrKey = [r.shipping_full_name, r.shipping_address_line1, r.shipping_address_line2 || '', r.shipping_city, r.shipping_state, r.shipping_pincode, r.shipping_phone].join('|');
+ const gk = `${r.influencer_id}::${addrKey}`;
+ if (!groups[gk]) groups[gk] = { name: r.influencers?.name || 'Unknown', count: 0 };
+ groups[gk].count++;
+ });
+ const shipmentCount = Object.keys(groups).length;
+ countEl.textContent = `${count} selected \u2192 ${shipmentCount} shipment${shipmentCount !== 1 ? 's' : ''}`;
+ } else {
+ bar.style.display = 'none';
+ }
+}
+
+// Bulk approve selected product requests as combined shipments
+async function bulkApproveProductRequests() {
+ const selectedIds = Array.from(selectedProductRequests);
+ if (selectedIds.length === 0) {
+ showToast('No requests selected', true);
+ return;
+ }
+ 
+ // Build summary of how they'll be grouped
+ const groups = {};
+ productRequestsData.filter(r => selectedIds.includes(r.id)).forEach(r => {
+ const addrKey = [r.shipping_full_name, r.shipping_address_line1, r.shipping_address_line2 || '', r.shipping_city, r.shipping_state, r.shipping_pincode, r.shipping_phone].join('|');
+ const gk = `${r.influencer_id}::${addrKey}`;
+ if (!groups[gk]) groups[gk] = { name: r.influencers?.name || 'Unknown', products: [], city: r.shipping_city };
+ groups[gk].products.push(r.product_title);
+ });
+ 
+ const shipmentCount = Object.keys(groups).length;
+ const groupSummary = Object.values(groups).map(g => `${g.name} (${g.city}): ${g.products.length} product(s)`).join('\n');
+ 
+ if (!confirm(`Approve ${selectedIds.length} request(s) as ${shipmentCount} combined shipment(s)?\n\n${groupSummary}\n\nProducts going to the same address for the same ambassador will be shipped together to save cost.`)) return;
+ 
+ try {
+ const res = await fetch(`${API}/product-requests/bulk-approve`, {
+ method: 'POST',
+ headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+ body: JSON.stringify({ requestIds: selectedIds })
+ });
+ 
+ if (res.status === 401) { handleLogout(); return; }
+ 
+ const data = await res.json();
+ 
+ if (data.success) {
+ const { summary, results } = data;
+ clearProductRequestSelection();
+ await loadProductRequests();
+ 
+ let msg = `${summary.succeeded} request(s) approved in ${summary.shipmentsCreated} shipment(s)`;
+ if (summary.failed > 0) msg += ` (${summary.failed} failed)`;
+ showToast(msg, summary.failed > 0);
+ } else {
+ showToast(data.error || 'Bulk approval failed', true);
+ }
+ } catch (e) {
+ showToast('Network error', true);
+ }
 }
 // Approve product request
 async function approveProductRequest(requestId) {

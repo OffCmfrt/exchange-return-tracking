@@ -8667,6 +8667,132 @@ app.post('/api/influencer-admin/product-requests/:requestId/approve', authentica
     }
 });
 
+// Admin: Bulk approve product requests as combined shipments (same influencer + same address = single shipment)
+app.post('/api/influencer-admin/product-requests/bulk-approve', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestIds, adminNotes } = req.body;
+
+        if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
+            return res.status(400).json({ error: 'requestIds array is required' });
+        }
+
+        // Fetch all requests
+        const requests = [];
+        for (const id of requestIds) {
+            const req_ = await getProductRequestById(id);
+            if (!req_) {
+                return res.status(404).json({ error: `Product request ${id} not found` });
+            }
+            if (req_.status !== 'pending') {
+                return res.status(400).json({ error: `Request ${id} is not pending (status: ${req_.status})` });
+            }
+            requests.push(req_);
+        }
+
+        // Group by influencer_id + shipping address
+        const groups = {};
+        for (const r of requests) {
+            const addrKey = [
+                r.shipping_full_name,
+                r.shipping_address_line1,
+                r.shipping_address_line2 || '',
+                r.shipping_city,
+                r.shipping_state,
+                r.shipping_pincode,
+                r.shipping_phone
+            ].join('|');
+            const groupKey = `${r.influencer_id}::${addrKey}`;
+            if (!groups[groupKey]) groups[groupKey] = [];
+            groups[groupKey].push(r);
+        }
+
+        const results = { success: [], failed: [], shipments: [] };
+
+        for (const [groupKey, groupRequests] of Object.entries(groups)) {
+            const [influencerId] = groupKey.split('::');
+            const first = groupRequests[0];
+
+            try {
+                // Build combined items list from all requests in group
+                const items = groupRequests.map(r => ({
+                    name: r.product_title,
+                    quantity: 1,
+                    price: 0
+                }));
+
+                // Create single Delhivery shipment for all items
+                const combinedRequestId = groupRequests.map(r => r.id.substring(0, 6)).join('-');
+                const shipmentData = {
+                    requestId: `INF-${combinedRequestId}`,
+                    customerName: first.shipping_full_name,
+                    customerAddress: first.shipping_address_line1 + (first.shipping_address_line2 ? ' ' + first.shipping_address_line2 : ''),
+                    customerCity: first.shipping_city,
+                    customerState: first.shipping_state,
+                    customerPincode: first.shipping_pincode,
+                    customerPhone: first.shipping_phone,
+                    items: items
+                };
+
+                let delhiveryResult = null;
+                try {
+                    delhiveryResult = await createDelhiveryForwardOrder(shipmentData, null);
+                } catch (delhiveryError) {
+                    console.error('Delhivery booking failed for group:', delhiveryError);
+                }
+
+                // Update all requests in group with shared shipment info
+                const updates = {
+                    status: 'approved',
+                    approvedAt: new Date().toISOString(),
+                    adminNotes: adminNotes || `Bulk approved with ${groupRequests.length} product(s) in single shipment`
+                };
+
+                if (delhiveryResult) {
+                    updates.delhiveryAwb = delhiveryResult.waybill;
+                    updates.delhiveryShipmentId = delhiveryResult.shipment_id;
+                }
+
+                for (const r of groupRequests) {
+                    try {
+                        await updateProductRequest(r.id, updates);
+                        results.success.push(r.id);
+                    } catch (updateErr) {
+                        results.failed.push({ id: r.id, error: updateErr.message });
+                    }
+                }
+
+                results.shipments.push({
+                    groupKey,
+                    influencerId,
+                    requestCount: groupRequests.length,
+                    products: groupRequests.map(r => r.product_title),
+                    awb: delhiveryResult?.waybill || null,
+                    shipmentId: delhiveryResult?.shipment_id || null
+                });
+
+            } catch (groupErr) {
+                for (const r of groupRequests) {
+                    results.failed.push({ id: r.id, error: groupErr.message });
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            results,
+            summary: {
+                total: requestIds.length,
+                succeeded: results.success.length,
+                failed: results.failed.length,
+                shipmentsCreated: results.shipments.length
+            }
+        });
+    } catch (error) {
+        console.error('Bulk approve product requests error:', error);
+        res.status(500).json({ error: 'Failed to bulk approve product requests' });
+    }
+});
+
 // Admin: Reject product request
 app.post('/api/influencer-admin/product-requests/:requestId/reject', authenticateAdmin, async (req, res) => {
     try {

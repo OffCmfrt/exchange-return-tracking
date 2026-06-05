@@ -2783,7 +2783,12 @@ html, body {
 <div id="sr-tab-product-requests" class="sr-tab-content" style="display: none;">
  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
  <span style="font-size: 0.75rem; color: var(--muted);">Review and approve ambassador product requests</span>
- <div style="display: flex; gap: 0.5rem;">
+ <div style="display: flex; gap: 0.5rem; align-items: center;">
+ <div id="prBulkActionBar" style="display: none; align-items: center; gap: 0.5rem; margin-right: 0.75rem;">
+ <span id="prBulkCount" style="font-size: 0.7rem; color: #4facfe; font-weight: 600;">0 selected</span>
+ <button class="ia-btn ia-btn-primary" onclick="bulkApproveProductRequests()" style="padding: 0.35rem 0.75rem; font-size: 0.65rem; background: linear-gradient(135deg, #00c853, #00e676); border: none;">Approve Combined</button>
+ <button class="ia-btn" onclick="clearProductRequestSelection()" style="padding: 0.35rem 0.75rem; font-size: 0.65rem;">Clear</button>
+ </div>
  <select id="srRequestFilter" class="ia-input" onchange="loadProductRequests()" style="width: 150px;">
  <option value="">All Status</option>
  <option value="pending">Pending</option>
@@ -2798,6 +2803,7 @@ html, body {
  <table class="ia-table">
  <thead>
  <tr>
+ <th style="width: 36px; text-align: center;"><input type="checkbox" id="prSelectAllCheckbox" onchange="toggleAllProductRequests(this)" style="cursor: pointer;"></th>
  <th>Ambassador</th>
  <th>Product</th>
  <th>Reason</th>
@@ -2809,7 +2815,7 @@ html, body {
  </thead>
  <tbody id="srRequestsTableBody">
  <tr>
- <td colspan="7" style="text-align: center; padding: 3rem; color: var(--muted);">
+ <td colspan="8" style="text-align: center; padding: 3rem; color: var(--muted);">
  Loading product requests...
  </td>
  </tr>
