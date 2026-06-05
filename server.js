@@ -147,9 +147,23 @@ app.post('/api/admin/', writeLimiter);
 app.post('/api/admin/*', writeLimiter);
 app.post('/api/influencer/apply', writeLimiter);
 
-// Request timeout protection - abort requests taking longer than 10 seconds
+// Request timeout protection - abort requests taking longer than 30 seconds
 app.use((req, res, next) => {
-    res.setTimeout(10000, () => {
+    // Safety net: make res.json and res.send no-ops if headers already sent.
+    // This prevents ERR_HTTP_HEADERS_SENT crashes when the timeout fires but
+    // the async route handler is still running and later tries to respond.
+    const origJson = res.json.bind(res);
+    const origSend = res.send.bind(res);
+    res.json = function (body) {
+        if (res.headersSent) return res;
+        return origJson(body);
+    };
+    res.send = function (body) {
+        if (res.headersSent) return res;
+        return origSend(body);
+    };
+
+    res.setTimeout(30000, () => {
         console.warn(`[Timeout] Request aborted: ${req.method} ${req.originalUrl}`);
         if (!res.headersSent) {
             res.status(503).json({ error: 'Request timeout - operation took too long' });
