@@ -2775,11 +2775,9 @@ html, body {
  <p style="font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem;">Products will auto-load when you open this tab</p>
  </div>
  </div>
-<div id="srProductPagination" style="display: none; margin-top: 1.25rem; padding: 1rem; background: var(--subtle); display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;">
- <button class="ia-btn" id="srPrevPage" onclick="searchShopifyProducts(srCurrentPage - 1)" style="padding: 0.5rem 1.2rem; font-size: 0.7rem;">&larr; Previous</button>
- <span id="srPageInfo" style="font-size: 0.75rem; color: var(--muted); font-weight: 600;">Page 1 of 1</span>
- <button class="ia-btn ia-btn-primary" id="srNextPage" onclick="searchShopifyProducts(srCurrentPage + 1)" style="padding: 0.5rem 1.2rem; font-size: 0.7rem;">Next &rarr;</button>
- <span id="srTotalProducts" style="font-size: 0.65rem; color: var(--muted); width: 100%; text-align: center;"></span>
+<div id="srShowMoreWrap" style="display: none; flex-direction: column; align-items: center; gap: 0.5rem; margin-top: 1.5rem; padding: 1rem;">
+ <button class="ia-btn ia-btn-primary" id="srShowMoreBtn" onclick="searchShopifyProducts(srCurrentPage + 1, true)" style="padding: 0.7rem 2.5rem; font-size: 0.75rem; letter-spacing: 0.1em;">Show More Products</button>
+ <span id="srLoadedCount" style="font-size: 0.65rem; color: var(--muted);"></span>
  </div>
  </div>
 <div id="sr-tab-product-requests" class="sr-tab-content" style="display: none;">

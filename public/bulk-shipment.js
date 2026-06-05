@@ -76,8 +76,9 @@ function updateSelectionUI() {
     }
   }
   
+  // Sync select-all checkbox: checked only if all loaded products are selected
   if (selectAllCheckbox && products.length > 0) {
-    selectAllCheckbox.checked = count === products.length;
+    selectAllCheckbox.checked = products.length > 0 && products.every(p => window.srSelectedProducts.has(p.id));
   }
 }
 
@@ -241,11 +242,36 @@ async function loadInfluencersForBulkShipment() {
         if (selectedInfluencer) {
           document.getElementById('bulkShipName').value = selectedInfluencer.name || '';
           document.getElementById('bulkShipPhone').value = selectedInfluencer.phone || '';
-          document.getElementById('bulkShipAddress1').value = selectedInfluencer.shipping_address || '';
+          const addr1 = selectedInfluencer.shipping_address || '';
+          document.getElementById('bulkShipAddress1').value = addr1;
           document.getElementById('bulkShipAddress2').value = selectedInfluencer.shipping_landmark || '';
-          document.getElementById('bulkShipCity').value = selectedInfluencer.shipping_city || selectedInfluencer.city || '';
-          document.getElementById('bulkShipState').value = selectedInfluencer.shipping_state || '';
-          document.getElementById('bulkShipPincode').value = selectedInfluencer.shipping_pin || '';
+          
+          let city = selectedInfluencer.shipping_city || selectedInfluencer.city || '';
+          let state = selectedInfluencer.shipping_state || '';
+          let pincode = selectedInfluencer.shipping_pin || '';
+          
+          // Parse city/state/pincode from full address string if missing
+          if (addr1 && (!city || !state || !pincode)) {
+            const parts = addr1.split(',').map(s => s.trim()).filter(Boolean);
+            if (parts.length >= 3) {
+              const pinIdx = parts.findIndex(p => /^\d{6}$/.test(p));
+              if (pinIdx > 0) {
+                if (!pincode) pincode = parts[pinIdx];
+                if (!state && pinIdx >= 2) state = parts[pinIdx - 1];
+                if (!city && pinIdx >= 3) city = parts[pinIdx - 2];
+              } else {
+                const last = parts[parts.length - 1];
+                const isCountry = /^(india|IN)$/i.test(last);
+                const endIdx = isCountry ? parts.length - 2 : parts.length - 1;
+                if (!state && endIdx >= 1) state = parts[endIdx];
+                if (!city && endIdx >= 2) city = parts[endIdx - 1];
+              }
+            }
+          }
+          
+          document.getElementById('bulkShipCity').value = city;
+          document.getElementById('bulkShipState').value = state;
+          document.getElementById('bulkShipPincode').value = pincode;
         } else {
           ['bulkShipName', 'bulkShipPhone', 'bulkShipAddress1', 'bulkShipAddress2', 'bulkShipCity', 'bulkShipState', 'bulkShipPincode'].forEach(id => {
             document.getElementById(id).value = '';
@@ -331,7 +357,7 @@ async function saveBulkShipment() {
       closeBulkAssignModal();
       window.srSelectedProducts.clear();
       updateSelectionUI();
-      searchShopifyProducts(srCurrentPage);
+      searchShopifyProducts();
     } else {
       alert(data.error || 'Failed to create shipment');
     }

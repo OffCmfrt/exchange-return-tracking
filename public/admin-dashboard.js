@@ -1960,44 +1960,123 @@ function getMonthName(monthNum) {
  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
  return months[parseInt(monthNum) - 1];
 }
-// Search Shopify products with pagination
+// Search Shopify products with "Show More" infinite loading
 let srCurrentPage = 1;
-const SR_PRODUCTS_PER_PAGE = 12;
-async function searchShopifyProducts(page = 1) {
+const SR_PRODUCTS_PER_PAGE = 20;
+let srAllLoadedProducts = []; // Accumulates all loaded products
+let srHasMoreProducts = false;
+let srTotalProductCount = 0;
+
+async function searchShopifyProducts(page = 1, append = false) {
  const search = document.getElementById('srProductSearch').value;
  const grid = document.getElementById('srProductGrid');
- const paginationEl = document.getElementById('srProductPagination');
+ const showMoreWrap = document.getElementById('srShowMoreWrap');
  const toolbarEl = document.getElementById('srBulkToolbar');
- 
- srCurrentPage = page;
- // Reset selections on new search
- window.srSelectedProducts = new Set();
- grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><div class="ia-spinner" style="margin: 0 auto 1rem;"></div><p class="form-input-sm">Loading available inventory...</p></div>';
- if (paginationEl) paginationEl.style.display = 'none';
- if (toolbarEl) toolbarEl.style.display = 'none';
- 
+
+ if (!append) {
+   // Fresh search — reset everything
+   srCurrentPage = 1;
+   srAllLoadedProducts = [];
+   window.srSelectedProducts = new Set();
+   grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><div class="ia-spinner" style="margin: 0 auto 1rem;"></div><p class="form-input-sm">Loading available inventory...</p></div>';
+   if (showMoreWrap) showMoreWrap.style.display = 'none';
+   if (toolbarEl) toolbarEl.style.display = 'none';
+ } else {
+   srCurrentPage = page;
+ }
+
  try {
  const res = await fetch(`${API}/shopify-products?search=${encodeURIComponent(search)}&limit=${SR_PRODUCTS_PER_PAGE}&page=${page}`, {
  headers: { 'Authorization': `Bearer ${authToken}` }
  });
  const data = await res.json();
- 
+
  if (data.success && data.products && data.products.length > 0) {
- // Store products globally for bulk selection
- window.srCurrentProducts = data.products;
- 
- grid.innerHTML = data.products.map(p => {
+   // Accumulate products
+   if (append) {
+     srAllLoadedProducts = srAllLoadedProducts.concat(data.products);
+   } else {
+     srAllLoadedProducts = data.products.slice();
+   }
+   window.srCurrentProducts = srAllLoadedProducts;
+   srTotalProductCount = data.pagination ? data.pagination.totalProducts : srAllLoadedProducts.length;
+   srHasMoreProducts = data.pagination ? data.pagination.hasNextPage : false;
+
+   if (append) {
+     // Append only the new products to the grid
+     const newProducts = data.products;
+     const fragment = document.createElement('div');
+     fragment.innerHTML = newProducts.map(p => buildProductCardHtml(p)).join('');
+     while (fragment.firstElementChild) {
+       grid.appendChild(fragment.firstElementChild);
+     }
+   } else {
+     // Full render
+     grid.innerHTML = srAllLoadedProducts.map(p => buildProductCardHtml(p)).join('');
+   }
+
+   // Restore checkbox state for previously selected products
+   window.srSelectedProducts.forEach(pid => {
+     const cb = document.getElementById(`select-product-${pid}`);
+     const card = document.getElementById(`product-card-${pid}`);
+     if (cb) cb.checked = true;
+     if (card) { card.style.borderColor = 'var(--text, #000)'; card.style.boxShadow = '0 0 0 2px var(--text, #000)'; }
+   });
+
+   // Show bulk toolbar
+   if (toolbarEl) toolbarEl.style.display = 'flex';
+
+   // Update show more button
+   const showMoreWrapEl = document.getElementById('srShowMoreWrap');
+   const showMoreBtnEl = document.getElementById('srShowMoreBtn');
+   const loadedCountEl = document.getElementById('srLoadedCount');
+   console.log('[Shopify Products] showMoreWrap:', !!showMoreWrapEl, 'hasMore:', srHasMoreProducts, 'loaded:', srAllLoadedProducts.length, 'total:', srTotalProductCount);
+   if (showMoreWrapEl) {
+     if (srHasMoreProducts) {
+       const loaded = srAllLoadedProducts.length;
+       const remaining = srTotalProductCount - loaded;
+       showMoreWrapEl.setAttribute('style', 'display:flex!important;flex-direction:column;align-items:center;gap:0.5rem;margin-top:1.5rem;padding:1rem;');
+       if (showMoreBtnEl) {
+         showMoreBtnEl.style.display = '';
+         showMoreBtnEl.textContent = `Show More Products (${remaining} remaining)`;
+       }
+       if (loadedCountEl) loadedCountEl.textContent = `Showing ${loaded} of ${srTotalProductCount} products`;
+     } else {
+       if (srAllLoadedProducts.length > SR_PRODUCTS_PER_PAGE) {
+         showMoreWrapEl.setAttribute('style', 'display:flex!important;flex-direction:column;align-items:center;gap:0.5rem;margin-top:1.5rem;padding:1rem;');
+         if (loadedCountEl) loadedCountEl.textContent = `All ${srTotalProductCount} products loaded`;
+         if (showMoreBtnEl) showMoreBtnEl.style.display = 'none';
+       } else {
+         showMoreWrapEl.style.display = 'none';
+       }
+     }
+   }
+
+   updateSelectionUI();
+ } else if (!append) {
+ grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg><p class="form-input-sm">No available products found</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">All products are currently out of stock or no matches for your search</p></div>';
+ }
+ } catch (e) {
+   if (!append) {
+     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--danger, #ef4444);"><p class="form-input-sm">Failed to load products</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">Please check your connection and try again</p><button onclick="searchShopifyProducts()" class="ia-btn" style="margin-top: 1rem; padding: 0.5rem 1.5rem; font-size: 0.7rem;">Retry</button></div>';
+   }
+ }
+}
+
+// Build a single product card HTML (shared by initial load and append)
+function buildProductCardHtml(p) {
  const imageUrl = p.images[0]?.src || '';
  const totalStock = p.totalStock || 0;
  const variantCount = p.variants.length;
- const sizesHtml = p.variants.map(v => 
- `<span style="display: inline-block; padding: 0.2rem 0.5rem; font-size: 0.65rem; border: 1px solid var(--border); margin: 0.15rem; background: var(--bg); font-weight: 500;" title="Stock: ${v.inventoryQuantity}">${v.title} <span style="color: var(--success, #22c55e); font-size: 0.6rem;">(${v.inventoryQuantity})</span></span>`
+ const sizesHtml = p.variants.map(v =>
+   `<span style="display: inline-block; padding: 0.2rem 0.5rem; font-size: 0.65rem; border: 1px solid var(--border); margin: 0.15rem; background: var(--bg); font-weight: 500;" title="Stock: ${v.inventoryQuantity}">${v.title} <span style="color: var(--success, #22c55e); font-size: 0.6rem;">(${v.inventoryQuantity})</span></span>`
  ).join('');
- 
+ const isSelected = window.srSelectedProducts.has(p.id);
+
  return `
- <div style="border: 1px solid var(--border); background: var(--surface); overflow: hidden; display: flex; flex-direction: column; transition: border-color 0.2s; position: relative;" onmouseenter="this.style.borderColor='var(--text)'" onmouseleave="this.style.borderColor='var(--border)'" id="product-card-${p.id}">
+ <div style="border: 1px solid ${isSelected ? 'var(--text, #000)' : 'var(--border)'}; background: var(--surface); overflow: hidden; display: flex; flex-direction: column; transition: border-color 0.2s; position: relative; ${isSelected ? 'box-shadow: 0 0 0 2px var(--text, #000);' : ''}" onmouseenter="this.style.borderColor='var(--text)'" onmouseleave="this.style.borderColor=window.srSelectedProducts.has(${p.id})?'var(--text, #000)':'var(--border)'" id="product-card-${p.id}">
  <div style="position: absolute; top: 0.5rem; left: 0.5rem; z-index: 10;">
- <input type="checkbox" id="select-product-${p.id}" value="${p.id}" onchange="toggleProductSelection(${p.id})" style="width: 20px; height: 20px; cursor: pointer; accent-color: var(--text, #000);">
+ <input type="checkbox" id="select-product-${p.id}" value="${p.id}" onchange="toggleProductSelection(${p.id})" style="width: 20px; height: 20px; cursor: pointer; accent-color: var(--text, #000);" ${isSelected ? 'checked' : ''}>
  </div>
  <div style="position: relative;">
  ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; height: 220px; object-fit: contain; background: var(--subtle);">` : '<div style="width: 100%; height: 220px; background: var(--subtle); display: flex; align-items: center; justify-content: center; color: var(--muted);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
@@ -2019,27 +2098,6 @@ async function searchShopifyProducts(page = 1) {
  </div>
  </div>
  `;
- }).join('');
- 
- // Show bulk toolbar
- if (toolbarEl) toolbarEl.style.display = 'flex';
- 
- // Update pagination
- if (data.pagination && paginationEl) {
- const { totalProducts, totalPages, hasNextPage, hasPrevPage } = data.pagination;
- paginationEl.style.display = 'flex';
- document.getElementById('srPageInfo').textContent = `Page ${page} of ${totalPages}`;
- document.getElementById('srTotalProducts').textContent = `${totalProducts} products with stock available`;
- document.getElementById('srPrevPage').disabled = !hasPrevPage;
- document.getElementById('srPrevPage').style.opacity = hasPrevPage ? '1' : '0.4';
- document.getElementById('srNextPage').disabled = !hasNextPage;
- document.getElementById('srNextPage').style.opacity = hasNextPage ? '1' : '0.4';
- }
- } else {
- grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg><p class="form-input-sm">No available products found</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">All products are currently out of stock or no matches for your search</p></div>';
- }
- } catch (e) { grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--danger, #ef4444);"><p class="form-input-sm">Failed to load products</p><p style="font-size: 0.7rem; margin-top: 0.5rem; color: var(--muted);">Please check your connection and try again</p><button onclick="searchShopifyProducts()" class="ia-btn" style="margin-top: 1rem; padding: 0.5rem 1.5rem; font-size: 0.7rem;">Retry</button></div>';
- }
 }
 // Global variable to store current product being assigned
 let currentAssignProduct = null;
