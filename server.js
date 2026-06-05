@@ -2290,16 +2290,40 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         let customerPincode = requestData.newPincode || requestData.shippingPincode || '';
         let customerPhone = requestData.customerPhone || requestData.newPhone || '9999999999';
 
-        // If we still don't have address, try to get from Shopify order
-        if (!customerAddress && shopifyOrder) {
+        // Parser: extract city/state/pincode from combined address string if missing
+        // Indian address format: "street, area, CITY, STATE, PINCODE, Country"
+        if (customerAddress && (!customerPincode || !customerCity || !customerState)) {
+            const addrParts = customerAddress.split(',').map(s => s.trim()).filter(Boolean);
+            if (addrParts.length >= 3) {
+                // Try to find pincode (6-digit number) in the address parts
+                const pincodeIdx = addrParts.findIndex(p => /^\d{6}$/.test(p));
+                if (pincodeIdx > 0) {
+                    if (!customerPincode) customerPincode = addrParts[pincodeIdx];
+                    if (!customerState && pincodeIdx >= 2) customerState = addrParts[pincodeIdx - 1];
+                    if (!customerCity && pincodeIdx >= 3) customerCity = addrParts[pincodeIdx - 2];
+                } else {
+                    // No 6-digit pincode found, try to extract from end: ..., City, State, Country
+                    const lastPart = addrParts[addrParts.length - 1];
+                    const isCountry = /^(india|IN)$/i.test(lastPart);
+                    const endIdx = isCountry ? addrParts.length - 2 : addrParts.length - 1;
+                    if (!customerState && endIdx >= 1) customerState = addrParts[endIdx];
+                    if (!customerCity && endIdx >= 2) customerCity = addrParts[endIdx - 1];
+                }
+            }
+            console.log(`[Address Parser] Parsed from combined address: city=${customerCity}, state=${customerState}, pin=${customerPincode}`);
+        }
+
+        // Shopify fallback: if still missing city/state/pincode, fetch from Shopify order
+        if (shopifyOrder && (!customerPincode || !customerCity || !customerState)) {
             const address = shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address);
             if (address) {
                 customerName = `${address.first_name || ''} ${address.last_name || ''}`.trim() || customerName;
-                customerAddress = ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 190);
-                customerCity = address.city || customerCity;
-                customerState = address.province || customerState;
-                customerPincode = address.zip || customerPincode;
+                if (!customerAddress) customerAddress = ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 190);
+                customerCity = customerCity || address.city || '';
+                customerState = customerState || address.province || '';
+                customerPincode = customerPincode || address.zip || '';
                 customerPhone = customerPhone || address.phone || shopifyOrder?.phone || '9999999999';
+                console.log(`[Shopify Fallback] Filled from Shopify: city=${customerCity}, state=${customerState}, pin=${customerPincode}`);
             }
         }
 
