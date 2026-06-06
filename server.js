@@ -964,7 +964,7 @@ try {
         cloudinary: cloudinary,
         params: {
             folder: 'returns',
-            allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+            allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'heic', 'heif'],
         },
     });
     console.log('✅ Cloudinary storage configured successfully');
