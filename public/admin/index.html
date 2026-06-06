@@ -1577,11 +1577,22 @@
                     <div id="whatsappMessagePreview" style="font-size: 0.8rem; color: #1b5e20; line-height: 1.6; font-family: monospace; white-space: pre-wrap;"></div>
                 </div>
                 
+                <!-- Send Coupon Button -->
+                <div style="margin-top: 1rem;">
+                    <button type="button" onclick="sendCouponCode()" id="sendCouponBtn" style="width: 100%; padding: 0.85rem 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4); transition: all 0.2s;">
+                        <i class="fas fa-paper-plane"></i>
+                        <span>Send Coupon & Message</span>
+                    </button>
+                    <p style="font-size: 0.7rem; color: #9ca3af; margin-top: 0.4rem; text-align: center;">
+                        Creates the discount in Shopify &amp; sends the WhatsApp template instantly
+                    </p>
+                </div>
+                
                 <!-- Helper Text -->
-                <div style="margin-top: 1rem; padding: 0.75rem; background: #fef3c7; border-radius: 6px; border-left: 3px solid #f59e0b;">
+                <div style="margin-top: 0.75rem; padding: 0.75rem; background: #fef3c7; border-radius: 6px; border-left: 3px solid #f59e0b;">
                     <p style="margin: 0; font-size: 0.75rem; color: #92400e;">
                         <i class="fas fa-info-circle" style="margin-right: 0.3rem;"></i>
-                        <strong>Tip:</strong> Discount code will be created in Shopify instantly. Customer can apply it at checkout on any product.
+                        <strong>Tip:</strong> Click "Send" to create the coupon and message without approving the return yet. You can still approve separately.
                     </p>
                 </div>
             </div>
@@ -2844,6 +2855,90 @@
         
         // Initial preview
         updatePreview();
+    }
+
+    // ── Send Coupon Code (create discount + send WhatsApp, no status change) ──
+    async function sendCouponCode() {
+        const discountCode  = document.getElementById('discountCode')?.value?.trim() || '';
+        const discountValue = document.getElementById('discountValue')?.value || '';
+        const discountType  = document.getElementById('discountType')?.value || 'percentage';
+        const usageLimit    = document.getElementById('discountUsageLimit')?.value || null;
+        const sendWhatsApp  = document.getElementById('sendWhatsAppDiscount')?.checked || false;
+        const whatsappPhone = document.getElementById('whatsappPhone')?.value?.trim() || '';
+
+        if (!discountValue || parseFloat(discountValue) <= 0) {
+            alert('Please enter a discount value before sending.');
+            return;
+        }
+
+        if (sendWhatsApp && !whatsappPhone) {
+            alert('Please provide a phone number to send WhatsApp message, or uncheck the send option.');
+            return;
+        }
+
+        const codeText  = discountCode || '(Auto-generated)';
+        const valueText = discountType === 'fixed' ? `₹${discountValue}` : `${discountValue}%`;
+
+        if (!confirm(
+            `Create discount code and send message?\n\n` +
+            `Code: ${codeText}\nValue: ${valueText}\n` +
+            `Usage: ${usageLimit || 'Unlimited'}\n` +
+            `WhatsApp: ${sendWhatsApp ? 'Yes (' + whatsappPhone + ')' : 'No'}\n\n` +
+            `This does NOT change the return status.`
+        )) return;
+
+        const btn = document.getElementById('sendCouponBtn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Sending…</span>'; }
+
+        try {
+            const response = await fetch(`${API_URL}/admin/send-coupon-code`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    requestId: currentRequest.requestId,
+                    discountCode: discountCode || null,
+                    discountValue: parseFloat(discountValue),
+                    discountType,
+                    usageLimit: usageLimit ? parseInt(usageLimit) : null,
+                    sendWhatsApp,
+                    whatsappPhone: sendWhatsApp ? whatsappPhone : null
+                })
+            });
+
+            const data = await response.json();
+            if (response.ok && data.success) {
+                let msg = '✅ Coupon sent successfully!\n\n';
+                msg += `Discount Code: ${data.discountCode}\n`;
+                msg += `Value: ${data.discountType === 'fixed' ? '₹' + data.discountValue : data.discountValue + '%'}\n\n`;
+
+                if (data.whatsappSent) {
+                    msg += `WhatsApp Template: ✅ Sent\nMessage ID: ${data.whatsappMessageId || 'N/A'}\n`;
+                } else if (data.whatsappError) {
+                    msg += `WhatsApp Template: ❌ Failed\nError: ${data.whatsappError}\n`;
+                } else if (sendWhatsApp) {
+                    msg += `WhatsApp Template: ⚠️ Not Sent (No Phone)\n`;
+                }
+
+                msg += '\nCustomer can now use this code at checkout.';
+                alert(msg);
+
+                // Disable the button to prevent duplicate sends
+                if (btn) {
+                    btn.innerHTML = '<i class="fas fa-check-circle"></i><span>Coupon Sent ✓</span>';
+                    btn.style.background = '#10b981';
+                }
+            } else {
+                alert('❌ ' + (data.error || 'Failed to send coupon'));
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i><span>Send Coupon & Message</span>'; }
+            }
+        } catch (error) {
+            console.error('Send coupon code error:', error);
+            alert('❌ An error occurred: ' + error.message);
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i><span>Send Coupon & Message</span>'; }
+        }
     }
 
     async function approveRequest() {

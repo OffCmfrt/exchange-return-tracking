@@ -5355,6 +5355,120 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
     }
 });
 
+// ── Send Coupon Code (create discount + send WhatsApp message, no status change) ──
+app.post('/api/admin/send-coupon-code', authenticateAdmin, async (req, res) => {
+    try {
+        const {
+            requestId,
+            discountCode,
+            discountValue,
+            discountType,
+            usageLimit,
+            sendWhatsApp,
+            whatsappPhone
+        } = req.body;
+
+        if (!requestId) {
+            return res.status(400).json({ error: 'Request ID is required' });
+        }
+        if (!discountValue || parseFloat(discountValue) <= 0) {
+            return res.status(400).json({ error: 'Discount value is required' });
+        }
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        // 1. Create Shopify discount code
+        const finalCode = discountCode || `RETURN${requestId.slice(-6).toUpperCase()}`;
+        const valueType = discountType === 'fixed' ? 'fixed_amount' : 'percentage';
+        const title = `Return Compensation: ${requestDetails.orderNumber}`;
+
+        let shopifyResult = null;
+        try {
+            shopifyResult = await createShopifyDiscountCode(
+                finalCode,
+                parseFloat(discountValue),
+                valueType,
+                usageLimit || null,
+                title
+            );
+            console.log(`[send-coupon][${requestId}] ✅ Shopify discount created: ${finalCode.toUpperCase()}`);
+        } catch (shopifyError) {
+            console.error(`[send-coupon][${requestId}] ❌ Shopify discount creation failed:`, shopifyError.message);
+            return res.status(500).json({ error: 'Failed to create discount code in Shopify: ' + shopifyError.message });
+        }
+
+        const discountCodeGenerated = finalCode.toUpperCase();
+
+        // 2. Save coupon info to request notes (without changing status)
+        const couponNote = `\n--- Coupon Code Sent ---\nCode: ${discountCodeGenerated}\nValue: ${discountType === 'fixed' ? '₹' + discountValue : discountValue + '%'}\nUsage Limit: ${usageLimit || 'Unlimited'}\nSent At: ${new Date().toLocaleString('en-IN')}`;
+        const existingNotes = requestDetails.adminNotes || '';
+        await updateRequestStatus(requestId, {
+            adminNotes: existingNotes + couponNote,
+            discountCode: discountCodeGenerated,
+            discountValue: parseFloat(discountValue),
+            discountType: discountType || 'percentage'
+        });
+
+        // 3. Send WhatsApp notification if requested
+        let whatsappSent = false;
+        let whatsappMessageId = null;
+        let whatsappError = null;
+
+        if (sendWhatsApp) {
+            const phoneToSend = whatsappPhone || requestDetails.customerPhone;
+            if (phoneToSend) {
+                const valueTypeLabel = discountType === 'fixed' ? `₹${discountValue}` : `${discountValue}%`;
+                const customerName = requestDetails.customerName || 'Valued Customer';
+                const message = `Hi ${customerName}! 👋\n\nGreat news! Your return for order *${requestDetails.orderNumber}* has been approved and processed successfully. ✅\n\n🎁 *Your Exclusive Compensation:*\n━━━━━━━━━━━━━━━━━\n💰 Discount Code: *${discountCodeGenerated}*\n💎 Value: ${valueTypeLabel}\n📝 Usage: ${usageLimit ? usageLimit + ' time(s)' : 'Unlimited'}\n━━━━━━━━━━━━━━━━━\n\nSimply apply this code at checkout on any product in our store!\n\nThank you for your patience and trust in us. We look forward to serving you again! 🙏\n\nNeed help? Reply to this message.`;
+
+                try {
+                    const whatsappResult = await sendWhatsAppNotification(
+                        phoneToSend,
+                        message,
+                        'return_approved_with_discount',
+                        requestId,
+                        {
+                            templateName: 'return_approved_discount',
+                            customerName: customerName,
+                            orderNumber: requestDetails.orderNumber,
+                            discountCode: discountCodeGenerated,
+                            value: parseFloat(discountValue),
+                            valueType: discountType === 'fixed' ? 'fixed_amount' : 'percentage',
+                            usage: usageLimit ? `${usageLimit} time(s)` : 'Unlimited'
+                        }
+                    );
+
+                    whatsappSent = true;
+                    whatsappMessageId = whatsappResult?.messageId || null;
+                    console.log(`[send-coupon][${requestId}] ✅ WhatsApp template sent. Message ID: ${whatsappMessageId}`);
+                } catch (error) {
+                    whatsappError = error.message;
+                    console.error(`[send-coupon][${requestId}] ❌ WhatsApp send failed:`, error.message);
+                }
+            } else {
+                whatsappError = 'No phone number available';
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Coupon code created and message sent',
+            discountCode: discountCodeGenerated,
+            discountValue: parseFloat(discountValue),
+            discountType: discountType || 'percentage',
+            whatsappSent,
+            whatsappMessageId,
+            whatsappError
+        });
+    } catch (error) {
+        console.error('Send coupon code error:', error);
+        res.status(500).json({ error: 'Failed to send coupon: ' + error.message });
+    }
+});
+
 // Reset pickup to pending (for fixing failed carrier bookings)
 app.post('/api/admin/reset-pickup', authenticateAdmin, async (req, res) => {
     try {
