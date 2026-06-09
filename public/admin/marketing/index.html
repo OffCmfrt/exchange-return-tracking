@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marketing Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/admin/marketing/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- Login Section -->
+<div id="loginSection" class="login-container">
+    <div class="login-card">
+        <div class="login-header">
+            <i class="fas fa-bullhorn login-icon"></i>
+            <h1>Marketing Dashboard</h1>
+            <p>Login to manage campaigns, coupons & customer engagement</p>
+        </div>
+        <div id="loginAlert"></div>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label for="adminPassword">Admin Password</label>
+                <input type="password" id="adminPassword" name="adminPassword" required placeholder="Enter admin password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+                <span id="loginBtnText">Login</span>
+                <span id="loginSpinner" class="spinner hidden"></span>
+            </button>
+        </form>
+        <div class="login-footer">
+            <a href="/admin/">← Back to Returns Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<!-- Dashboard Section -->
+<div id="dashboardSection" class="dashboard-container hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <i class="fas fa-bullhorn"></i>
+            <span>Marketing</span>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active" data-section="overview" onclick="switchSection('overview')">
+                <i class="fas fa-chart-pie"></i><span>Overview</span>
+            </a>
+            <a href="#" class="nav-item" data-section="customers" onclick="switchSection('customers')">
+                <i class="fas fa-users"></i><span>Customers</span>
+            </a>
+            <a href="#" class="nav-item" data-section="campaigns" onclick="switchSection('campaigns')">
+                <i class="fas fa-paper-plane"></i><span>Campaigns</span>
+            </a>
+            <a href="#" class="nav-item" data-section="templates" onclick="switchSection('templates')">
+                <i class="fas fa-file-alt"></i><span>Templates</span>
+            </a>
+            <a href="#" class="nav-item" data-section="coupons" onclick="switchSection('coupons')">
+                <i class="fas fa-ticket-alt"></i><span>Coupons</span>
+            </a>
+            <a href="#" class="nav-item" data-section="abandoned-carts" onclick="switchSection('abandoned-carts')">
+                <i class="fas fa-shopping-cart"></i><span>Abandoned Carts</span>
+            </a>
+            <a href="#" class="nav-item" data-section="analytics" onclick="switchSection('analytics')">
+                <i class="fas fa-chart-bar"></i><span>Analytics</span>
+            </a>
+            <a href="#" class="nav-item" data-section="settings" onclick="switchSection('settings')">
+                <i class="fas fa-cog"></i><span>Settings</span>
+            </a>
+            <a href="#" class="nav-item" data-section="audit-log" onclick="switchSection('audit-log')">
+                <i class="fas fa-history"></i><span>Audit Log</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <a href="/admin/" class="nav-item"><i class="fas fa-arrow-left"></i><span>Returns Dashboard</span></a>
+            <a href="#" class="nav-item" onclick="logout()"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <button class="sidebar-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+            <h2 id="sectionTitle">Overview</h2>
+            <div class="top-bar-actions">
+                <span id="lastSyncTime" class="text-muted"></span>
+            </div>
+        </header>
+
+        <!-- Overview Section -->
+        <section id="section-overview" class="content-section active">
+            <div class="stats-grid" id="overviewStats">
+                <div class="stat-card"><div class="stat-icon blue"><i class="fas fa-users"></i></div><div class="stat-info"><span class="stat-value" id="stat-totalCustomers">0</span><span class="stat-label">Total Customers</span></div></div>
+                <div class="stat-card"><div class="stat-icon green"><i class="fas fa-paper-plane"></i></div><div class="stat-info"><span class="stat-value" id="stat-campaignsSent">0</span><span class="stat-label">Campaigns Sent</span></div></div>
+                <div class="stat-card"><div class="stat-icon purple"><i class="fas fa-ticket-alt"></i></div><div class="stat-info"><span class="stat-value" id="stat-activeCoupons">0</span><span class="stat-label">Active Coupons</span></div></div>
+                <div class="stat-card"><div class="stat-icon orange"><i class="fas fa-shopping-cart"></i></div><div class="stat-info"><span class="stat-value" id="stat-abandonedCarts">0</span><span class="stat-label">Abandoned Carts</span></div></div>
+            </div>
+            <div class="charts-grid">
+                <div class="card"><div class="card-header"><h3>Revenue Trend</h3></div><div class="card-body"><canvas id="revenueChart"></canvas></div></div>
+                <div class="card"><div class="card-header"><h3>Campaign Performance</h3></div><div class="card-body"><canvas id="campaignChart"></canvas></div></div>
+            </div>
+            <div class="charts-grid">
+                <div class="card"><div class="card-header"><h3>Customer Segments</h3></div><div class="card-body"><canvas id="segmentChart"></canvas></div></div>
+                <div class="card"><div class="card-header"><h3>Cart Recovery</h3></div><div class="card-body"><canvas id="recoveryChart"></canvas></div></div>
+            </div>
+        </section>
+
+        <!-- Customers Section -->
+        <section id="section-customers" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <input type="text" id="customerSearch" placeholder="Search customers..." class="form-input" oninput="debounce(loadCustomers, 300)()">
+                    <select id="customerSegment" class="form-select" onchange="loadCustomers()"><option value="">All Segments</option></select>
+                    <select id="customerTier" class="form-select" onchange="loadCustomers()"><option value="">All Tiers</option><option value="bronze">Bronze</option><option value="silver">Silver</option><option value="gold">Gold</option><option value="platinum">Platinum</option></select>
+                </div>
+                <button class="btn btn-primary" onclick="syncCustomers()"><i class="fas fa-sync"></i> Sync from Shopify</button>
+            </div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="customersTable"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Orders</th><th>Total Spent</th><th>Segment</th><th>Tier</th><th>Last Order</th></tr></thead><tbody id="customersBody"></tbody></table></div><div id="customersPagination" class="pagination"></div></div></div>
+        </section>
+
+        <!-- Campaigns Section -->
+        <section id="section-campaigns" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="campaignStatus" class="form-select" onchange="loadCampaigns()"><option value="">All Status</option><option value="draft">Draft</option><option value="scheduled">Scheduled</option><option value="sending">Sending</option><option value="sent">Sent</option><option value="paused">Paused</option><option value="cancelled">Cancelled</option></select>
+                </div>
+                <button class="btn btn-primary" onclick="showCreateCampaignModal()"><i class="fas fa-plus"></i> New Campaign</button>
+            </div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="campaignsTable"><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Recipients</th><th>Template</th><th>Scheduled</th><th>Created</th><th>Actions</th></tr></thead><tbody id="campaignsBody"></tbody></table></div><div id="campaignsPagination" class="pagination"></div></div></div>
+        </section>
+
+        <!-- Templates Section -->
+        <section id="section-templates" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="templateCategory" class="form-select" onchange="loadTemplates()"><option value="">All Categories</option><option value="marketing">Marketing</option><option value="utility">Utility</option><option value="authentication">Authentication</option><option value="service">Service</option></select>
+                </div>
+                <button class="btn btn-primary" onclick="showCreateTemplateModal()"><i class="fas fa-plus"></i> New Template</button>
+            </div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="templatesTable"><thead><tr><th>Name</th><th>Category</th><th>Language</th><th>Status</th><th>Meta Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="templatesBody"></tbody></table></div></div></div>
+        </section>
+
+        <!-- Coupons Section -->
+        <section id="section-coupons" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <input type="text" id="couponSearch" placeholder="Search coupons..." class="form-input" oninput="debounce(loadCoupons, 300)()">
+                </div>
+                <button class="btn btn-primary" onclick="showCreateCouponModal()"><i class="fas fa-plus"></i> New Coupon</button>
+            </div>
+            <div class="stats-grid stats-grid-sm" id="couponStats"></div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="couponsTable"><thead><tr><th>Code</th><th>Discount</th><th>Type</th><th>Used</th><th>Status</th><th>Expires</th><th>Shopify</th><th>Actions</th></tr></thead><tbody id="couponsBody"></tbody></table></div><div id="couponsPagination" class="pagination"></div></div></div>
+        </section>
+
+        <!-- Abandoned Carts Section -->
+        <section id="section-abandoned-carts" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="cartStatus" class="form-select" onchange="loadAbandonedCarts()"><option value="">All Status</option><option value="pending">Pending</option><option value="first_reminder_sent">First Reminder</option><option value="second_reminder_sent">Second Reminder</option><option value="final_reminder_sent">Final Reminder</option><option value="recovered">Recovered</option><option value="expired">Expired</option></select>
+                </div>
+            </div>
+            <div class="stats-grid stats-grid-sm" id="cartStats"></div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="cartsTable"><thead><tr><th>Customer</th><th>Phone</th><th>Cart Value</th><th>Items</th><th>Status</th><th>Reminders</th><th>Created</th><th>Actions</th></tr></thead><tbody id="cartsBody"></tbody></table></div><div id="cartsPagination" class="pagination"></div></div></div>
+        </section>
+
+        <!-- Analytics Section -->
+        <section id="section-analytics" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <input type="date" id="analyticsStart" class="form-input" onchange="loadAnalytics()">
+                    <input type="date" id="analyticsEnd" class="form-input" onchange="loadAnalytics()">
+                </div>
+            </div>
+            <div class="stats-grid" id="analyticsStats"></div>
+            <div class="charts-grid"><div class="card"><div class="card-header"><h3>Daily Revenue</h3></div><div class="card-body"><canvas id="dailyRevenueChart"></canvas></div></div></div>
+            <div class="charts-grid"><div class="card"><div class="card-header"><h3>Campaign Analytics</h3></div><div class="card-body"><canvas id="analyticsCampaignChart"></canvas></div></div></div>
+        </section>
+
+        <!-- Settings Section -->
+        <section id="section-settings" class="content-section">
+            <div class="card"><div class="card-header"><h3>Marketing Settings</h3></div><div class="card-body" id="settingsBody"><p class="text-muted">Loading settings...</p></div></div>
+        </section>
+
+        <!-- Audit Log Section -->
+        <section id="section-audit-log" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="auditEntityType" class="form-select" onchange="loadAuditLogs()"><option value="">All Entities</option><option value="campaign">Campaign</option><option value="template">Template</option><option value="coupon">Coupon</option><option value="customer">Customer</option><option value="setting">Setting</option></select>
+                    <select id="auditAction" class="form-select" onchange="loadAuditLogs()"><option value="">All Actions</option><option value="created">Created</option><option value="updated">Updated</option><option value="deleted">Deleted</option><option value="launched">Launched</option><option value="settings_changed">Settings Changed</option></select>
+                </div>
+            </div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="auditTable"><thead><tr><th>Time</th><th>Action</th><th>Entity</th><th>Actor</th><th>Details</th></tr></thead><tbody id="auditBody"></tbody></table></div><div id="auditPagination" class="pagination"></div></div></div>
+        </section>
+    </main>
+</div>
+
+<!-- Modal Container -->
+<div id="modalOverlay" class="modal-overlay hidden" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header"><h3 id="modalTitle">Modal</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+        <div class="modal-body" id="modalBody"></div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toastContainer" class="toast-container"></div>
+
+<script src="/admin/marketing/utils.js"></script>
+<script src="/admin/marketing/chart-init.js"></script>
+<script src="/admin/marketing/dashboard.js"></script>
+</body>
+</html>

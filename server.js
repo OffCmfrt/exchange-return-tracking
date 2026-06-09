@@ -249,6 +249,10 @@ const {
 } = require('./config/db-helpers');
 const supabase = require('./config/supabase');
 
+// Marketing Dashboard modules (isolated from return/exchange logic)
+const marketingDB = require('./config/marketing-db-helpers');
+const metaWhatsApp = require('./config/meta-whatsapp');
+
 async function generateUniqueRequestId() {
     let isUnique = false;
     let requestId;
@@ -945,6 +949,25 @@ setTimeout(() => {
 }, 45000);
 
 console.log('✅ Shopify influencer usage sync scheduled: 4 times daily (6AM, 12PM, 6PM, 12AM IST)');
+
+// ==================== MARKETING CRON JOBS ====================
+// Abandoned cart reminders - every 30 minutes
+cron.schedule('*/30 * * * *', () => {
+    processAbandonedCartReminders();
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
+});
+console.log('✅ Marketing: Abandoned cart reminders scheduled (every 30 minutes)');
+
+// Daily analytics aggregation - at 2AM IST
+cron.schedule('0 2 * * *', () => {
+    aggregateDailyMarketingAnalytics();
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
+});
+console.log('✅ Marketing: Daily analytics aggregation scheduled (2AM IST)');
 
 // ==================== CLOUDINARY CONFIG ====================
 
@@ -9401,6 +9424,1215 @@ app.get('/api/influencer/messages/unread-count', async (req, res) => {
         res.status(500).json({ error: 'Failed to get unread count' });
     }
 });
+
+// ==================== MARKETING DASHBOARD ====================
+// All marketing routes are isolated from return/exchange logic.
+// They use the same authenticateAdmin middleware and Supabase client.
+
+// ── Customer Intelligence ──
+
+// GET /api/admin/marketing/customers - List customers with filters
+app.get('/api/admin/marketing/customers', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getMarketingCustomers(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Customers list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch customers' });
+    }
+});
+
+// GET /api/admin/marketing/customers/stats - Customer statistics
+app.get('/api/admin/marketing/customers/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getCustomerStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Customer stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch customer stats' });
+    }
+});
+
+// GET /api/admin/marketing/customers/segments - List all segments
+app.get('/api/admin/marketing/customers/segments', authenticateAdmin, async (req, res) => {
+    try {
+        const segments = await marketingDB.getCustomerSegments();
+        res.json({ success: true, segments });
+    } catch (error) {
+        console.error('[Marketing] Segments error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch segments' });
+    }
+});
+
+// GET /api/admin/marketing/customers/segments/:name - Get customers by segment
+app.get('/api/admin/marketing/customers/segments/:name', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getCustomersBySegment(req.params.name, req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Segment customers error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch segment customers' });
+    }
+});
+
+// GET /api/admin/marketing/customers/:id - Get single customer
+app.get('/api/admin/marketing/customers/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const customer = await marketingDB.getMarketingCustomerById(req.params.id);
+        if (!customer) return res.status(404).json({ error: 'Customer not found' });
+        const orders = await marketingDB.getCustomerOrders(req.params.id);
+        res.json({ success: true, customer, orders });
+    } catch (error) {
+        console.error('[Marketing] Customer detail error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch customer' });
+    }
+});
+
+// PUT /api/admin/marketing/customers/:id - Update customer
+app.put('/api/admin/marketing/customers/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const updated = await marketingDB.updateMarketingCustomer(req.params.id, req.body);
+        await marketingDB.createAuditLog({
+            action: 'updated',
+            entityType: 'customer',
+            entityId: parseInt(req.params.id),
+            actor: req.user?.sub || 'admin',
+            newValues: req.body,
+            ipAddress: req.ip
+        });
+        res.json({ success: true, customer: updated });
+    } catch (error) {
+        console.error('[Marketing] Customer update error:', error.message);
+        res.status(500).json({ error: 'Failed to update customer' });
+    }
+});
+
+// POST /api/admin/marketing/customers/sync - Trigger customer sync from Shopify
+app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, res) => {
+    try {
+        console.log('[Marketing] Starting customer sync from Shopify...');
+        const shopifyStore = process.env.SHOPIFY_STORE;
+        const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
+
+        if (!shopifyStore || !accessToken) {
+            return res.status(400).json({ error: 'Shopify not configured' });
+        }
+
+        let page = 1;
+        let totalSynced = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+            const url = `https://${shopifyStore}/admin/api/2024-01/customers.json?limit=250&page=${page}`;
+            const response = await fetch(url, {
+                headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Shopify API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const customers = data.customers || [];
+
+            if (customers.length === 0) {
+                hasMore = false;
+                break;
+            }
+
+            for (const c of customers) {
+                const totalOrders = c.orders_count || 0;
+                const totalSpent = parseFloat(c.total_spent || 0);
+                const avgOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
+
+                let segment = 'general';
+                if (totalSpent >= 20000) segment = 'vip';
+                else if (totalSpent >= 10000) segment = 'premium';
+                else if (totalOrders >= 3) segment = 'loyal';
+                else if (totalOrders === 1) segment = 'new';
+
+                let tier = 'bronze';
+                if (totalSpent >= 50000) tier = 'platinum';
+                else if (totalSpent >= 20000) tier = 'gold';
+                else if (totalSpent >= 10000) tier = 'silver';
+
+                await marketingDB.upsertMarketingCustomer({
+                    shopifyCustomerId: c.id,
+                    firstName: c.first_name,
+                    lastName: c.last_name,
+                    email: c.email,
+                    phone: c.phone,
+                    totalOrders,
+                    totalSpent,
+                    averageOrderValue: avgOrderValue,
+                    lastOrderDate: c.last_order_name ? new Date().toISOString() : null,
+                    tags: c.tags ? c.tags.split(',').map(t => t.trim()) : [],
+                    location: c.default_address ? `${c.default_address.city || ''}, ${c.default_address.province || ''}`.trim() : null,
+                    acceptsMarketing: c.accepts_marketing || false,
+                    verifiedEmail: c.verified_email || false,
+                    segment,
+                    lifetimeValueTier: tier
+                });
+                totalSynced++;
+            }
+
+            page++;
+            if (page > 100) hasMore = false; // Safety limit
+        }
+
+        await marketingDB.createAuditLog({
+            action: 'synced',
+            entityType: 'customer',
+            actor: req.user?.sub || 'admin',
+            details: { totalSynced },
+            ipAddress: req.ip
+        });
+
+        res.json({ success: true, totalSynced, message: `Synced ${totalSynced} customers from Shopify` });
+    } catch (error) {
+        console.error('[Marketing] Customer sync error:', error.message);
+        res.status(500).json({ error: 'Customer sync failed: ' + error.message });
+    }
+});
+
+// ── Templates ──
+
+// GET /api/admin/marketing/templates - List all templates
+app.get('/api/admin/marketing/templates', authenticateAdmin, async (req, res) => {
+    try {
+        const templates = await marketingDB.getMarketingTemplates(req.query);
+        res.json({ success: true, templates });
+    } catch (error) {
+        console.error('[Marketing] Templates list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch templates' });
+    }
+});
+
+// GET /api/admin/marketing/templates/:id - Get template by ID
+app.get('/api/admin/marketing/templates/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const template = await marketingDB.getMarketingTemplateById(req.params.id);
+        if (!template) return res.status(404).json({ error: 'Template not found' });
+        res.json({ success: true, template });
+    } catch (error) {
+        console.error('[Marketing] Template detail error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch template' });
+    }
+});
+
+// POST /api/admin/marketing/templates - Create template
+app.post('/api/admin/marketing/templates', authenticateAdmin, async (req, res) => {
+    try {
+        const { name, category, language, header, headerType, body, footer, buttons, variables } = req.body;
+        if (!name || !body) {
+            return res.status(400).json({ error: 'Template name and body are required' });
+        }
+        const template = await marketingDB.createMarketingTemplate({
+            name, category, language, header, headerType, body, footer, buttons, variables,
+            createdBy: req.user?.sub || 'admin'
+        });
+        await marketingDB.createAuditLog({
+            action: 'created', entityType: 'template', entityId: template.id, entityName: name,
+            actor: req.user?.sub || 'admin', newValues: req.body, ipAddress: req.ip
+        });
+        res.json({ success: true, template });
+    } catch (error) {
+        console.error('[Marketing] Template create error:', error.message);
+        res.status(500).json({ error: 'Failed to create template' });
+    }
+});
+
+// PUT /api/admin/marketing/templates/:id - Update template
+app.put('/api/admin/marketing/templates/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const existing = await marketingDB.getMarketingTemplateById(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Template not found' });
+
+        const updated = await marketingDB.updateMarketingTemplate(req.params.id, req.body);
+        await marketingDB.createAuditLog({
+            action: 'updated', entityType: 'template', entityId: parseInt(req.params.id),
+            actor: req.user?.sub || 'admin', previousValues: existing, newValues: req.body, ipAddress: req.ip
+        });
+        res.json({ success: true, template: updated });
+    } catch (error) {
+        console.error('[Marketing] Template update error:', error.message);
+        res.status(500).json({ error: 'Failed to update template' });
+    }
+});
+
+// DELETE /api/admin/marketing/templates/:id - Soft delete template
+app.delete('/api/admin/marketing/templates/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.deleteMarketingTemplate(req.params.id);
+        await marketingDB.createAuditLog({
+            action: 'deleted', entityType: 'template', entityId: parseInt(req.params.id),
+            actor: req.user?.sub || 'admin', ipAddress: req.ip
+        });
+        res.json(result);
+    } catch (error) {
+        console.error('[Marketing] Template delete error:', error.message);
+        res.status(500).json({ error: 'Failed to delete template' });
+    }
+});
+
+// POST /api/admin/marketing/templates/:id/submit-meta - Submit template to Meta for approval
+app.post('/api/admin/marketing/templates/:id/submit-meta', authenticateAdmin, async (req, res) => {
+    try {
+        const template = await marketingDB.getMarketingTemplateById(req.params.id);
+        if (!template) return res.status(404).json({ error: 'Template not found' });
+
+        if (!metaWhatsApp.isMetaConfigured()) {
+            return res.status(400).json({ error: 'Meta Cloud API not configured. Set META_ACCESS_TOKEN and META_PHONE_NUMBER_ID.' });
+        }
+
+        const result = await metaWhatsApp.submitTemplateToMeta(template);
+        if (result.success) {
+            await marketingDB.updateMarketingTemplate(req.params.id, {
+                metaTemplateId: result.templateId,
+                metaStatus: 'PENDING'
+            });
+            await marketingDB.createAuditLog({
+                action: 'template_submitted', entityType: 'template', entityId: parseInt(req.params.id),
+                actor: req.user?.sub || 'admin', details: { metaTemplateId: result.templateId }, ipAddress: req.ip
+            });
+        }
+        res.json({ success: result.success, error: result.error });
+    } catch (error) {
+        console.error('[Marketing] Template submit error:', error.message);
+        res.status(500).json({ error: 'Failed to submit template to Meta' });
+    }
+});
+
+// GET /api/admin/marketing/templates/:id/meta-status - Check template status on Meta
+app.get('/api/admin/marketing/templates/:id/meta-status', authenticateAdmin, async (req, res) => {
+    try {
+        const template = await marketingDB.getMarketingTemplateById(req.params.id);
+        if (!template) return res.status(404).json({ error: 'Template not found' });
+
+        const result = await metaWhatsApp.getTemplateStatusFromMeta(template.name);
+        if (result.success && result.status) {
+            await marketingDB.updateMarketingTemplate(req.params.id, {
+                metaStatus: result.status,
+                metaRejectionReason: result.rejectionReason
+            });
+        }
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Template status check error:', error.message);
+        res.status(500).json({ error: 'Failed to check template status' });
+    }
+});
+
+// GET /api/admin/marketing/meta/templates - List all templates from Meta
+app.get('/api/admin/marketing/meta/templates', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await metaWhatsApp.listMetaTemplates(req.query.limit || 50);
+        res.json(result);
+    } catch (error) {
+        console.error('[Marketing] Meta templates list error:', error.message);
+        res.status(500).json({ error: 'Failed to list Meta templates' });
+    }
+});
+
+// ── Campaigns ──
+
+// GET /api/admin/marketing/campaigns - List campaigns
+app.get('/api/admin/marketing/campaigns', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getMarketingCampaigns(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Campaigns list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch campaigns' });
+    }
+});
+
+// GET /api/admin/marketing/campaigns/:id - Get campaign by ID
+app.get('/api/admin/marketing/campaigns/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        const recipientStats = await marketingDB.getCampaignRecipientStats(req.params.id);
+        res.json({ success: true, campaign, recipientStats });
+    } catch (error) {
+        console.error('[Marketing] Campaign detail error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch campaign' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns - Create campaign
+app.post('/api/admin/marketing/campaigns', authenticateAdmin, async (req, res) => {
+    try {
+        const { name, description, type, templateId, segmentFilter, recipientCount,
+                excludedCustomers, scheduledAt, sendWindowStart, sendWindowEnd,
+                timezone, budget, costPerMessage, notes, tags } = req.body;
+
+        if (!name) return res.status(400).json({ error: 'Campaign name is required' });
+
+        const campaign = await marketingDB.createMarketingCampaign({
+            name, description, type, templateId, segmentFilter, recipientCount,
+            excludedCustomers, scheduledAt, sendWindowStart, sendWindowEnd,
+            timezone, budget, costPerMessage, notes, tags,
+            createdBy: req.user?.sub || 'admin'
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'created', entityType: 'campaign', entityId: campaign.id, entityName: name,
+            actor: req.user?.sub || 'admin', newValues: req.body, ipAddress: req.ip
+        });
+        res.json({ success: true, campaign });
+    } catch (error) {
+        console.error('[Marketing] Campaign create error:', error.message);
+        res.status(500).json({ error: 'Failed to create campaign' });
+    }
+});
+
+// PUT /api/admin/marketing/campaigns/:id - Update campaign (only draft/scheduled)
+app.put('/api/admin/marketing/campaigns/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const existing = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Campaign not found' });
+        if (!['draft', 'scheduled'].includes(existing.status)) {
+            return res.status(400).json({ error: 'Can only edit draft or scheduled campaigns' });
+        }
+
+        const updated = await marketingDB.updateMarketingCampaign(req.params.id, req.body);
+        await marketingDB.createAuditLog({
+            action: 'updated', entityType: 'campaign', entityId: parseInt(req.params.id),
+            actor: req.user?.sub || 'admin', previousValues: existing, newValues: req.body, ipAddress: req.ip
+        });
+        res.json({ success: true, campaign: updated });
+    } catch (error) {
+        console.error('[Marketing] Campaign update error:', error.message);
+        res.status(500).json({ error: 'Failed to update campaign' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns/:id/recipients - Add recipients to campaign
+app.post('/api/admin/marketing/campaigns/:id/recipients', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        if (campaign.status !== 'draft') {
+            return res.status(400).json({ error: 'Can only add recipients to draft campaigns' });
+        }
+
+        const { recipients } = req.body;
+        if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+            return res.status(400).json({ error: 'Recipients array is required' });
+        }
+
+        const added = await marketingDB.addCampaignRecipients(req.params.id, recipients);
+        res.json({ success: true, count: added.length });
+    } catch (error) {
+        console.error('[Marketing] Add recipients error:', error.message);
+        res.status(500).json({ error: 'Failed to add recipients' });
+    }
+});
+
+// GET /api/admin/marketing/campaigns/:id/recipients - Get campaign recipients
+app.get('/api/admin/marketing/campaigns/:id/recipients', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getCampaignRecipients(req.params.id, req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Recipients list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch recipients' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns/:id/launch - Launch campaign (send messages)
+app.post('/api/admin/marketing/campaigns/:id/launch', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        if (campaign.status !== 'draft' && campaign.status !== 'scheduled') {
+            return res.status(400).json({ error: 'Can only launch draft or scheduled campaigns' });
+        }
+        if (!campaign.template_id) {
+            return res.status(400).json({ error: 'Campaign must have a template assigned before launching' });
+        }
+
+        // Get template
+        const template = await marketingDB.getMarketingTemplateById(campaign.template_id);
+        if (!template) return res.status(400).json({ error: 'Campaign template not found' });
+
+        // Update status to sending
+        await marketingDB.updateMarketingCampaign(req.params.id, { status: 'sending' });
+
+        await marketingDB.createAuditLog({
+            action: 'launched', entityType: 'campaign', entityId: parseInt(req.params.id),
+            entityName: campaign.name, actor: req.user?.sub || 'admin', ipAddress: req.ip
+        });
+
+        // Launch async send (non-blocking)
+        sendCampaignAsync(req.params.id, campaign, template, req.user?.sub || 'admin');
+
+        res.json({ success: true, message: 'Campaign launch initiated. Messages will be sent in background.' });
+    } catch (error) {
+        console.error('[Marketing] Campaign launch error:', error.message);
+        res.status(500).json({ error: 'Failed to launch campaign' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns/:id/pause - Pause campaign
+app.post('/api/admin/marketing/campaigns/:id/pause', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        if (campaign.status !== 'sending') {
+            return res.status(400).json({ error: 'Can only pause sending campaigns' });
+        }
+
+        const updated = await marketingDB.updateMarketingCampaign(req.params.id, { status: 'paused' });
+        await marketingDB.createAuditLog({
+            action: 'paused', entityType: 'campaign', entityId: parseInt(req.params.id),
+            entityName: campaign.name, actor: req.user?.sub || 'admin', ipAddress: req.ip
+        });
+        res.json({ success: true, campaign: updated });
+    } catch (error) {
+        console.error('[Marketing] Campaign pause error:', error.message);
+        res.status(500).json({ error: 'Failed to pause campaign' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns/:id/cancel - Cancel campaign
+app.post('/api/admin/marketing/campaigns/:id/cancel', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        const updated = await marketingDB.updateMarketingCampaign(req.params.id, { status: 'cancelled' });
+        await marketingDB.createAuditLog({
+            action: 'cancelled', entityType: 'campaign', entityId: parseInt(req.params.id),
+            entityName: campaign.name, actor: req.user?.sub || 'admin', ipAddress: req.ip
+        });
+        res.json({ success: true, campaign: updated });
+    } catch (error) {
+        console.error('[Marketing] Campaign cancel error:', error.message);
+        res.status(500).json({ error: 'Failed to cancel campaign' });
+    }
+});
+
+// GET /api/admin/marketing/campaigns/:id/stats - Campaign stats
+app.get('/api/admin/marketing/campaigns/:id/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getCampaignRecipientStats(req.params.id);
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Campaign stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch campaign stats' });
+    }
+});
+
+// ── Campaign Async Sender (background) ──
+
+async function sendCampaignAsync(campaignId, campaign, template, actor) {
+    try {
+        const { data: recipients } = await supabase
+            .from('marketing_campaign_recipients')
+            .select('*')
+            .eq('campaign_id', campaignId)
+            .in('status', ['pending']);
+
+        if (!recipients || recipients.length === 0) {
+            await marketingDB.updateMarketingCampaign(campaignId, { status: 'sent' });
+            await marketingDB.createCampaignSnapshot(campaignId);
+            return;
+        }
+
+        console.log(`[Marketing Campaign] Sending ${recipients.length} messages for campaign ${campaignId}`);
+
+        const batchSize = 50;
+        const batchDelay = 2000;
+        let sentCount = 0;
+        let failedCount = 0;
+
+        for (let i = 0; i < recipients.length; i += batchSize) {
+            // Check if campaign was paused/cancelled
+            const current = await marketingDB.getMarketingCampaignById(campaignId);
+            if (current && (current.status === 'paused' || current.status === 'cancelled')) {
+                console.log(`[Marketing Campaign] Campaign ${campaignId} ${current.status}. Stopping send.`);
+                break;
+            }
+
+            const batch = recipients.slice(i, i + batchSize);
+            const sendPromises = batch.map(async (recipient) => {
+                try {
+                    // Mark as queued
+                    await marketingDB.updateCampaignRecipient(recipient.id, {
+                        status: 'queued',
+                        queuedAt: new Date().toISOString()
+                    });
+
+                    // Send via Meta WhatsApp (falls back to existing bot)
+                    const result = await metaWhatsApp.sendTemplateMessage(
+                        recipient.phone,
+                        template.name,
+                        recipient.template_variables ? Object.values(recipient.template_variables) : [],
+                        template.language || 'en'
+                    );
+
+                    if (result.success) {
+                        await marketingDB.updateCampaignRecipient(recipient.id, {
+                            status: 'sent',
+                            metaMessageId: result.messageId,
+                            metaConversationId: result.conversationId || null,
+                            metaPricingCategory: result.pricingCategory || null,
+                            sentAt: new Date().toISOString()
+                        });
+                        sentCount++;
+                    } else {
+                        await marketingDB.updateCampaignRecipient(recipient.id, {
+                            status: 'failed',
+                            errorMessage: result.error,
+                            failedAt: new Date().toISOString()
+                        });
+                        failedCount++;
+                    }
+                } catch (err) {
+                    await marketingDB.updateCampaignRecipient(recipient.id, {
+                        status: 'failed',
+                        errorMessage: err.message,
+                        failedAt: new Date().toISOString()
+                    });
+                    failedCount++;
+                }
+            });
+
+            await Promise.all(sendPromises);
+            console.log(`[Marketing Campaign] Batch ${Math.floor(i / batchSize) + 1}: sent=${sentCount}, failed=${failedCount}`);
+
+            // Delay between batches
+            if (i + batchSize < recipients.length) {
+                await new Promise(resolve => setTimeout(resolve, batchDelay));
+            }
+        }
+
+        // Mark campaign as sent
+        await marketingDB.updateMarketingCampaign(campaignId, { status: 'sent' });
+        await marketingDB.createCampaignSnapshot(campaignId);
+
+        await marketingDB.createAuditLog({
+            action: 'sent',
+            entityType: 'campaign',
+            entityId: parseInt(campaignId),
+            entityName: campaign.name,
+            actorType: 'system',
+            actor: 'campaign-sender',
+            details: { sentCount, failedCount, totalRecipients: recipients.length }
+        });
+
+        console.log(`[Marketing Campaign] Campaign ${campaignId} complete. Sent: ${sentCount}, Failed: ${failedCount}`);
+    } catch (error) {
+        console.error(`[Marketing Campaign] Fatal error for campaign ${campaignId}:`, error.message);
+        await marketingDB.updateMarketingCampaign(campaignId, { status: 'failed' }).catch(() => {});
+    }
+}
+
+// ── Coupon Management ──
+
+// GET /api/admin/marketing/coupons - List coupons
+app.get('/api/admin/marketing/coupons', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getMarketingCoupons(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Coupons list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch coupons' });
+    }
+});
+
+// GET /api/admin/marketing/coupons/stats - Coupon statistics
+app.get('/api/admin/marketing/coupons/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getCouponStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Coupon stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch coupon stats' });
+    }
+});
+
+// GET /api/admin/marketing/coupons/:id - Get coupon by ID
+app.get('/api/admin/marketing/coupons/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const coupon = await marketingDB.getMarketingCouponById(req.params.id);
+        if (!coupon) return res.status(404).json({ error: 'Coupon not found' });
+        res.json({ success: true, coupon });
+    } catch (error) {
+        console.error('[Marketing] Coupon fetch error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch coupon' });
+    }
+});
+
+// POST /api/admin/marketing/coupons - Create coupon
+app.post('/api/admin/marketing/coupons', authenticateAdmin, async (req, res) => {
+    try {
+        const { code, name, description, discountType, discountValue, minPurchaseAmount, 
+                maxDiscountAmount, appliesTo, usageLimit, usageLimitPerCustomer, 
+                applicableProducts, applicableCollections, segmentTarget, campaignId,
+                startsAt, expiresAt } = req.body;
+
+        if (!code || !discountValue) {
+            return res.status(400).json({ error: 'Code and discount value are required' });
+        }
+
+        const coupon = await marketingDB.createMarketingCoupon({
+            code, name, description, discountType, discountValue, minPurchaseAmount,
+            maxDiscountAmount, appliesTo, usageLimit, usageLimitPerCustomer,
+            applicableProducts, applicableCollections, segmentTarget, campaignId,
+            startsAt, expiresAt, createdBy: req.adminUser || 'admin'
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'created', entityType: 'coupon', entityId: coupon.id,
+            entityName: coupon.code, actor: req.adminUser || 'admin',
+            newValues: coupon, ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, coupon });
+    } catch (error) {
+        console.error('[Marketing] Coupon create error:', error.message);
+        res.status(500).json({ error: 'Failed to create coupon' });
+    }
+});
+
+// PUT /api/admin/marketing/coupons/:id - Update coupon
+app.put('/api/admin/marketing/coupons/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const existing = await marketingDB.getMarketingCouponById(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Coupon not found' });
+
+        const coupon = await marketingDB.updateMarketingCoupon(req.params.id, req.body);
+
+        await marketingDB.createAuditLog({
+            action: 'updated', entityType: 'coupon', entityId: parseInt(req.params.id),
+            entityName: coupon.code, actor: req.adminUser || 'admin',
+            previousValues: existing, newValues: coupon,
+            changedFields: Object.keys(req.body),
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, coupon });
+    } catch (error) {
+        console.error('[Marketing] Coupon update error:', error.message);
+        res.status(500).json({ error: 'Failed to update coupon' });
+    }
+});
+
+// DELETE /api/admin/marketing/coupons/:id - Soft delete coupon
+app.delete('/api/admin/marketing/coupons/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const existing = await marketingDB.getMarketingCouponById(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Coupon not found' });
+
+        await marketingDB.deleteMarketingCoupon(req.params.id);
+
+        await marketingDB.createAuditLog({
+            action: 'deleted', entityType: 'coupon', entityId: parseInt(req.params.id),
+            entityName: existing.code, actor: req.adminUser || 'admin',
+            previousValues: existing,
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, message: 'Coupon deleted' });
+    } catch (error) {
+        console.error('[Marketing] Coupon delete error:', error.message);
+        res.status(500).json({ error: 'Failed to delete coupon' });
+    }
+});
+
+// POST /api/admin/marketing/coupons/:id/sync-shopify - Sync coupon to Shopify as discount code
+app.post('/api/admin/marketing/coupons/:id/sync-shopify', authenticateAdmin, async (req, res) => {
+    try {
+        const coupon = await marketingDB.getMarketingCouponById(req.params.id);
+        if (!coupon) return res.status(404).json({ error: 'Coupon not found' });
+
+        // Build Shopify price rule payload
+        const priceRule = {
+            price_rule: {
+                title: coupon.name || coupon.code,
+                target_type: 'line_item',
+                target_selection: coupon.applies_to === 'all' ? 'all' : 'entitled',
+                allocation_method: 'across',
+                value_type: coupon.discount_type === 'percentage' ? 'percentage' : 'fixed_amount',
+                value: coupon.discount_type === 'fixed_amount' ? -Math.abs(parseFloat(coupon.discount_value)) : parseFloat(coupon.discount_value),
+                allocation_limit: coupon.max_discount_amount ? parseFloat(coupon.max_discount_amount) : undefined,
+                customer_selection: coupon.segment_target ? 'segment' : 'all',
+                starts_at: coupon.starts_at || new Date().toISOString(),
+                ends_at: coupon.expires_at || null,
+                usage_limit: coupon.usage_limit || null,
+                once_per_customer: coupon.usage_limit_per_customer === 1
+            }
+        };
+
+        // Set minimum purchase requirement
+        if (parseFloat(coupon.min_purchase_amount) > 0) {
+            priceRule.price_rule.customer_selection = 'all';
+            priceRule.price_rule.prerequisite_subtotal_range = {
+                greater_than_or_equal_to: parseFloat(coupon.min_purchase_amount).toString()
+            };
+        }
+
+        // Create price rule
+        const ruleResult = await shopifyAPI('price_rules.json', {
+            method: 'POST',
+            body: JSON.stringify(priceRule)
+        });
+
+        const priceRuleId = ruleResult.price_rule.id;
+
+        // Create discount code
+        const codeResult = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
+            method: 'POST',
+            body: JSON.stringify({ discount_code: { code: coupon.code, price_rule_id: priceRuleId } })
+        });
+
+        // Update coupon with Shopify IDs
+        const updated = await marketingDB.updateMarketingCoupon(req.params.id, {
+            shopifyPriceRuleId: priceRuleId,
+            shopifyDiscountCodeId: codeResult.discount_code.id,
+            shopifySyncStatus: 'synced',
+            shopifySyncedAt: new Date().toISOString()
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'synced', entityType: 'coupon', entityId: parseInt(req.params.id),
+            entityName: coupon.code, actor: req.adminUser || 'admin',
+            details: { shopifyPriceRuleId: priceRuleId, shopifyDiscountCodeId: codeResult.discount_code.id },
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, coupon: updated, message: 'Coupon synced to Shopify' });
+    } catch (error) {
+        console.error('[Marketing] Coupon Shopify sync error:', error.message);
+        await marketingDB.updateMarketingCoupon(req.params.id, {
+            shopifySyncStatus: 'failed', shopifySyncError: error.message
+        }).catch(() => {});
+        res.status(500).json({ error: 'Failed to sync coupon to Shopify', details: error.message });
+    }
+});
+
+// GET /api/admin/marketing/coupons/:id/usage - Get coupon usage history
+app.get('/api/admin/marketing/coupons/:id/usage', authenticateAdmin, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('marketing_coupon_usage')
+            .select('*').eq('coupon_id', req.params.id).order('created_at', { ascending: false });
+        if (error) throw error;
+        res.json({ success: true, usage: data || [] });
+    } catch (error) {
+        console.error('[Marketing] Coupon usage error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch coupon usage' });
+    }
+});
+
+
+// ── Abandoned Cart Recovery ──
+
+// GET /api/admin/marketing/abandoned-carts - List abandoned carts
+app.get('/api/admin/marketing/abandoned-carts', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getAbandonedCarts(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Abandoned carts list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch abandoned carts' });
+    }
+});
+
+// GET /api/admin/marketing/abandoned-carts/stats - Abandoned cart statistics
+app.get('/api/admin/marketing/abandoned-carts/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getAbandonedCartStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Abandoned cart stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch abandoned cart stats' });
+    }
+});
+
+// GET /api/admin/marketing/abandoned-carts/:id - Get cart by ID
+app.get('/api/admin/marketing/abandoned-carts/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const cart = await marketingDB.getAbandonedCartById(req.params.id);
+        if (!cart) return res.status(404).json({ error: 'Cart not found' });
+        res.json({ success: true, cart });
+    } catch (error) {
+        console.error('[Marketing] Abandoned cart fetch error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch abandoned cart' });
+    }
+});
+
+// POST /api/admin/marketing/abandoned-carts - Create abandoned cart (from checkout webhook or API)
+app.post('/api/admin/marketing/abandoned-carts', authenticateAdmin, async (req, res) => {
+    try {
+        const { cartToken, customerEmail, customerPhone, customerName, shopifyCustomerId,
+                checkoutId, checkoutUrl, cartValue, currency, items } = req.body;
+
+        if (!cartToken) return res.status(400).json({ error: 'Cart token is required' });
+
+        // Check if cart with this token already exists
+        const { data: existing } = await supabase
+            .from('marketing_abandoned_carts')
+            .select('id').eq('cart_token', cartToken).limit(1);
+
+        if (existing && existing.length > 0) {
+            return res.json({ success: true, message: 'Cart already tracked', cartId: existing[0].id });
+        }
+
+        const cart = await marketingDB.createAbandonedCart({
+            cartToken, customerEmail, customerPhone, customerName, shopifyCustomerId,
+            checkoutId, checkoutUrl, cartValue, currency, items, source: 'api'
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'created', entityType: 'abandoned_cart', entityId: cart.id,
+            entityName: `Cart ${cartToken.substring(0, 8)}`, actor: 'system', actorType: 'system',
+            newValues: { cartToken, cartValue, customerEmail },
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, cart });
+    } catch (error) {
+        console.error('[Marketing] Abandoned cart create error:', error.message);
+        res.status(500).json({ error: 'Failed to create abandoned cart' });
+    }
+});
+
+// POST /api/admin/marketing/abandoned-carts/:id/send-reminder - Send WhatsApp reminder
+app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateAdmin, async (req, res) => {
+    try {
+        const cart = await marketingDB.getAbandonedCartById(req.params.id);
+        if (!cart) return res.status(404).json({ error: 'Cart not found' });
+        if (!cart.customer_phone) return res.status(400).json({ error: 'No phone number for this cart' });
+
+        const { reminderType } = req.body; // 'first', 'second', 'final'
+
+        // Get abandoned cart template
+        const templates = await marketingDB.getMarketingTemplates({ category: 'utility', status: 'approved' });
+        const template = templates.find(t => t.name && t.name.toLowerCase().includes('abandoned')) || templates[0];
+
+        let messageText = `Hi ${cart.customer_name || 'there'}! You left items in your cart worth ₹${cart.cart_value}. `;
+        messageText += `Complete your purchase before they're gone! `;
+        if (cart.checkout_url) messageText += `\nCheckout: ${cart.checkout_url}`;
+
+        // Send via Meta WhatsApp
+        const sendResult = await metaWhatsApp.sendTemplateMessage({
+            phoneNumber: cart.customer_phone,
+            templateName: template ? template.name : 'abandoned_cart_reminder',
+            variables: {
+                customer_name: cart.customer_name || 'there',
+                cart_value: cart.cart_value.toString(),
+                checkout_url: cart.checkout_url || ''
+            }
+        });
+
+        // Update cart based on reminder type
+        const now = new Date().toISOString();
+        const updates = { lastReminderAt: now };
+        if (reminderType === 'first') {
+            updates.recoveryStatus = 'first_reminder_sent';
+            updates.firstReminderAt = now;
+        } else if (reminderType === 'second') {
+            updates.recoveryStatus = 'second_reminder_sent';
+            updates.secondReminderAt = now;
+        } else {
+            updates.recoveryStatus = 'final_reminder_sent';
+            updates.finalReminderAt = now;
+        }
+        updates.reminderCount = (cart.reminder_count || 0) + 1;
+
+        await marketingDB.updateAbandonedCart(req.params.id, updates);
+
+        await marketingDB.createAuditLog({
+            action: 'sent', entityType: 'abandoned_cart', entityId: parseInt(req.params.id),
+            entityName: `Cart ${cart.cart_token.substring(0, 8)}`,
+            actor: req.adminUser || 'admin',
+            details: { reminderType, phone: cart.customer_phone, messageId: sendResult?.messageId },
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, message: `Reminder sent to ${cart.customer_phone}`, reminderType });
+    } catch (error) {
+        console.error('[Marketing] Abandoned cart reminder error:', error.message);
+        res.status(500).json({ error: 'Failed to send reminder' });
+    }
+});
+
+// POST /api/admin/marketing/abandoned-carts/:id/mark-recovered - Mark cart as recovered
+app.post('/api/admin/marketing/abandoned-carts/:id/mark-recovered', authenticateAdmin, async (req, res) => {
+    try {
+        const { recoveredOrderId, recoveredOrderName, recoveredAmount } = req.body;
+
+        await marketingDB.updateAbandonedCart(req.params.id, {
+            recoveryStatus: 'recovered',
+            recoveredAt: new Date().toISOString(),
+            recoveredOrderId: recoveredOrderId || null,
+            recoveredOrderName: recoveredOrderName || null,
+            recoveredAmount: recoveredAmount || 0
+        });
+
+        res.json({ success: true, message: 'Cart marked as recovered' });
+    } catch (error) {
+        console.error('[Marketing] Mark recovered error:', error.message);
+        res.status(500).json({ error: 'Failed to mark as recovered' });
+    }
+});
+
+
+// ── Analytics ──
+
+// GET /api/admin/marketing/analytics/overview - Analytics overview dashboard
+app.get('/api/admin/marketing/analytics/overview', authenticateAdmin, async (req, res) => {
+    try {
+        const overview = await marketingDB.getMarketingAnalyticsOverview(req.query);
+        res.json({ success: true, overview });
+    } catch (error) {
+        console.error('[Marketing] Analytics overview error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch analytics overview' });
+    }
+});
+
+// GET /api/admin/marketing/analytics/campaigns - Campaign analytics
+app.get('/api/admin/marketing/analytics/campaigns', authenticateAdmin, async (req, res) => {
+    try {
+        const data = await marketingDB.getCampaignAnalytics();
+        res.json({ success: true, campaigns: data });
+    } catch (error) {
+        console.error('[Marketing] Campaign analytics error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch campaign analytics' });
+    }
+});
+
+// GET /api/admin/marketing/analytics/channels - Channel analytics
+app.get('/api/admin/marketing/analytics/channels', authenticateAdmin, async (req, res) => {
+    try {
+        const data = await marketingDB.getChannelAnalytics(req.query);
+        res.json({ success: true, channels: data });
+    } catch (error) {
+        console.error('[Marketing] Channel analytics error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch channel analytics' });
+    }
+});
+
+// GET /api/admin/marketing/analytics/segments - Segment analytics
+app.get('/api/admin/marketing/analytics/segments', authenticateAdmin, async (req, res) => {
+    try {
+        const data = await marketingDB.getSegmentAnalytics(req.query);
+        res.json({ success: true, segments: data });
+    } catch (error) {
+        console.error('[Marketing] Segment analytics error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch segment analytics' });
+    }
+});
+
+
+// ── Settings ──
+
+// GET /api/admin/marketing/settings - Get all settings
+app.get('/api/admin/marketing/settings', authenticateAdmin, async (req, res) => {
+    try {
+        const settings = await marketingDB.getAllMarketingSettings();
+        // Filter out secret values for security
+        const sanitized = settings.map(s => ({
+            ...s,
+            value: s.is_secret ? '••••••••' : s.value
+        }));
+        res.json({ success: true, settings: sanitized });
+    } catch (error) {
+        console.error('[Marketing] Settings fetch error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch settings' });
+    }
+});
+
+// PUT /api/admin/marketing/settings/:key - Update a setting
+app.put('/api/admin/marketing/settings/:key', authenticateAdmin, async (req, res) => {
+    try {
+        const { value } = req.body;
+        if (value === undefined) return res.status(400).json({ error: 'Value is required' });
+
+        const setting = await marketingDB.updateMarketingSetting(req.params.key, value, req.adminUser || 'admin');
+
+        await marketingDB.createAuditLog({
+            action: 'settings_changed', entityType: 'setting',
+            entityName: req.params.key, actor: req.adminUser || 'admin',
+            newValues: { key: req.params.key, value: req.body.value },
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, setting });
+    } catch (error) {
+        console.error('[Marketing] Settings update error:', error.message);
+        res.status(500).json({ error: 'Failed to update setting' });
+    }
+});
+
+
+// ── Audit Log ──
+
+// GET /api/admin/marketing/audit-logs - Get audit logs with filters
+app.get('/api/admin/marketing/audit-logs', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getAuditLogs(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Audit logs error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch audit logs' });
+    }
+});
+
+
+// ── Abandoned Cart Recovery Cron Job ──
+
+async function processAbandonedCartReminders() {
+    try {
+        console.log('[Marketing Cron] Processing abandoned cart reminders...');
+        const carts = await marketingDB.getPendingReminderCarts();
+        
+        if (carts.length === 0) {
+            console.log('[Marketing Cron] No carts need reminders');
+            return;
+        }
+
+        console.log(`[Marketing Cron] Found ${carts.length} carts needing reminders`);
+
+        for (const cart of carts) {
+            try {
+                if (!cart.customer_phone) continue;
+
+                const hoursSinceCreated = (Date.now() - new Date(cart.created_at).getTime()) / (1000 * 60 * 60);
+                let reminderType = null;
+
+                // Schedule: 1hr -> first, 24hr -> second, 72hr -> final
+                if (cart.recovery_status === 'pending' && hoursSinceCreated >= 1) {
+                    reminderType = 'first';
+                } else if (cart.recovery_status === 'first_reminder_sent' && hoursSinceCreated >= 24) {
+                    reminderType = 'second';
+                } else if (cart.recovery_status === 'second_reminder_sent' && hoursSinceCreated >= 72) {
+                    reminderType = 'final';
+                }
+
+                if (!reminderType) continue;
+
+                // Send WhatsApp message
+                const messageText = `Hi ${cart.customer_name || 'there'}! You left items worth ₹${cart.cart_value} in your cart. ` +
+                    `Complete your purchase now! ${cart.checkout_url || ''}`;
+
+                const sendResult = await metaWhatsApp.sendTemplateMessage({
+                    phoneNumber: cart.customer_phone,
+                    templateName: 'abandoned_cart_reminder',
+                    variables: {
+                        customer_name: cart.customer_name || 'there',
+                        cart_value: cart.cart_value.toString(),
+                        checkout_url: cart.checkout_url || ''
+                    }
+                }).catch(async () => {
+                    // Fallback to bot
+                    return metaWhatsApp.sendViaBot({
+                        phone: cart.customer_phone,
+                        message: messageText
+                    });
+                });
+
+                // Update cart
+                const now = new Date().toISOString();
+                const updates = {
+                    recoveryStatus: `${reminderType}_reminder_sent`,
+                    lastReminderAt: now,
+                    reminderCount: (cart.reminder_count || 0) + 1
+                };
+                if (reminderType === 'first') updates.firstReminderAt = now;
+                if (reminderType === 'second') updates.secondReminderAt = now;
+                if (reminderType === 'final') updates.finalReminderAt = now;
+
+                await marketingDB.updateAbandonedCart(cart.id, updates);
+
+                console.log(`[Marketing Cron] Sent ${reminderType} reminder to cart ${cart.id} (${cart.customer_phone})`);
+
+                // Rate limit: wait 2 seconds between messages
+                await new Promise(r => setTimeout(r, 2000));
+            } catch (cartErr) {
+                console.error(`[Marketing Cron] Error processing cart ${cart.id}:`, cartErr.message);
+            }
+        }
+
+        console.log('[Marketing Cron] Abandoned cart reminder processing complete');
+    } catch (error) {
+        console.error('[Marketing Cron] Abandoned cart reminder error:', error.message);
+    }
+}
+
+// ── Daily Analytics Aggregation Cron Job ──
+
+async function aggregateDailyMarketingAnalytics() {
+    try {
+        console.log('[Marketing Cron] Aggregating daily analytics...');
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+        // Check if already aggregated
+        const { data: existing } = await supabase
+            .from('marketing_analytics_daily')
+            .select('id').eq('date', yesterday).limit(1);
+
+        if (existing && existing.length > 0) {
+            console.log(`[Marketing Cron] Analytics for ${yesterday} already exist`);
+            return;
+        }
+
+        // Aggregate data
+        const [
+            { count: newCustomers },
+            { count: campaignsSent },
+            { count: campaignsDelivered },
+            { count: campaignsRead },
+            { count: campaignsFailed },
+            { count: cartsAbandoned },
+            { count: cartsRecovered },
+            { data: revenueData }
+        ] = await Promise.all([
+            supabase.from('marketing_customers').select('*', { count: 'exact', head: true })
+                .gte('created_at', yesterday).lt('created_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_campaign_recipients').select('*', { count: 'exact', head: true })
+                .gte('sent_at', yesterday).lt('sent_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_campaign_recipients').select('*', { count: 'exact', head: true })
+                .gte('delivered_at', yesterday).lt('delivered_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_campaign_recipients').select('*', { count: 'exact', head: true })
+                .gte('read_at', yesterday).lt('read_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_campaign_recipients').select('*', { count: 'exact', head: true })
+                .gte('failed_at', yesterday).lt('failed_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_abandoned_carts').select('*', { count: 'exact', head: true })
+                .gte('created_at', yesterday).lt('created_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_abandoned_carts').select('*', { count: 'exact', head: true })
+                .eq('recovery_status', 'recovered')
+                .gte('recovered_at', yesterday).lt('recovered_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_coupon_usage').select('discount_amount, order_total')
+                .gte('created_at', yesterday).lt('created_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0])
+        ]);
+
+        const couponRevenue = (revenueData || []).reduce((sum, u) => sum + (parseFloat(u.order_total) || 0), 0);
+        const couponDiscount = (revenueData || []).reduce((sum, u) => sum + (parseFloat(u.discount_amount) || 0), 0);
+
+        await supabase.from('marketing_analytics_daily').insert([{
+            date: yesterday,
+            new_customers: newCustomers || 0,
+            campaigns_sent: campaignsSent || 0,
+            campaigns_delivered: campaignsDelivered || 0,
+            campaigns_read: campaignsRead || 0,
+            campaigns_failed: campaignsFailed || 0,
+            coupon_revenue: couponRevenue,
+            coupon_discount_given: couponDiscount,
+            carts_abandoned: cartsAbandoned || 0,
+            carts_recovered: cartsRecovered || 0
+        }]);
+
+        console.log(`[Marketing Cron] Daily analytics for ${yesterday} aggregated successfully`);
+    } catch (error) {
+        console.error('[Marketing Cron] Daily analytics aggregation error:', error.message);
+    }
+}
+
 
 // ==================== ERROR HANDLING ====================
 
