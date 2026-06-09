@@ -3,12 +3,13 @@
  * Handles all section loading, CRUD operations, and modals
  */
 
-// ── Dashboard Init ──
+// ── Dashboard Init ─
 async function initDashboard() {
-    initRevenueChart('revenueChart');
-    initCampaignChart('campaignChart');
-    initSegmentChart('segmentChart');
-    initRecoveryChart('recoveryChart');
+    // Chart functions are no-ops if Chart.js CDN was blocked
+    if (typeof initRevenueChart === 'function') initRevenueChart('revenueChart');
+    if (typeof initCampaignChart === 'function') initCampaignChart('campaignChart');
+    if (typeof initSegmentChart === 'function') initSegmentChart('segmentChart');
+    if (typeof initRecoveryChart === 'function') initRecoveryChart('recoveryChart');
     loadOverview();
 }
 

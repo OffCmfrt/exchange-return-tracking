@@ -1,7 +1,10 @@
 /**
  * Marketing Dashboard - Chart Initialization
  * Chart.js configurations and update functions
+ * Gracefully degrades if Chart.js CDN is blocked (e.g. by CSP headers)
  */
+
+if (typeof Chart !== 'undefined') {
 
 // Chart.js global defaults
 Chart.defaults.font.family = "'Inter', sans-serif";
@@ -191,3 +194,5 @@ function initAnalyticsCampaignChart(canvasId) {
         }
     });
 }
+
+} // end typeof Chart check
