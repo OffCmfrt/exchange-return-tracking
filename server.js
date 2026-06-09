@@ -1226,7 +1226,33 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
             finalTitle = title;
             finalValue = typeof value === 'string' ? value : `-${value}`;
         }
-        
+
+        // --- DUPLICATE CHECK: search for existing discount code before creating ---
+        const upperCode = code.toUpperCase();
+        try {
+            let pageUrl = 'price_rules.json?limit=250';
+            while (pageUrl) {
+                const listResp = await shopifyAPI(pageUrl);
+                const rules = listResp.price_rules || [];
+                for (const rule of rules) {
+                    try {
+                        const codesResp = await shopifyAPI(`price_rules/${rule.id}/discount_codes.json`);
+                        const codes = codesResp.discount_codes || [];
+                        const match = codes.find(c => c.code && c.code.toUpperCase() === upperCode);
+                        if (match) {
+                            console.log(`♻️  Discount code ${upperCode} already exists on Price Rule ${rule.id} (Code ID: ${match.id}), reusing instead of creating duplicate`);
+                            return { priceRuleId: rule.id, discountCodeId: match.id, code: upperCode };
+                        }
+                    } catch (e) { /* skip rules we can't read */ }
+                }
+                // Follow pagination (shopifyAPI sets .nextUrl from Link header)
+                pageUrl = listResp.nextUrl || null;
+            }
+        } catch (searchErr) {
+            console.warn('⚠️ Could not search existing discount codes, proceeding with creation:', searchErr.message);
+        }
+        // --- END DUPLICATE CHECK ---
+
         // Step 1: Create Price Rule
         const priceRulePayload = {
             price_rule: {
@@ -1410,8 +1436,30 @@ async function createShopifyDiscountDraft(code, percentage, usageLimit, title) {
  */
 async function activateShopifyDiscountCode(priceRuleId, code) {
     try {
+        // Check if a discount code already exists on this price rule
+        const existing = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`);
+        const existingCodes = existing.discount_codes || [];
+        const upperCode = code.toUpperCase();
+
+        // Look for an exact match
+        const match = existingCodes.find(c => c.code && c.code.toUpperCase() === upperCode);
+        if (match) {
+            console.log(`✅ Shopify discount code ${code} already exists (Discount Code ID: ${match.id}), skipping duplicate creation`);
+            return { discountCodeId: match.id };
+        }
+
+        // If other codes exist but don't match, remove them first (stale codes)
+        for (const old of existingCodes) {
+            try {
+                await shopifyAPI(`price_rules/${priceRuleId}/discount_codes/${old.id}.json`, { method: 'DELETE' });
+                console.log(`🗑️ Removed stale discount code "${old.code}" (ID: ${old.id}) from price rule ${priceRuleId}`);
+            } catch (e) {
+                console.warn(`⚠️ Could not remove stale code ${old.id}:`, e.message);
+            }
+        }
+
         const discountCodePayload = {
-            discount_code: { code: code.toUpperCase() }
+            discount_code: { code: upperCode }
         };
 
         const discountCodeResponse = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {

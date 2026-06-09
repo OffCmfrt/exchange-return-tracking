@@ -2562,6 +2562,41 @@
             if (whatsappPhoneInput && data.customerPhone) {
                 whatsappPhoneInput.value = data.customerPhone;
             }
+
+            // Auto-fill discount code if empty
+            const discountCodeEl = document.getElementById('discountCode');
+            if (discountCodeEl) {
+                const namePart = (data.customerName || 'CUST').replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase();
+                const idPart = (data.requestId || '').replace(/[^0-9]/g, '').slice(-4);
+                const randPart = Math.random().toString(36).substring(2, 5).toUpperCase();
+                discountCodeEl.value = `OFFCOMFRT${namePart}${idPart || randPart}`;
+            }
+
+            // Auto-fill discount defaults: fixed amount, usage 1, product price as value
+            const discountTypeEl = document.getElementById('discountType');
+            const discountValueEl = document.getElementById('discountValue');
+            const discountUsageEl = document.getElementById('discountUsageLimit');
+
+            if (discountTypeEl) {
+                discountTypeEl.value = 'fixed';
+            }
+            if (discountUsageEl) {
+                discountUsageEl.value = '1';
+            }
+            if (discountValueEl) {
+                // Calculate total product price from items
+                const items = Array.isArray(data.items)
+                    ? data.items
+                    : (typeof data.items === 'string' ? (() => { try { return JSON.parse(data.items); } catch(e) { return []; } })() : []);
+                const totalPrice = items.reduce((sum, item) => {
+                    const price = parseFloat(item.price || item.replacementPrice || 0);
+                    const qty = parseInt(item.quantity || 1);
+                    return sum + (price * qty);
+                }, 0);
+                if (totalPrice > 0) {
+                    discountValueEl.value = totalPrice;
+                }
+            }
             
             // Set up real-time preview
             setupWhatsAppPreview();
