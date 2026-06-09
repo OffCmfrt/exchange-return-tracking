@@ -78,7 +78,13 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
 });
 
-// Security middleware - Helmet for security headers (applied AFTER admin route)
+// Marketing dashboard - same permissive CSP as admin dashboard
+app.get('/admin/marketing', (req, res) => {
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
+    res.sendFile(path.join(__dirname, 'public', 'admin', 'marketing', 'index.html'));
+});
+
+// Security middleware - Helmet for security headers (applied AFTER admin routes)
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
