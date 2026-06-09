@@ -9562,27 +9562,26 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
             return res.status(400).json({ error: 'Shopify not configured' });
         }
 
-        let page = 1;
         let totalSynced = 0;
-        let hasMore = true;
+        let cursor = null;
+        let pagesFetched = 0;
 
-        while (hasMore) {
-            const url = `https://${shopifyStore}/admin/api/2024-01/customers.json?limit=250&page=${page}`;
+        do {
+            let url = `https://${shopifyStore}/admin/api/2024-01/customers.json?limit=250`;
+            if (cursor) url += `&page_info=${cursor}`;
+
             const response = await fetch(url, {
                 headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' }
             });
 
             if (!response.ok) {
-                throw new Error(`Shopify API error: ${response.status}`);
+                const errorBody = await response.text().catch(() => 'No body');
+                console.error('[Marketing] Shopify API error:', response.status, response.statusText, errorBody);
+                throw new Error(`Shopify API ${response.status} ${response.statusText}: ${errorBody}`);
             }
 
             const data = await response.json();
             const customers = data.customers || [];
-
-            if (customers.length === 0) {
-                hasMore = false;
-                break;
-            }
 
             for (const c of customers) {
                 const totalOrders = c.orders_count || 0;
@@ -9620,9 +9619,15 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
                 totalSynced++;
             }
 
-            page++;
-            if (page > 100) hasMore = false; // Safety limit
-        }
+            // Extract cursor from Link header for next page
+            const linkHeader = response.headers.get('link');
+            cursor = null;
+            if (linkHeader) {
+                const nextMatch = linkHeader.match(/page_info=([^&>]+)>; rel="next"/);
+                if (nextMatch) cursor = nextMatch[1];
+            }
+            pagesFetched++;
+        } while (cursor && pagesFetched < 100); // Safety limit: max 100 pages
 
         await marketingDB.createAuditLog({
             action: 'synced',

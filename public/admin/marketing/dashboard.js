@@ -84,7 +84,7 @@ async function syncCustomers() {
     try {
         showToast('Syncing customers from Shopify...', 'info');
         const data = await apiCall('customers/sync', { method: 'POST' });
-        showToast(`Synced ${data.synced || 0} customers`);
+        showToast(`Synced ${data.totalSynced || 0} customers`);
         loadCustomers();
     } catch (error) {
         showToast(error.message, 'error');
@@ -215,7 +215,7 @@ async function loadTemplates() {
         const data = await apiCall(`templates?${params}`);
         
         const tbody = document.getElementById('templatesBody');
-        tbody.innerHTML = (data.data || data).map(t => `
+        tbody.innerHTML = (data.templates || data.data || []).map(t => `
             <tr>
                 <td><strong>${escapeHtml(t.name)}</strong></td>
                 <td>${escapeHtml(t.category)}</td>
