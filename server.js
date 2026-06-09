@@ -1230,23 +1230,13 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
         // --- DUPLICATE CHECK: search for existing discount code before creating ---
         const upperCode = code.toUpperCase();
         try {
-            let pageUrl = 'price_rules.json?limit=250';
-            while (pageUrl) {
-                const listResp = await shopifyAPI(pageUrl);
-                const rules = listResp.price_rules || [];
-                for (const rule of rules) {
-                    try {
-                        const codesResp = await shopifyAPI(`price_rules/${rule.id}/discount_codes.json`);
-                        const codes = codesResp.discount_codes || [];
-                        const match = codes.find(c => c.code && c.code.toUpperCase() === upperCode);
-                        if (match) {
-                            console.log(`♻️  Discount code ${upperCode} already exists on Price Rule ${rule.id} (Code ID: ${match.id}), reusing instead of creating duplicate`);
-                            return { priceRuleId: rule.id, discountCodeId: match.id, code: upperCode };
-                        }
-                    } catch (e) { /* skip rules we can't read */ }
-                }
-                // Follow pagination (shopifyAPI sets .nextUrl from Link header)
-                pageUrl = listResp.nextUrl || null;
+            // Use Shopify's direct discount code search (single API call, no pagination)
+            const searchResp = await shopifyAPI(`discount_codes.json?code=${encodeURIComponent(upperCode)}`);
+            const existingCodes = searchResp.discount_codes || [];
+            const match = existingCodes.find(c => c.code && c.code.toUpperCase() === upperCode);
+            if (match) {
+                console.log(`♻️  Discount code ${upperCode} already exists (Price Rule: ${match.price_rule_id}, Code ID: ${match.id}), reusing instead of creating duplicate`);
+                return { priceRuleId: match.price_rule_id, discountCodeId: match.id, code: upperCode };
             }
         } catch (searchErr) {
             console.warn('⚠️ Could not search existing discount codes, proceeding with creation:', searchErr.message);
