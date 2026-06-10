@@ -2554,7 +2554,9 @@
         }
         
         if (discountSection) {
-            // Show discount code section for all statuses
+            // Show discount code section for all request types
+            // For returns: approve button will auto-create coupon
+            // For exchanges: coupon only created via explicit "Send & Create" button
             discountSection.classList.remove('hidden');
             
             // Populate WhatsApp phone with customer's phone
@@ -2992,9 +2994,11 @@
         const whatsappPhone = document.getElementById('whatsappPhone')?.value?.trim() || '';
         
         // If discount section is visible and value is provided
+        // Safety: also check request type is 'return' to prevent exchange coupon auto-creation
         const hasDiscount = discountValue && parseFloat(discountValue) > 0;
+        const isReturnType = currentRequest && currentRequest.type === 'return';
         
-        if (isDiscountVisible && hasDiscount) {
+        if (isDiscountVisible && hasDiscount && isReturnType) {
             // Validate phone if WhatsApp is enabled
             if (sendWhatsApp && !whatsappPhone) {
                 alert('Please provide a phone number to send WhatsApp message, or uncheck the send option.');
