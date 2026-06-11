@@ -1235,7 +1235,22 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
             const existingCodes = searchResp.discount_codes || [];
             const match = existingCodes.find(c => c.code && c.code.toUpperCase() === upperCode);
             if (match) {
-                console.log(`♻️  Discount code ${upperCode} already exists (Price Rule: ${match.price_rule_id}, Code ID: ${match.id}), reusing instead of creating duplicate`);
+                console.log(`♻️  Discount code ${upperCode} already exists (Price Rule: ${match.price_rule_id}, Code ID: ${match.id}), updating value to ${finalValue} (${finalValueType})`);
+                // UPDATE the existing price rule with the admin's new value — never silently skip
+                try {
+                    await shopifyAPI(`price_rules/${match.price_rule_id}.json`, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            price_rule: {
+                                value: finalValue,
+                                value_type: finalValueType
+                            }
+                        })
+                    });
+                    console.log(`✅ Updated existing price rule ${match.price_rule_id} value to ${finalValue}`);
+                } catch (updateErr) {
+                    console.warn(`⚠️ Could not update existing price rule ${match.price_rule_id}:`, updateErr.message);
+                }
                 return { priceRuleId: match.price_rule_id, discountCodeId: match.id, code: upperCode };
             }
         } catch (searchErr) {
@@ -1244,6 +1259,7 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
         // --- END DUPLICATE CHECK ---
 
         // Step 1: Create Price Rule
+        console.log(`[createShopifyDiscount] Creating price rule for ${code.toUpperCase()}: value_type=${finalValueType}, value=${finalValue}, usage_limit=${finalUsageLimit || 'unlimited'}`);
         const priceRulePayload = {
             price_rule: {
                 title: finalTitle || `Influencer: ${code}`,
@@ -5326,16 +5342,17 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
             const valueType = discountType === 'fixed' ? 'fixed_amount' : 'percentage';
             const title = `Return Compensation: ${requestDetails.orderNumber}`;
             
+            console.log(`[approve-discount][${requestId}] Creating Shopify discount: code=${finalCode}, value=${discountValue}, type=${valueType}, usage=${usageLimit || 'unlimited'}`);
             shopifyResult = await createShopifyDiscountCode(
                 finalCode,
-                discountValue,
+                parseFloat(discountValue),
                 valueType,
                 usageLimit || null,
                 title
             );
             
             discountCodeGenerated = finalCode.toUpperCase();
-            console.log(`[${requestId}] ✅ Shopify discount created: ${discountCodeGenerated}`);
+            console.log(`[approve-discount][${requestId}] ✅ Shopify discount created: ${discountCodeGenerated} (value=${discountValue}, type=${valueType})`);
         }
 
         // 3. Update request status to 'approved' with discount info
@@ -5452,6 +5469,8 @@ app.post('/api/admin/send-coupon-code', authenticateAdmin, async (req, res) => {
         const valueType = discountType === 'fixed' ? 'fixed_amount' : 'percentage';
         const title = `Return Compensation: ${requestDetails.orderNumber}`;
 
+        console.log(`[send-coupon][${requestId}] Creating Shopify discount: code=${finalCode}, value=${discountValue}, type=${valueType}, usage=${usageLimit || 'unlimited'}`);
+
         let shopifyResult = null;
         try {
             shopifyResult = await createShopifyDiscountCode(
@@ -5461,7 +5480,7 @@ app.post('/api/admin/send-coupon-code', authenticateAdmin, async (req, res) => {
                 usageLimit || null,
                 title
             );
-            console.log(`[send-coupon][${requestId}] ✅ Shopify discount created: ${finalCode.toUpperCase()}`);
+            console.log(`[send-coupon][${requestId}] ✅ Shopify discount created: ${finalCode.toUpperCase()} (value=${discountValue}, type=${valueType})`);
         } catch (shopifyError) {
             console.error(`[send-coupon][${requestId}] ❌ Shopify discount creation failed:`, shopifyError.message);
             return res.status(500).json({ error: 'Failed to create discount code in Shopify: ' + shopifyError.message });
