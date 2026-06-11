@@ -338,6 +338,18 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.carrierAwb !== undefined) updateData.carrier_awb = updates.carrierAwb;
     if (updates.carrierFallbackReason !== undefined) updateData.carrier_fallback_reason = updates.carrierFallbackReason;
 
+    // Discount Code (return compensation)
+    if (updates.discountCode !== undefined) updateData.discount_code = updates.discountCode;
+    if (updates.discountValue !== undefined) updateData.discount_value = updates.discountValue;
+    if (updates.discountType !== undefined) updateData.discount_type = updates.discountType;
+    if (updates.approvedAt !== undefined) updateData.approved_at = updates.approvedAt;
+
+    // WhatsApp Tracking
+    if (updates.whatsappSent !== undefined) updateData.whatsapp_sent = updates.whatsappSent;
+    if (updates.whatsappMessageId !== undefined) updateData.whatsapp_message_id = updates.whatsappMessageId;
+    if (updates.whatsappSentAt !== undefined) updateData.whatsapp_sent_at = updates.whatsappSentAt;
+    if (updates.whatsappError !== undefined) updateData.whatsapp_error = updates.whatsappError;
+
     if (Object.keys(updateData).length === 0) return null;
 
     const { data, error } = await supabase
@@ -403,6 +415,12 @@ function convertFromSnakeCase(data) {
         carrierShipmentId: data.carrier_shipment_id,
         carrierAwb: data.carrier_awb,
         carrierFallbackReason: data.carrier_fallback_reason,
+        discountCode: data.discount_code || null,
+        discountValue: data.discount_value || null,
+        discountType: data.discount_type || null,
+        whatsappSent: data.whatsapp_sent || false,
+        whatsappMessageId: data.whatsapp_message_id || null,
+        whatsappSentAt: data.whatsapp_sent_at || null,
         createdAt: data.created_at,
         updatedAt: data.updated_at
     };
