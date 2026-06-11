@@ -2141,6 +2141,22 @@
         // Store request data globally for workflow timeline access
         window.currentRequestData = data;
         
+        // Save user-edited discount values before innerHTML wipe (preserve on refresh)
+        const _savedDiscount = {};
+        const _existingCode = document.getElementById('discountCode');
+        const _existingType = document.getElementById('discountType');
+        const _existingValue = document.getElementById('discountValue');
+        const _existingUsage = document.getElementById('discountUsageLimit');
+        const _existingWhatsapp = document.getElementById('whatsappPhone');
+        const _existingSendWhatsapp = document.getElementById('sendWhatsAppDiscount');
+        if (_existingCode) _savedDiscount.code = _existingCode.value;
+        if (_existingType) _savedDiscount.type = _existingType.value;
+        if (_existingValue) _savedDiscount.value = _existingValue.value;
+        if (_existingUsage) _savedDiscount.usage = _existingUsage.value;
+        if (_existingWhatsapp) _savedDiscount.phone = _existingWhatsapp.value;
+        if (_existingSendWhatsapp) _savedDiscount.sendWhatsapp = _existingSendWhatsapp.checked;
+        const _hasUserDiscountEdits = Object.keys(_savedDiscount).length > 0;
+        
         // Debug: Log incoming data status
         console.log('displayRequestDetails called with status:', data.status, 'full data keys:', Object.keys(data));
 
@@ -2565,38 +2581,58 @@
                 whatsappPhoneInput.value = data.customerPhone;
             }
 
-            // Auto-fill discount code if empty
+            // Auto-fill discount code only if empty or no prior user edits (preserve on refresh)
             const discountCodeEl = document.getElementById('discountCode');
             if (discountCodeEl) {
-                const namePart = (data.customerName || 'CUST').replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase();
-                const idPart = (data.requestId || '').replace(/[^0-9]/g, '').slice(-4);
-                const randPart = Math.random().toString(36).substring(2, 5).toUpperCase();
-                discountCodeEl.value = `OFFCOMFRT${namePart}${idPart || randPart}`;
+                if (_hasUserDiscountEdits && _savedDiscount.code) {
+                    discountCodeEl.value = _savedDiscount.code;
+                } else if (!discountCodeEl.value.trim()) {
+                    const namePart = (data.customerName || 'CUST').replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase();
+                    const idPart = (data.requestId || '').replace(/[^0-9]/g, '').slice(-4);
+                    const randPart = Math.random().toString(36).substring(2, 5).toUpperCase();
+                    discountCodeEl.value = `OFFCOMFRT${namePart}${idPart || randPart}`;
+                }
             }
 
-            // Auto-fill discount defaults: fixed amount, usage 1, product price as value
+            // Auto-fill discount defaults only if no prior user edits (preserve on refresh)
             const discountTypeEl = document.getElementById('discountType');
             const discountValueEl = document.getElementById('discountValue');
             const discountUsageEl = document.getElementById('discountUsageLimit');
 
             if (discountTypeEl) {
-                discountTypeEl.value = 'fixed';
+                discountTypeEl.value = _hasUserDiscountEdits && _savedDiscount.type ? _savedDiscount.type : 'fixed';
             }
             if (discountUsageEl) {
-                discountUsageEl.value = '1';
+                discountUsageEl.value = _hasUserDiscountEdits && _savedDiscount.usage ? _savedDiscount.usage : '1';
             }
             if (discountValueEl) {
-                // Calculate total product price from items
-                const items = Array.isArray(data.items)
-                    ? data.items
-                    : (typeof data.items === 'string' ? (() => { try { return JSON.parse(data.items); } catch(e) { return []; } })() : []);
-                const totalPrice = items.reduce((sum, item) => {
-                    const price = parseFloat(item.price || item.replacementPrice || 0);
-                    const qty = parseInt(item.quantity || 1);
-                    return sum + (price * qty);
-                }, 0);
-                if (totalPrice > 0) {
-                    discountValueEl.value = totalPrice;
+                if (_hasUserDiscountEdits && _savedDiscount.value) {
+                    discountValueEl.value = _savedDiscount.value;
+                } else if (!discountValueEl.value.trim()) {
+                    // Calculate total product price from items
+                    const items = Array.isArray(data.items)
+                        ? data.items
+                        : (typeof data.items === 'string' ? (() => { try { return JSON.parse(data.items); } catch(e) { return []; } })() : []);
+                    const totalPrice = items.reduce((sum, item) => {
+                        const price = parseFloat(item.price || item.replacementPrice || 0);
+                        const qty = parseInt(item.quantity || 1);
+                        return sum + (price * qty);
+                    }, 0);
+                    if (totalPrice > 0) {
+                        discountValueEl.value = totalPrice;
+                    }
+                }
+            }
+            
+            // Restore WhatsApp checkbox and phone if user had set them
+            if (_hasUserDiscountEdits) {
+                const sendWhatsappEl = document.getElementById('sendWhatsAppDiscount');
+                if (sendWhatsappEl && _savedDiscount.sendWhatsapp !== undefined) {
+                    sendWhatsappEl.checked = _savedDiscount.sendWhatsapp;
+                }
+                const phoneEl = document.getElementById('whatsappPhone');
+                if (phoneEl && _savedDiscount.phone) {
+                    phoneEl.value = _savedDiscount.phone;
                 }
             }
             
