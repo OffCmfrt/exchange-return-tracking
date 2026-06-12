@@ -2155,7 +2155,9 @@
         if (_existingUsage) _savedDiscount.usage = _existingUsage.value;
         if (_existingWhatsapp) _savedDiscount.phone = _existingWhatsapp.value;
         if (_existingSendWhatsapp) _savedDiscount.sendWhatsapp = _existingSendWhatsapp.checked;
-        const _hasUserDiscountEdits = Object.keys(_savedDiscount).length > 0;
+        // Track which request the saved form data belongs to
+        _savedDiscount.requestId = (window.currentRequestData && window.currentRequestData.requestId) || null;
+        const _hasUserDiscountEdits = !!( _existingCode || _existingType || _existingValue || _existingUsage || _existingWhatsapp || _existingSendWhatsapp);
         
         // Debug: Log incoming data status
         console.log('displayRequestDetails called with status:', data.status, 'full data keys:', Object.keys(data));
@@ -2624,8 +2626,10 @@
                 }
             }
             
-            // Restore WhatsApp checkbox and phone if user had set them
-            if (_hasUserDiscountEdits) {
+            // Restore WhatsApp checkbox and phone if user had set them FOR THE SAME REQUEST
+            // Never carry over phone from a different request
+            const _isSameRequest = _savedDiscount.requestId === data.requestId;
+            if (_hasUserDiscountEdits && _isSameRequest) {
                 const sendWhatsappEl = document.getElementById('sendWhatsAppDiscount');
                 if (sendWhatsappEl && _savedDiscount.sendWhatsapp !== undefined) {
                     sendWhatsappEl.checked = _savedDiscount.sendWhatsapp;
