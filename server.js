@@ -7498,8 +7498,8 @@ app.post('/api/influencer/apply', async (req, res) => {
                 field: !name ? 'name' : !phone ? 'phone' : !email ? 'email' : !instagramHandle ? 'instagramHandle' : 'preferredCode'
             });
         }
-        if (!followerCount || followerCount < 1000) {
-            return res.status(400).json({ error: 'Please enter a valid follower count (minimum 1,000)', field: 'followerCount' });
+        if (followerCount === null || followerCount === undefined || followerCount < 0) {
+            return res.status(400).json({ error: 'Please enter a valid follower count', field: 'followerCount' });
         }
         if (!niche) {
             return res.status(400).json({ error: 'Please select a niche', field: 'niche' });
