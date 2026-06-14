@@ -42,44 +42,502 @@ async function loadOverview() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// CUSTOMERS
+// CUSTOMER INTELLIGENCE (Premium)
 // ════════════════════════════════════════════════════════════════
 
 let customerPage = 1;
+let selectedCustomers = new Set();
+let customerStatsCache = null;
+let segmentOptionsCache = [];
 
+// Tier colors & icons
+const TIER_CONFIG = {
+    platinum: { color: '#6366f1', bg: '#eef2ff', icon: 'fa-gem', label: 'Platinum' },
+    gold:     { color: '#d97706', bg: '#fffbeb', icon: 'fa-crown', label: 'Gold' },
+    silver:   { color: '#6b7280', bg: '#f3f4f6', icon: 'fa-medal', label: 'Silver' },
+    bronze:   { color: '#92400e', bg: '#fef3c7', icon: 'fa-award', label: 'Bronze' }
+};
+
+const SEGMENT_COLORS = {
+    vip: '#4f46e5', general: '#64748b', repeat: '#06b6d4',
+    new_customer: '#10b981', at_risk: '#ef4444', dormant: '#8b5cf6',
+    high_value: '#f59e0b', wholesale: '#ec4899'
+};
+
+// ── Load Customer Stats ──
+async function loadCustomerStats() {
+    try {
+        const data = await apiCall('customers/stats');
+        customerStatsCache = data.stats;
+        const s = data.stats;
+
+        document.getElementById('cstat-total').textContent = formatNumber(s.total);
+        document.getElementById('cstat-vip').textContent = formatNumber(s.vipCount || 0);
+        document.getElementById('cstat-health').textContent = s.avgHealthScore || 0;
+        document.getElementById('cstat-atrisk').textContent = formatNumber(s.atRiskCount || 0);
+
+        // Health breakdown bars
+        const total = s.total || 1;
+        const hb = s.healthBreakdown || {};
+        setBarWidth('healthExcellent', hb.excellent, total);
+        setBarWidth('healthGood', hb.good, total);
+        setBarWidth('healthAverage', hb.average, total);
+        setBarWidth('healthPoor', hb.poor, total);
+
+        // Churn breakdown bars
+        const cb = s.churnBreakdown || {};
+        setBarWidth('churnLow', cb.low, total);
+        setBarWidth('churnMedium', cb.medium, total);
+        setBarWidth('churnHigh', cb.high, total);
+        setBarWidth('churnCritical', cb.critical, total);
+    } catch (error) {
+        console.error('[Customer Stats] Error:', error.message);
+    }
+}
+
+function setBarWidth(id, value, total) {
+    const el = document.getElementById(id);
+    if (el) el.style.width = total > 0 ? Math.round((value / total) * 100) + '%' : '0%';
+}
+
+// ── Load Segment Options ──
+async function loadSegmentOptions() {
+    try {
+        const data = await apiCall('customers/segments');
+        segmentOptionsCache = data.segments || [];
+        const select = document.getElementById('customerSegment');
+        const currentVal = select?.value || '';
+        select.innerHTML = '<option value="">All Segments</option>';
+        segmentOptionsCache.forEach(seg => {
+            const opt = document.createElement('option');
+            opt.value = seg.name;
+            opt.textContent = `${seg.name}${seg.customer_count ? ` (${seg.customer_count})` : ''}`;
+            select.appendChild(opt);
+        });
+        select.value = currentVal;
+    } catch (error) {
+        // Fallback: use known segment names
+        const select = document.getElementById('customerSegment');
+        const fallbacks = ['general', 'vip', 'repeat', 'new_customer', 'at_risk', 'dormant', 'high_value'];
+        select.innerHTML = '<option value="">All Segments</option>';
+        fallbacks.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s;
+            opt.textContent = s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            select.appendChild(opt);
+        });
+    }
+}
+
+// ── Load Customers ─
 async function loadCustomers(page = 1) {
     customerPage = page;
     try {
-        const params = new URLSearchParams({ page });
+        const params = new URLSearchParams({ page, limit: 50 });
+        const search = document.getElementById('customerSearch')?.value;
+        const segment = document.getElementById('customerSegment')?.value;
+        const tier = document.getElementById('customerTier')?.value;
+        const marketing = document.getElementById('customerMarketing')?.value;
+        const sortBy = document.getElementById('customerSortBy')?.value || 'created_at';
+        const churnRisk = document.getElementById('customerChurnRisk')?.value;
+
+        if (search) params.append('search', search);
+        if (segment) params.append('segment', segment);
+        if (tier) params.append('tier', tier);
+        if (marketing) params.append('acceptsMarketing', marketing);
+        if (churnRisk) params.append('churnRisk', churnRisk);
+        params.append('sortBy', sortBy);
+        params.append('sortOrder', 'desc');
+
+        const [customerData] = await Promise.all([
+            apiCall(`customers?${params}`),
+            loadCustomerStats().catch(() => {}),
+            loadSegmentOptions().catch(() => {})
+        ]);
+
+        const tbody = document.getElementById('customersBody');
+        const emptyState = document.getElementById('customersEmpty');
+
+        if (!customerData.data || customerData.data.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.classList.remove('hidden');
+            document.getElementById('customersPagination').innerHTML = '';
+            return;
+        }
+
+        emptyState.classList.add('hidden');
+
+        const CHURN_CONFIG = {
+            low:      { color: '#10b981', bg: '#ecfdf5', icon: 'fa-shield-alt', label: 'Low' },
+            medium:   { color: '#f59e0b', bg: '#fffbeb', icon: 'fa-exclamation', label: 'Medium' },
+            high:     { color: '#f97316', bg: '#fff7ed', icon: 'fa-exclamation-triangle', label: 'High' },
+            critical: { color: '#ef4444', bg: '#fef2f2', icon: 'fa-skull-crossbones', label: 'Critical' }
+        };
+
+        tbody.innerHTML = customerData.data.map(c => {
+            const initials = getInitials(c.first_name, c.last_name);
+            const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email;
+            const tierCfg = TIER_CONFIG[(c.lifetime_value_tier || 'bronze').toLowerCase()] || TIER_CONFIG.bronze;
+            const segColor = SEGMENT_COLORS[(c.segment || 'general').toLowerCase()] || '#64748b';
+            const healthScore = parseInt(c.health_score) || 0;
+            const churnCfg = CHURN_CONFIG[(c.churn_risk || 'low').toLowerCase()] || CHURN_CONFIG.low;
+            const isSelected = selectedCustomers.has(c.id);
+
+            // Health bar color
+            let healthColor = '#ef4444';
+            if (healthScore >= 75) healthColor = '#10b981';
+            else if (healthScore >= 50) healthColor = '#3b82f6';
+            else if (healthScore >= 25) healthColor = '#f59e0b';
+
+            return `
+            <tr class="${isSelected ? 'row-selected' : ''}" data-id="${c.id}">
+                <td class="col-checkbox"><input type="checkbox" class="customer-cb" ${isSelected ? 'checked' : ''} onchange="toggleCustomerSelect(${c.id}, this)"></td>
+                <td>
+                    <div class="customer-cell">
+                        <div class="avatar" style="background:${tierCfg.bg};color:${tierCfg.color}">${initials}</div>
+                        <div class="customer-info">
+                            <span class="customer-name">${escapeHtml(fullName)}</span>
+                            <span class="customer-id">#${c.shopify_customer_id || c.id}</span>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div class="contact-cell">
+                        <div class="contact-email" title="${escapeHtml(c.email)}">${escapeHtml(c.email)}</div>
+                        <div class="contact-phone">${escapeHtml(c.phone || '-')}</div>
+                    </div>
+                </td>
+                <td><strong>${c.total_orders || 0}</strong></td>
+                <td><strong>${formatCurrency(c.total_spent)}</strong></td>
+                <td>
+                    <div class="health-cell">
+                        <div class="health-bar-bg"><div class="health-bar-fill" style="width:${healthScore}%;background:${healthColor}"></div></div>
+                        <span class="health-score-text" style="color:${healthColor}">${healthScore}</span>
+                    </div>
+                </td>
+                <td><span class="segment-badge" style="background:${segColor}20;color:${segColor}">${escapeHtml(c.segment || 'general')}</span></td>
+                <td><span class="tier-badge" style="background:${tierCfg.bg};color:${tierCfg.color}"><i class="fas ${tierCfg.icon}"></i> ${tierCfg.label}</span></td>
+                <td><span class="churn-badge" style="background:${churnCfg.bg};color:${churnCfg.color}"><i class="fas ${churnCfg.icon}"></i> ${churnCfg.label}</span></td>
+                <td>${c.last_order_date ? timeAgo(c.last_order_date) : '<span class="text-muted">Never</span>'}</td>
+                <td>
+                    <div class="table-actions">
+                        <button class="btn-icon" onclick="viewCustomerDetail(${c.id})" title="View Details"><i class="fas fa-eye"></i></button>
+                        <button class="btn-icon" onclick="editCustomerSegment(${c.id}, '${escapeHtml(c.segment || 'general')}', '${escapeHtml(c.lifetime_value_tier || 'bronze')}')" title="Edit"><i class="fas fa-edit"></i></button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+
+        renderPagination('customersPagination', customerData.pagination, 'loadCustomers');
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+// ─ Customer Selection ──
+function toggleCustomerSelect(id, cb) {
+    if (cb.checked) selectedCustomers.add(id); else selectedCustomers.delete(id);
+    updateBulkActionsUI();
+    updateRowHighlight(id, cb.checked);
+}
+
+function toggleSelectAll(masterCb) {
+    const checkboxes = document.querySelectorAll('.customer-cb');
+    checkboxes.forEach(cb => {
+        const row = cb.closest('tr');
+        const id = parseInt(row.dataset.id);
+        cb.checked = masterCb.checked;
+        if (masterCb.checked) selectedCustomers.add(id); else selectedCustomers.delete(id);
+        updateRowHighlight(id, masterCb.checked);
+    });
+    updateBulkActionsUI();
+}
+
+function updateRowHighlight(id, selected) {
+    const row = document.querySelector(`tr[data-id="${id}"]`);
+    if (row) row.classList.toggle('row-selected', selected);
+}
+
+function updateBulkActionsUI() {
+    const count = selectedCustomers.size;
+    document.getElementById('selectedCount').textContent = count;
+    const panel = document.getElementById('bulkActionsPanel');
+    const btn = document.getElementById('bulkActionsBtn');
+    if (count > 0) { panel.classList.remove('hidden'); btn.style.display = 'inline-flex'; }
+    else { panel.classList.add('hidden'); btn.style.display = 'none'; }
+}
+
+function toggleBulkActions() {
+    document.getElementById('bulkActionsPanel').classList.toggle('hidden');
+}
+
+function bulkDeselect() {
+    selectedCustomers.clear();
+    document.querySelectorAll('.customer-cb').forEach(cb => cb.checked = false);
+    document.getElementById('selectAllCustomers').checked = false;
+    document.querySelectorAll('.row-selected').forEach(r => r.classList.remove('row-selected'));
+    updateBulkActionsUI();
+}
+
+// ── Bulk Actions ──
+async function bulkChangeSegment() {
+    if (selectedCustomers.size === 0) return showToast('No customers selected', 'error');
+    openModal('Bulk Change Segment', `
+        <div class="form-group"><label>Select New Segment</label>
+            <select class="form-select" id="bulkSegment">
+                <option value="general">General</option><option value="vip">VIP</option>
+                <option value="repeat">Repeat</option><option value="new_customer">New Customer</option>
+                <option value="at_risk">At Risk</option><option value="dormant">Dormant</option>
+                <option value="high_value">High Value</option>
+            </select>
+        </div>
+        <p class="text-muted mb-2">${selectedCustomers.size} customers will be updated</p>
+        <button class="btn btn-primary btn-block" onclick="executeBulkSegment()"><i class="fas fa-check"></i> Apply Segment</button>
+    `);
+}
+
+async function executeBulkSegment() {
+    const segment = document.getElementById('bulkSegment').value;
+    try {
+        showToast(`Updating ${selectedCustomers.size} customers...`, 'info');
+        let success = 0;
+        for (const id of selectedCustomers) {
+            await apiCall(`customers/${id}`, { method: 'PUT', body: { segment } });
+            success++;
+        }
+        showToast(`${success} customers updated to "${segment}"`);
+        closeModal();
+        bulkDeselect();
+        loadCustomers(customerPage);
+    } catch (error) { showToast(error.message, 'error'); }
+}
+
+async function bulkChangeTier() {
+    if (selectedCustomers.size === 0) return showToast('No customers selected', 'error');
+    openModal('Bulk Change Tier', `
+        <div class="form-group"><label>Select New Tier</label>
+            <select class="form-select" id="bulkTier">
+                <option value="bronze">Bronze</option><option value="silver">Silver</option>
+                <option value="gold">Gold</option><option value="platinum">Platinum</option>
+            </select>
+        </div>
+        <p class="text-muted mb-2">${selectedCustomers.size} customers will be updated</p>
+        <button class="btn btn-primary btn-block" onclick="executeBulkTier()"><i class="fas fa-check"></i> Apply Tier</button>
+    `);
+}
+
+async function executeBulkTier() {
+    const tier = document.getElementById('bulkTier').value;
+    try {
+        showToast(`Updating ${selectedCustomers.size} customers...`, 'info');
+        let success = 0;
+        for (const id of selectedCustomers) {
+            await apiCall(`customers/${id}`, { method: 'PUT', body: { lifetimeValueTier: tier } });
+            success++;
+        }
+        showToast(`${success} customers updated to "${tier}" tier`);
+        closeModal();
+        bulkDeselect();
+        loadCustomers(customerPage);
+    } catch (error) { showToast(error.message, 'error'); }
+}
+
+async function bulkSendCoupon() {
+    if (selectedCustomers.size === 0) return showToast('No customers selected', 'error');
+    openModal('Send Coupon to Selected Customers', `
+        <div class="form-group"><label>Coupon Code *</label><input type="text" class="form-input" id="bulkCouponCode" placeholder="e.g. VIP20"></div>
+        <div class="form-group"><label>Discount Type</label><select class="form-select" id="bulkCouponType"><option value="percentage">Percentage</option><option value="fixed_amount">Fixed Amount</option></select></div>
+        <div class="form-group"><label>Discount Value *</label><input type="number" class="form-input" id="bulkCouponValue" step="0.01" placeholder="e.g. 20"></div>
+        <p class="text-muted mb-2">Coupon will be sent to ${selectedCustomers.size} customers</p>
+        <button class="btn btn-primary btn-block" onclick="executeBulkCoupon()"><i class="fas fa-paper-plane"></i> Create & Send</button>
+    `);
+}
+
+async function executeBulkCoupon() {
+    const code = document.getElementById('bulkCouponCode').value;
+    const discountType = document.getElementById('bulkCouponType').value;
+    const discountValue = document.getElementById('bulkCouponValue').value;
+    if (!code || !discountValue) return showToast('Please fill all fields', 'error');
+    try {
+        showToast('Creating coupon...', 'info');
+        await apiCall('coupons', {
+            method: 'POST',
+            body: { code, discountType, discountValue, usageLimit: selectedCustomers.size, isActive: true }
+        });
+        showToast(`Coupon "${code}" created for ${selectedCustomers.size} customers`);
+        closeModal();
+        bulkDeselect();
+    } catch (error) { showToast(error.message, 'error'); }
+}
+
+// ── Export Customers ──
+async function exportCustomers() {
+    try {
+        showToast('Preparing export...', 'info');
+        const params = new URLSearchParams({ limit: 10000 });
         const search = document.getElementById('customerSearch')?.value;
         const segment = document.getElementById('customerSegment')?.value;
         const tier = document.getElementById('customerTier')?.value;
         if (search) params.append('search', search);
         if (segment) params.append('segment', segment);
         if (tier) params.append('tier', tier);
-        
+
         const data = await apiCall(`customers?${params}`);
-        
-        const tbody = document.getElementById('customersBody');
-        tbody.innerHTML = data.data.map(c => `
-            <tr>
-                <td>${escapeHtml(c.first_name || '')} ${escapeHtml(c.last_name || '')}</td>
-                <td>${escapeHtml(c.email)}</td>
-                <td>${escapeHtml(c.phone || '-')}</td>
-                <td>${c.total_orders || 0}</td>
-                <td>${formatCurrency(c.total_spent)}</td>
-                <td>${statusBadge(c.segment)}</td>
-                <td>${statusBadge(c.lifetime_value_tier)}</td>
-                <td>${formatDate(c.last_order_date)}</td>
-            </tr>
-        `).join('');
-        
-        renderPagination('customersPagination', data.pagination, 'loadCustomers');
-    } catch (error) {
-        showToast(error.message, 'error');
-    }
+        const customers = data.data || [];
+
+        let csv = 'Name,Email,Phone,Orders,Total Spent,Health Score,Churn Risk,Segment,Tier,Marketing,Last Order\n';
+        customers.forEach(c => {
+            const avgOrder = c.total_orders > 0 ? (c.total_spent / c.total_orders).toFixed(2) : '0';
+            csv += `"${c.first_name || ''} ${c.last_name || ''}","${c.email}","${c.phone || ''}",${c.total_orders || 0},${c.total_spent || 0},${c.health_score || 0},"${c.churn_risk || 'low'}","${c.segment || 'general'}","${c.lifetime_value_tier || 'bronze'}",${c.accepts_marketing ? 'Yes' : 'No'},"${c.last_order_date || ''}"\n`;
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `customers_export_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(`Exported ${customers.length} customers`);
+    } catch (error) { showToast(error.message, 'error'); }
 }
 
+// ── Customer Detail Modal ──
+async function viewCustomerDetail(id) {
+    try {
+        showToast('Loading customer details...', 'info');
+        const data = await apiCall(`customers/${id}`);
+        const c = data.customer;
+        const orders = data.orders || [];
+        const tierCfg = TIER_CONFIG[(c.lifetime_value_tier || 'bronze').toLowerCase()] || TIER_CONFIG.bronze;
+        const healthScore = parseInt(c.health_score) || 0;
+        const churnRisk = (c.churn_risk || 'low').toLowerCase();
+
+        let healthColor = '#ef4444';
+        if (healthScore >= 75) healthColor = '#10b981';
+        else if (healthScore >= 50) healthColor = '#3b82f6';
+        else if (healthScore >= 25) healthColor = '#f59e0b';
+
+        const CHURN_CFG = {
+            low:      { color: '#10b981', bg: '#ecfdf5', icon: 'fa-shield-alt', label: 'Low Risk' },
+            medium:   { color: '#f59e0b', bg: '#fffbeb', icon: 'fa-exclamation', label: 'Medium Risk' },
+            high:     { color: '#f97316', bg: '#fff7ed', icon: 'fa-exclamation-triangle', label: 'High Risk' },
+            critical: { color: '#ef4444', bg: '#fef2f2', icon: 'fa-skull-crossbones', label: 'Critical' }
+        };
+        const churnCfg = CHURN_CFG[churnRisk] || CHURN_CFG.low;
+
+        let ordersHtml = '';
+        if (orders.length > 0) {
+            ordersHtml = orders.slice(0, 10).map(o => `
+                <div class="order-item">
+                    <div class="order-header">
+                        <span class="order-name">${escapeHtml(o.order_name || o.shopify_order_id)}</span>
+                        <span class="order-status">${statusBadge(o.financial_status)}</span>
+                    </div>
+                    <div class="order-meta">
+                        <span>${formatCurrency(o.total_price)}</span>
+                        <span>${formatDate(o.order_created_at)}</span>
+                        <span>${Array.isArray(o.line_items) ? o.line_items.length : 0} items</span>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            ordersHtml = '<p class="text-muted">No orders found</p>';
+        }
+
+        openModal('Customer Profile', `
+            <div class="customer-profile">
+                <div class="profile-header">
+                    <div class="profile-avatar" style="background:${tierCfg.bg};color:${tierCfg.color}">
+                        ${getInitials(c.first_name, c.last_name)}
+                    </div>
+                    <div class="profile-info">
+                        <h3>${escapeHtml(c.first_name || '')} ${escapeHtml(c.last_name || '')}</h3>
+                        <p class="text-muted">${escapeHtml(c.email)}</p>
+                        <div class="profile-badges">
+                            <span class="tier-badge" style="background:${tierCfg.bg};color:${tierCfg.color}"><i class="fas ${tierCfg.icon}"></i> ${tierCfg.label}</span>
+                            <span class="segment-badge" style="background:${SEGMENT_COLORS[(c.segment||'general').toLowerCase()] || '#64748b'}20;color:${SEGMENT_COLORS[(c.segment||'general').toLowerCase()] || '#64748b'}">${escapeHtml(c.segment || 'general')}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="profile-stats">
+                    <div class="profile-stat"><span class="profile-stat-value">${c.total_orders || 0}</span><span class="profile-stat-label">Orders</span></div>
+                    <div class="profile-stat"><span class="profile-stat-value">${formatCurrency(c.total_spent)}</span><span class="profile-stat-label">Total Spent</span></div>
+                    <div class="profile-stat"><span class="profile-stat-value" style="color:${healthColor}">${healthScore}<small style="font-size:0.6rem;font-weight:400">/100</small></span><span class="profile-stat-label">Health Score</span></div>
+                    <div class="profile-stat"><span class="profile-stat-value"><span class="churn-badge" style="background:${churnCfg.bg};color:${churnCfg.color};font-size:0.65rem"><i class="fas ${churnCfg.icon}"></i> ${churnCfg.label}</span></span><span class="profile-stat-label">Churn Risk</span></div>
+                </div>
+
+                <div class="profile-details">
+                    <div class="detail-row"><span class="detail-label">Customer ID</span><span>#${c.shopify_customer_id || c.id}</span></div>
+                    <div class="detail-row"><span class="detail-label">Health Score</span><span style="color:${healthColor};font-weight:700">${healthScore}/100</span></div>
+                    <div class="detail-row"><span class="detail-label">Churn Risk</span><span class="churn-badge" style="background:${churnCfg.bg};color:${churnCfg.color}"><i class="fas ${churnCfg.icon}"></i> ${churnCfg.label}</span></div>
+                    <div class="detail-row"><span class="detail-label">First Order</span><span>${formatDate(c.first_order_date)}</span></div>
+                    <div class="detail-row"><span class="detail-label">Last Order</span><span>${formatDate(c.last_order_date)}</span></div>
+                    <div class="detail-row"><span class="detail-label">Phone</span><span>${c.phone || 'N/A'}</span></div>
+                    <div class="detail-row"><span class="detail-label">Marketing</span><span>${c.accepts_marketing ? '<span class="marketing-badge subscribed"><i class="fas fa-check-circle"></i> Subscribed</span>' : '<span class="marketing-badge unsubscribed"><i class="fas fa-times-circle"></i> Unsubscribed</span>'}</span></div>
+                    <div class="detail-row"><span class="detail-label">Location</span><span>${escapeHtml(c.location || 'N/A')}</span></div>
+                    ${c.tags && c.tags.length > 0 ? `<div class="detail-row"><span class="detail-label">Tags</span><span class="tags-list">${c.tags.map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</span></div>` : ''}
+                </div>
+
+                <div class="profile-section">
+                    <h4><i class="fas fa-shopping-bag"></i> Recent Orders (${orders.length})</h4>
+                    <div class="orders-list">${ordersHtml}</div>
+                </div>
+
+                <div class="profile-actions">
+                    <button class="btn btn-primary" onclick="editCustomerSegment(${c.id}, '${escapeHtml(c.segment || 'general')}', '${escapeHtml(c.lifetime_value_tier || 'bronze')}')"><i class="fas fa-edit"></i> Edit Customer</button>
+                </div>
+            </div>
+        `);
+    } catch (error) { showToast(error.message, 'error'); }
+}
+
+// ── Edit Customer Segment/Tier ──
+function editCustomerSegment(id, currentSegment, currentTier) {
+    openModal('Edit Customer', `
+        <form onsubmit="updateCustomer(event, ${id})">
+            <div class="form-group"><label>Segment</label>
+                <select class="form-select" id="editCustSegment">
+                    <option value="general" ${currentSegment==='general'?'selected':''}>General</option>
+                    <option value="vip" ${currentSegment==='vip'?'selected':''}>VIP</option>
+                    <option value="repeat" ${currentSegment==='repeat'?'selected':''}>Repeat</option>
+                    <option value="new_customer" ${currentSegment==='new_customer'?'selected':''}>New Customer</option>
+                    <option value="at_risk" ${currentSegment==='at_risk'?'selected':''}>At Risk</option>
+                    <option value="dormant" ${currentSegment==='dormant'?'selected':''}>Dormant</option>
+                    <option value="high_value" ${currentSegment==='high_value'?'selected':''}>High Value</option>
+                </select>
+            </div>
+            <div class="form-group"><label>Lifetime Value Tier</label>
+                <select class="form-select" id="editCustTier">
+                    <option value="bronze" ${currentTier==='bronze'?'selected':''}>Bronze</option>
+                    <option value="silver" ${currentTier==='silver'?'selected':''}>Silver</option>
+                    <option value="gold" ${currentTier==='gold'?'selected':''}>Gold</option>
+                    <option value="platinum" ${currentTier==='platinum'?'selected':''}>Platinum</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Save Changes</button>
+        </form>
+    `);
+}
+
+async function updateCustomer(event, id) {
+    event.preventDefault();
+    try {
+        await apiCall(`customers/${id}`, {
+            method: 'PUT',
+            body: {
+                segment: document.getElementById('editCustSegment').value,
+                lifetimeValueTier: document.getElementById('editCustTier').value
+            }
+        });
+        closeModal();
+        showToast('Customer updated');
+        loadCustomers(customerPage);
+    } catch (error) { showToast(error.message, 'error'); }
+}
+
+// ── Sync Customers ─
 async function syncCustomers(forceFull = false) {
     try {
         const mode = forceFull ? 'full' : 'incremental';
@@ -92,6 +550,19 @@ async function syncCustomers(forceFull = false) {
         const skipped = data.totalSkipped > 0 ? `, ${data.totalSkipped} skipped (no email)` : '';
         const recovered = data.phonesRecovered > 0 ? `, ${data.phonesRecovered} phones recovered from address` : '';
         showToast(`Synced ${data.totalSynced || 0} customers (${data.mode || mode})${skipped}${recovered}`);
+        loadCustomers();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+// ── Smart Recompute Segments ──
+async function recomputeSegments() {
+    if (!confirm('This will re-analyze ALL customers using RFM scoring. Segments, tiers, health scores and churn risk will be recomputed. Continue?')) return;
+    try {
+        showToast('Recomputing smart segments...', 'info');
+        const data = await apiCall('customers/recompute-segments', { method: 'POST' });
+        showToast(data.message || `Recomputed ${data.total} customers`);
         loadCustomers();
     } catch (error) {
         showToast(error.message, 'error');

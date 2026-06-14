@@ -112,16 +112,115 @@
 
         <!-- Customers Section -->
         <section id="section-customers" class="content-section">
+            <!-- Customer Stats Row -->
+            <div class="stats-grid" id="customerStatsRow">
+                <div class="stat-card"><div class="stat-icon blue"><i class="fas fa-users"></i></div><div class="stat-info"><span class="stat-value" id="cstat-total">0</span><span class="stat-label">Total Customers</span></div></div>
+                <div class="stat-card"><div class="stat-icon green"><i class="fas fa-crown"></i></div><div class="stat-info"><span class="stat-value" id="cstat-vip">0</span><span class="stat-label">VIP / Gold+</span></div></div>
+                <div class="stat-card"><div class="stat-icon purple"><i class="fas fa-heartbeat"></i></div><div class="stat-info"><span class="stat-value" id="cstat-health">0</span><span class="stat-label">Avg Health Score</span></div></div>
+                <div class="stat-card"><div class="stat-icon orange"><i class="fas fa-exclamation-triangle"></i></div><div class="stat-info"><span class="stat-value" id="cstat-atrisk">0</span><span class="stat-label">At Risk / Churning</span></div></div>
+            </div>
+
+            <!-- Health & Churn Breakdown Row -->
+            <div class="smart-breakdown-row" id="smartBreakdownRow">
+                <div class="breakdown-card">
+                    <span class="breakdown-label">Health</span>
+                    <div class="breakdown-bars">
+                        <div class="breakdown-bar"><span class="bar-fill bar-excellent" id="healthExcellent" style="width:0%"></span><span class="bar-label">Excellent</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-good" id="healthGood" style="width:0%"></span><span class="bar-label">Good</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-average" id="healthAverage" style="width:0%"></span><span class="bar-label">Average</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-poor" id="healthPoor" style="width:0%"></span><span class="bar-label">Poor</span></div>
+                    </div>
+                </div>
+                <div class="breakdown-card">
+                    <span class="breakdown-label">Churn Risk</span>
+                    <div class="breakdown-bars">
+                        <div class="breakdown-bar"><span class="bar-fill bar-low" id="churnLow" style="width:0%"></span><span class="bar-label">Low</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-medium" id="churnMedium" style="width:0%"></span><span class="bar-label">Medium</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-high" id="churnHigh" style="width:0%"></span><span class="bar-label">High</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-critical" id="churnCritical" style="width:0%"></span><span class="bar-label">Critical</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters & Actions Bar -->
             <div class="section-header">
                 <div class="filters-bar">
-                    <input type="text" id="customerSearch" placeholder="Search customers..." class="form-input" oninput="debounce(loadCustomers, 300)()">
+                    <div class="search-wrapper">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" id="customerSearch" placeholder="Search by name, email, phone..." class="form-input search-input" oninput="debounce(loadCustomers, 300)()">
+                    </div>
                     <select id="customerSegment" class="form-select" onchange="loadCustomers()"><option value="">All Segments</option></select>
-                    <select id="customerTier" class="form-select" onchange="loadCustomers()"><option value="">All Tiers</option><option value="bronze">Bronze</option><option value="silver">Silver</option><option value="gold">Gold</option><option value="platinum">Platinum</option></select>
+                    <select id="customerTier" class="form-select" onchange="loadCustomers()">
+                        <option value="">All Tiers</option>
+                        <option value="bronze">Bronze</option>
+                        <option value="silver">Silver</option>
+                        <option value="gold">Gold</option>
+                        <option value="platinum">Platinum</option>
+                    </select>
+                    <select id="customerMarketing" class="form-select" onchange="loadCustomers()">
+                        <option value="">Marketing: All</option>
+                        <option value="true">Subscribed</option>
+                        <option value="false">Unsubscribed</option>
+                    </select>
+                    <select id="customerSortBy" class="form-select" onchange="loadCustomers()">
+                        <option value="created_at">Sort: Newest</option>
+                        <option value="total_spent">Sort: Highest Spent</option>
+                        <option value="total_orders">Sort: Most Orders</option>
+                        <option value="last_order_date">Sort: Last Order</option>
+                        <option value="first_name">Sort: Name A-Z</option>
+                        <option value="health_score">Sort: Health Score</option>
+                    </select>
+                    <select id="customerChurnRisk" class="form-select" onchange="loadCustomers()">
+                        <option value="">Churn: All</option>
+                        <option value="low">Low Risk</option>
+                        <option value="medium">Medium Risk</option>
+                        <option value="high">High Risk</option>
+                        <option value="critical">Critical</option>
+                    </select>
                 </div>
-                <button class="btn btn-primary" onclick="syncCustomers()"><i class="fas fa-sync"></i> Sync from Shopify</button>
-                <button class="btn btn-secondary" onclick="if(confirm('Full sync fetches ALL customers. This may take a while. Continue?')) syncCustomers(true)"><i class="fas fa-sync-alt"></i> Force Full Sync</button>
+                <div class="action-buttons">
+                    <button class="btn btn-secondary" id="bulkActionsBtn" style="display:none" onclick="toggleBulkActions()"><i class="fas fa-check-square"></i> Bulk Actions</button>
+                    <button class="btn btn-secondary" onclick="exportCustomers()"><i class="fas fa-download"></i> Export</button>
+                    <button class="btn btn-warning" onclick="recomputeSegments()" title="Re-analyze all customers with RFM"><i class="fas fa-brain"></i> Smart Recompute</button>
+                    <button class="btn btn-primary" onclick="syncCustomers()"><i class="fas fa-sync"></i> Sync from Shopify</button>
+                    <button class="btn btn-secondary" onclick="if(confirm('Full sync fetches ALL customers. This may take a while. Continue?')) syncCustomers(true)"><i class="fas fa-sync-alt"></i> Force Full Sync</button>
+                </div>
             </div>
-            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="customersTable"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Orders</th><th>Total Spent</th><th>Segment</th><th>Tier</th><th>Last Order</th></tr></thead><tbody id="customersBody"></tbody></table></div><div id="customersPagination" class="pagination"></div></div></div>
+
+            <!-- Bulk Actions Panel -->
+            <div id="bulkActionsPanel" class="bulk-actions-panel hidden">
+                <div class="bulk-actions-content">
+                    <span class="bulk-selected-count"><span id="selectedCount">0</span> selected</span>
+                    <div class="bulk-actions-buttons">
+                        <button class="btn btn-sm btn-primary" onclick="bulkChangeSegment()"><i class="fas fa-tag"></i> Change Segment</button>
+                        <button class="btn btn-sm btn-primary" onclick="bulkChangeTier()"><i class="fas fa-crown"></i> Change Tier</button>
+                        <button class="btn btn-sm btn-success" onclick="bulkSendCoupon()"><i class="fas fa-ticket-alt"></i> Send Coupon</button>
+                        <button class="btn btn-sm btn-danger" onclick="bulkDeselect()"><i class="fas fa-times"></i> Clear Selection</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Customer Table -->
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table premium-table" id="customersTable">
+                <thead>
+                    <tr>
+                        <th class="col-checkbox"><input type="checkbox" id="selectAllCustomers" onchange="toggleSelectAll(this)"></th>
+                        <th>Customer</th>
+                        <th>Contact</th>
+                        <th>Orders</th>
+                        <th>Total Spent</th>
+                        <th>Health</th>
+                        <th>Segment</th>
+                        <th>Tier</th>
+                        <th>Churn</th>
+                        <th>Last Order</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="customersBody"></tbody>
+            </table></div>
+            <div id="customersEmpty" class="empty-state hidden"><i class="fas fa-users-slash"></i><p>No customers found</p><small>Try adjusting your filters or sync from Shopify</small></div>
+            <div id="customersPagination" class="pagination"></div></div></div>
         </section>
 
         <!-- Campaigns Section -->

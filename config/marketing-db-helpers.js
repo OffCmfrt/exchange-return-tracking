@@ -17,7 +17,9 @@ async function getMarketingCustomers(filters = {}) {
 
     if (filters.segment) query = query.eq('segment', filters.segment);
     if (filters.tier) query = query.eq('lifetime_value_tier', filters.tier);
-    if (filters.acceptsMarketing !== undefined) query = query.eq('accepts_marketing', filters.acceptsMarketing);
+    if (filters.acceptsMarketing !== undefined && filters.acceptsMarketing !== '') {
+        query = query.eq('accepts_marketing', filters.acceptsMarketing === 'true' || filters.acceptsMarketing === true);
+    }
 
     if (filters.search) {
         const s = filters.search;
@@ -27,6 +29,9 @@ async function getMarketingCustomers(filters = {}) {
     if (filters.minSpent) query = query.gte('total_spent', parseFloat(filters.minSpent));
     if (filters.maxSpent) query = query.lte('total_spent', parseFloat(filters.maxSpent));
     if (filters.minOrders) query = query.gte('total_orders', parseInt(filters.minOrders));
+    if (filters.churnRisk) query = query.eq('churn_risk', filters.churnRisk);
+    if (filters.minHealth) query = query.gte('health_score', parseInt(filters.minHealth));
+    if (filters.maxHealth) query = query.lte('health_score', parseInt(filters.maxHealth));
 
     const sortBy = filters.sortBy || 'created_at';
     const sortOrder = filters.sortOrder || 'desc';
@@ -76,6 +81,8 @@ async function upsertMarketingCustomer(customerData) {
         verified_email: customerData.verifiedEmail || false,
         segment: customerData.segment || 'general',
         lifetime_value_tier: customerData.lifetimeValueTier || 'bronze',
+        health_score: customerData.healthScore != null ? customerData.healthScore : 0,
+        churn_risk: customerData.churnRisk || 'low',
         last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
     };
@@ -109,6 +116,8 @@ async function batchUpsertMarketingCustomers(customersArray) {
         verified_email: c.verifiedEmail || false,
         segment: c.segment || 'general',
         lifetime_value_tier: c.lifetimeValueTier || 'bronze',
+        health_score: c.healthScore != null ? c.healthScore : 0,
+        churn_risk: c.churnRisk || 'low',
         last_synced_at: now,
         updated_at: now
     }));
@@ -250,6 +259,218 @@ async function getCustomersBySegment(segmentName, filters = {}) {
     const { data, count, error } = await query;
     if (error) throw error;
     return { data: data || [], pagination: { total: count || 0, page, limit } };
+}
+
+// ════════════════════════════════════════════════════════════════
+// SMART CUSTOMER INTELLIGENCE (RFM, Health Score, Churn Risk)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Compute RFM-based health score (0-100) for a customer.
+ * R = Recency (days since last order, lower is better)
+ * F = Frequency (total orders)
+ * M = Monetary (total spent)
+ */
+function computeHealthScore(customer) {
+    const totalSpent = parseFloat(customer.total_spent) || 0;
+    const totalOrders = parseInt(customer.total_orders) || 0;
+    const lastOrderDate = customer.last_order_date ? new Date(customer.last_order_date) : null;
+    const daysSinceLastOrder = lastOrderDate ? Math.floor((Date.now() - lastOrderDate.getTime()) / 86400000) : 999;
+
+    // Recency Score (0-35): More recent = higher score
+    let rScore = 0;
+    if (daysSinceLastOrder <= 7) rScore = 35;
+    else if (daysSinceLastOrder <= 30) rScore = 30;
+    else if (daysSinceLastOrder <= 60) rScore = 22;
+    else if (daysSinceLastOrder <= 90) rScore = 15;
+    else if (daysSinceLastOrder <= 180) rScore = 8;
+    else if (daysSinceLastOrder <= 365) rScore = 3;
+    else rScore = 0;
+
+    // Frequency Score (0-35): More orders = higher score
+    let fScore = 0;
+    if (totalOrders >= 20) fScore = 35;
+    else if (totalOrders >= 10) fScore = 30;
+    else if (totalOrders >= 5) fScore = 24;
+    else if (totalOrders >= 3) fScore = 18;
+    else if (totalOrders >= 2) fScore = 10;
+    else if (totalOrders === 1) fScore = 5;
+    else fScore = 0;
+
+    // Monetary Score (0-30): Higher spend = higher score
+    let mScore = 0;
+    if (totalSpent >= 50000) mScore = 30;
+    else if (totalSpent >= 20000) mScore = 26;
+    else if (totalSpent >= 10000) mScore = 22;
+    else if (totalSpent >= 5000) mScore = 17;
+    else if (totalSpent >= 2000) mScore = 12;
+    else if (totalSpent >= 500) mScore = 7;
+    else if (totalSpent > 0) mScore = 3;
+    else mScore = 0;
+
+    return Math.min(100, rScore + fScore + mScore);
+}
+
+/**
+ * Compute churn risk level based on recency and engagement.
+ * Returns: 'low', 'medium', 'high', 'critical'
+ */
+function computeChurnRisk(customer) {
+    const totalOrders = parseInt(customer.total_orders) || 0;
+    if (totalOrders === 0) return 'low'; // Never ordered, can't churn
+
+    const lastOrderDate = customer.last_order_date ? new Date(customer.last_order_date) : null;
+    const daysSinceLastOrder = lastOrderDate ? Math.floor((Date.now() - lastOrderDate.getTime()) / 86400000) : 999;
+
+    if (daysSinceLastOrder > 365) return 'critical';
+    if (daysSinceLastOrder > 180) return 'high';
+    if (daysSinceLastOrder > 90) return 'medium';
+    return 'low';
+}
+
+/**
+ * Smart RFM-based segmentation.
+ * Returns segment name based on behavior patterns.
+ */
+function smartSegment(customer) {
+    const totalSpent = parseFloat(customer.total_spent) || 0;
+    const totalOrders = parseInt(customer.total_orders) || 0;
+    const lastOrderDate = customer.last_order_date ? new Date(customer.last_order_date) : null;
+    const daysSinceLastOrder = lastOrderDate ? Math.floor((Date.now() - lastOrderDate.getTime()) / 86400000) : 999;
+    const firstOrderDate = customer.first_order_date ? new Date(customer.first_order_date) : null;
+    const daysSinceFirst = firstOrderDate ? Math.floor((Date.now() - firstOrderDate.getTime()) / 86400000) : 999;
+
+    // VIP: High spend + recent
+    if (totalSpent >= 20000 && daysSinceLastOrder <= 90) return 'vip';
+    // High Value: High spend but maybe less recent
+    if (totalSpent >= 10000) return 'high_value';
+    // At Risk: Was active but hasn't ordered recently
+    if (totalOrders >= 2 && daysSinceLastOrder > 90 && daysSinceLastOrder <= 180) return 'at_risk';
+    // Dormant: Haven't ordered in a long time
+    if (totalOrders >= 1 && daysSinceLastOrder > 180) return 'dormant';
+    // Repeat: Multiple orders, recent
+    if (totalOrders >= 3 && daysSinceLastOrder <= 90) return 'repeat';
+    // New: First order within last 30 days
+    if (totalOrders >= 1 && daysSinceFirst <= 30) return 'new_customer';
+    // General: Everyone else
+    return 'general';
+}
+
+/**
+ * Smart tier assignment based on lifetime value.
+ */
+function smartTier(totalSpent) {
+    const spent = parseFloat(totalSpent) || 0;
+    if (spent >= 50000) return 'platinum';
+    if (spent >= 20000) return 'gold';
+    if (spent >= 5000) return 'silver';
+    return 'bronze';
+}
+
+/**
+ * Recompute smart fields for ALL customers in the database.
+ * Used by the /customers/recompute-segments endpoint.
+ */
+async function recomputeAllCustomerSegments() {
+    const { data: customers, error } = await supabase
+        .from('marketing_customers')
+        .select('id, total_spent, total_orders, last_order_date, first_order_date, segment, lifetime_value_tier');
+    if (error) throw error;
+
+    let updated = 0;
+    const BATCH = 50;
+    const batch = [];
+
+    for (const c of customers) {
+        const newSegment = smartSegment(c);
+        const newTier = smartTier(c.total_spent);
+        const healthScore = computeHealthScore(c);
+        const churnRisk = computeChurnRisk(c);
+
+        const needsUpdate = c.segment !== newSegment || c.lifetime_value_tier !== newTier;
+
+        batch.push({
+            id: c.id,
+            segment: newSegment,
+            lifetime_value_tier: newTier,
+            health_score: healthScore,
+            churn_risk: churnRisk,
+            updated_at: new Date().toISOString()
+        });
+
+        if (batch.length >= BATCH) {
+            const { error: upsertErr } = await supabase.from('marketing_customers').upsert(batch, { onConflict: 'id' });
+            if (upsertErr) console.error('[Smart Recompute] Batch error:', upsertErr.message);
+            else updated += batch.length;
+            batch.length = 0;
+        }
+    }
+
+    // Final batch
+    if (batch.length > 0) {
+        const { error: upsertErr } = await supabase.from('marketing_customers').upsert(batch, { onConflict: 'id' });
+        if (upsertErr) console.error('[Smart Recompute] Final batch error:', upsertErr.message);
+        else updated += batch.length;
+    }
+
+    return { total: (customers || []).length, updated };
+}
+
+/**
+ * Get smart customer stats with health/churn breakdowns.
+ */
+async function getSmartCustomerStats() {
+    const { data: customers, error } = await supabase
+        .from('marketing_customers')
+        .select('segment, lifetime_value_tier, created_at, health_score, churn_risk');
+    if (error) throw error;
+
+    const list = customers || [];
+    const total = list.length;
+    const now = Date.now();
+    const thirtyDaysAgo = now - 30 * 86400000;
+
+    const segments = {};
+    const tiers = {};
+    let healthTotal = 0;
+    let healthCount = 0;
+    const churnBreakdown = { low: 0, medium: 0, high: 0, critical: 0 };
+    const healthBreakdown = { excellent: 0, good: 0, average: 0, poor: 0 };
+
+    list.forEach(c => {
+        // Segments
+        segments[c.segment] = (segments[c.segment] || 0) + 1;
+        // Tiers
+        tiers[c.lifetime_value_tier] = (tiers[c.lifetime_value_tier] || 0) + 1;
+        // Health score
+        if (c.health_score != null) {
+            healthTotal += (parseInt(c.health_score) || 0);
+            healthCount++;
+            const hs = parseInt(c.health_score) || 0;
+            if (hs >= 75) healthBreakdown.excellent++;
+            else if (hs >= 50) healthBreakdown.good++;
+            else if (hs >= 25) healthBreakdown.average++;
+            else healthBreakdown.poor++;
+        }
+        // Churn risk
+        const cr = (c.churn_risk || 'low').toLowerCase();
+        if (churnBreakdown[cr] !== undefined) churnBreakdown[cr]++;
+    });
+
+    const newLast30Days = list.filter(c => new Date(c.created_at).getTime() > thirtyDaysAgo).length;
+    const avgHealth = healthCount > 0 ? Math.round(healthTotal / healthCount) : 0;
+
+    return {
+        total,
+        segments,
+        tiers,
+        newLast30Days,
+        avgHealthScore: avgHealth,
+        healthBreakdown,
+        churnBreakdown,
+        vipCount: (tiers.gold || 0) + (tiers.platinum || 0),
+        atRiskCount: churnBreakdown.high + churnBreakdown.critical
+    };
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -958,6 +1179,12 @@ module.exports = {
     getCustomerStats,
     getCustomerSegments,
     getCustomersBySegment,
+    computeHealthScore,
+    computeChurnRisk,
+    smartSegment,
+    smartTier,
+    recomputeAllCustomerSegments,
+    getSmartCustomerStats,
 
     // Templates
     getMarketingTemplates,

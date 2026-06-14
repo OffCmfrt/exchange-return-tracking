@@ -9505,14 +9505,33 @@ app.get('/api/admin/marketing/customers', authenticateAdmin, async (req, res) =>
     }
 });
 
-// GET /api/admin/marketing/customers/stats - Customer statistics
+// GET /api/admin/marketing/customers/stats - Customer statistics (SMART)
 app.get('/api/admin/marketing/customers/stats', authenticateAdmin, async (req, res) => {
     try {
-        const stats = await marketingDB.getCustomerStats();
+        const stats = await marketingDB.getSmartCustomerStats();
         res.json({ success: true, stats });
     } catch (error) {
         console.error('[Marketing] Customer stats error:', error.message);
         res.status(500).json({ error: 'Failed to fetch customer stats' });
+    }
+});
+
+// POST /api/admin/marketing/customers/recompute-segments - Smart recompute all segments
+app.post('/api/admin/marketing/customers/recompute-segments', authenticateAdmin, async (req, res) => {
+    try {
+        console.log('[Marketing] Starting smart segment recomputation...');
+        const result = await marketingDB.recomputeAllCustomerSegments();
+        await marketingDB.createAuditLog({
+            action: 'recomputed',
+            entityType: 'customer',
+            actor: req.user?.sub || 'admin',
+            details: { total: result.total, updated: result.updated },
+            ipAddress: req.ip
+        });
+        res.json({ success: true, ...result, message: `Recomputed ${result.total} customers, ${result.updated} updated` });
+    } catch (error) {
+        console.error('[Marketing] Recompute error:', error.message);
+        res.status(500).json({ error: 'Recompute failed: ' + error.message });
     }
 });
 
@@ -9636,16 +9655,17 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
                 const totalSpent = parseFloat(c.total_spent || 0);
                 const avgOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
 
-                let segment = 'general';
-                if (totalSpent >= 20000) segment = 'vip';
-                else if (totalSpent >= 10000) segment = 'premium';
-                else if (totalOrders >= 3) segment = 'loyal';
-                else if (totalOrders === 1) segment = 'new';
-
-                let tier = 'bronze';
-                if (totalSpent >= 50000) tier = 'platinum';
-                else if (totalSpent >= 20000) tier = 'gold';
-                else if (totalSpent >= 10000) tier = 'silver';
+                // Smart server-side segmentation using RFM analysis
+                const customerData = {
+                    total_spent: totalSpent,
+                    total_orders: totalOrders,
+                    last_order_date: c.last_order_id ? new Date().toISOString() : null,
+                    first_order_date: c.created_at || null
+                };
+                const segment = marketingDB.smartSegment(customerData);
+                const tier = marketingDB.smartTier(totalSpent);
+                const healthScore = marketingDB.computeHealthScore(customerData);
+                const churnRisk = marketingDB.computeChurnRisk(customerData);
 
                 // Extract phone: prefer top-level, fallback to default_address.phone
                 const customerPhone = c.phone || c.default_address?.phone || null;
@@ -9661,12 +9681,15 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
                     totalSpent,
                     averageOrderValue: avgOrderValue,
                     lastOrderDate: c.last_order_name ? new Date().toISOString() : null,
+                    firstOrderDate: c.created_at || null,
                     tags: c.tags ? c.tags.split(',').map(t => t.trim()) : [],
                     location: c.default_address ? `${c.default_address.city || ''}, ${c.default_address.province || ''}`.trim() : null,
                     acceptsMarketing: c.accepts_marketing || false,
                     verifiedEmail: c.verified_email || false,
                     segment,
-                    lifetimeValueTier: tier
+                    lifetimeValueTier: tier,
+                    healthScore,
+                    churnRisk
                 });
 
                 // Upsert in batches

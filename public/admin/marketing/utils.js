@@ -223,3 +223,10 @@ function escapeHtml(str) {
     div.textContent = str;
     return div.innerHTML;
 }
+
+// ── Get Initials ──
+function getInitials(firstName, lastName) {
+    const f = (firstName || '').charAt(0).toUpperCase();
+    const l = (lastName || '').charAt(0).toUpperCase();
+    return (f + l) || '?';
+}
