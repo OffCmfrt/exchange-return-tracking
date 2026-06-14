@@ -9592,6 +9592,7 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
 
         let totalSynced = 0;
         let totalSkipped = 0;
+        let phonesRecovered = 0;
         let cursor = null;
         let pagesFetched = 0;
         const BATCH_SIZE = 50; // Upsert in batches of 50
@@ -9646,12 +9647,16 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
                 else if (totalSpent >= 20000) tier = 'gold';
                 else if (totalSpent >= 10000) tier = 'silver';
 
+                // Extract phone: prefer top-level, fallback to default_address.phone
+                const customerPhone = c.phone || c.default_address?.phone || null;
+                if (!c.phone && c.default_address?.phone) phonesRecovered++;
+
                 batch.push({
                     shopifyCustomerId: c.id,
                     firstName: c.first_name,
                     lastName: c.last_name,
                     email: c.email,
-                    phone: c.phone,
+                    phone: customerPhone,
                     totalOrders,
                     totalSpent,
                     averageOrderValue: avgOrderValue,
@@ -9721,12 +9726,12 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
             action: 'synced',
             entityType: 'customer',
             actor: req.user?.sub || 'admin',
-            details: { totalSynced, totalSkipped, mode: isIncremental ? 'incremental' : 'full' },
+            details: { totalSynced, totalSkipped, phonesRecovered, mode: isIncremental ? 'incremental' : 'full' },
             ipAddress: req.ip
         });
 
         const mode = isIncremental ? 'incremental' : 'full';
-        res.json({ success: true, totalSynced, totalSkipped, mode, message: `Synced ${totalSynced} customers (${mode})${totalSkipped > 0 ? `, ${totalSkipped} skipped (no email)` : ''}` });
+        res.json({ success: true, totalSynced, totalSkipped, phonesRecovered, mode, message: `Synced ${totalSynced} customers (${mode})${totalSkipped > 0 ? `, ${totalSkipped} skipped (no email)` : ''}${phonesRecovered > 0 ? `, ${phonesRecovered} phones recovered from address` : ''}` });
     } catch (error) {
         console.error('[Marketing] Customer sync error:', error.message);
         res.status(500).json({ error: 'Customer sync failed: ' + error.message });

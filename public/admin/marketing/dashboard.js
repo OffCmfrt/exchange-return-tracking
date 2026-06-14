@@ -90,7 +90,8 @@ async function syncCustomers(forceFull = false) {
             body: JSON.stringify({ forceFull })
         });
         const skipped = data.totalSkipped > 0 ? `, ${data.totalSkipped} skipped (no email)` : '';
-        showToast(`Synced ${data.totalSynced || 0} customers (${data.mode || mode})${skipped}`);
+        const recovered = data.phonesRecovered > 0 ? `, ${data.phonesRecovered} phones recovered from address` : '';
+        showToast(`Synced ${data.totalSynced || 0} customers (${data.mode || mode})${skipped}${recovered}`);
         loadCustomers();
     } catch (error) {
         showToast(error.message, 'error');
