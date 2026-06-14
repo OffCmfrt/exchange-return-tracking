@@ -119,6 +119,7 @@
                     <select id="customerTier" class="form-select" onchange="loadCustomers()"><option value="">All Tiers</option><option value="bronze">Bronze</option><option value="silver">Silver</option><option value="gold">Gold</option><option value="platinum">Platinum</option></select>
                 </div>
                 <button class="btn btn-primary" onclick="syncCustomers()"><i class="fas fa-sync"></i> Sync from Shopify</button>
+                <button class="btn btn-secondary" onclick="if(confirm('Full sync fetches ALL customers. This may take a while. Continue?')) syncCustomers(true)"><i class="fas fa-sync-alt"></i> Force Full Sync</button>
             </div>
             <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="customersTable"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Orders</th><th>Total Spent</th><th>Segment</th><th>Tier</th><th>Last Order</th></tr></thead><tbody id="customersBody"></tbody></table></div><div id="customersPagination" class="pagination"></div></div></div>
         </section>

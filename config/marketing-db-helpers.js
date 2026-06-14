@@ -88,6 +88,50 @@ async function upsertMarketingCustomer(customerData) {
     return data;
 }
 
+// Batch upsert customers - much faster than one-by-one
+async function batchUpsertMarketingCustomers(customersArray) {
+    if (!customersArray || customersArray.length === 0) return [];
+    const now = new Date().toISOString();
+    const rows = customersArray.map(c => ({
+        shopify_customer_id: c.shopifyCustomerId || null,
+        first_name: c.firstName || null,
+        last_name: c.lastName || null,
+        email: c.email,
+        phone: c.phone || null,
+        total_orders: c.totalOrders || 0,
+        total_spent: c.totalSpent || 0,
+        average_order_value: c.averageOrderValue || 0,
+        last_order_date: c.lastOrderDate || null,
+        first_order_date: c.firstOrderDate || null,
+        tags: c.tags || [],
+        location: c.location || null,
+        accepts_marketing: c.acceptsMarketing || false,
+        verified_email: c.verifiedEmail || false,
+        segment: c.segment || 'general',
+        lifetime_value_tier: c.lifetimeValueTier || 'bronze',
+        last_synced_at: now,
+        updated_at: now
+    }));
+    const { data, error } = await supabase
+        .from('marketing_customers')
+        .upsert(rows, { onConflict: 'shopify_customer_id' })
+        .select();
+    if (error) throw error;
+    return data || [];
+}
+
+// Get the most recent sync timestamp from existing customers
+async function getLastCustomerSyncTime() {
+    const { data, error } = await supabase
+        .from('marketing_customers')
+        .select('last_synced_at')
+        .order('last_synced_at', { ascending: false })
+        .limit(1)
+        .single();
+    if (error || !data) return null;
+    return data.last_synced_at;
+}
+
 async function updateMarketingCustomer(id, updates) {
     const row = { updated_at: new Date().toISOString() };
     if (updates.segment !== undefined) row.segment = updates.segment;
@@ -906,6 +950,8 @@ module.exports = {
     getMarketingCustomerById,
     getMarketingCustomerByEmail,
     upsertMarketingCustomer,
+    batchUpsertMarketingCustomers,
+    getLastCustomerSyncTime,
     updateMarketingCustomer,
     getCustomerOrders,
     upsertCustomerOrder,

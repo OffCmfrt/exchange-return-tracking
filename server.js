@@ -9570,9 +9570,10 @@ app.put('/api/admin/marketing/customers/:id', authenticateAdmin, async (req, res
     }
 });
 
-// POST /api/admin/marketing/customers/sync - Trigger customer sync from Shopify
+// POST /api/admin/marketing/customers/sync - Trigger customer sync from Shopify (INCREMENTAL)
 app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, res) => {
     try {
+        const forceFull = req.body?.forceFull === true;
         console.log('[Marketing] Starting customer sync from Shopify...');
         const shopifyStore = process.env.SHOPIFY_STORE;
         const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
@@ -9581,12 +9582,26 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
             return res.status(400).json({ error: 'Shopify not configured' });
         }
 
+        // Determine if this is an incremental sync
+        let lastSyncTime = null;
+        if (!forceFull) {
+            lastSyncTime = await marketingDB.getLastCustomerSyncTime();
+        }
+        const isIncremental = !!lastSyncTime;
+        console.log(`[Marketing] Sync mode: ${isIncremental ? 'INCREMENTAL' : 'FULL'}${isIncremental ? ` (since ${lastSyncTime})` : ''}`);
+
         let totalSynced = 0;
+        let totalSkipped = 0;
         let cursor = null;
         let pagesFetched = 0;
+        const BATCH_SIZE = 50; // Upsert in batches of 50
 
         do {
+            // Build URL - use updated_at_min for incremental sync
             let url = `https://${shopifyStore}/admin/api/2024-01/customers.json?limit=250`;
+            if (isIncremental && lastSyncTime) {
+                url += `&updated_at_min=${lastSyncTime}`;
+            }
             if (cursor) url += `&page_info=${cursor}`;
 
             const response = await fetch(url, {
@@ -9602,7 +9617,20 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
             const data = await response.json();
             const customers = data.customers || [];
 
+            if (customers.length === 0) {
+                console.log('[Marketing] No more customers to fetch');
+                break;
+            }
+
+            // Process customers into batch, skipping null/invalid emails
+            const batch = [];
             for (const c of customers) {
+                // Skip customers without valid email (guest/phone-only accounts)
+                if (!c.email || typeof c.email !== 'string' || !c.email.includes('@')) {
+                    totalSkipped++;
+                    continue;
+                }
+
                 const totalOrders = c.orders_count || 0;
                 const totalSpent = parseFloat(c.total_spent || 0);
                 const avgOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
@@ -9618,7 +9646,7 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
                 else if (totalSpent >= 20000) tier = 'gold';
                 else if (totalSpent >= 10000) tier = 'silver';
 
-                await marketingDB.upsertMarketingCustomer({
+                batch.push({
                     shopifyCustomerId: c.id,
                     firstName: c.first_name,
                     lastName: c.last_name,
@@ -9635,8 +9663,49 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
                     segment,
                     lifetimeValueTier: tier
                 });
-                totalSynced++;
+
+                // Upsert in batches
+                if (batch.length >= BATCH_SIZE) {
+                    try {
+                        await marketingDB.batchUpsertMarketingCustomers(batch);
+                        totalSynced += batch.length;
+                    } catch (batchErr) {
+                        console.error('[Marketing] Batch upsert error:', batchErr.message);
+                        // Fallback: try one-by-one for this batch
+                        for (const item of batch) {
+                            try {
+                                await marketingDB.upsertMarketingCustomer(item);
+                                totalSynced++;
+                            } catch (e) {
+                                console.error(`[Marketing] Skip customer ${item.email}: ${e.message}`);
+                                totalSkipped++;
+                            }
+                        }
+                    }
+                    batch.length = 0; // Clear batch
+                }
             }
+
+            // Upsert remaining items in final batch
+            if (batch.length > 0) {
+                try {
+                    await marketingDB.batchUpsertMarketingCustomers(batch);
+                    totalSynced += batch.length;
+                } catch (batchErr) {
+                    console.error('[Marketing] Final batch upsert error:', batchErr.message);
+                    for (const item of batch) {
+                        try {
+                            await marketingDB.upsertMarketingCustomer(item);
+                            totalSynced++;
+                        } catch (e) {
+                            console.error(`[Marketing] Skip customer ${item.email}: ${e.message}`);
+                            totalSkipped++;
+                        }
+                    }
+                }
+            }
+
+            console.log(`[Marketing] Page ${pagesFetched + 1}: processed ${customers.length} customers (${totalSynced} synced, ${totalSkipped} skipped)`);
 
             // Extract cursor from Link header for next page
             const linkHeader = response.headers.get('link');
@@ -9652,11 +9721,12 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
             action: 'synced',
             entityType: 'customer',
             actor: req.user?.sub || 'admin',
-            details: { totalSynced },
+            details: { totalSynced, totalSkipped, mode: isIncremental ? 'incremental' : 'full' },
             ipAddress: req.ip
         });
 
-        res.json({ success: true, totalSynced, message: `Synced ${totalSynced} customers from Shopify` });
+        const mode = isIncremental ? 'incremental' : 'full';
+        res.json({ success: true, totalSynced, totalSkipped, mode, message: `Synced ${totalSynced} customers (${mode})${totalSkipped > 0 ? `, ${totalSkipped} skipped (no email)` : ''}` });
     } catch (error) {
         console.error('[Marketing] Customer sync error:', error.message);
         res.status(500).json({ error: 'Customer sync failed: ' + error.message });

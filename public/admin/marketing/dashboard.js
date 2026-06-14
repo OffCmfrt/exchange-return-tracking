@@ -80,11 +80,17 @@ async function loadCustomers(page = 1) {
     }
 }
 
-async function syncCustomers() {
+async function syncCustomers(forceFull = false) {
     try {
-        showToast('Syncing customers from Shopify...', 'info');
-        const data = await apiCall('customers/sync', { method: 'POST' });
-        showToast(`Synced ${data.totalSynced || 0} customers`);
+        const mode = forceFull ? 'full' : 'incremental';
+        showToast(`Syncing customers from Shopify (${mode} mode)...`, 'info');
+        const data = await apiCall('customers/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ forceFull })
+        });
+        const skipped = data.totalSkipped > 0 ? `, ${data.totalSkipped} skipped (no email)` : '';
+        showToast(`Synced ${data.totalSynced || 0} customers (${data.mode || mode})${skipped}`);
         loadCustomers();
     } catch (error) {
         showToast(error.message, 'error');
