@@ -1727,8 +1727,12 @@ async function loadAnalytics() {
 
 async function loadSettings() {
     try {
-        const data = await apiCall('settings');
+        const [data, tplData] = await Promise.all([
+            apiCall('settings'),
+            apiCall('templates?isActive=true').catch(() => ({ templates: [] }))
+        ]);
         const settings = data.settings || [];
+        const templates = tplData.templates || tplData.data || [];
         
         // Group by category
         const grouped = {};
@@ -1743,17 +1747,39 @@ async function loadSettings() {
             html += `<div class="setting-category">${category.replace(/_/g, ' ').toUpperCase()}</div>`;
             items.forEach(s => {
                 const val = typeof s.value === 'object' ? JSON.stringify(s.value) : String(s.value ?? '');
-                html += `
-                    <div class="setting-item">
-                        <div class="setting-info">
-                            <h4>${escapeHtml(s.key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</h4>
-                            <p>${escapeHtml(s.description || '')}</p>
-                        </div>
-                        <div style="display:flex;gap:0.5rem;align-items:center;">
-                            <input type="text" class="form-input" style="width:200px;" value="${escapeHtml(val)}" id="setting-${s.key}" ${s.is_secret ? 'placeholder=••••••••' : ''}>
-                            <button class="btn btn-sm btn-primary" onclick="updateSetting('${s.key}')">Save</button>
-                        </div>
-                    </div>`;
+                const isTemplateSetting = s.key.endsWith('_template_id');
+                
+                if (isTemplateSetting && templates.length > 0) {
+                    const options = templates.map(t => 
+                        `<option value="${t.id}" ${String(t.id) === val ? 'selected' : ''}>${escapeHtml(t.name)} (${t.status})</option>`
+                    ).join('');
+                    html += `
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <h4>${escapeHtml(s.key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</h4>
+                                <p>${escapeHtml(s.description || 'Template used by cron job for this reminder type')}</p>
+                            </div>
+                            <div style="display:flex;gap:0.5rem;align-items:center;">
+                                <select class="form-input" style="width:250px;" id="setting-${s.key}">
+                                    <option value="">-- None (use fallback) --</option>
+                                    ${options}
+                                </select>
+                                <button class="btn btn-sm btn-primary" onclick="updateSetting('${s.key}')">Save</button>
+                            </div>
+                        </div>`;
+                } else {
+                    html += `
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <h4>${escapeHtml(s.key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</h4>
+                                <p>${escapeHtml(s.description || '')}</p>
+                            </div>
+                            <div style="display:flex;gap:0.5rem;align-items:center;">
+                                <input type="text" class="form-input" style="width:200px;" value="${escapeHtml(val)}" id="setting-${s.key}" ${s.is_secret ? 'placeholder=••••••••' : ''}>
+                                <button class="btn btn-sm btn-primary" onclick="updateSetting('${s.key}')">Save</button>
+                            </div>
+                        </div>`;
+                }
             });
         }
         
