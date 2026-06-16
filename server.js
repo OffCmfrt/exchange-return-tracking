@@ -10702,11 +10702,12 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
         ];
         
         // Send via Meta WhatsApp with template
-        const sendResult = await metaWhatsApp.sendTemplateMessage({
-            phoneNumber: cart.customer_phone,
-            templateName: template.name,
-            variables: variables
-        });
+        const sendResult = await metaWhatsApp.sendTemplateMessage(
+            cart.customer_phone,
+            template.name,
+            variables,
+            template.language || 'en'
+        );
 
         // Update cart with template reference and reminder tracking
         const now = new Date().toISOString();
@@ -10775,11 +10776,14 @@ app.post('/api/webhooks/gokwik/abandoned-cart', express.json(), async (req, res)
         }
         
         const payload = req.body;
-        console.log('[Gokwik Webhook] Received abandoned cart event:', payload.checkout_id);
+        console.log('[Gokwik Webhook] Received abandoned cart event:', payload.checkout_id || payload.id || payload.order_id);
+        if (!payload.checkout_id) {
+            console.log('[Gokwik Webhook] Payload keys:', Object.keys(payload));
+        }
         
-        // Extract data from Gokwik payload
+        // Extract data from Gokwik payload — support multiple field name variants
         const { 
-            checkout_id, 
+            checkout_id = payload.id || payload.order_id || payload.token,
             customer = {}, 
             cart = {}, 
             checkout_url, 
@@ -10789,6 +10793,7 @@ app.post('/api/webhooks/gokwik/abandoned-cart', express.json(), async (req, res)
         } = payload;
         
         if (!checkout_id) {
+            console.error('[Gokwik Webhook] No checkout_id in payload. Full payload:', JSON.stringify(payload).substring(0, 500));
             return res.status(400).json({ error: 'checkout_id is required' });
         }
         
@@ -11000,15 +11005,16 @@ async function processAbandonedCartReminders() {
                 const messageText = `Hi ${cart.customer_name || 'there'}! You left items worth ₹${cart.cart_value} in your cart. ` +
                     `Complete your purchase now! ${cart.checkout_url || ''}`;
 
-                const sendResult = await metaWhatsApp.sendTemplateMessage({
-                    phoneNumber: cart.customer_phone,
-                    templateName: 'abandoned_cart_reminder',
-                    variables: {
-                        customer_name: cart.customer_name || 'there',
-                        cart_value: cart.cart_value.toString(),
-                        checkout_url: cart.checkout_url || ''
-                    }
-                }).catch(async () => {
+                const sendResult = await metaWhatsApp.sendTemplateMessage(
+                    cart.customer_phone,
+                    'abandoned_cart_reminder',
+                    [
+                        cart.customer_name || 'there',
+                        cart.cart_value?.toString() || '0',
+                        cart.checkout_url || ''
+                    ],
+                    'en'
+                ).catch(async () => {
                     // Fallback to bot
                     return metaWhatsApp.sendViaBot({
                         phone: cart.customer_phone,

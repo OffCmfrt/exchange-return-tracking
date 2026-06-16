@@ -1187,15 +1187,23 @@ async function getMarketingSetting(key, defaultValue = null) {
 }
 
 async function getAllMarketingSettings() {
-    const { data, error } = await supabase.from('marketing_settings').select('*').order('category').order('key');
+    // Try full query with category ordering first
+    let { data, error } = await supabase.from('marketing_settings').select('*').order('category').order('key');
+    if (error && error.message && error.message.includes('category')) {
+        // Fallback: category column doesn't exist, query without it
+        const result = await supabase.from('marketing_settings').select('*').order('key');
+        if (result.error) throw result.error;
+        return result.data || [];
+    }
     if (error) throw error;
     return data || [];
 }
 
 async function updateMarketingSetting(key, value, updatedBy = 'admin') {
+    // Only upsert key and value - other columns may not exist in all schema versions
     const { data, error } = await supabase
         .from('marketing_settings')
-        .upsert({ key, value, updated_by: updatedBy, updated_at: new Date().toISOString() })
+        .upsert({ key, value }, { onConflict: 'key' })
         .select().single();
     if (error) throw error;
     _marketingSettingsCache[key] = value;
