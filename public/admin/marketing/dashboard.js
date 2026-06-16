@@ -1734,6 +1734,19 @@ async function loadSettings() {
         const settings = data.settings || [];
         const templates = tplData.templates || tplData.data || [];
         
+        // Ensure template_id settings exist (inject if missing from DB)
+        const requiredTemplateKeys = [
+            { key: 'abandoned_cart_first_template_id', description: 'Template for 1st reminder (1hr)', category: 'abandoned_cart' },
+            { key: 'abandoned_cart_second_template_id', description: 'Template for 2nd reminder (24hr)', category: 'abandoned_cart' },
+            { key: 'abandoned_cart_final_template_id', description: 'Template for final reminder (72hr)', category: 'abandoned_cart' }
+        ];
+        const existingKeys = new Set(settings.map(s => s.key));
+        requiredTemplateKeys.forEach(rk => {
+            if (!existingKeys.has(rk.key)) {
+                settings.push({ key: rk.key, value: '', description: rk.description, category: rk.category });
+            }
+        });
+        
         // Group by category
         const grouped = {};
         settings.forEach(s => {
