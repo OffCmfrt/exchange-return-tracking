@@ -104,6 +104,7 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     background: linear-gradient(90deg, rgba(79,70,229,0.1) 0%, transparent 100%);
     opacity: 0;
     transition: opacity 0.3s ease;
+    pointer-events: none;
 }
 .sidebar-header:hover::after {
     opacity: 1;
@@ -132,6 +133,8 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     cursor: pointer;
     transition: all 0.2s ease;
     flex-shrink: 0;
+    position: relative;
+    z-index: 10;
 }
 .sidebar-collapse-btn:hover {
     background: rgba(255,255,255,0.2);
