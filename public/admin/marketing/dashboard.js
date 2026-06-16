@@ -1581,7 +1581,7 @@ async function loadAbandonedCarts(page = 1) {
                 <td>${c.reminder_count || 0}</td>
                 <td>${timeAgo(c.created_at)}</td>
                 <td>
-                    ${c.customer_phone && !['recovered','expired'].includes(c.recovery_status) ? `<button class="btn btn-sm btn-primary" onclick="sendCartReminder(${c.id})">Send Reminder</button>` : ''}
+                    ${!['recovered','expired'].includes(c.recovery_status) ? `<button class="btn btn-sm btn-primary" onclick="sendCartReminder(${c.id})">Send Reminder</button>` : ''}
                     ${c.recovery_status !== 'recovered' ? `<button class="btn btn-sm btn-success" onclick="markCartRecovered(${c.id})">Mark Recovered</button>` : ''}
                 </td>
             </tr>
@@ -1596,6 +1596,14 @@ async function loadAbandonedCarts(page = 1) {
 
 async function sendCartReminder(id) {
     try {
+        // First check if cart has a phone number
+        const cartData = await apiCall(`abandoned-carts/${id}`);
+        const cart = cartData.cart || cartData;
+        if (!cart.customer_phone) {
+            showToast('This cart has no phone number. WhatsApp reminder cannot be sent.', 'error');
+            return;
+        }
+
         // Fetch all active templates for selection
         const tplData = await apiCall('templates?isActive=true');
         const templates = (tplData.templates || tplData.data || []);
