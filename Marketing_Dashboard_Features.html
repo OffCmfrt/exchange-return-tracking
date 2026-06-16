@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OFFCOMFRT Marketing Dashboard - Premium Feature List</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #fff; color: #1a1a1a; line-height: 1.6; padding: 0; }
+  .page { max-width: 800px; margin: 0 auto; padding: 40px 36px; }
+
+  /* Header */
+  .header { text-align: center; padding-bottom: 28px; border-bottom: 3px solid #000; margin-bottom: 32px; }
+  .header .brand { font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: #888; margin-bottom: 8px; }
+  .header h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .header .subtitle { font-size: 13px; color: #555; }
+  .header .date { font-size: 11px; color: #999; margin-top: 10px; }
+
+  /* Summary Box */
+  .summary-box { background: #f7f7f7; border: 1px solid #e5e5e5; border-radius: 10px; padding: 20px 24px; margin-bottom: 32px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; text-align: center; }
+  .summary-box .stat { }
+  .summary-box .stat .num { font-size: 26px; font-weight: 800; color: #111; }
+  .summary-box .stat .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #888; margin-top: 2px; }
+
+  /* Section */
+  .section { margin-bottom: 28px; page-break-inside: avoid; }
+  .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1.5px solid #e5e5e5; }
+  .section-num { background: #111; color: #fff; font-size: 11px; font-weight: 700; width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .section-title { font-size: 16px; font-weight: 700; color: #111; }
+  .feature-list { list-style: none; padding-left: 38px; }
+  .feature-list li { position: relative; font-size: 12.5px; color: #333; padding: 3px 0; line-height: 1.55; }
+  .feature-list li::before { content: ''; position: absolute; left: -16px; top: 10px; width: 5px; height: 5px; background: #111; border-radius: 50%; }
+
+  /* Sub-sections */
+  .sub-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-top: 10px; margin-bottom: 4px; padding-left: 38px; }
+
+  /* Footer */
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 2px solid #111; text-align: center; }
+  .footer p { font-size: 10px; color: #999; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="brand">OFFCOMFRT</div>
+    <h1>Marketing Dashboard System</h1>
+    <div class="subtitle">Premium Edition — Complete Feature Specification</div>
+    <div class="date">Generated June 6, 2026</div>
+  </div>
+
+  <div class="summary-box">
+    <div class="stat"><div class="num">55+</div><div class="label">API Endpoints</div></div>
+    <div class="stat"><div class="num">8</div><div class="label">DB Tables</div></div>
+    <div class="stat"><div class="num">6</div><div class="label">Cron Jobs</div></div>
+    <div class="stat"><div class="num">8</div><div class="label">Dashboard Views</div></div>
+  </div>
+
+  <!-- 1 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">1</div>
+      <div class="section-title">Customer Intelligence &amp; Sync</div>
+    </div>
+    <ul class="feature-list">
+      <li>Full &amp; incremental Shopify customer sync (auto-paginated, 250 per batch)</li>
+      <li>Auto-computed metrics: Total Orders, Total Spent, Avg Order Value, LTV, Purchase Frequency Score</li>
+      <li>Smart segmentation: VIP / Repeat / New / Lapsed / At-Risk (auto-assigned by algorithm)</li>
+      <li>Churn risk scoring (0–100) based on order frequency gaps</li>
+      <li>Advanced filtering: search, segment, state, order count range, churn risk range, marketing opt-in</li>
+      <li>Customer detail slide-over panel: order history, campaign interactions, messages received</li>
+      <li>CSV export with applied filters</li>
+      <li>Editable notes &amp; tags per customer</li>
+    </ul>
+  </div>
+
+  <!-- 2 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">2</div>
+      <div class="section-title">Campaign Management</div>
+    </div>
+    <ul class="feature-list">
+      <li>5-step campaign creation wizard: Audience Builder → Template Selector → A/B Test → Schedule → Review</li>
+      <li>Audience builder with nested AND/OR conditions (segment, orders, LTV, location, dates, etc.)</li>
+      <li>Live recipient count preview before sending</li>
+      <li>A/B testing: random split recipients, per-variant metrics, auto winner detection</li>
+      <li>Delivery modes: Instant, Scheduled, Drip (configurable intervals &amp; rate caps)</li>
+      <li>Full campaign lifecycle: Draft → Scheduled → Running → Paused → Completed → Cancelled</li>
+      <li>Clone, pause, resume, and cancel campaigns at any stage</li>
+      <li>Delivery funnel visualization: Sent → Delivered → Read → Clicked → Converted</li>
+      <li>ROI tracking per campaign (cost vs attributed revenue)</li>
+    </ul>
+  </div>
+
+  <!-- 3 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">3</div>
+      <div class="section-title">WhatsApp Template Messaging (Meta Cloud API)</div>
+    </div>
+    <ul class="feature-list">
+      <li>Direct Meta Graph API integration — no third-party proxy required</li>
+      <li>Send WhatsApp template messages with header, body, footer, and button variables</li>
+      <li>Bulk sending with queue-based concurrency (max 20/sec per Meta rate limits)</li>
+      <li>Exponential backoff retry on rate limits (429) and server errors (5xx), up to 5 retries</li>
+      <li>Create &amp; submit new WhatsApp templates to Meta directly from the dashboard</li>
+      <li>Template editor with live iPhone-frame preview</li>
+      <li>Template versioning — track changes across versions with history</li>
+      <li>Template approval status tracking: Draft / Pending / Approved / Rejected</li>
+      <li>Template quality score monitoring (Green / Yellow / Red)</li>
+      <li>Message delivery tracking: Queued → Sent → Delivered → Read → Failed</li>
+      <li>Webhook receiver for real-time Meta status callbacks (delivered, read, failed events)</li>
+      <li>Phone number validation for Indian mobile numbers (10 digits, WhatsApp-active)</li>
+    </ul>
+  </div>
+
+  <!-- 4 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">4</div>
+      <div class="section-title">Coupon &amp; Discount Management</div>
+    </div>
+    <ul class="feature-list">
+      <li>Single coupon creation with Shopify price rule + discount code auto-sync</li>
+      <li>Bulk coupon generation: prefix-based sequential (PREFIX001, PREFIX002) or random alphanumeric</li>
+      <li>Discount types: Percentage, Fixed Amount, Free Shipping, Buy X Get Y</li>
+      <li>Configurable usage limits: global cap + per-customer cap</li>
+      <li>Product and collection targeting for coupon applicability</li>
+      <li>Coupon batches with aggregate stats (total created, used, revenue generated)</li>
+      <li>Real-time usage tracking synced from Shopify orders</li>
+      <li>Time-series usage charts per coupon (daily redemption graph)</li>
+      <li>Activate, deactivate, and reactivate coupons instantly via Shopify API</li>
+      <li>Performance analytics: redemption rate, revenue generated, average discount per order</li>
+    </ul>
+  </div>
+
+  <!-- 5 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">5</div>
+      <div class="section-title">Abandoned Cart Recovery</div>
+    </div>
+    <ul class="feature-list">
+      <li>Auto-sync open checkouts from Shopify every 15 minutes</li>
+      <li>Cart detail view: product images, variant info, quantities, prices, total cart value</li>
+      <li>Manual recovery: send personalized WhatsApp to a specific cart owner</li>
+      <li>Bulk recovery: filter carts by criteria and send recovery messages to all matching</li>
+      <li>Auto-recovery automation: configurable max reminders (default 3) and interval (default 24 hours)</li>
+      <li>Recovery funnel analytics: Abandoned → Reminded → Recovered, recovery rate %, revenue recovered</li>
+      <li>Relative timestamps ("2 hours ago") and reminder count tracking per cart</li>
+      <li>Ignore cart option to exclude specific carts from auto-reminders</li>
+      <li>Checkout URL deep-link included in every recovery message</li>
+    </ul>
+  </div>
+
+  <!-- 6 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">6</div>
+      <div class="section-title">Analytics &amp; Reporting Dashboard</div>
+    </div>
+    <ul class="feature-list">
+      <li>Executive KPI cards: Total Customers, Active (30d), Campaigns Running, Coupons Redeemed, Abandoned Carts, Revenue Influenced</li>
+      <li>Time-series charts: messages sent, deliveries, reads, conversions, revenue (daily / weekly / monthly)</li>
+      <li>Campaign performance comparison chart</li>
+      <li>Customer segment growth chart (doughnut visualization)</li>
+      <li>Cart recovery funnel chart</li>
+      <li>Leaderboards: Top Templates (by read rate), Top Campaigns (by ROI), Top Customers (by LTV)</li>
+      <li>ROI breakdown per campaign with cost vs revenue side-by-side</li>
+      <li>Date range selector for all analytics views</li>
+    </ul>
+  </div>
+
+  <!-- 7 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">7</div>
+      <div class="section-title">Settings &amp; Audit Trail</div>
+    </div>
+    <ul class="feature-list">
+      <li>Configurable marketing settings: auto-recovery toggle, max reminders, interval, rate limits, sender name</li>
+      <li>Full audit log for every action: campaign created, coupon sent, template submitted, sync run, etc.</li>
+      <li>Audit log filters: action type, entity, performed by, date range</li>
+      <li>Meta API connection health check indicator (live status dot)</li>
+      <li>Campaign approval workflow (optional approval before send)</li>
+    </ul>
+  </div>
+
+  <!-- 8 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">8</div>
+      <div class="section-title">Premium UI/UX Design</div>
+    </div>
+    <ul class="feature-list">
+      <li>Dark theme (Stripe/Vercel-inspired) with optional light mode toggle</li>
+      <li>Glass-morphism card design: backdrop-blur, subtle borders, layered depth</li>
+      <li>Collapsible sidebar navigation (240px ↔ 64px) with SVG icons</li>
+      <li>Command palette (Ctrl+K) for instant navigation and quick actions</li>
+      <li>Animated KPI cards with micro sparklines and count-up effects</li>
+      <li>Skeleton loaders for async data loading states</li>
+      <li>Toast notifications (stacking, auto-dismiss) and slide-over detail panels</li>
+      <li>Fully responsive design: mobile, tablet, and desktop breakpoints</li>
+      <li>Keyboard shortcuts: Ctrl+K (palette), Ctrl+S (save), Esc (close), Ctrl+Enter (execute)</li>
+      <li>Virtual scrolling for large customer lists (10,000+ rows without lag)</li>
+    </ul>
+  </div>
+
+  <!-- 9 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">9</div>
+      <div class="section-title">Background Automation (6 Cron Jobs)</div>
+    </div>
+    <ul class="feature-list">
+      <li>Every 15 minutes — Abandoned cart sync from Shopify + auto first-reminder for carts &gt;1 hour old</li>
+      <li>Every 6 hours — Incremental customer sync (by updated_at, last 6 hours only)</li>
+      <li>Daily at 1:00 AM — Full customer sync + segment / LTV / churn score recalculation</li>
+      <li>Every 5 minutes — Scheduled campaign execution check (batch send with rate limiting)</li>
+      <li>Every 10 minutes — Message delivery status polling from Meta API for last 24h messages</li>
+      <li>Every 2 hours — Coupon usage sync from Shopify orders (used_count + revenue update)</li>
+    </ul>
+  </div>
+
+  <!-- 10 -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">10</div>
+      <div class="section-title">Security &amp; Infrastructure</div>
+    </div>
+    <ul class="feature-list">
+      <li>Admin JWT authentication on all marketing API endpoints</li>
+      <li>Token bucket rate limiter: 20 requests/sec to Meta API, queue overflow handling</li>
+      <li>Request deduplication and 5-minute response cache for repeated queries</li>
+      <li>8 indexed database tables with composite indexes for optimal query performance</li>
+      <li>HTTP keep-alive connection pooling for Meta API calls</li>
+      <li>Detailed error diagnostics with Shopify/Meta error passthrough</li>
+      <li>Graceful degradation: marketing features work even if Meta API is temporarily unavailable</li>
+    </ul>
+  </div>
+
+  <div class="footer">
+    <p>OFFCOMFRT Marketing Dashboard System — Premium Edition — Confidential</p>
+  </div>
+
+</div>
+</body>
+</html>
