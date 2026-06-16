@@ -1806,8 +1806,9 @@ async function updateSetting(key) {
     try {
         const input = document.getElementById(`setting-${key}`);
         let value = input.value;
-        // Try to parse as JSON
-        try { value = JSON.parse(value); } catch(e) { /* keep as string */ }
+        // Empty string → null (valid for JSON column)
+        if (value === '') { value = null; }
+        else { try { value = JSON.parse(value); } catch(e) { /* keep as string */ } }
         
         await apiCall(`settings/${key}`, { method: 'PUT', body: { value } });
         showToast(`Setting "${key}" updated`);
