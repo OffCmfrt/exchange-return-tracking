@@ -9926,8 +9926,27 @@ app.get('/api/admin/marketing/meta/templates', authenticateAdmin, async (req, re
 // POST /api/admin/marketing/templates/sync-from-meta - Sync templates from Meta to local DB
 app.post('/api/admin/marketing/templates/sync-from-meta', authenticateAdmin, async (req, res) => {
     try {
+        // Check which specific credentials are missing
+        const missing = [];
+        if (!process.env.META_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN === 'your_meta_access_token_here') {
+            missing.push('META_ACCESS_TOKEN');
+        }
+        if (!process.env.META_PHONE_NUMBER_ID || process.env.META_PHONE_NUMBER_ID === 'your_phone_number_id_here') {
+            missing.push('META_PHONE_NUMBER_ID');
+        }
+        if (!process.env.META_WABA_ID || process.env.META_WABA_ID === 'your_waba_id_here') {
+            missing.push('META_WABA_ID');
+        }
+        
+        if (missing.length > 0) {
+            return res.status(400).json({ 
+                error: `Meta Cloud API credentials not configured. Missing: ${missing.join(', ')}. Add them in your .env file. Get credentials from https://developers.facebook.com > Your App > WhatsApp > API Setup`,
+                missingCredentials: missing
+            });
+        }
+
         if (!metaWhatsApp.isMetaConfigured()) {
-            return res.status(400).json({ error: 'Meta Cloud API not configured' });
+            return res.status(400).json({ error: 'Meta Cloud API not properly configured. Check META_ACCESS_TOKEN and META_PHONE_NUMBER_ID in .env' });
         }
 
         // Fetch all templates from Meta
