@@ -943,6 +943,7 @@ async function getAbandonedCarts(filters = {}) {
     if (filters.email) query = query.ilike('customer_email', `%${filters.email}%`);
     if (filters.phone) query = query.ilike('customer_phone', `%${filters.phone}%`);
     if (filters.minValue) query = query.gte('cart_value', parseFloat(filters.minValue));
+    if (filters.source) query = query.eq('checkout_source', filters.source); // 'gokwik' or 'shopify'
 
     query = query.order('created_at', { ascending: false });
 
@@ -979,7 +980,13 @@ async function createAbandonedCart(cartData) {
         currency: cartData.currency || 'INR',
         items: cartData.items || [],
         auto_recovery_enabled: cartData.auto_recovery_enabled !== undefined ? cartData.auto_recovery_enabled : true,
-        source: cartData.source || 'api'
+        source: cartData.source || 'api',
+        // Gokwik-specific fields
+        checkout_source: cartData.source === 'gokwik' ? 'gokwik' : (cartData.checkoutSource || 'shopify'),
+        gokwik_checkout_id: cartData.gokwikCheckoutId || null,
+        checkout_version: cartData.checkoutVersion || null,
+        gokwik_customer_phone_verified: cartData.gokwikCustomerPhoneVerified || false,
+        payment_method: cartData.paymentMethod || null
     };
 
     const { data, error } = await supabase.from('marketing_abandoned_carts').insert([row]).select().single();
@@ -1010,11 +1017,13 @@ async function getAbandonedCartStats() {
     const [
         { count: total },
         { data: statusData },
-        { data: recoveredData }
+        { data: recoveredData },
+        { data: sourceData }
     ] = await Promise.all([
         supabase.from('marketing_abandoned_carts').select('*', { count: 'exact', head: true }),
-        supabase.from('marketing_abandoned_carts').select('recovery_status'),
-        supabase.from('marketing_abandoned_carts').select('recovered_amount, cart_value').eq('recovery_status', 'recovered')
+        supabase.from('marketing_abandoned_carts').select('recovery_status, checkout_source'),
+        supabase.from('marketing_abandoned_carts').select('recovered_amount, cart_value, checkout_source').eq('recovery_status', 'recovered'),
+        supabase.from('marketing_abandoned_carts').select('checkout_source, recovery_status')
     ]);
 
     const statuses = {};
@@ -1025,13 +1034,40 @@ async function getAbandonedCartStats() {
     const totalCartValue = (recoveredData || []).reduce((sum, c) => sum + (parseFloat(c.cart_value) || 0), 0);
     const recoveryRate = total > 0 ? ((recoveredCount / total) * 100).toFixed(2) : 0;
 
+    // Source-specific stats
+    const sourceStats = { gokwik: { total: 0, recovered: 0, revenue: 0 }, shopify: { total: 0, recovered: 0, revenue: 0 } };
+    (sourceData || []).forEach(c => {
+        const source = c.checkout_source || 'shopify';
+        if (sourceStats[source]) {
+            sourceStats[source].total++;
+            if (c.recovery_status === 'recovered') {
+                sourceStats[source].recovered++;
+                sourceStats[source].revenue += parseFloat(c.recovered_amount) || 0;
+            }
+        }
+    });
+
     return {
         total: total || 0,
         statuses,
         recoveredCount,
         recoveredRevenue,
         totalCartValueAtRecovery: totalCartValue,
-        recoveryRate: parseFloat(recoveryRate)
+        recoveryRate: parseFloat(recoveryRate),
+        bySource: {
+            gokwik: {
+                total: sourceStats.gokwik.total,
+                recovered: sourceStats.gokwik.recovered,
+                revenue: sourceStats.gokwik.revenue,
+                recoveryRate: sourceStats.gokwik.total > 0 ? ((sourceStats.gokwik.recovered / sourceStats.gokwik.total) * 100).toFixed(2) : 0
+            },
+            shopify: {
+                total: sourceStats.shopify.total,
+                recovered: sourceStats.shopify.recovered,
+                revenue: sourceStats.shopify.revenue,
+                recoveryRate: sourceStats.shopify.total > 0 ? ((sourceStats.shopify.recovered / sourceStats.shopify.total) * 100).toFixed(2) : 0
+            }
+        }
     };
 }
 

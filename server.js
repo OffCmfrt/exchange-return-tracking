@@ -65,6 +65,21 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const Razorpay = require('razorpay');
 
+// Gokwik webhook signature verification
+function verifyGokwikWebhook(payload, signature, secret) {
+    if (!signature || !secret) return false;
+    const hmac = crypto.createHmac('sha256', secret);
+    const digest = hmac.update(payload).digest('hex');
+    try {
+        return crypto.timingSafeEqual(
+            Buffer.from(signature, 'hex'),
+            Buffer.from(digest, 'hex')
+        );
+    } catch {
+        return false;
+    }
+}
+
 const app = express();
 
 // Trust Render's proxy so express-rate-limit can read real client IPs
@@ -10740,6 +10755,107 @@ app.post('/api/admin/marketing/abandoned-carts/:id/mark-recovered', authenticate
     }
 });
 
+// ── Gokwik Webhook ──
+
+// POST /api/webhooks/gokwik/abandoned-cart - Receive abandoned cart events from Gokwik
+app.post('/api/webhooks/gokwik/abandoned-cart', express.json(), async (req, res) => {
+    try {
+        const signature = req.headers['x-gokwik-signature'] || req.headers['x-gokwik-webhook-signature'];
+        const webhookSecret = process.env.GOKWIK_WEBHOOK_SECRET;
+        
+        // Optional signature verification (only if secret is configured)
+        if (webhookSecret && signature) {
+            const rawBody = JSON.stringify(req.body);
+            if (!verifyGokwikWebhook(rawBody, signature, webhookSecret)) {
+                console.warn('[Gokwik Webhook] Invalid signature from IP:', req.ip);
+                return res.status(401).json({ error: 'Invalid webhook signature' });
+            }
+        } else if (!webhookSecret) {
+            console.log('[Gokwik Webhook] No webhook secret configured - accepting without verification');
+        }
+        
+        const payload = req.body;
+        console.log('[Gokwik Webhook] Received abandoned cart event:', payload.checkout_id);
+        
+        // Extract data from Gokwik payload
+        const { 
+            checkout_id, 
+            customer = {}, 
+            cart = {}, 
+            checkout_url, 
+            created_at,
+            payment_method,
+            checkout_version = process.env.GOKWIK_CHECKOUT_VERSION || 'v1'
+        } = payload;
+        
+        if (!checkout_id) {
+            return res.status(400).json({ error: 'checkout_id is required' });
+        }
+        
+        // Check for duplicate checkout_id
+        const { data: existing } = await supabase
+            .from('marketing_abandoned_carts')
+            .select('id')
+            .eq('gokwik_checkout_id', checkout_id)
+            .limit(1);
+        
+        if (existing && existing.length > 0) {
+            console.log('[Gokwik Webhook] Cart already tracked for checkout:', checkout_id);
+            return res.json({ success: true, message: 'Cart already tracked', cartId: existing[0].id });
+        }
+        
+        // Map Gokwik payload to our schema
+        const cartToken = `gokwik_${checkout_id}`;
+        const customerEmail = customer.email || null;
+        const customerPhone = customer.phone || null;
+        const customerName = customer.name || null;
+        const cartValue = cart.total_value || cart.total_amount || 0;
+        const currency = cart.currency || 'INR';
+        const items = cart.items || [];
+        
+        // Create abandoned cart record
+        const cartData = {
+            cartToken,
+            customerEmail,
+            customerPhone,
+            customerName,
+            checkoutId: checkout_id,
+            checkoutUrl: checkout_url,
+            cartValue,
+            currency,
+            items,
+            source: 'gokwik',
+            // Gokwik-specific fields
+            gokwikCheckoutId: checkout_id,
+            checkoutVersion: checkout_version,
+            gokwikCustomerPhoneVerified: customer.phone_verified || false,
+            paymentMethod: payment_method
+        };
+        
+        const newCart = await marketingDB.createAbandonedCart(cartData);
+        
+        console.log(`[Gokwik Webhook] Created abandoned cart ${newCart.id} for checkout ${checkout_id}`);
+        
+        // Create audit log
+        await marketingDB.createAuditLog({
+            action: 'created',
+            entityType: 'abandoned_cart',
+            entityId: newCart.id,
+            entityName: `Gokwik Cart ${checkout_id.substring(0, 8)}`,
+            actor: 'gokwik_webhook',
+            actorType: 'system',
+            newValues: { checkout_id, cartValue, customerEmail, customerPhone, checkout_version },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+        });
+        
+        res.json({ success: true, cartId: newCart.id, message: 'Abandoned cart tracked successfully' });
+    } catch (error) {
+        console.error('[Gokwik Webhook] Error processing webhook:', error.message);
+        res.status(500).json({ error: 'Failed to process webhook' });
+    }
+});
+
 
 // ── Analytics ──
 
@@ -10856,6 +10972,11 @@ async function processAbandonedCartReminders() {
         }
 
         console.log(`[Marketing Cron] Found ${carts.length} carts needing reminders`);
+        
+        // Log source breakdown
+        const gokwikCount = carts.filter(c => c.checkout_source === 'gokwik').length;
+        const shopifyCount = carts.filter(c => c.checkout_source === 'shopify' || !c.checkout_source).length;
+        console.log(`[Marketing Cron] Source breakdown: Gokwik=${gokwikCount}, Shopify=${shopifyCount}`);
 
         for (const cart of carts) {
             try {
@@ -10908,7 +11029,8 @@ async function processAbandonedCartReminders() {
 
                 await marketingDB.updateAbandonedCart(cart.id, updates);
 
-                console.log(`[Marketing Cron] Sent ${reminderType} reminder to cart ${cart.id} (${cart.customer_phone})`);
+                const sourceLabel = cart.checkout_source === 'gokwik' ? 'Gokwik' : 'Shopify';
+                console.log(`[Marketing Cron] Sent ${reminderType} reminder to ${sourceLabel} cart ${cart.id} (${cart.customer_phone})`);
 
                 // Rate limit: wait 2 seconds between messages
                 await new Promise(r => setTimeout(r, 2000));

@@ -1534,7 +1534,9 @@ async function loadAbandonedCarts(page = 1) {
     try {
         const params = new URLSearchParams({ page });
         const status = document.getElementById('cartStatus')?.value;
+        const source = document.getElementById('cartSource')?.value;
         if (status) params.append('status', status);
+        if (source) params.append('source', source);
         
         const [cartData, statsData] = await Promise.all([
             apiCall(`abandoned-carts?${params}`),
@@ -1542,6 +1544,17 @@ async function loadAbandonedCarts(page = 1) {
         ]);
         
         const s = statsData.stats;
+        const bySource = s.bySource || { gokwik: { total: 0, recovered: 0 }, shopify: { total: 0, recovered: 0 } };
+        
+        // Update source breakdown display
+        const sourceBreakdownEl = document.getElementById('sourceBreakdown');
+        if (sourceBreakdownEl) {
+            sourceBreakdownEl.innerHTML = `
+                <span style="margin-right: 15px;"><i class="fas fa-shopping-cart" style="color: #f59e0b;"></i> Gokwik: <strong>${formatNumber(bySource.gokwik.total)}</strong> (${bySource.gokwik.recovered} recovered)</span>
+                <span><i class="fas fa-store" style="color: #10b981;"></i> Shopify: <strong>${formatNumber(bySource.shopify.total)}</strong> (${bySource.shopify.recovered} recovered)</span>
+            `;
+        }
+        
         document.getElementById('cartStats').innerHTML = `
             <div class="stat-card"><div class="stat-icon orange"><i class="fas fa-shopping-cart"></i></div><div class="stat-info"><span class="stat-value">${formatNumber(s.total)}</span><span class="stat-label">Total Carts</span></div></div>
             <div class="stat-card"><div class="stat-icon green"><i class="fas fa-check-circle"></i></div><div class="stat-info"><span class="stat-value">${formatNumber(s.recoveredCount)}</span><span class="stat-label">Recovered</span></div></div>
@@ -1550,10 +1563,18 @@ async function loadAbandonedCarts(page = 1) {
         `;
         
         const tbody = document.getElementById('cartsBody');
-        tbody.innerHTML = cartData.data.map(c => `
+        tbody.innerHTML = cartData.data.map(c => {
+            const sourceIcon = c.checkout_source === 'gokwik' 
+                ? '<i class="fas fa-shopping-cart" style="color: #f59e0b;" title="Gokwik"></i>' 
+                : '<i class="fas fa-store" style="color: #10b981;" title="Shopify"></i>';
+            const sourceLabel = c.checkout_source === 'gokwik' ? 'Gokwik' : 'Shopify';
+            const versionBadge = c.checkout_version ? `<span class="badge badge-sm" title="Checkout version">${c.checkout_version.toUpperCase()}</span>` : '';
+            
+            return `
             <tr>
                 <td>${escapeHtml(c.customer_name || c.customer_email || 'Anonymous')}</td>
                 <td>${escapeHtml(c.customer_phone || '-')}</td>
+                <td>${sourceIcon} ${sourceLabel} ${versionBadge}</td>
                 <td>${formatCurrency(c.cart_value)}</td>
                 <td>${Array.isArray(c.items) ? c.items.length : 0} items</td>
                 <td>${statusBadge(c.recovery_status)}</td>
@@ -1564,7 +1585,8 @@ async function loadAbandonedCarts(page = 1) {
                     ${c.recovery_status !== 'recovered' ? `<button class="btn btn-sm btn-success" onclick="markCartRecovered(${c.id})">Mark Recovered</button>` : ''}
                 </td>
             </tr>
-        `).join('');
+            `;
+        }).join('');
         
         renderPagination('cartsPagination', cartData.pagination, 'loadAbandonedCarts');
     } catch (error) {

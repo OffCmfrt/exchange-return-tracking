@@ -79,9 +79,12 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     overflow: hidden;
     box-shadow: 2px 0 8px rgba(0,0,0,0.1);
 }
-.sidebar.collapsed { width: 72px; }
+.sidebar.collapsed { 
+    width: 72px; 
+    overflow: visible;
+}
 .sidebar-header {
-    padding: 1.25rem 1.5rem;
+    padding: 1.25rem 1rem;
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -92,7 +95,11 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     white-space: nowrap;
     min-height: 64px;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
+}
+.sidebar.collapsed .sidebar-header {
+    padding: 1.25rem 0.5rem;
+    justify-content: center;
 }
 .sidebar-header::after {
     content: '';
@@ -136,6 +143,18 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     position: relative;
     z-index: 10;
 }
+.sidebar.collapsed .sidebar-collapse-btn {
+    position: absolute;
+    right: -14px;
+    top: 50%;
+    transform: translateY(-50%);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    background: rgba(79,70,229,0.9);
+}
+.sidebar.collapsed .sidebar-collapse-btn:hover {
+    background: var(--primary);
+    transform: translateY(-50%) scale(1.1);
+}
 .sidebar-collapse-btn:hover {
     background: rgba(255,255,255,0.2);
     transform: scale(1.05);
@@ -147,10 +166,11 @@ textarea.form-input { min-height: 100px; resize: vertical; }
 .sidebar.collapsed .sidebar-collapse-btn i {
     transform: rotate(180deg);
 }
+.sidebar.collapsed .sidebar-collapse-btn:hover i {
+    transform: rotate(180deg) scale(1.1);
+}
 .sidebar.collapsed .sidebar-header span { 
-    opacity: 0; 
-    transform: translateX(-10px);
-    pointer-events: none;
+    display: none;
 }
 .sidebar-nav { flex: 1; padding: 0.75rem 0; overflow-y: auto; overflow-x: hidden; }
 .sidebar-footer { border-top: 1px solid rgba(255,255,255,0.1); padding: 0.75rem 0; }
