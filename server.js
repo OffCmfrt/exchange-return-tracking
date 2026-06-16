@@ -10702,13 +10702,56 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
             return res.status(400).json({ error: 'No approved template found for abandoned cart reminders' });
         }
 
-        // Prepare variables based on template structure
-        const variables = [
-            cart.customer_name || 'there',                                    // {{1}}
-            `${cart.items?.length || 0} item(s)`,                            // {{2}}
-            `₹${cart.cart_value}`,                                           // {{3}}
-            cart.checkout_url || 'https://offcomfrt.com'                     // {{4}}
+        // Build variables pool from cart data
+        const varPool = [
+            cart.customer_name || 'there',
+            `${cart.items?.length || 0} item(s)`,
+            `₹${cart.cart_value}`,
+            cart.checkout_url || 'https://offcomfrt.com',
+            cart.customer_phone || '',
+            cart.customer_email || ''
         ];
+
+        // Try to fetch template from Meta to get expected parameter count
+        let expectedParamCount = 0;
+        try {
+            const metaResult = await metaWhatsApp.getMetaTemplateByName(template.name);
+            if (metaResult.success && metaResult.template) {
+                const bodyComponent = (metaResult.template.components || []).find(c => c.type === 'BODY');
+                if (bodyComponent && bodyComponent.text) {
+                    const matches = bodyComponent.text.match(/\{\{\d+\}\}/g);
+                    expectedParamCount = matches ? matches.length : 0;
+                }
+                console.log(`[Send Reminder] Meta template "${template.name}" expects ${expectedParamCount} parameters`);
+            }
+        } catch (e) {
+            console.warn('[Send Reminder] Could not fetch Meta template details:', e.message);
+        }
+
+        // Build variables array matching expected parameter count
+        let variables;
+        if (expectedParamCount > 0) {
+            variables = varPool.slice(0, expectedParamCount);
+        } else {
+            const templateVariables = template.variables || [];
+            variables = templateVariables.map(v => {
+                const name = String(v.name);
+                switch (name) {
+                    case '1': return varPool[0];
+                    case '2': return varPool[1];
+                    case '3': return varPool[2];
+                    case '4': return varPool[3];
+                    case '5': return varPool[4];
+                    case '6': return varPool[5];
+                    default: return v.example || '';
+                }
+            });
+            if (variables.length === 0) {
+                variables = varPool.slice(0, 4);
+            }
+        }
+
+        console.log(`[Send Reminder] Sending ${variables.length} params for template "${template.name}":`, variables);
         
         // Send via Meta WhatsApp with template
         const sendResult = await metaWhatsApp.sendTemplateMessage(
@@ -11030,13 +11073,56 @@ async function processAbandonedCartReminders() {
                     continue;
                 }
 
-                // Prepare variables based on template structure
-                const variables = [
-                    cart.customer_name || 'there',                                    // {{1}}
-                    `${cart.items?.length || 0} item(s)`,                            // {{2}}
-                    `₹${cart.cart_value}`,                                           // {{3}}
-                    cart.checkout_url || 'https://offcomfrt.com'                     // {{4}}
+                // Build variables pool from cart data
+                const varPool = [
+                    cart.customer_name || 'there',
+                    `${cart.items?.length || 0} item(s)`,
+                    `₹${cart.cart_value}`,
+                    cart.checkout_url || 'https://offcomfrt.com',
+                    cart.customer_phone || '',
+                    cart.customer_email || ''
                 ];
+
+                // Try to fetch template from Meta to get expected parameter count
+                let expectedParamCount = 0;
+                try {
+                    const metaResult = await metaWhatsApp.getMetaTemplateByName(template.name);
+                    if (metaResult.success && metaResult.template) {
+                        const bodyComponent = (metaResult.template.components || []).find(c => c.type === 'BODY');
+                        if (bodyComponent && bodyComponent.text) {
+                            const matches = bodyComponent.text.match(/\{\{\d+\}\}/g);
+                            expectedParamCount = matches ? matches.length : 0;
+                        }
+                        console.log(`[Marketing Cron] Meta template "${template.name}" expects ${expectedParamCount} parameters`);
+                    }
+                } catch (e) {
+                    console.warn('[Marketing Cron] Could not fetch Meta template details:', e.message);
+                }
+
+                // Build variables array matching expected parameter count
+                let variables;
+                if (expectedParamCount > 0) {
+                    variables = varPool.slice(0, expectedParamCount);
+                } else {
+                    const templateVariables = template.variables || [];
+                    variables = templateVariables.map(v => {
+                        const name = String(v.name);
+                        switch (name) {
+                            case '1': return varPool[0];
+                            case '2': return varPool[1];
+                            case '3': return varPool[2];
+                            case '4': return varPool[3];
+                            case '5': return varPool[4];
+                            case '6': return varPool[5];
+                            default: return v.example || '';
+                        }
+                    });
+                    if (variables.length === 0) {
+                        variables = varPool.slice(0, 4);
+                    }
+                }
+
+                console.log(`[Marketing Cron] Sending ${variables.length} params for template "${template.name}":`, variables);
 
                 // Send WhatsApp message via Meta API
                 const sendResult = await metaWhatsApp.sendTemplateMessage(

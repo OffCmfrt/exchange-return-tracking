@@ -367,6 +367,42 @@ async function getTemplateStatusFromMeta(templateName) {
 }
 
 /**
+ * Get full template details from Meta (including components/parameters)
+ */
+async function getMetaTemplateByName(templateName) {
+    if (!isMetaConfigured()) {
+        return { success: false, error: 'Meta Cloud API not configured' };
+    }
+
+    const accessToken = getMetaAccessToken();
+    const wabaId = getWabaId();
+
+    if (!wabaId) {
+        return { success: false, error: 'META_WABA_ID not configured' };
+    }
+
+    try {
+        const url = `${META_GRAPH_API_BASE}/${META_API_VERSION}/${wabaId}/message_templates?name=${encodeURIComponent(templateName)}`;
+
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        const data = await response.json();
+
+        if (data.data && data.data.length > 0) {
+            return { success: true, template: data.data[0] };
+        }
+
+        return { success: false, error: 'Template not found on Meta' };
+
+    } catch (error) {
+        console.error('[Meta WhatsApp] Get template failed:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
  * List all templates from Meta
  */
 async function listMetaTemplates(limit = 50) {
@@ -450,6 +486,7 @@ module.exports = {
     // Template Management
     submitTemplateToMeta,
     getTemplateStatusFromMeta,
+    getMetaTemplateByName,
     listMetaTemplates,
 
     // Webhook
