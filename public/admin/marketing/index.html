@@ -45,39 +45,42 @@
         <div class="sidebar-header">
             <i class="fas fa-bullhorn"></i>
             <span>Marketing</span>
+            <button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar">
+                <i class="fas fa-angles-left"></i>
+            </button>
         </div>
         <nav class="sidebar-nav">
-            <a href="#" class="nav-item active" data-section="overview" onclick="switchSection('overview')">
+            <a href="#" class="nav-item" data-section="overview" data-tooltip="Overview" onclick="switchSection('overview')">
                 <i class="fas fa-chart-pie"></i><span>Overview</span>
             </a>
-            <a href="#" class="nav-item" data-section="customers" onclick="switchSection('customers')">
+            <a href="#" class="nav-item" data-section="customers" data-tooltip="Customers" onclick="switchSection('customers')">
                 <i class="fas fa-users"></i><span>Customers</span>
             </a>
-            <a href="#" class="nav-item" data-section="campaigns" onclick="switchSection('campaigns')">
+            <a href="#" class="nav-item" data-section="campaigns" data-tooltip="Campaigns" onclick="switchSection('campaigns')">
                 <i class="fas fa-paper-plane"></i><span>Campaigns</span>
             </a>
-            <a href="#" class="nav-item" data-section="templates" onclick="switchSection('templates')">
+            <a href="#" class="nav-item" data-section="templates" data-tooltip="Templates" onclick="switchSection('templates')">
                 <i class="fas fa-file-alt"></i><span>Templates</span>
             </a>
-            <a href="#" class="nav-item" data-section="coupons" onclick="switchSection('coupons')">
+            <a href="#" class="nav-item" data-section="coupons" data-tooltip="Coupons" onclick="switchSection('coupons')">
                 <i class="fas fa-ticket-alt"></i><span>Coupons</span>
             </a>
-            <a href="#" class="nav-item" data-section="abandoned-carts" onclick="switchSection('abandoned-carts')">
+            <a href="#" class="nav-item" data-section="abandoned-carts" data-tooltip="Abandoned Carts" onclick="switchSection('abandoned-carts')">
                 <i class="fas fa-shopping-cart"></i><span>Abandoned Carts</span>
             </a>
-            <a href="#" class="nav-item" data-section="analytics" onclick="switchSection('analytics')">
+            <a href="#" class="nav-item" data-section="analytics" data-tooltip="Analytics" onclick="switchSection('analytics')">
                 <i class="fas fa-chart-bar"></i><span>Analytics</span>
             </a>
-            <a href="#" class="nav-item" data-section="settings" onclick="switchSection('settings')">
+            <a href="#" class="nav-item" data-section="settings" data-tooltip="Settings" onclick="switchSection('settings')">
                 <i class="fas fa-cog"></i><span>Settings</span>
             </a>
-            <a href="#" class="nav-item" data-section="audit-log" onclick="switchSection('audit-log')">
+            <a href="#" class="nav-item" data-section="audit-log" data-tooltip="Audit Log" onclick="switchSection('audit-log')">
                 <i class="fas fa-history"></i><span>Audit Log</span>
             </a>
         </nav>
         <div class="sidebar-footer">
-            <a href="/admin/" class="nav-item"><i class="fas fa-arrow-left"></i><span>Returns Dashboard</span></a>
-            <a href="#" class="nav-item" onclick="logout()"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
+            <a href="/admin/" class="nav-item" data-tooltip="Returns Dashboard"><i class="fas fa-arrow-left"></i><span>Returns Dashboard</span></a>
+            <a href="#" class="nav-item" data-tooltip="Logout" onclick="logout()"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
         </div>
     </aside>
 
@@ -280,10 +283,11 @@
             <div class="section-header">
                 <div class="filters-bar">
                     <select id="cartStatus" class="form-select" onchange="loadAbandonedCarts()"><option value="">All Status</option><option value="pending">Pending</option><option value="first_reminder_sent">First Reminder</option><option value="second_reminder_sent">Second Reminder</option><option value="final_reminder_sent">Final Reminder</option><option value="recovered">Recovered</option><option value="expired">Expired</option></select>
+                    <select id="cartSource" class="form-select" onchange="loadAbandonedCarts()"><option value="">All Sources</option><option value="gokwik">Gokwik</option><option value="shopify">Shopify</option></select>
                 </div>
             </div>
             <div class="stats-grid stats-grid-sm" id="cartStats"></div>
-            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="cartsTable"><thead><tr><th>Customer</th><th>Phone</th><th>Cart Value</th><th>Items</th><th>Status</th><th>Reminders</th><th>Created</th><th>Actions</th></tr></thead><tbody id="cartsBody"></tbody></table></div><div id="cartsPagination" class="pagination"></div></div></div>
+            <div class="card"><div class="card-header"><h3>Abandoned Carts</h3><div class="card-actions"><span id="sourceBreakdown" class="text-muted small"></span></div></div><div class="card-body"><div class="table-container"><table class="data-table" id="cartsTable"><thead><tr><th>Customer</th><th>Phone</th><th>Source</th><th>Cart Value</th><th>Items</th><th>Status</th><th>Reminders</th><th>Created</th><th>Actions</th></tr></thead><tbody id="cartsBody"></tbody></table></div><div id="cartsPagination" class="pagination"></div></div></div>
         </section>
 
         <!-- Analytics Section -->

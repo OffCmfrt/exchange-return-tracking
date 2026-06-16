@@ -116,8 +116,36 @@ function switchSection(section) {
 }
 
 function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('open');
+    const sidebar = document.getElementById('sidebar');
+    const isMobile = window.innerWidth <= 768;
+    
+    if (isMobile) {
+        // Mobile: toggle open/close slide
+        sidebar.classList.toggle('open');
+    } else {
+        // Desktop: toggle collapsed state
+        sidebar.classList.toggle('collapsed');
+        // Save state to localStorage
+        const isCollapsed = sidebar.classList.contains('collapsed');
+        localStorage.setItem('marketing-sidebar-collapsed', isCollapsed);
+    }
 }
+
+// Initialize sidebar state from localStorage
+function initSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const isMobile = window.innerWidth <= 768;
+    
+    if (!isMobile) {
+        const isCollapsed = localStorage.getItem('marketing-sidebar-collapsed') === 'true';
+        if (isCollapsed) {
+            sidebar.classList.add('collapsed');
+        }
+    }
+}
+
+// Call on page load
+document.addEventListener('DOMContentLoaded', initSidebarState);
 
 // ── Modal ──
 function openModal(title, content) {
