@@ -9766,7 +9766,13 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
 // GET /api/admin/marketing/templates - List all templates
 app.get('/api/admin/marketing/templates', authenticateAdmin, async (req, res) => {
     try {
-        const templates = await marketingDB.getMarketingTemplates(req.query);
+        // Parse isActive filter - convert string to boolean
+        const filters = { ...req.query };
+        if (filters.isActive !== undefined) {
+            filters.isActive = filters.isActive === 'true';
+        }
+        
+        const templates = await marketingDB.getMarketingTemplates(filters);
         
         // Enrich with usage stats
         for (const t of templates) {
@@ -9914,6 +9920,147 @@ app.get('/api/admin/marketing/meta/templates', authenticateAdmin, async (req, re
     } catch (error) {
         console.error('[Marketing] Meta templates list error:', error.message);
         res.status(500).json({ error: 'Failed to list Meta templates' });
+    }
+});
+
+// POST /api/admin/marketing/templates/sync-from-meta - Sync templates from Meta to local DB
+app.post('/api/admin/marketing/templates/sync-from-meta', authenticateAdmin, async (req, res) => {
+    try {
+        if (!metaWhatsApp.isMetaConfigured()) {
+            return res.status(400).json({ error: 'Meta Cloud API not configured' });
+        }
+
+        // Fetch all templates from Meta
+        const result = await metaWhatsApp.listMetaTemplates(100);
+        
+        if (!result.success || !result.templates) {
+            return res.status(500).json({ error: result.error || 'Failed to fetch templates from Meta' });
+        }
+
+        const metaTemplates = result.templates;
+        let created = 0;
+        let updated = 0;
+        let skipped = 0;
+
+        for (const metaTemplate of metaTemplates) {
+            try {
+                // Extract template components
+                const components = metaTemplate.components || [];
+                
+                let header = null;
+                let headerType = 'text';
+                let body = '';
+                let footer = null;
+                let buttons = [];
+                let variables = [];
+
+                // Parse components
+                for (const component of components) {
+                    if (component.type === 'HEADER') {
+                        headerType = (component.format || 'TEXT').toLowerCase();
+                        if (headerType === 'text' && component.text) {
+                            header = component.text;
+                        }
+                    } else if (component.type === 'BODY') {
+                        body = component.text || '';
+                        // Extract variables from example
+                        if (component.example?.body_text?.[0]) {
+                            const examples = component.example.body_text[0];
+                            const varRegex = /\{\{(\d+)\}\}/g;
+                            let match;
+                            let varIndex = 0;
+                            while ((match = varRegex.exec(body)) !== null) {
+                                varIndex++;
+                                variables.push({
+                                    name: match[1],
+                                    type: 'text',
+                                    example: examples[varIndex - 1] || 'example'
+                                });
+                            }
+                        }
+                    } else if (component.type === 'FOOTER') {
+                        footer = component.text || null;
+                    } else if (component.type === 'BUTTONS') {
+                        buttons = (component.buttons || []).map(btn => ({
+                            type: btn.type || 'QUICK_REPLY',
+                            text: btn.text,
+                            url: btn.url || null,
+                            phone_number: btn.phone_number || null
+                        }));
+                    }
+                }
+
+                // Determine category from Meta template category
+                const category = (metaTemplate.category || 'MARKETING').toLowerCase();
+                
+                // Check if template already exists
+                const existing = await marketingDB.getMarketingTemplateByName(metaTemplate.name);
+                
+                if (existing) {
+                    // Update existing template
+                    await marketingDB.updateMarketingTemplate(existing.id, {
+                        name: metaTemplate.name,
+                        category: category,
+                        language: metaTemplate.language || 'en',
+                        status: metaTemplate.status === 'APPROVED' ? 'approved' : 'pending_approval',
+                        header: header,
+                        headerType: headerType,
+                        body: body,
+                        footer: footer,
+                        buttons: buttons,
+                        variables: variables,
+                        metaTemplateId: metaTemplate.id,
+                        metaStatus: metaTemplate.status || 'PENDING',
+                        metaRejectionReason: metaTemplate.rejection_reason || null,
+                        metaLastSyncedAt: new Date().toISOString(),
+                        isActive: true
+                    });
+                    updated++;
+                } else {
+                    // Create new template
+                    await marketingDB.createMarketingTemplate({
+                        name: metaTemplate.name,
+                        category: category,
+                        language: metaTemplate.language || 'en',
+                        status: metaTemplate.status === 'APPROVED' ? 'approved' : 'pending_approval',
+                        header: header,
+                        headerType: headerType,
+                        body: body,
+                        footer: footer,
+                        buttons: buttons,
+                        variables: variables,
+                        metaTemplateId: metaTemplate.id,
+                        metaStatus: metaTemplate.status || 'PENDING',
+                        metaRejectionReason: metaTemplate.rejection_reason || null,
+                        metaLastSyncedAt: new Date().toISOString(),
+                        isActive: true
+                    });
+                    created++;
+                }
+            } catch (error) {
+                console.error(`[Sync] Error processing template ${metaTemplate.name}:`, error.message);
+                skipped++;
+            }
+        }
+
+        // Log the sync action
+        await marketingDB.createAuditLog({
+            action: 'templates_synced_from_meta',
+            actor: req.user?.sub || 'admin',
+            details: { created, updated, skipped, total: metaTemplates.length },
+            ipAddress: req.ip
+        });
+
+        res.json({
+            success: true,
+            message: `Synced ${metaTemplates.length} templates from Meta`,
+            created,
+            updated,
+            skipped
+        });
+    } catch (error) {
+        console.error('[Marketing] Sync from Meta error:', error.message);
+        res.status(500).json({ error: 'Failed to sync templates from Meta' });
     }
 });
 

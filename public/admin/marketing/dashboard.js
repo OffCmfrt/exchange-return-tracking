@@ -860,6 +860,32 @@ async function createTemplate(event) {
     }
 }
 
+/**
+ * Sync templates from Meta WhatsApp API
+ */
+async function syncTemplatesFromMeta() {
+    if (!confirm('Sync templates from Meta WhatsApp? This will fetch all templates from Meta and save/update them in the local database.')) {
+        return;
+    }
+    
+    try {
+        showToast('Syncing templates from Meta...', 'info');
+        
+        const data = await apiCall('templates/sync-from-meta', {
+            method: 'POST'
+        });
+        
+        if (data.success) {
+            showToast(`Synced ${data.created + data.updated} templates (${data.created} new, ${data.updated} updated)`, 'success');
+            loadTemplates();
+        } else {
+            showToast(data.error || 'Sync failed', 'error');
+        }
+    } catch (error) {
+        showToast(error.message || 'Failed to sync templates', 'error');
+    }
+}
+
 async function editTemplate(id) {
     try {
         const data = await apiCall(`templates/${id}`);

@@ -554,6 +554,12 @@ async function getMarketingTemplateById(id) {
     return data;
 }
 
+async function getMarketingTemplateByName(name) {
+    const { data, error } = await supabase.from('marketing_templates').select('*').eq('name', name).single();
+    if (error) { if (error.code === 'PGRST116') return null; throw error; }
+    return data;
+}
+
 async function createMarketingTemplate(templateData) {
     const row = {
         name: templateData.name,
@@ -1246,6 +1252,7 @@ module.exports = {
     // Templates
     getMarketingTemplates,
     getMarketingTemplateById,
+    getMarketingTemplateByName,
     createMarketingTemplate,
     updateMarketingTemplate,
     deleteMarketingTemplate,
