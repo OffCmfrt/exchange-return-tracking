@@ -1596,8 +1596,67 @@ async function loadAbandonedCarts(page = 1) {
 
 async function sendCartReminder(id) {
     try {
-        await apiCall(`abandoned-carts/${id}/send-reminder`, { method: 'POST', body: { reminderType: 'first' } });
-        showToast('Reminder sent');
+        // Fetch approved templates for selection
+        const tplData = await apiCall('templates?status=approved&limit=100');
+        const templates = (tplData.templates || tplData.data || []);
+        
+        if (templates.length === 0) {
+            showToast('No approved templates available. Please approve a template first.', 'error');
+            return;
+        }
+
+        const templateOptions = templates.map(t => 
+            `<option value="${t.id}" data-name="${escapeHtml(t.name)}">${escapeHtml(t.name)} ${t.category ? `(${t.category})` : ''}</option>`
+        ).join('');
+
+        openModal('Send WhatsApp Reminder', `
+            <form onsubmit="executeCartReminder(event, ${id})">
+                <div class="form-group">
+                    <label>Reminder Type</label>
+                    <select class="form-input" id="reminderTypeSelect" required>
+                        <option value="first">First Reminder (1 hr)</option>
+                        <option value="second">Second Reminder (24 hr)</option>
+                        <option value="final">Final Reminder (72 hr)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>WhatsApp Template <span style="color:#ef4444">*</span></label>
+                    <select class="form-input" id="reminderTemplateSelect" required>
+                        <option value="">-- Select a template --</option>
+                        ${templateOptions}
+                    </select>
+                    <p class="text-muted" style="font-size:0.8rem;margin-top:4px;">
+                        Only approved Meta templates are shown. The template variables will be filled automatically.
+                    </p>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block mt-3">
+                    <i class="fab fa-whatsapp"></i> Send Reminder
+                </button>
+            </form>
+        `);
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+async function executeCartReminder(event, cartId) {
+    event.preventDefault();
+    try {
+        const reminderType = document.getElementById('reminderTypeSelect').value;
+        const templateId = parseInt(document.getElementById('reminderTemplateSelect').value);
+        
+        if (!templateId) {
+            showToast('Please select a template', 'error');
+            return;
+        }
+
+        await apiCall(`abandoned-carts/${cartId}/send-reminder`, {
+            method: 'POST',
+            body: { reminderType, templateId }
+        });
+        
+        closeModal();
+        showToast('Reminder sent successfully!');
         loadAbandonedCarts();
     } catch (error) {
         showToast(error.message, 'error');

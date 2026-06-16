@@ -10672,15 +10672,24 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
         if (!cart) return res.status(404).json({ error: 'Cart not found' });
         if (!cart.customer_phone) return res.status(400).json({ error: 'No phone number for this cart' });
 
-        const { reminderType } = req.body; // 'first', 'second', 'final'
+        const { reminderType, templateId } = req.body; // 'first', 'second', 'final' + optional templateId
+
+        // Use directly-selected templateId if provided, otherwise fall back to settings
+        let template;
+        if (templateId) {
+            template = await marketingDB.getMarketingTemplateById(templateId);
+            if (template && template.status !== 'approved') {
+                return res.status(400).json({ error: 'Selected template is not approved' });
+            }
+        }
 
         // Get linked template from settings
-        const settingKey = `abandoned_cart_${reminderType}_template_id`;
-        const templateSetting = await marketingDB.getMarketingSetting(settingKey);
-        
-        let template;
-        if (templateSetting) {
-            template = await marketingDB.getMarketingTemplateById(templateSetting.value);
+        if (!template) {
+            const settingKey = `abandoned_cart_${reminderType}_template_id`;
+            const templateSetting = await marketingDB.getMarketingSetting(settingKey);
+            if (templateSetting) {
+                template = await marketingDB.getMarketingTemplateById(templateSetting.value);
+            }
         }
         
         // Fallback to search if no linked template
