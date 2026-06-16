@@ -1596,18 +1596,24 @@ async function loadAbandonedCarts(page = 1) {
 
 async function sendCartReminder(id) {
     try {
-        // Fetch approved templates for selection
-        const tplData = await apiCall('templates?status=approved&limit=100');
+        // Fetch all active templates for selection
+        const tplData = await apiCall('templates?isActive=true');
         const templates = (tplData.templates || tplData.data || []);
         
+        console.log('[Abandoned Cart] Templates loaded:', templates.length, templates.map(t => `${t.id}:${t.name}(${t.status})`));
+        
         if (templates.length === 0) {
-            showToast('No approved templates available. Please approve a template first.', 'error');
+            showToast('No templates available. Please create a template first in the Templates section.', 'error');
             return;
         }
 
-        const templateOptions = templates.map(t => 
-            `<option value="${t.id}" data-name="${escapeHtml(t.name)}">${escapeHtml(t.name)} ${t.category ? `(${t.category})` : ''}</option>`
-        ).join('');
+        // Prioritize approved templates but show all
+        const sorted = [...templates].sort((a, b) => (a.status === 'approved' ? -1 : 1));
+
+        const templateOptions = sorted.map(t => {
+            const statusTag = t.status !== 'approved' ? ' ⚠' : '';
+            return `<option value="${t.id}" ${t.status !== 'approved' ? 'title="This template is not approved yet"' : ''}>${escapeHtml(t.name)}${statusTag} ${t.category ? `(${t.category})` : ''}</option>`;
+        }).join('');
 
         openModal('Send WhatsApp Reminder', `
             <form onsubmit="executeCartReminder(event, ${id})">
@@ -1626,7 +1632,7 @@ async function sendCartReminder(id) {
                         ${templateOptions}
                     </select>
                     <p class="text-muted" style="font-size:0.8rem;margin-top:4px;">
-                        Only approved Meta templates are shown. The template variables will be filled automatically.
+                        ⚠ = not yet approved by Meta. Only approved templates will deliver successfully.
                     </p>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block mt-3">
@@ -1635,7 +1641,8 @@ async function sendCartReminder(id) {
             </form>
         `);
     } catch (error) {
-        showToast(error.message, 'error');
+        console.error('[Abandoned Cart] Template fetch error:', error);
+        showToast('Failed to load templates: ' + error.message, 'error');
     }
 }
 
