@@ -10703,8 +10703,10 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
         }
 
         // Build variables pool from cart data
+        // Derive display name: prefer customer_name, fallback to email prefix
+        const displayName = cart.customer_name || (cart.customer_email ? cart.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim() : 'there');
         const varPool = [
-            cart.customer_name || 'there',
+            displayName,
             `${cart.items?.length || 0} item(s)`,
             `₹${cart.cart_value}`,
             cart.checkout_url || 'https://offcomfrt.com',
@@ -10862,9 +10864,44 @@ app.post('/api/webhooks/gokwik/abandoned-cart', express.json(), async (req, res)
         const cartToken = `gokwik_${checkout_id}`;
         const customerEmail = customer.email || payload.mapped_email || null;
         const customerPhone = customer.phone || customer.mobile || null;
-        const customerName = customer.first_name || customer.last_name 
-            ? `${customer.first_name || ''} ${customer.last_name || ''}`.trim() 
-            : (customer.name || null);
+        
+        // Robust customer name extraction — try multiple Gokwik payload locations
+        let customerName = null;
+        
+        // 1. customer object: first_name + last_name or name
+        if (customer.first_name || customer.last_name) {
+            customerName = `${customer.first_name || ''} ${customer.last_name || ''}`.trim();
+        } else if (customer.name) {
+            customerName = customer.name;
+        }
+        // 2. address object (Gokwik often puts name here)
+        if (!customerName && payload.address) {
+            const addr = typeof payload.address === 'string' ? {} : payload.address;
+            if (addr.first_name || addr.last_name) {
+                customerName = `${addr.first_name || ''} ${addr.last_name || ''}`.trim();
+            } else if (addr.name) {
+                customerName = addr.name;
+            }
+        }
+        // 3. billing_address_details_pii (may be a JSON string or object)
+        if (!customerName && payload.billing_address_details_pii) {
+            try {
+                const billing = typeof payload.billing_address_details_pii === 'string'
+                    ? JSON.parse(payload.billing_address_details_pii)
+                    : payload.billing_address_details_pii;
+                if (billing.first_name || billing.last_name) {
+                    customerName = `${billing.first_name || ''} ${billing.last_name || ''}`.trim();
+                } else if (billing.name) {
+                    customerName = billing.name;
+                }
+            } catch (e) { /* ignore parse errors */ }
+        }
+        // 4. Fallback: derive name from email prefix (e.g. "brunosbro404" from email)
+        if (!customerName && customerEmail) {
+            customerName = customerEmail.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').trim();
+            // Capitalize first letter of each word
+            customerName = customerName.replace(/\b\w/g, c => c.toUpperCase());
+        }
         const cartValue = payload.original_total_price || payload.total_price || payload.items_subtotal_price || 0;
         const currency = payload.currency || 'INR';
         const items = payload.items || [];
@@ -11074,8 +11111,10 @@ async function processAbandonedCartReminders() {
                 }
 
                 // Build variables pool from cart data
+                // Derive display name: prefer customer_name, fallback to email prefix
+                const displayName = cart.customer_name || (cart.customer_email ? cart.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim() : 'there');
                 const varPool = [
-                    cart.customer_name || 'there',
+                    displayName,
                     `${cart.items?.length || 0} item(s)`,
                     `₹${cart.cart_value}`,
                     cart.checkout_url || 'https://offcomfrt.com',
@@ -11132,7 +11171,8 @@ async function processAbandonedCartReminders() {
                     template.language || 'en'
                 ).catch(async () => {
                     // Fallback to bot
-                    const messageText = `Hi ${cart.customer_name || 'there'}! You left items worth ₹${cart.cart_value} in your cart. ` +
+                    const fallbackName = cart.customer_name || (cart.customer_email ? cart.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()).trim() : 'there');
+                    const messageText = `Hi ${fallbackName}! You left items worth ₹${cart.cart_value} in your cart. ` +
                         `Complete your purchase now! ${cart.checkout_url || ''}`;
                     return metaWhatsApp.sendViaBot({
                         phone: cart.customer_phone,

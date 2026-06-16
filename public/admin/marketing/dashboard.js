@@ -1570,9 +1570,16 @@ async function loadAbandonedCarts(page = 1) {
             const sourceLabel = c.checkout_source === 'gokwik' ? 'Gokwik' : 'Shopify';
             const versionBadge = c.checkout_version ? `<span class="badge badge-sm" title="Checkout version">${c.checkout_version.toUpperCase()}</span>` : '';
             
+            // Derive display name: prefer customer_name, fallback to formatted email prefix
+            let displayCustomer = c.customer_name;
+            if (!displayCustomer && c.customer_email) {
+                displayCustomer = c.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()).trim();
+            }
+            if (!displayCustomer) displayCustomer = 'Anonymous';
+            
             return `
             <tr>
-                <td>${escapeHtml(c.customer_name || c.customer_email || 'Anonymous')}</td>
+                <td>${escapeHtml(displayCustomer)}</td>
                 <td>${escapeHtml(c.customer_phone || '-')}</td>
                 <td>${sourceIcon} ${sourceLabel} ${versionBadge}</td>
                 <td>${formatCurrency(c.cart_value)}</td>
