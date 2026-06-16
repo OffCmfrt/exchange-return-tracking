@@ -238,11 +238,28 @@
         <section id="section-templates" class="content-section">
             <div class="section-header">
                 <div class="filters-bar">
-                    <select id="templateCategory" class="form-select" onchange="loadTemplates()"><option value="">All Categories</option><option value="marketing">Marketing</option><option value="utility">Utility</option><option value="authentication">Authentication</option><option value="service">Service</option></select>
+                    <select id="templateCategory" class="form-select" onchange="loadTemplates()">
+                        <option value="">All Categories</option>
+                        <option value="marketing">Marketing</option>
+                        <option value="utility">Utility</option>
+                        <option value="authentication">Authentication</option>
+                        <option value="service">Service</option>
+                    </select>
+                    <select id="templateStatus" class="form-select" onchange="loadTemplates()">
+                        <option value="">All Status</option>
+                        <option value="draft">Draft</option>
+                        <option value="pending_approval">Pending Approval</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="templateActiveOnly" checked onchange="loadTemplates()">
+                        Active Only
+                    </label>
                 </div>
                 <button class="btn btn-primary" onclick="showCreateTemplateModal()"><i class="fas fa-plus"></i> New Template</button>
             </div>
-            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="templatesTable"><thead><tr><th>Name</th><th>Category</th><th>Language</th><th>Status</th><th>Meta Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="templatesBody"></tbody></table></div></div></div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="templatesTable"><thead><tr><th>Name</th><th>Category</th><th>Language</th><th>Status</th><th>Meta Status</th><th>Usage</th><th>Created</th><th>Actions</th></tr></thead><tbody id="templatesBody"></tbody></table></div></div></div>
         </section>
 
         <!-- Coupons Section -->

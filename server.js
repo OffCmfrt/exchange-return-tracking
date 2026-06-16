@@ -9767,6 +9767,23 @@ app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, r
 app.get('/api/admin/marketing/templates', authenticateAdmin, async (req, res) => {
     try {
         const templates = await marketingDB.getMarketingTemplates(req.query);
+        
+        // Enrich with usage stats
+        for (const t of templates) {
+            // Count campaigns using this template
+            const { count: campaignCount } = await supabase
+                .from('marketing_campaigns').select('*', { count: 'exact', head: true })
+                .eq('template_id', t.id);
+            
+            // Count abandoned carts using this template
+            const { count: cartCount } = await supabase
+                .from('marketing_abandoned_carts').select('*', { count: 'exact', head: true })
+                .eq('message_template_id', t.id);
+            
+            t.campaign_usage = campaignCount || 0;
+            t.cart_usage = cartCount || 0;
+        }
+        
         res.json({ success: true, templates });
     } catch (error) {
         console.error('[Marketing] Templates list error:', error.message);
@@ -10476,53 +10493,63 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
 
         const { reminderType } = req.body; // 'first', 'second', 'final'
 
-        // Get abandoned cart template
-        const templates = await marketingDB.getMarketingTemplates({ category: 'utility', status: 'approved' });
-        const template = templates.find(t => t.name && t.name.toLowerCase().includes('abandoned')) || templates[0];
+        // Get linked template from settings
+        const settingKey = `abandoned_cart_${reminderType}_template_id`;
+        const templateSetting = await marketingDB.getMarketingSetting(settingKey);
+        
+        let template;
+        if (templateSetting) {
+            template = await marketingDB.getMarketingTemplateById(templateSetting.value);
+        }
+        
+        // Fallback to search if no linked template
+        if (!template) {
+            const templates = await marketingDB.getMarketingTemplates({ category: 'utility', status: 'approved' });
+            template = templates.find(t => t.name && t.name.toLowerCase().includes('abandoned')) || templates[0];
+        }
+        
+        if (!template) {
+            return res.status(400).json({ error: 'No approved template found for abandoned cart reminders' });
+        }
 
-        let messageText = `Hi ${cart.customer_name || 'there'}! You left items in your cart worth ₹${cart.cart_value}. `;
-        messageText += `Complete your purchase before they're gone! `;
-        if (cart.checkout_url) messageText += `\nCheckout: ${cart.checkout_url}`;
-
-        // Send via Meta WhatsApp
+        // Prepare variables based on template structure
+        const variables = [
+            cart.customer_name || 'there',                                    // {{1}}
+            `${cart.items?.length || 0} item(s)`,                            // {{2}}
+            `₹${cart.cart_value}`,                                           // {{3}}
+            cart.checkout_url || 'https://offcomfrt.com'                     // {{4}}
+        ];
+        
+        // Send via Meta WhatsApp with template
         const sendResult = await metaWhatsApp.sendTemplateMessage({
             phoneNumber: cart.customer_phone,
-            templateName: template ? template.name : 'abandoned_cart_reminder',
-            variables: {
-                customer_name: cart.customer_name || 'there',
-                cart_value: cart.cart_value.toString(),
-                checkout_url: cart.checkout_url || ''
-            }
+            templateName: template.name,
+            variables: variables
         });
 
-        // Update cart based on reminder type
+        // Update cart with template reference and reminder tracking
         const now = new Date().toISOString();
-        const updates = { lastReminderAt: now };
-        if (reminderType === 'first') {
-            updates.recoveryStatus = 'first_reminder_sent';
-            updates.firstReminderAt = now;
-        } else if (reminderType === 'second') {
-            updates.recoveryStatus = 'second_reminder_sent';
-            updates.secondReminderAt = now;
-        } else {
-            updates.recoveryStatus = 'final_reminder_sent';
-            updates.finalReminderAt = now;
-        }
-        updates.reminderCount = (cart.reminder_count || 0) + 1;
-
-        await marketingDB.updateAbandonedCart(req.params.id, updates);
-
-        await marketingDB.createAuditLog({
-            action: 'sent', entityType: 'abandoned_cart', entityId: parseInt(req.params.id),
-            entityName: `Cart ${cart.cart_token.substring(0, 8)}`,
-            actor: req.adminUser || 'admin',
-            details: { reminderType, phone: cart.customer_phone, messageId: sendResult?.messageId },
-            ipAddress: req.ip, userAgent: req.get('user-agent')
+        const updates = { 
+            lastReminderAt: now,
+            messageTemplateId: template.id
+        };
+        
+        // Update specific reminder timestamp
+        if (reminderType === 'first') updates.firstReminderAt = now;
+        else if (reminderType === 'second') updates.secondReminderAt = now;
+        else if (reminderType === 'final') updates.finalReminderAt = now;
+        
+        await marketingDB.updateAbandonedCart(cart.id, updates);
+        
+        // Increment template usage count
+        await marketingDB.updateMarketingTemplate(template.id, {
+            usageCount: (template.usage_count || 0) + 1,
+            lastUsedAt: now
         });
 
-        res.json({ success: true, message: `Reminder sent to ${cart.customer_phone}`, reminderType });
+        res.json({ success: true, messageId: sendResult.messageId, templateName: template.name });
     } catch (error) {
-        console.error('[Marketing] Abandoned cart reminder error:', error.message);
+        console.error('[Send Reminder] Error:', error);
         res.status(500).json({ error: 'Failed to send reminder' });
     }
 });

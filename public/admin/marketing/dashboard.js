@@ -688,23 +688,59 @@ async function loadTemplates() {
     try {
         const params = new URLSearchParams();
         const cat = document.getElementById('templateCategory')?.value;
+        const statusFilter = document.getElementById('templateStatus')?.value;
+        const showActive = document.getElementById('templateActiveOnly')?.checked;
+        
         if (cat) params.append('category', cat);
+        if (statusFilter) params.append('status', statusFilter);
+        if (showActive !== undefined) params.append('isActive', showActive);
         
         const data = await apiCall(`templates?${params}`);
         
         const tbody = document.getElementById('templatesBody');
-        tbody.innerHTML = (data.templates || data.data || []).map(t => `
+        tbody.innerHTML = (data.templates || []).map(t => `
             <tr>
-                <td><strong>${escapeHtml(t.name)}</strong></td>
-                <td>${escapeHtml(t.category)}</td>
+                <td>
+                    <div class="template-name-cell">
+                        <strong>${escapeHtml(t.name)}</strong>
+                        <span class="text-muted" style="font-size: 0.85em">
+                            ${escapeHtml(t.body?.substring(0, 60) || '')}...
+                        </span>
+                    </div>
+                </td>
+                <td>
+                    <span class="badge badge-${t.category}">${escapeHtml(t.category)}</span>
+                </td>
                 <td>${escapeHtml(t.language || 'en')}</td>
                 <td>${statusBadge(t.status)}</td>
-                <td>${statusBadge(t.meta_status)}</td>
+                <td>${statusBadge(t.meta_status, 'meta')}</td>
+                <td>
+                    <div class="usage-stats">
+                        <span title="Campaigns"><i class="fas fa-paper-plane"></i> ${t.campaign_usage || 0}</span>
+                        <span title="Abandoned Carts"><i class="fas fa-shopping-cart"></i> ${t.cart_usage || 0}</span>
+                        <span title="Total Uses"><i class="fas fa-chart-line"></i> ${t.usage_count || 0}</span>
+                    </div>
+                </td>
                 <td>${formatDate(t.created_at)}</td>
                 <td>
-                    <button class="btn btn-sm" onclick="editTemplate(${t.id})">Edit</button>
-                    ${t.status === 'draft' ? `<button class="btn btn-sm btn-primary" onclick="submitTemplateToMeta(${t.id})">Submit to Meta</button>` : ''}
-                    <button class="btn btn-sm btn-danger" onclick="deleteTemplate(${t.id})">Delete</button>
+                    <button class="btn btn-sm" onclick="previewTemplate(${t.id})" title="Preview">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="btn btn-sm" onclick="editTemplate(${t.id})" title="Edit">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-sm" onclick="copyTemplate(${t.id})" title="Copy">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                    ${t.status === 'draft' ? `<button class="btn btn-sm btn-primary" onclick="submitTemplateToMeta(${t.id})" title="Submit to Meta">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                    </button>` : ''}
+                    ${t.status === 'approved' ? `<button class="btn btn-sm btn-success" onclick="linkToAbandonedCart(${t.id})" title="Link to Abandoned Cart">
+                        <i class="fas fa-link"></i>
+                    </button>` : ''}
+                    <button class="btn btn-sm btn-danger" onclick="deleteTemplate(${t.id})" title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
                 </td>
             </tr>
         `).join('');
@@ -716,20 +752,94 @@ async function loadTemplates() {
 function showCreateTemplateModal() {
     openModal('Create Template', `
         <form onsubmit="createTemplate(event)">
-            <div class="form-group"><label>Name *</label><input type="text" class="form-input" id="tplName" required></div>
-            <div class="form-group"><label>Category</label><select class="form-select" id="tplCategory"><option value="marketing">Marketing</option><option value="utility">Utility</option><option value="authentication">Authentication</option><option value="service">Service</option></select></div>
-            <div class="form-group"><label>Language</label><input type="text" class="form-input" id="tplLang" value="en"></div>
-            <div class="form-group"><label>Header</label><input type="text" class="form-input" id="tplHeader"></div>
-            <div class="form-group"><label>Body *</label><textarea class="form-input" id="tplBody" required placeholder="Use {{1}}, {{2}} for variables"></textarea></div>
-            <div class="form-group"><label>Footer</label><input type="text" class="form-input" id="tplFooter"></div>
-            <button type="submit" class="btn btn-primary btn-block">Create Template</button>
+            <div class="form-group">
+                <label>Template Name *</label>
+                <input type="text" class="form-input" id="tplName" required 
+                       placeholder="e.g., abandoned_cart_reminder_v1">
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Category *</label>
+                    <select class="form-select" id="tplCategory" required>
+                        <option value="marketing">Marketing</option>
+                        <option value="utility">Utility</option>
+                        <option value="authentication">Authentication</option>
+                        <option value="service">Service</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Language</label>
+                    <input type="text" class="form-input" id="tplLang" value="en" maxlength="5">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>Header (Optional)</label>
+                <input type="text" class="form-input" id="tplHeader" 
+                       placeholder="e.g., Don't miss out!">
+            </div>
+            
+            <div class="form-group">
+                <label>Message Body *</label>
+                <textarea class="form-input" id="tplBody" required rows="6"
+                          placeholder="Hi {{1}}, you left {{2}} in your cart worth ₹{{3}}. Complete your order now! {{4}}"></textarea>
+                <small class="text-muted">Use {{1}}, {{2}}, {{3}} etc. for dynamic variables</small>
+            </div>
+            
+            <div class="form-group">
+                <label>Footer (Optional)</label>
+                <input type="text" class="form-input" id="tplFooter" 
+                       placeholder="e.g., Reply STOP to unsubscribe">
+            </div>
+            
+            <!-- Smart Variables Section -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h4><i class="fas fa-code"></i> Template Variables</h4>
+                </div>
+                <div class="card-body">
+                    <div id="tplVariablesList" class="variables-list">
+                        <p class="text-muted">Variables will be auto-detected from message body</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Live Preview Section -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h4><i class="fas fa-mobile-alt"></i> WhatsApp Preview</h4>
+                </div>
+                <div class="card-body">
+                    <div id="tplPreview" class="whatsapp-preview">
+                        <div class="preview-bubble">
+                            <p id="previewHeader" class="preview-header hidden"></p>
+                            <p id="previewBody"></p>
+                            <p id="previewFooter" class="preview-footer hidden"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-block mt-3">
+                <i class="fas fa-plus"></i> Create Template
+            </button>
         </form>
     `);
+    
+    // Add auto-detection listeners
+    document.getElementById('tplBody')?.addEventListener('input', autoDetectVariables);
+    document.getElementById('tplHeader')?.addEventListener('input', updateLivePreview);
+    document.getElementById('tplFooter')?.addEventListener('input', updateLivePreview);
 }
 
 async function createTemplate(event) {
     event.preventDefault();
     try {
+        // Extract variables from body
+        const bodyText = document.getElementById('tplBody').value;
+        const variables = extractVariablesFromBody(bodyText);
+        
         await apiCall('templates', {
             method: 'POST',
             body: {
@@ -737,8 +847,9 @@ async function createTemplate(event) {
                 category: document.getElementById('tplCategory').value,
                 language: document.getElementById('tplLang').value,
                 header: document.getElementById('tplHeader').value,
-                body: document.getElementById('tplBody').value,
-                footer: document.getElementById('tplFooter').value
+                body: bodyText,
+                footer: document.getElementById('tplFooter').value,
+                variables: variables
             }
         });
         closeModal();
@@ -755,14 +866,79 @@ async function editTemplate(id) {
         const t = data.template || data;
         openModal('Edit Template', `
             <form onsubmit="updateTemplate(event, ${id})">
-                <div class="form-group"><label>Name</label><input type="text" class="form-input" id="editTplName" value="${escapeHtml(t.name)}"></div>
-                <div class="form-group"><label>Category</label><select class="form-select" id="editTplCategory"><option value="marketing" ${t.category==='marketing'?'selected':''}>Marketing</option><option value="utility" ${t.category==='utility'?'selected':''}>Utility</option><option value="authentication" ${t.category==='authentication'?'selected':''}>Authentication</option><option value="service" ${t.category==='service'?'selected':''}>Service</option></select></div>
-                <div class="form-group"><label>Header</label><input type="text" class="form-input" id="editTplHeader" value="${escapeHtml(t.header || '')}"></div>
-                <div class="form-group"><label>Body</label><textarea class="form-input" id="editTplBody">${escapeHtml(t.body)}</textarea></div>
-                <div class="form-group"><label>Footer</label><input type="text" class="form-input" id="editTplFooter" value="${escapeHtml(t.footer || '')}"></div>
-                <button type="submit" class="btn btn-primary btn-block">Update Template</button>
+                <div class="form-group">
+                    <label>Template Name</label>
+                    <input type="text" class="form-input" id="editTplName" value="${escapeHtml(t.name)}">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select class="form-select" id="editTplCategory">
+                            <option value="marketing" ${t.category==='marketing'?'selected':''}>Marketing</option>
+                            <option value="utility" ${t.category==='utility'?'selected':''}>Utility</option>
+                            <option value="authentication" ${t.category==='authentication'?'selected':''}>Authentication</option>
+                            <option value="service" ${t.category==='service'?'selected':''}>Service</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Language</label>
+                        <input type="text" class="form-input" id="editTplLang" value="${escapeHtml(t.language || 'en')}" maxlength="5">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Header</label>
+                    <input type="text" class="form-input" id="editTplHeader" value="${escapeHtml(t.header || '')}">
+                </div>
+                
+                <div class="form-group">
+                    <label>Body</label>
+                    <textarea class="form-input" id="editTplBody" rows="6">${escapeHtml(t.body)}</textarea>
+                    <small class="text-muted">Use {{1}}, {{2}}, {{3}} etc. for dynamic variables</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Footer</label>
+                    <input type="text" class="form-input" id="editTplFooter" value="${escapeHtml(t.footer || '')}">
+                </div>
+                
+                <!-- Variables Section -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h4><i class="fas fa-code"></i> Template Variables</h4>
+                    </div>
+                    <div class="card-body">
+                        <div id="editTplVariablesList" class="variables-list">
+                            ${(t.variables || []).length > 0 ? renderVariablesList(t.variables) : '<p class="text-muted">No variables defined</p>'}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Live Preview -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h4><i class="fas fa-mobile-alt"></i> WhatsApp Preview</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="whatsapp-preview">
+                            <div class="preview-bubble">
+                                ${t.header ? `<p class="preview-header"><strong>${escapeHtml(t.header)}</strong></p>` : ''}
+                                <p class="preview-body">${escapeHtml(previewTemplateBody(t.body, t.variables || []))}</p>
+                                ${t.footer ? `<p class="preview-footer text-muted">${escapeHtml(t.footer)}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-block mt-3">Update Template</button>
             </form>
         `);
+        
+        // Add listeners for edit modal
+        document.getElementById('editTplBody')?.addEventListener('input', () => autoDetectVariables('editTplBody', 'editTplVariablesList'));
+        document.getElementById('editTplHeader')?.addEventListener('input', () => updateLivePreview('editTplHeader', 'editTplBody', 'editTplFooter'));
+        document.getElementById('editTplFooter')?.addEventListener('input', () => updateLivePreview('editTplHeader', 'editTplBody', 'editTplFooter'));
     } catch (error) {
         showToast(error.message, 'error');
     }
@@ -771,14 +947,19 @@ async function editTemplate(id) {
 async function updateTemplate(event, id) {
     event.preventDefault();
     try {
+        const bodyText = document.getElementById('editTplBody').value;
+        const variables = extractVariablesFromBody(bodyText);
+        
         await apiCall(`templates/${id}`, {
             method: 'PUT',
             body: {
                 name: document.getElementById('editTplName').value,
                 category: document.getElementById('editTplCategory').value,
+                language: document.getElementById('editTplLang')?.value || 'en',
                 header: document.getElementById('editTplHeader').value,
-                body: document.getElementById('editTplBody').value,
-                footer: document.getElementById('editTplFooter').value
+                body: bodyText,
+                footer: document.getElementById('editTplFooter').value,
+                variables: variables
             }
         });
         closeModal();
@@ -806,6 +987,357 @@ async function deleteTemplate(id) {
         await apiCall(`templates/${id}`, { method: 'DELETE' });
         showToast('Template deleted');
         loadTemplates();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// TEMPLATE HELPER FUNCTIONS
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * Extract variables from template body text
+ * Looks for patterns like {{1}}, {{2}}, etc.
+ */
+function extractVariablesFromBody(bodyText) {
+    const variableRegex = /\{\{(\d+)\}\}/g;
+    const variables = [];
+    let match;
+    
+    while ((match = variableRegex.exec(bodyText)) !== null) {
+        const varNum = match[1];
+        if (!variables.find(v => v.name === varNum)) {
+            variables.push({
+                name: varNum,
+                type: 'text',
+                example: getVariableExample(varNum)
+            });
+        }
+    }
+    
+    return variables;
+}
+
+/**
+ * Get example value for a variable based on common patterns
+ */
+function getVariableExample(varNum) {
+    const examples = {
+        '1': 'John',
+        '2': '3 items',
+        '3': '₹1,499',
+        '4': 'https://offcomfrt.com/checkout',
+        '5': '24 hours',
+        '6': '10%'
+    };
+    return examples[varNum] || `Sample ${varNum}`;
+}
+
+/**
+ * Auto-detect variables and update the variables list UI
+ */
+function autoDetectVariables(bodyId = 'tplBody', containerId = 'tplVariablesList') {
+    const bodyText = document.getElementById(bodyId)?.value || '';
+    const variables = extractVariablesFromBody(bodyText);
+    const container = document.getElementById(containerId);
+    
+    if (container) {
+        container.innerHTML = variables.length > 0 
+            ? renderVariablesList(variables)
+            : '<p class="text-muted">Variables will be auto-detected from message body</p>';
+    }
+    
+    // Update live preview
+    updateLivePreview();
+}
+
+/**
+ * Render variables list as editable items
+ */
+function renderVariablesList(variables) {
+    return variables.map(v => `
+        <div class="variable-item">
+            <code>{{${v.name}}}</code>
+            <input type="text" class="form-input" placeholder="Type" value="${escapeHtml(v.type || 'text')}" 
+                   onchange="updateVariableType('${v.name}', this.value)">
+            <input type="text" class="form-input" placeholder="Example value" value="${escapeHtml(v.example || '')}" 
+                   onchange="updateVariableExample('${v.name}', this.value)">
+            <span class="text-muted" style="font-size: 0.85em">Variable ${v.name}</span>
+        </div>
+    `).join('');
+}
+
+/**
+ * Update live WhatsApp preview
+ */
+function updateLivePreview(headerId = 'tplHeader', bodyId = 'tplBody', footerId = 'tplFooter') {
+    const header = document.getElementById(headerId)?.value || '';
+    const body = document.getElementById(bodyId)?.value || '';
+    const footer = document.getElementById(footerId)?.value || '';
+    
+    const previewHeader = document.getElementById('previewHeader');
+    const previewBody = document.getElementById('previewBody');
+    const previewFooter = document.getElementById('previewFooter');
+    
+    if (previewHeader) {
+        if (header) {
+            previewHeader.textContent = header;
+            previewHeader.classList.remove('hidden');
+        } else {
+            previewHeader.classList.add('hidden');
+        }
+    }
+    
+    if (previewBody) {
+        // Replace variables with example values
+        const variables = extractVariablesFromBody(body);
+        let previewText = body;
+        variables.forEach(v => {
+            const regex = new RegExp(`\\{\\{${v.name}\\}\\}`, 'g');
+            previewText = previewText.replace(regex, `[${v.example || v.name}]`);
+        });
+        previewBody.textContent = previewText;
+    }
+    
+    if (previewFooter) {
+        if (footer) {
+            previewFooter.textContent = footer;
+            previewFooter.classList.remove('hidden');
+        } else {
+            previewFooter.classList.add('hidden');
+        }
+    }
+}
+
+/**
+ * Preview template body with sample values
+ */
+function previewTemplateBody(body, variables) {
+    if (!body) return '';
+    let preview = body;
+    variables.forEach(v => {
+        const regex = new RegExp(`\\{\\{${v.name}\\}\\}`, 'g');
+        preview = preview.replace(regex, v.example || `[${v.name}]`);
+    });
+    return preview;
+}
+
+/**
+ * Copy template - creates a duplicate with "_copy" suffix
+ */
+async function copyTemplate(id) {
+    try {
+        const data = await apiCall(`templates/${id}`);
+        const t = data.template || data;
+        
+        await apiCall('templates', {
+            method: 'POST',
+            body: {
+                name: `${t.name}_copy`,
+                category: t.category,
+                language: t.language,
+                header: t.header,
+                body: t.body,
+                footer: t.footer,
+                variables: t.variables,
+                status: 'draft'
+            }
+        });
+        
+        showToast('Template copied');
+        loadTemplates();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+/**
+ * Preview template in a modal
+ */
+async function previewTemplate(id) {
+    try {
+        const data = await apiCall(`templates/${id}`);
+        const t = data.template || data;
+        
+        // Parse variables and generate sample preview
+        const variables = t.variables || [];
+        let previewBody = t.body || '';
+        variables.forEach(v => {
+            const regex = new RegExp(`\\{\\{${v.name}\\}\\}`, 'g');
+            previewBody = previewBody.replace(regex, v.example || `[${v.name}]`);
+        });
+        
+        openModal(`Template Preview: ${t.name}`, `
+            <div class="template-preview-container">
+                <div class="template-info-row">
+                    <span><strong>Category:</strong> ${escapeHtml(t.category)}</span>
+                    <span><strong>Language:</strong> ${escapeHtml(t.language || 'en')}</span>
+                    <span><strong>Status:</strong> ${statusBadge(t.status)}</span>
+                    <span><strong>Meta Status:</strong> ${statusBadge(t.meta_status, 'meta')}</span>
+                </div>
+                
+                <div class="whatsapp-preview mt-3">
+                    <div class="preview-bubble">
+                        ${t.header ? `<p class="preview-header"><strong>${escapeHtml(t.header)}</strong></p>` : ''}
+                        <p class="preview-body">${escapeHtml(previewBody)}</p>
+                        ${t.footer ? `<p class="preview-footer text-muted">${escapeHtml(t.footer)}</p>` : ''}
+                    </div>
+                </div>
+                
+                <div class="template-variables-section mt-3">
+                    <h5>Variables</h5>
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Variable</th><th>Type</th><th>Example</th></tr>
+                        </thead>
+                        <tbody>
+                            ${(t.variables || []).map(v => `
+                                <tr>
+                                    <td><code>{{${v.name}}}</code></td>
+                                    <td>${escapeHtml(v.type || 'text')}</td>
+                                    <td>${escapeHtml(v.example || '-')}</td>
+                                </tr>
+                            `).join('') || '<tr><td colspan="3" class="text-muted">No variables defined</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="template-usage-section mt-3">
+                    <h5>Usage Statistics</h5>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <span class="stat-value">${t.usage_count || 0}</span>
+                            <span class="stat-label">Total Uses</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value">${t.campaign_usage || 0}</span>
+                            <span class="stat-label">Campaigns</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value">${t.cart_usage || 0}</span>
+                            <span class="stat-label">Abandoned Carts</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+/**
+ * Link template to abandoned cart recovery
+ */
+async function linkToAbandonedCart(templateId) {
+    try {
+        const data = await apiCall(`templates/${templateId}`);
+        const t = data.template || data;
+        
+        if (t.status !== 'approved') {
+            showToast('Template must be Meta-approved before linking to abandoned carts', 'error');
+            return;
+        }
+        
+        openModal(`Link Template to Abandoned Cart Recovery`, `
+            <form onsubmit="saveAbandonedCartTemplateLink(event, ${templateId})">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    Link this template to automated abandoned cart recovery messages.
+                </div>
+                
+                <div class="form-group">
+                    <label>Reminder Type</label>
+                    <select class="form-select" id="linkReminderType" required>
+                        <option value="first">First Reminder (1 hour after abandonment)</option>
+                        <option value="second">Second Reminder (24 hours after)</option>
+                        <option value="final">Final Reminder (72 hours after)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Delay (hours)</label>
+                    <input type="number" class="form-input" id="linkDelayHours" value="1" min="1" max="168">
+                </div>
+                
+                <div class="form-group">
+                    <label>Auto-Apply Coupon?</label>
+                    <select class="form-select" id="linkAutoCoupon">
+                        <option value="false">No coupon</option>
+                        <option value="true">Auto-generate 10% discount coupon</option>
+                    </select>
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5>Template Preview with Sample Data</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="whatsapp-preview">
+                            <div class="preview-bubble">
+                                ${t.header ? `<p class="preview-header"><strong>${escapeHtml(t.header)}</strong></p>` : ''}
+                                <p class="preview-body">${escapeHtml(t.body
+                                    .replace(/\{\{1\}\}/g, 'John')
+                                    .replace(/\{\{2\}\}/g, '3 items')
+                                    .replace(/\{\{3\}\}/g, '₹1,499')
+                                    .replace(/\{\{4\}\}/g, 'https://offcomfrt.com/checkout')
+                                )}</p>
+                                ${t.footer ? `<p class="preview-footer text-muted">${escapeHtml(t.footer)}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-block mt-3">
+                    <i class="fas fa-link"></i> Link Template
+                </button>
+            </form>
+        `);
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+/**
+ * Save abandoned cart template link
+ */
+async function saveAbandonedCartTemplateLink(event, templateId) {
+    event.preventDefault();
+    try {
+        const reminderType = document.getElementById('linkReminderType').value;
+        const delayHours = parseInt(document.getElementById('linkDelayHours').value);
+        const autoCoupon = document.getElementById('linkAutoCoupon').value === 'true';
+        
+        // Update marketing_settings with the template link
+        await apiCall('settings', {
+            method: 'PUT',
+            body: {
+                key: `abandoned_cart_${reminderType}_template_id`,
+                value: templateId.toString()
+            }
+        });
+        
+        await apiCall('settings', {
+            method: 'PUT',
+            body: {
+                key: `abandoned_cart_${reminderType}_delay_hours`,
+                value: delayHours.toString()
+            }
+        });
+        
+        if (autoCoupon) {
+            await apiCall('settings', {
+                method: 'PUT',
+                body: {
+                    key: `abandoned_cart_${reminderType}_auto_coupon`,
+                    value: 'true'
+                }
+            });
+        }
+        
+        closeModal();
+        showToast(`${reminderType.charAt(0).toUpperCase() + reminderType.slice(1)} reminder linked to template`);
     } catch (error) {
         showToast(error.message, 'error');
     }

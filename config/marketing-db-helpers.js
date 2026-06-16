@@ -190,23 +190,44 @@ async function upsertCustomerOrder(orderData) {
 }
 
 async function getCustomerStats() {
-    const [
-        { count: total },
-        { data: segmentData },
-        { data: tierData },
-        { data: recentData }
-    ] = await Promise.all([
-        supabase.from('marketing_customers').select('*', { count: 'exact', head: true }),
-        supabase.from('marketing_customers').select('segment'),
-        supabase.from('marketing_customers').select('lifetime_value_tier'),
-        supabase.from('marketing_customers').select('id').gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
+    const [{ count: total }] = await Promise.all([
+        supabase.from('marketing_customers').select('*', { count: 'exact', head: true })
     ]);
 
+    // Fetch segments and tiers in batches to avoid 1000 row limit
+    const BATCH_SIZE = 1000;
+    let allSegments = [];
+    let allTiers = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+        const [{ data: segmentData }, { data: tierData }] = await Promise.all([
+            supabase.from('marketing_customers').select('segment').range(offset, offset + BATCH_SIZE - 1),
+            supabase.from('marketing_customers').select('lifetime_value_tier').range(offset, offset + BATCH_SIZE - 1)
+        ]);
+
+        if (!segmentData || segmentData.length === 0) {
+            hasMore = false;
+        } else {
+            allSegments = allSegments.concat(segmentData);
+            allTiers = allTiers.concat(tierData);
+            offset += BATCH_SIZE;
+            hasMore = segmentData.length === BATCH_SIZE;
+        }
+    }
+
+    // Fetch new customers in last 30 days
+    const { data: recentData } = await supabase
+        .from('marketing_customers')
+        .select('id')
+        .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString());
+
     const segments = {};
-    (segmentData || []).forEach(c => { segments[c.segment] = (segments[c.segment] || 0) + 1; });
+    (allSegments || []).forEach(c => { segments[c.segment] = (segments[c.segment] || 0) + 1; });
 
     const tiers = {};
-    (tierData || []).forEach(c => { tiers[c.lifetime_value_tier] = (tiers[c.lifetime_value_tier] || 0) + 1; });
+    (allTiers || []).forEach(c => { tiers[c.lifetime_value_tier] = (tiers[c.lifetime_value_tier] || 0) + 1; });
 
     return { total: total || 0, segments, tiers, newLast30Days: (recentData || []).length };
 }
@@ -372,16 +393,34 @@ function smartTier(totalSpent) {
  * Used by the /customers/recompute-segments endpoint.
  */
 async function recomputeAllCustomerSegments() {
-    const { data: customers, error } = await supabase
-        .from('marketing_customers')
-        .select('id, total_spent, total_orders, last_order_date, first_order_date, segment, lifetime_value_tier');
-    if (error) throw error;
+    // Fetch all customers in batches to avoid Supabase 1000 row limit
+    const BATCH_SIZE = 1000;
+    let allCustomers = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data: customers, error } = await supabase
+            .from('marketing_customers')
+            .select('id, total_spent, total_orders, last_order_date, first_order_date, segment, lifetime_value_tier')
+            .range(offset, offset + BATCH_SIZE - 1);
+        
+        if (error) throw error;
+        
+        if (!customers || customers.length === 0) {
+            hasMore = false;
+        } else {
+            allCustomers = allCustomers.concat(customers);
+            offset += BATCH_SIZE;
+            hasMore = customers.length === BATCH_SIZE;
+        }
+    }
 
     let updated = 0;
     const BATCH = 50;
     const batch = [];
 
-    for (const c of customers) {
+    for (const c of allCustomers) {
         const newSegment = smartSegment(c);
         const newTier = smartTier(c.total_spent);
         const healthScore = computeHealthScore(c);
@@ -413,19 +452,37 @@ async function recomputeAllCustomerSegments() {
         else updated += batch.length;
     }
 
-    return { total: (customers || []).length, updated };
+    return { total: allCustomers.length, updated };
 }
 
 /**
  * Get smart customer stats with health/churn breakdowns.
  */
 async function getSmartCustomerStats() {
-    const { data: customers, error } = await supabase
-        .from('marketing_customers')
-        .select('segment, lifetime_value_tier, created_at, health_score, churn_risk');
-    if (error) throw error;
+    // Fetch all customers in batches to avoid Supabase 1000 row limit
+    const BATCH_SIZE = 1000;
+    let allCustomers = [];
+    let offset = 0;
+    let hasMore = true;
 
-    const list = customers || [];
+    while (hasMore) {
+        const { data: customers, error } = await supabase
+            .from('marketing_customers')
+            .select('segment, lifetime_value_tier, created_at, health_score, churn_risk')
+            .range(offset, offset + BATCH_SIZE - 1);
+        
+        if (error) throw error;
+        
+        if (!customers || customers.length === 0) {
+            hasMore = false;
+        } else {
+            allCustomers = allCustomers.concat(customers);
+            offset += BATCH_SIZE;
+            hasMore = customers.length === BATCH_SIZE;
+        }
+    }
+
+    const list = allCustomers;
     const total = list.length;
     const now = Date.now();
     const thirtyDaysAgo = now - 30 * 86400000;
