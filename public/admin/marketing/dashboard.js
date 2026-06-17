@@ -1747,10 +1747,21 @@ async function loadSettings() {
             { key: 'abandoned_cart_second_template_id', description: 'Template for 2nd reminder (24hr)', category: 'abandoned_cart' },
             { key: 'abandoned_cart_final_template_id', description: 'Template for final reminder (72hr)', category: 'abandoned_cart' }
         ];
+        // Ensure per-reminder enable toggles exist
+        const requiredToggleKeys = [
+            { key: 'abandoned_cart_first_reminder_enabled',  description: 'Enable first reminder (1hr after abandonment)',  category: 'abandoned_cart', default: 'true' },
+            { key: 'abandoned_cart_second_reminder_enabled', description: 'Enable second reminder (24hr after 1st)',         category: 'abandoned_cart', default: 'true' },
+            { key: 'abandoned_cart_final_reminder_enabled',  description: 'Enable final reminder (72hr after 2nd)',          category: 'abandoned_cart', default: 'true' }
+        ];
         const existingKeys = new Set(settings.map(s => s.key));
         requiredTemplateKeys.forEach(rk => {
             if (!existingKeys.has(rk.key)) {
                 settings.push({ key: rk.key, value: '', description: rk.description, category: rk.category });
+            }
+        });
+        requiredToggleKeys.forEach(tk => {
+            if (!existingKeys.has(tk.key)) {
+                settings.push({ key: tk.key, value: tk.default, description: tk.description, category: tk.category });
             }
         });
         
@@ -1765,11 +1776,49 @@ async function loadSettings() {
         let html = '';
         for (const [category, items] of Object.entries(grouped)) {
             html += `<div class="setting-category">${category.replace(/_/g, ' ').toUpperCase()}</div>`;
+
+            // For abandoned_cart category: render a master auto-recovery toggle at the top
+            if (category === 'abandoned_cart') {
+                const masterKey = 'abandoned_cart_auto_recovery';
+                const masterSetting = items.find(s => s.key === masterKey);
+                const masterVal = masterSetting ? String(masterSetting.value).toLowerCase() === 'true' : true;
+                html += `
+                    <div class="setting-item" style="background:var(--surface-alt);border-radius:8px;padding:1rem;margin-bottom:0.5rem;">
+                        <div class="setting-info">
+                            <h4><i class="fas fa-power-off" style="color:var(--primary);margin-right:0.4rem;"></i> Master: Auto Recovery Reminders</h4>
+                            <p>Turn OFF to stop ALL automated abandoned cart reminders (first, second &amp; final).</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="setting-${masterKey}" ${masterVal ? 'checked' : ''} onchange="updateSetting('${masterKey}')">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>`;
+            }
+
             items.forEach(s => {
                 const val = typeof s.value === 'object' ? JSON.stringify(s.value) : String(s.value ?? '');
                 const isTemplateSetting = s.key.endsWith('_template_id');
-                
-                if (isTemplateSetting && templates.length > 0) {
+                const isReminderToggle  = s.key.endsWith('_reminder_enabled');
+                const isMasterToggle    = s.key === 'abandoned_cart_auto_recovery';
+                const isBooleanToggle   = isReminderToggle || isMasterToggle;
+
+                // Skip master key in normal loop (already rendered above)
+                if (isMasterToggle) return;
+
+                if (isBooleanToggle) {
+                    const isOn = val.toLowerCase() === 'true';
+                    html += `
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <h4>${escapeHtml(s.key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</h4>
+                                <p>${escapeHtml(s.description || '')}</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setting-${s.key}" ${isOn ? 'checked' : ''} onchange="updateToggleSetting('${s.key}')">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>`;
+                } else if (isTemplateSetting && templates.length > 0) {
                     const options = templates.map(t => 
                         `<option value="${t.id}" ${String(t.id) === val ? 'selected' : ''}>${escapeHtml(t.name)} (${t.status})</option>`
                     ).join('');
@@ -1812,13 +1861,28 @@ async function loadSettings() {
 async function updateSetting(key) {
     try {
         const input = document.getElementById(`setting-${key}`);
-        let value = input.value;
-        // Empty string → null (valid for JSON column)
-        if (value === '') { value = null; }
-        else { try { value = JSON.parse(value); } catch(e) { /* keep as string */ } }
-        
+        let value;
+        // Toggle checkbox (master auto-recovery)
+        if (input.type === 'checkbox') {
+            value = input.checked;
+        } else {
+            value = input.value;
+            if (value === '') { value = null; }
+            else { try { value = JSON.parse(value); } catch(e) { /* keep as string */ } }
+        }
         await apiCall(`settings/${key}`, { method: 'PUT', body: { value } });
         showToast(`Setting "${key}" updated`);
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+async function updateToggleSetting(key) {
+    try {
+        const checkbox = document.getElementById(`setting-${key}`);
+        const value = checkbox.checked;
+        await apiCall(`settings/${key}`, { method: 'PUT', body: { value } });
+        showToast(`${key.replace(/_/g, ' ')} ${value ? 'enabled' : 'disabled'}`);
     } catch (error) {
         showToast(error.message, 'error');
     }

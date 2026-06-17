@@ -10714,17 +10714,30 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
             cart.customer_email || ''
         ];
 
-        // Try to fetch template from Meta to get expected parameter count
-        let expectedParamCount = 0;
+        // Try to fetch template from Meta to build proper per-component parameters
+        let prebuiltComponents = null;
+        let totalParamCount = 0;
         try {
             const metaResult = await metaWhatsApp.getMetaTemplateByName(template.name);
             if (metaResult.success && metaResult.template) {
-                const bodyComponent = (metaResult.template.components || []).find(c => c.type === 'BODY');
-                if (bodyComponent && bodyComponent.text) {
-                    const matches = bodyComponent.text.match(/\{\{\d+\}\}/g);
-                    expectedParamCount = matches ? matches.length : 0;
+                // Count total placeholders across ALL components (header + body + button)
+                const allComponents = metaResult.template.components || [];
+                for (const comp of allComponents) {
+                    if (comp.type === 'HEADER' && comp.text) {
+                        totalParamCount += (comp.text.match(/\{\{\d+\}\}/g) || []).length;
+                    } else if (comp.type === 'BODY' && comp.text) {
+                        totalParamCount += (comp.text.match(/\{\{\d+\}\}/g) || []).length;
+                    } else if (comp.type === 'BUTTONS') {
+                        for (const btn of (comp.buttons || [])) {
+                            if (btn.type === 'URL' && btn.url) {
+                                totalParamCount += (btn.url.match(/\{\{\d+\}\}/g) || []).length;
+                            }
+                        }
+                    }
                 }
-                console.log(`[Send Reminder] Meta template "${template.name}" expects ${expectedParamCount} parameters`);
+                // Build properly structured components (header, body, button each get their own params)
+                prebuiltComponents = metaWhatsApp.buildTemplateComponents(metaResult.template, varPool);
+                console.log(`[Send Reminder] Meta template "${template.name}" has ${totalParamCount} total params across ${prebuiltComponents.length} component(s)`);
             }
         } catch (e) {
             console.warn('[Send Reminder] Could not fetch Meta template details:', e.message);
@@ -10732,8 +10745,8 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
 
         // Build variables array matching expected parameter count
         let variables;
-        if (expectedParamCount > 0) {
-            variables = varPool.slice(0, expectedParamCount);
+        if (totalParamCount > 0) {
+            variables = varPool.slice(0, totalParamCount);
         } else {
             const templateVariables = template.variables || [];
             variables = templateVariables.map(v => {
@@ -10760,7 +10773,8 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
             cart.customer_phone,
             template.name,
             variables,
-            template.language || 'en'
+            template.language || 'en',
+            prebuiltComponents
         );
 
         // Update cart with template reference and reminder tracking
@@ -11058,6 +11072,20 @@ app.get('/api/admin/marketing/audit-logs', authenticateAdmin, async (req, res) =
 async function processAbandonedCartReminders() {
     try {
         console.log('[Marketing Cron] Processing abandoned cart reminders...');
+
+        // Check master auto-recovery switch
+        const masterEnabled = await marketingDB.getMarketingSetting('abandoned_cart_auto_recovery');
+        if (masterEnabled && String(masterEnabled).toLowerCase() !== 'true') {
+            console.log('[Marketing Cron] Auto-recovery is disabled in settings, skipping');
+            return;
+        }
+
+        // Load per-reminder-type enable flags
+        const firstReminderEnabled  = (await marketingDB.getMarketingSetting('abandoned_cart_first_reminder_enabled')  ?? 'true').toString().toLowerCase() !== 'false';
+        const secondReminderEnabled = (await marketingDB.getMarketingSetting('abandoned_cart_second_reminder_enabled') ?? 'true').toString().toLowerCase() !== 'false';
+        const finalReminderEnabled  = (await marketingDB.getMarketingSetting('abandoned_cart_final_reminder_enabled')  ?? 'true').toString().toLowerCase() !== 'false';
+        console.log(`[Marketing Cron] Reminder toggles — first: ${firstReminderEnabled}, second: ${secondReminderEnabled}, final: ${finalReminderEnabled}`);
+
         const carts = await marketingDB.getPendingReminderCarts();
         
         if (carts.length === 0) {
@@ -11089,6 +11117,11 @@ async function processAbandonedCartReminders() {
                 }
 
                 if (!reminderType) continue;
+
+                // Skip if this specific reminder type is disabled in settings
+                if (reminderType === 'first'  && !firstReminderEnabled)  { console.log(`[Marketing Cron] First reminder disabled, skipping cart ${cart.id}`);  continue; }
+                if (reminderType === 'second' && !secondReminderEnabled) { console.log(`[Marketing Cron] Second reminder disabled, skipping cart ${cart.id}`); continue; }
+                if (reminderType === 'final'  && !finalReminderEnabled)  { console.log(`[Marketing Cron] Final reminder disabled, skipping cart ${cart.id}`);  continue; }
 
                 // Get template from settings (same logic as manual send-reminder)
                 const settingKey = `abandoned_cart_${reminderType}_template_id`;
@@ -11122,17 +11155,30 @@ async function processAbandonedCartReminders() {
                     cart.customer_email || ''
                 ];
 
-                // Try to fetch template from Meta to get expected parameter count
-                let expectedParamCount = 0;
+                // Try to fetch template from Meta to build proper per-component parameters
+                let prebuiltComponents = null;
+                let totalParamCount = 0;
                 try {
                     const metaResult = await metaWhatsApp.getMetaTemplateByName(template.name);
                     if (metaResult.success && metaResult.template) {
-                        const bodyComponent = (metaResult.template.components || []).find(c => c.type === 'BODY');
-                        if (bodyComponent && bodyComponent.text) {
-                            const matches = bodyComponent.text.match(/\{\{\d+\}\}/g);
-                            expectedParamCount = matches ? matches.length : 0;
+                        // Count total placeholders across ALL components (header + body + button)
+                        const allComponents = metaResult.template.components || [];
+                        for (const comp of allComponents) {
+                            if (comp.type === 'HEADER' && comp.text) {
+                                totalParamCount += (comp.text.match(/\{\{\d+\}\}/g) || []).length;
+                            } else if (comp.type === 'BODY' && comp.text) {
+                                totalParamCount += (comp.text.match(/\{\{\d+\}\}/g) || []).length;
+                            } else if (comp.type === 'BUTTONS') {
+                                for (const btn of (comp.buttons || [])) {
+                                    if (btn.type === 'URL' && btn.url) {
+                                        totalParamCount += (btn.url.match(/\{\{\d+\}\}/g) || []).length;
+                                    }
+                                }
+                            }
                         }
-                        console.log(`[Marketing Cron] Meta template "${template.name}" expects ${expectedParamCount} parameters`);
+                        // Build properly structured components (header, body, button each get their own params)
+                        prebuiltComponents = metaWhatsApp.buildTemplateComponents(metaResult.template, varPool);
+                        console.log(`[Marketing Cron] Meta template "${template.name}" has ${totalParamCount} total params across ${prebuiltComponents.length} component(s)`);
                     }
                 } catch (e) {
                     console.warn('[Marketing Cron] Could not fetch Meta template details:', e.message);
@@ -11140,8 +11186,8 @@ async function processAbandonedCartReminders() {
 
                 // Build variables array matching expected parameter count
                 let variables;
-                if (expectedParamCount > 0) {
-                    variables = varPool.slice(0, expectedParamCount);
+                if (totalParamCount > 0) {
+                    variables = varPool.slice(0, totalParamCount);
                 } else {
                     const templateVariables = template.variables || [];
                     variables = templateVariables.map(v => {
@@ -11168,7 +11214,8 @@ async function processAbandonedCartReminders() {
                     cart.customer_phone,
                     template.name,
                     variables,
-                    template.language || 'en'
+                    template.language || 'en',
+                    prebuiltComponents
                 ).catch(async () => {
                     // Fallback to bot
                     const fallbackName = cart.customer_name || (cart.customer_email ? cart.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()).trim() : 'there');
