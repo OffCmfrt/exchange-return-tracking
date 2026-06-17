@@ -10688,7 +10688,7 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
             const settingKey = `abandoned_cart_${reminderType}_template_id`;
             const templateSetting = await marketingDB.getMarketingSetting(settingKey);
             if (templateSetting) {
-                template = await marketingDB.getMarketingTemplateById(templateSetting.value);
+                template = await marketingDB.getMarketingTemplateById(templateSetting);
             }
         }
         
@@ -11096,7 +11096,7 @@ async function processAbandonedCartReminders() {
                 
                 let template;
                 if (templateSetting) {
-                    template = await marketingDB.getMarketingTemplateById(templateSetting.value);
+                    template = await marketingDB.getMarketingTemplateById(templateSetting);
                 }
                 
                 // Fallback: search for approved templates with "abandoned" in name
