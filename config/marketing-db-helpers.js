@@ -1007,6 +1007,9 @@ async function updateAbandonedCart(id, updates) {
     if (updates.recoveredOrderName !== undefined) row.recovered_order_name = updates.recoveredOrderName;
     if (updates.recoveredAmount !== undefined) row.recovered_amount = updates.recoveredAmount;
     if (updates.recoveryChannel !== undefined) row.recovery_channel = updates.recoveryChannel;
+    if (updates.recoveryDetectedAt !== undefined) row.recovery_detected_at = updates.recoveryDetectedAt;
+    if (updates.recoveryDetectionMethod !== undefined) row.recovery_detection_method = updates.recoveryDetectionMethod;
+    if (updates.timeToRecoveryHours !== undefined) row.time_to_recovery_hours = updates.timeToRecoveryHours;
 
     const { data, error } = await supabase.from('marketing_abandoned_carts').update(row).eq('id', id).select().single();
     if (error) throw error;
@@ -1084,6 +1087,217 @@ async function getPendingReminderCarts() {
 
     if (error) throw error;
     return data || [];
+}
+
+/**
+ * Compute product overlap score between an abandoned cart and a Shopify order.
+ * Returns a score 0-1 indicating how similar the items are.
+ */
+function computeProductOverlapScore(cartItems, orderLineItems) {
+    if (!Array.isArray(cartItems) || cartItems.length === 0) return 0;
+    if (!Array.isArray(orderLineItems) || orderLineItems.length === 0) return 0;
+
+    const cartProductIds = new Set(cartItems.map(i => String(i.product_id || i.variant_id || '')).filter(Boolean));
+    const orderProductIds = new Set(orderLineItems.map(i => String(i.product_id || i.variant_id || '')).filter(Boolean));
+
+    if (cartProductIds.size === 0 || orderProductIds.size === 0) {
+        // Fallback: match by title similarity
+        const cartTitles = cartItems.map(i => (i.title || i.product_title || '').toLowerCase().trim()).filter(Boolean);
+        const orderTitles = orderLineItems.map(i => (i.title || i.name || '').toLowerCase().trim()).filter(Boolean);
+        if (cartTitles.length === 0 || orderTitles.length === 0) return 0;
+        let titleMatches = 0;
+        for (const ct of cartTitles) {
+            if (orderTitles.some(ot => ot.includes(ct) || ct.includes(ot))) titleMatches++;
+        }
+        return titleMatches / Math.max(cartTitles.length, 1);
+    }
+
+    // Jaccard-like overlap: intersection / union
+    let intersection = 0;
+    for (const pid of cartProductIds) {
+        if (orderProductIds.has(pid)) intersection++;
+    }
+    return intersection / Math.max(cartProductIds.size, orderProductIds.size, 1);
+}
+
+/**
+ * Find non-recovered abandoned carts matching a customer by email or phone.
+ * Uses smart product overlap scoring when multiple carts match.
+ * Used by Shopify order webhook and cron scan to auto-detect recovery.
+ */
+async function findMatchingAbandonedCart(customerEmail, customerPhone, orderLineItems = []) {
+    const conditions = [];
+    const nonRecovered = ['pending', 'first_reminder_sent', 'second_reminder_sent', 'final_reminder_sent'];
+
+    // Search by email (exact match, case-insensitive)
+    if (customerEmail) {
+        const { data: emailMatches, error: emailErr } = await supabase
+            .from('marketing_abandoned_carts')
+            .select('*')
+            .ilike('customer_email', customerEmail)
+            .in('recovery_status', nonRecovered)
+            .gt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()) // only last 7 days
+            .order('created_at', { ascending: false })
+            .limit(10);
+        if (!emailErr && emailMatches) conditions.push(...emailMatches);
+    }
+
+    // Search by phone (normalize: strip non-digits, match last 10 digits)
+    if (customerPhone) {
+        const phoneDigits = customerPhone.replace(/\D/g, '').slice(-10);
+        if (phoneDigits.length >= 10) {
+            // Use ilike with the last 10 digits for better Supabase query
+            const { data: phoneMatches, error: phoneErr } = await supabase
+                .from('marketing_abandoned_carts')
+                .select('*')
+                .in('recovery_status', nonRecovered)
+                .gt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+                .not('customer_phone', 'is', null)
+                .order('created_at', { ascending: false })
+                .limit(50);
+            // Filter in-memory for phone suffix match
+            if (!phoneErr && phoneMatches) {
+                const matched = phoneMatches.filter(c => {
+                    const dbDigits = (c.customer_phone || '').replace(/\D/g, '').slice(-10);
+                    return dbDigits === phoneDigits;
+                });
+                conditions.push(...matched);
+            }
+        }
+    }
+
+    // Deduplicate by ID
+    const seen = new Set();
+    const unique = conditions.filter(c => {
+        if (seen.has(c.id)) return false;
+        seen.add(c.id);
+        return true;
+    });
+
+    if (unique.length === 0) return null;
+    if (unique.length === 1) return unique[0];
+
+    // Smart scoring: when multiple matches, score by product overlap + recency
+    const scored = unique.map(cart => {
+        let score = 0;
+
+        // Product overlap score (0-1)
+        if (orderLineItems.length > 0) {
+            const overlapScore = computeProductOverlapScore(cart.items, orderLineItems);
+            score += overlapScore * 50; // up to 50 points for product match
+        }
+
+        // Cart value similarity (0-20 points)
+        if (orderLineItems.length > 0) {
+            const orderTotal = orderLineItems.reduce((sum, i) => sum + (parseFloat(i.price) || 0) * (i.quantity || 1), 0);
+            const cartVal = parseFloat(cart.cart_value) || 0;
+            if (orderTotal > 0 && cartVal > 0) {
+                const valueDiff = Math.abs(orderTotal - cartVal) / Math.max(orderTotal, cartVal);
+                score += (1 - valueDiff) * 20; // closer values get more points
+            }
+        }
+
+        // Recency bonus (0-20 points) — more recent carts get higher score
+        const hoursSinceCart = (Date.now() - new Date(cart.created_at).getTime()) / (1000 * 60 * 60);
+        if (hoursSinceCart < 24) score += 20;
+        else if (hoursSinceCart < 48) score += 15;
+        else if (hoursSinceCart < 72) score += 10;
+        else score += 5;
+
+        // Reminder bonus (0-10) — if we already sent a reminder, this cart is "hot"
+        if (cart.reminder_count > 0) score += 10;
+
+        return { cart, score };
+    });
+
+    // Return the highest-scoring cart
+    scored.sort((a, b) => b.score - a.score);
+    return scored[0].cart;
+}
+
+/**
+ * Get recovered carts with pagination and filters.
+ */
+async function getRecoveredCarts(filters = {}) {
+    let query = supabase.from('marketing_abandoned_carts').select('*', { count: 'exact' })
+        .eq('recovery_status', 'recovered');
+
+    if (filters.source) query = query.eq('checkout_source', filters.source);
+    if (filters.channel) query = query.eq('recovery_channel', filters.channel);
+    if (filters.method) query = query.eq('recovery_detection_method', filters.method);
+    if (filters.dateFrom) query = query.gte('recovered_at', filters.dateFrom);
+    if (filters.dateTo) query = query.lte('recovered_at', filters.dateTo);
+
+    query = query.order('recovered_at', { ascending: false });
+
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 50;
+    const offset = (page - 1) * limit;
+    query = query.range(offset, offset + limit - 1);
+
+    const { data, count, error } = await query;
+    if (error) throw error;
+    return {
+        data: data || [],
+        pagination: { total: count || 0, page, limit, totalPages: Math.ceil((count || 0) / limit) }
+    };
+}
+
+/**
+ * Get detailed stats for recovered carts including avg recovery time and channel breakdown.
+ */
+async function getRecoveredCartStats() {
+    const { data: recoveredData, error } = await supabase
+        .from('marketing_abandoned_carts')
+        .select('recovered_amount, cart_value, checkout_source, recovery_channel, recovery_detection_method, time_to_recovery_hours, recovered_at, created_at')
+        .eq('recovery_status', 'recovered');
+
+    if (error) throw error;
+
+    const carts = recoveredData || [];
+    const totalRecovered = carts.length;
+    const totalRevenue = carts.reduce((sum, c) => sum + (parseFloat(c.recovered_amount) || 0), 0);
+    const totalCartValue = carts.reduce((sum, c) => sum + (parseFloat(c.cart_value) || 0), 0);
+
+    // Avg recovery time
+    const recoveryTimes = carts.filter(c => c.time_to_recovery_hours != null).map(c => parseFloat(c.time_to_recovery_hours));
+    const avgRecoveryHours = recoveryTimes.length > 0
+        ? (recoveryTimes.reduce((a, b) => a + b, 0) / recoveryTimes.length).toFixed(1)
+        : 0;
+
+    // Channel breakdown
+    const channelBreakdown = {};
+    carts.forEach(c => {
+        const ch = c.recovery_channel || 'unknown';
+        channelBreakdown[ch] = (channelBreakdown[ch] || 0) + 1;
+    });
+
+    // Detection method breakdown
+    const methodBreakdown = {};
+    carts.forEach(c => {
+        const m = c.recovery_detection_method || 'unknown';
+        methodBreakdown[m] = (methodBreakdown[m] || 0) + 1;
+    });
+
+    // Source breakdown
+    const sourceBreakdown = { gokwik: { count: 0, revenue: 0 }, shopify: { count: 0, revenue: 0 } };
+    carts.forEach(c => {
+        const src = c.checkout_source || 'shopify';
+        if (sourceBreakdown[src]) {
+            sourceBreakdown[src].count++;
+            sourceBreakdown[src].revenue += parseFloat(c.recovered_amount) || 0;
+        }
+    });
+
+    return {
+        totalRecovered,
+        totalRevenue,
+        totalCartValue,
+        avgRecoveryHours: parseFloat(avgRecoveryHours),
+        channelBreakdown,
+        methodBreakdown,
+        sourceBreakdown
+    };
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1329,6 +1543,9 @@ module.exports = {
     updateAbandonedCart,
     getAbandonedCartStats,
     getPendingReminderCarts,
+    findMatchingAbandonedCart,
+    getRecoveredCarts,
+    getRecoveredCartStats,
 
     // Analytics
     getMarketingAnalyticsOverview,

@@ -58,23 +58,82 @@ function isBotConfigured() {
 // ── Meta Cloud API: Send Template Message ──
 
 /**
+ * Build properly structured components array from Meta template metadata and a variable pool.
+ * Handles HEADER, BODY, and BUTTON components — each gets its own parameters.
+ *
+ * @param {Object} metaTemplate - Full template object from getMetaTemplateByName()
+ * @param {Array<string>} varPool - Ordered pool of variable values [name, itemCount, value, url, phone, email]
+ * @returns {Array} components array ready for the Meta Cloud API
+ */
+function buildTemplateComponents(metaTemplate, varPool) {
+    const components = metaTemplate.components || [];
+    let varIndex = 0;
+    const result = [];
+
+    for (const comp of components) {
+        if (comp.type === 'HEADER' && comp.format === 'TEXT' && comp.text) {
+            const matches = comp.text.match(/\{\{\d+\}\}/g) || [];
+            if (matches.length > 0) {
+                const params = [];
+                for (let i = 0; i < matches.length; i++) {
+                    params.push({ type: 'text', text: String(varPool[varIndex++] || '') });
+                }
+                result.push({ type: 'header', parameters: params });
+            }
+        } else if (comp.type === 'BODY') {
+            const matches = (comp.text || '').match(/\{\{\d+\}\}/g) || [];
+            if (matches.length > 0) {
+                const params = [];
+                for (let i = 0; i < matches.length; i++) {
+                    params.push({ type: 'text', text: String(varPool[varIndex++] || '') });
+                }
+                result.push({ type: 'body', parameters: params });
+            }
+        } else if (comp.type === 'BUTTONS') {
+            // Handle URL buttons with payload parameters
+            for (let btnIdx = 0; btnIdx < (comp.buttons || []).length; btnIdx++) {
+                const btn = comp.buttons[btnIdx];
+                if (btn.type === 'URL' && btn.url) {
+                    const matches = btn.url.match(/\{\{\d+\}\}/g) || [];
+                    if (matches.length > 0) {
+                        const params = [];
+                        for (let i = 0; i < matches.length; i++) {
+                            params.push({ type: 'text', text: String(varPool[varIndex++] || '') });
+                        }
+                        result.push({
+                            type: 'button',
+                            sub_type: 'url',
+                            index: String(btnIdx),
+                            parameters: params
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+/**
  * Send a WhatsApp template message via Meta Cloud API
  * Falls back to existing WhatsApp bot if Meta is not configured
  * 
  * @param {string} phone - Recipient phone number with country code (e.g., '919876543210')
  * @param {string} templateName - Meta-approved template name
- * @param {Array} parameters - Array of parameter values for template variables
+ * @param {Array} parameters - Array of parameter values OR pre-built components array
  * @param {string} language - Template language code (default: 'en')
+ * @param {Array} [prebuiltComponents] - Optional pre-built components from buildTemplateComponents()
  * @returns {Object} { success, messageId, fallback, error }
  */
-async function sendTemplateMessage(phone, templateName, parameters = [], language = 'en') {
+async function sendTemplateMessage(phone, templateName, parameters = [], language = 'en', prebuiltComponents = null) {
     if (!phone) {
         return { success: false, error: 'Phone number is required' };
     }
 
     // Try Meta Cloud API first
     if (isMetaConfigured()) {
-        return await _sendViaMetaCloudAPI(phone, templateName, parameters, language);
+        return await _sendViaMetaCloudAPI(phone, templateName, parameters, language, prebuiltComponents);
     }
 
     // Fallback to existing WhatsApp bot
@@ -89,7 +148,7 @@ async function sendTemplateMessage(phone, templateName, parameters = [], languag
 /**
  * Send via Meta Cloud API directly
  */
-async function _sendViaMetaCloudAPI(phone, templateName, parameters, language) {
+async function _sendViaMetaCloudAPI(phone, templateName, parameters, language, prebuiltComponents = null) {
     const accessToken = getMetaAccessToken();
     const phoneNumberId = getPhoneNumberId();
 
@@ -102,8 +161,11 @@ async function _sendViaMetaCloudAPI(phone, templateName, parameters, language) {
             language: { code: language }
         };
 
-        // Add parameters if provided
-        if (parameters && parameters.length > 0) {
+        // Use pre-built components if provided (handles header + body + button)
+        if (prebuiltComponents && prebuiltComponents.length > 0) {
+            templatePayload.components = prebuiltComponents;
+        } else if (parameters && parameters.length > 0) {
+            // Legacy fallback: all params go into body only
             templatePayload.components = [
                 {
                     type: 'body',
@@ -482,6 +544,7 @@ module.exports = {
 
     // Messaging
     sendTemplateMessage,
+    buildTemplateComponents,
 
     // Template Management
     submitTemplateToMeta,

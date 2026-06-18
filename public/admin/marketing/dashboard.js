@@ -1570,7 +1570,7 @@ async function loadAbandonedCarts(page = 1) {
             const sourceLabel = c.checkout_source === 'gokwik' ? 'Gokwik' : 'Shopify';
             const versionBadge = c.checkout_version ? `<span class="badge badge-sm" title="Checkout version">${c.checkout_version.toUpperCase()}</span>` : '';
             
-            // Derive display name: prefer customer_name, fallback to formatted email prefix
+            // Derive display name: prefer customer_name (server-enriched via Shopify), fallback to formatted email prefix
             let displayCustomer = c.customer_name;
             if (!displayCustomer && c.customer_email) {
                 displayCustomer = c.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()).trim();
@@ -1584,12 +1584,13 @@ async function loadAbandonedCarts(page = 1) {
                 <td>${sourceIcon} ${sourceLabel} ${versionBadge}</td>
                 <td>${formatCurrency(c.cart_value)}</td>
                 <td>${Array.isArray(c.items) ? c.items.length : 0} items</td>
-                <td>${statusBadge(c.recovery_status)}</td>
+                <td>${statusBadge(c.recovery_status)}${c.recovery_status === 'recovered' && c.recovered_order_name ? `<br><small class="text-muted">${escapeHtml(c.recovered_order_name)}</small>` : ''}</td>
                 <td>${c.reminder_count || 0}</td>
                 <td>${timeAgo(c.created_at)}</td>
                 <td>
                     ${!['recovered','expired'].includes(c.recovery_status) ? `<button class="btn btn-sm btn-primary" onclick="sendCartReminder(${c.id})">Send Reminder</button>` : ''}
                     ${c.recovery_status !== 'recovered' ? `<button class="btn btn-sm btn-success" onclick="markCartRecovered(${c.id})">Mark Recovered</button>` : ''}
+                    ${c.recovery_status === 'recovered' ? `<span class="badge badge-success"><i class="fas fa-check"></i> Recovered</span>` : ''}
                 </td>
             </tr>
             `;
@@ -1690,6 +1691,223 @@ async function markCartRecovered(id) {
         await apiCall(`abandoned-carts/${id}/mark-recovered`, { method: 'POST', body: {} });
         showToast('Cart marked as recovered');
         loadAbandonedCarts();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// RECOVERED CARTS
+// ════════════════════════════════════════════════════════════════
+
+let recoveredPage = 1;
+
+function formatRecoveryTime(hours) {
+    if (!hours && hours !== 0) return '-';
+    if (hours < 1) return `${Math.round(hours * 60)}m`;
+    if (hours < 24) return `${hours.toFixed(1)}h`;
+    const days = (hours / 24).toFixed(1);
+    return `${days}d`;
+}
+
+function channelBadge(channel) {
+    const map = {
+        whatsapp: { icon: 'fab fa-whatsapp', color: '#25D366', label: 'WhatsApp' },
+        direct: { icon: 'fas fa-user', color: '#3b82f6', label: 'Direct' },
+        coupon: { icon: 'fas fa-ticket-alt', color: '#f59e0b', label: 'Coupon' },
+        email: { icon: 'fas fa-envelope', color: '#8b5cf6', label: 'Email' },
+        unknown: { icon: 'fas fa-question', color: '#6b7280', label: 'Unknown' }
+    };
+    const c = map[channel] || map.unknown;
+    return `<span class="badge" style="background:${c.color}15;color:${c.color};border:1px solid ${c.color}30"><i class="${c.icon}"></i> ${c.label}</span>`;
+}
+
+function detectionMethodBadge(method) {
+    const map = {
+        shopify_webhook: { icon: 'fas fa-bolt', color: '#10b981', label: 'Auto (Webhook)' },
+        cron_scan: { icon: 'fas fa-clock', color: '#6366f1', label: 'Auto (Scan)' },
+        manual: { icon: 'fas fa-hand-pointer', color: '#f59e0b', label: 'Manual' },
+        unknown: { icon: 'fas fa-question', color: '#6b7280', label: 'Unknown' }
+    };
+    const m = map[method] || map.unknown;
+    return `<span class="badge" style="background:${m.color}15;color:${m.color};border:1px solid ${m.color}30"><i class="${m.icon}"></i> ${m.label}</span>`;
+}
+
+async function loadRecoveredCarts(page = 1) {
+    recoveredPage = page;
+    try {
+        const params = new URLSearchParams({ page });
+        const source = document.getElementById('recoveredSource')?.value;
+        const channel = document.getElementById('recoveredChannel')?.value;
+        const method = document.getElementById('recoveredMethod')?.value;
+        const dateFrom = document.getElementById('recoveredDateFrom')?.value;
+        const dateTo = document.getElementById('recoveredDateTo')?.value;
+        if (source) params.append('source', source);
+        if (channel) params.append('channel', channel);
+        if (method) params.append('method', method);
+        if (dateFrom) params.append('dateFrom', dateFrom);
+        if (dateTo) params.append('dateTo', dateTo);
+
+        const [recoveredData, statsData] = await Promise.all([
+            apiCall(`abandoned-carts/recovered?${params}`),
+            apiCall('abandoned-carts/recovered/stats').catch(() => ({ stats: {} }))
+        ]);
+
+        const s = statsData.stats || {};
+
+        // Method breakdown display
+        const methodBreakdownEl = document.getElementById('recoveryMethodBreakdown');
+        if (methodBreakdownEl && s.methodBreakdown) {
+            const mb = s.methodBreakdown;
+            const parts = [];
+            if (mb.shopify_webhook) parts.push(`Webhook: ${mb.shopify_webhook}`);
+            if (mb.cron_scan) parts.push(`Scan: ${mb.cron_scan}`);
+            if (mb.manual) parts.push(`Manual: ${mb.manual}`);
+            methodBreakdownEl.innerHTML = parts.length > 0 ? parts.join(' | ') : '';
+        }
+
+        // Stats cards
+        document.getElementById('recoveredStats').innerHTML = `
+            <div class="stat-card"><div class="stat-icon green"><i class="fas fa-check-circle"></i></div><div class="stat-info"><span class="stat-value">${formatNumber(s.totalRecovered)}</span><span class="stat-label">Total Recovered</span></div></div>
+            <div class="stat-card"><div class="stat-icon blue"><i class="fas fa-rupee-sign"></i></div><div class="stat-info"><span class="stat-value">${formatCurrency(s.totalRevenue)}</span><span class="stat-label">Revenue Recovered</span></div></div>
+            <div class="stat-card"><div class="stat-icon purple"><i class="fas fa-clock"></i></div><div class="stat-info"><span class="stat-value">${formatRecoveryTime(s.avgRecoveryHours)}</span><span class="stat-label">Avg Recovery Time</span></div></div>
+            <div class="stat-card"><div class="stat-icon orange"><i class="fas fa-shopping-cart"></i></div><div class="stat-info"><span class="stat-value">${formatCurrency(s.totalCartValue)}</span><span class="stat-label">Original Cart Value</span></div></div>
+        `;
+
+        // Smart insight: recovery funnel (how were recoveries attributed?)
+        const cb = s.channelBreakdown || {};
+        const mb = s.methodBreakdown || {};
+        const totalR = s.totalRecovered || 1;
+        const whatsappCount = cb.whatsapp || 0;
+        const directCount = cb.direct || 0;
+        const couponCount = cb.coupon || 0;
+        const autoCount = (mb.shopify_webhook || 0) + (mb.cron_scan || 0);
+        const manualCount = mb.manual || 0;
+        const bestChannel = whatsappCount >= directCount && whatsappCount >= couponCount ? 'WhatsApp' : (directCount >= couponCount ? 'Direct' : 'Coupon');
+        const bestChannelPct = totalR > 0 ? Math.round((Math.max(whatsappCount, directCount, couponCount) / totalR) * 100) : 0;
+
+        // Add smart insight card before the table
+        const cardEl = document.querySelector('#section-recovered-carts .card');
+        if (cardEl && !document.getElementById('recoveryInsightCard')) {
+            const insightEl = document.createElement('div');
+            insightEl.id = 'recoveryInsightCard';
+            insightEl.className = 'insight-card';
+            cardEl.parentNode.insertBefore(insightEl, cardEl);
+        }
+        const insightEl = document.getElementById('recoveryInsightCard');
+        if (insightEl) {
+            insightEl.innerHTML = `
+                <div class="insight-title"><i class="fas fa-lightbulb"></i> Smart Recovery Insight</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-top:0.5rem">
+                    <div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem">Top Channel</div>
+                        <div style="font-size:1.25rem;font-weight:700;color:var(--text)">${bestChannel} <span style="font-size:0.8rem;color:var(--text-muted)">${bestChannelPct}%</span></div>
+                    </div>
+                    <div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem">Auto-Detected</div>
+                        <div style="font-size:1.25rem;font-weight:700;color:#10b981">${autoCount} <span style="font-size:0.8rem;color:var(--text-muted)">of ${totalR}</span></div>
+                    </div>
+                    <div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem">Recovery Funnel</div>
+                        <div style="display:flex;gap:4px;align-items:center">
+                            <span class="badge" style="background:#d1fae5;color:#065f46"><i class="fab fa-whatsapp"></i> ${whatsappCount}</span>
+                            <span class="badge" style="background:#eff6ff;color:#3b82f6"><i class="fas fa-user"></i> ${directCount}</span>
+                            <span class="badge" style="background:#fff7ed;color:#f97316"><i class="fas fa-ticket-alt"></i> ${couponCount}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        const tbody = document.getElementById('recoveredBody');
+        tbody.innerHTML = (recoveredData.data || []).map(c => {
+            const sourceIcon = c.checkout_source === 'gokwik'
+                ? '<i class="fas fa-shopping-cart" style="color: #f59e0b;" title="Gokwik"></i>'
+                : '<i class="fas fa-store" style="color: #10b981;" title="Shopify"></i>';
+            const sourceLabel = c.checkout_source === 'gokwik' ? 'Gokwik' : 'Shopify';
+
+            let displayCustomer = c.customer_name;
+            if (!displayCustomer && c.customer_email) {
+                displayCustomer = c.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()).trim();
+            }
+            if (!displayCustomer) displayCustomer = 'Anonymous';
+
+            return `
+            <tr>
+                <td>${escapeHtml(displayCustomer)}${c.customer_phone ? `<br><small class="text-muted">${escapeHtml(c.customer_phone)}</small>` : ''}</td>
+                <td>${sourceIcon} ${sourceLabel}</td>
+                <td>${formatCurrency(c.cart_value)}</td>
+                <td><strong style="color:#10b981">${formatCurrency(c.recovered_amount)}</strong></td>
+                <td>${c.recovered_order_name ? escapeHtml(c.recovered_order_name) : '-'}${c.recovered_order_id ? `<br><small class="text-muted">ID: ${escapeHtml(String(c.recovered_order_id)).substring(0, 12)}</small>` : ''}</td>
+                <td>${channelBadge(c.recovery_channel)}</td>
+                <td>${detectionMethodBadge(c.recovery_detection_method)}</td>
+                <td>${formatRecoveryTime(c.time_to_recovery_hours)}</td>
+                <td>${timeAgo(c.recovered_at)}</td>
+                <td><button class="btn btn-sm btn-secondary" onclick="viewCartDetail(${c.id})" title="View details"><i class="fas fa-eye"></i></button></td>
+            </tr>
+            `;
+        }).join('');
+
+        renderPagination('recoveredPagination', recoveredData.pagination, 'loadRecoveredCarts');
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+async function scanRecoveries() {
+    try {
+        showToast('Scanning Shopify orders for recoveries...', 'info');
+        const result = await apiCall('abandoned-carts/scan-recoveries', { method: 'POST' });
+        if (result.recoveredCount > 0) {
+            showToast(`Found ${result.recoveredCount} new recoveries from ${result.scannedOrders} orders!`);
+        } else {
+            showToast(`No new recoveries found. Scanned ${result.scannedOrders} orders.`);
+        }
+        loadRecoveredCarts();
+    } catch (error) {
+        showToast('Scan failed: ' + error.message, 'error');
+    }
+}
+
+async function viewCartDetail(id) {
+    try {
+        const data = await apiCall(`abandoned-carts/${id}`);
+        const c = data.cart || data;
+
+        let displayCustomer = c.customer_name;
+        if (!displayCustomer && c.customer_email) {
+            displayCustomer = c.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()).trim();
+        }
+
+        const items = Array.isArray(c.items) ? c.items : [];
+
+        openModal('Cart Details', `
+            <div class="detail-grid">
+                <div><strong>Customer:</strong> ${escapeHtml(displayCustomer || 'Anonymous')}</div>
+                <div><strong>Email:</strong> ${escapeHtml(c.customer_email || '-')}</div>
+                <div><strong>Phone:</strong> ${escapeHtml(c.customer_phone || '-')}</div>
+                <div><strong>Source:</strong> ${c.checkout_source === 'gokwik' ? 'Gokwik' : 'Shopify'}</div>
+                <div><strong>Cart Value:</strong> ${formatCurrency(c.cart_value)}</div>
+                <div><strong>Status:</strong> ${statusBadge(c.recovery_status)}</div>
+                ${c.recovery_status === 'recovered' ? `
+                    <div><strong>Recovered Amount:</strong> ${formatCurrency(c.recovered_amount)}</div>
+                    <div><strong>Order:</strong> ${escapeHtml(c.recovered_order_name || '-')}</div>
+                    <div><strong>Channel:</strong> ${channelBadge(c.recovery_channel)}</div>
+                    <div><strong>Detected By:</strong> ${detectionMethodBadge(c.recovery_detection_method)}</div>
+                    <div><strong>Recovery Time:</strong> ${formatRecoveryTime(c.time_to_recovery_hours)}</div>
+                    <div><strong>Recovered At:</strong> ${c.recovered_at ? new Date(c.recovered_at).toLocaleString() : '-'}</div>
+                ` : ''}
+                <div><strong>Created:</strong> ${c.created_at ? new Date(c.created_at).toLocaleString() : '-'}</div>
+                <div><strong>Reminders Sent:</strong> ${c.reminder_count || 0}</div>
+            </div>
+            ${items.length > 0 ? `
+                <h4 style="margin-top:16px">Items</h4>
+                <table class="data-table" style="font-size:0.85rem">
+                    <thead><tr><th>Product</th><th>Qty</th><th>Price</th></tr></thead>
+                    <tbody>${items.map(i => `<tr><td>${escapeHtml(i.title || i.product_title || 'Item')}</td><td>${i.quantity || 1}</td><td>${formatCurrency(i.price)}</td></tr>`).join('')}</tbody>
+                </table>
+            ` : ''}
+        `);
     } catch (error) {
         showToast(error.message, 'error');
     }

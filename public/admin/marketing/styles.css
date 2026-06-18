@@ -786,3 +786,143 @@ textarea.form-input { min-height: 100px; resize: vertical; }
         gap: 4px;
     }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   RECOVERED CARTS & SMART RECOVERY STYLES
+   ════════════════════════════════════════════════════════════════ */
+
+/* Detail grid for cart detail modal */
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    font-size: 0.875rem;
+}
+
+.detail-grid > div {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.detail-grid strong {
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-right: 0.5rem;
+}
+
+/* Badge success */
+.badge-success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+/* Smart recovery funnel */
+.recovery-funnel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: var(--radius);
+}
+
+.funnel-step {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface);
+    border-radius: 6px;
+    border-left: 3px solid var(--border);
+}
+
+.funnel-step.active {
+    border-left-color: var(--success);
+    background: #ecfdf5;
+}
+
+.funnel-step.completed {
+    border-left-color: var(--primary);
+}
+
+.funnel-count {
+    font-weight: 700;
+    font-size: 1.1rem;
+    min-width: 36px;
+}
+
+.funnel-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.funnel-bar {
+    flex: 1;
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.funnel-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+}
+
+/* Smart insight cards */
+.insight-card {
+    background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.insight-card .insight-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--primary);
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.insight-card .insight-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.insight-card .insight-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+/* Recovery time indicator */
+.recovery-time-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.recovery-time-indicator.fast { color: #10b981; }
+.recovery-time-indicator.medium { color: #f59e0b; }
+.recovery-time-indicator.slow { color: #ef4444; }
+
+/* Scan button animation */
+.btn-secondary:active .fa-search {
+    animation: spin 0.6s linear infinite;
+}
+
+@media (max-width: 768px) {
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+}

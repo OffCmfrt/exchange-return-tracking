@@ -97,6 +97,7 @@ function switchSection(section) {
         'overview': 'Overview', 'customers': 'Customer Intelligence',
         'campaigns': 'Campaign Management', 'templates': 'Message Templates',
         'coupons': 'Coupon Management', 'abandoned-carts': 'Abandoned Cart Recovery',
+        'recovered-carts': 'Recovered Carts',
         'analytics': 'Analytics', 'settings': 'Settings', 'audit-log': 'Audit Log'
     };
     document.getElementById('sectionTitle').textContent = titles[section] || 'Marketing';
@@ -106,6 +107,7 @@ function switchSection(section) {
         'overview': loadOverview, 'customers': loadCustomers,
         'campaigns': loadCampaigns, 'templates': loadTemplates,
         'coupons': loadCoupons, 'abandoned-carts': loadAbandonedCarts,
+        'recovered-carts': loadRecoveredCarts,
         'analytics': loadAnalytics, 'settings': loadSettings,
         'audit-log': loadAuditLogs
     };

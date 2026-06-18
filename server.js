@@ -80,6 +80,56 @@ function verifyGokwikWebhook(payload, signature, secret) {
     }
 }
 
+// In-memory cache for Shopify customer name lookups (avoids repeated API calls)
+const _customerNameCache = new Map();
+const CUSTOMER_NAME_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+// Resolve the best customer display name from cart data
+// Tries: customer_name -> Shopify lookup by email (cached) -> email prefix -> 'there'
+async function resolveCustomerDisplayName(cart) {
+    // If we have a real name (has a space suggesting first+last, or is a single real name), use it
+    if (cart.customer_name && cart.customer_name.includes(' ')) {
+        return cart.customer_name;
+    }
+    // Single-word customer_name might be email-derived; try Shopify lookup for a real name
+    if (cart.customer_email) {
+        // Check cache first
+        const cached = _customerNameCache.get(cart.customer_email);
+        if (cached && (Date.now() - cached.ts < CUSTOMER_NAME_CACHE_TTL)) {
+            return cached.name;
+        }
+        try {
+            const shopifyCustomerData = await shopifyAPI(`customers.json?email=${encodeURIComponent(cart.customer_email)}&limit=1`);
+            let resolvedName = null;
+            if (shopifyCustomerData?.customers?.[0]) {
+                const sc = shopifyCustomerData.customers[0];
+                resolvedName = `${sc.first_name || ''} ${sc.last_name || ''}`.trim() || null;
+                if (!resolvedName && sc.default_address?.name) resolvedName = sc.default_address.name;
+                if (!resolvedName && (sc.default_address?.first_name || sc.default_address?.last_name)) {
+                    resolvedName = `${sc.default_address.first_name || ''} ${sc.default_address.last_name || ''}`.trim();
+                }
+            }
+            // Cache the result (even null so we don't re-lookup emails with no Shopify customer)
+            _customerNameCache.set(cart.customer_email, { name: resolvedName, ts: Date.now() });
+            // Evict stale entries if cache grows too large
+            if (_customerNameCache.size > 500) {
+                const cutoff = Date.now() - CUSTOMER_NAME_CACHE_TTL;
+                for (const [key, val] of _customerNameCache) {
+                    if (val.ts < cutoff) _customerNameCache.delete(key);
+                }
+            }
+            if (resolvedName) return resolvedName;
+        } catch (e) { /* ignore Shopify lookup errors */ }
+    }
+    // Fallback to existing customer_name if present
+    if (cart.customer_name) return cart.customer_name;
+    // Last resort: derive from email prefix
+    if (cart.customer_email) {
+        return cart.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
+    }
+    return 'there';
+}
+
 const app = express();
 
 // Trust Render's proxy so express-rate-limit can read real client IPs
@@ -980,6 +1030,22 @@ cron.schedule('*/30 * * * *', () => {
     timezone: "Asia/Kolkata"
 });
 console.log('✅ Marketing: Abandoned cart reminders scheduled (every 30 minutes)');
+
+// Recovery scan - every 6 hours, check Shopify orders against abandoned carts
+cron.schedule('0 */6 * * *', async () => {
+    try {
+        if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) return;
+        console.log('[Marketing Cron] Running recovery scan...');
+        const result = await scanShopifyOrdersForRecoveries();
+        console.log(`[Marketing Cron] Recovery scan complete: ${result.recoveredCount} new recoveries from ${result.scannedOrders} orders`);
+    } catch (err) {
+        console.error('[Marketing Cron] Recovery scan error:', err.message);
+    }
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
+});
+console.log('✅ Marketing: Recovery scan scheduled (every 6 hours)');
 
 // Daily analytics aggregation - at 2AM IST
 cron.schedule('0 2 * * *', () => {
@@ -10599,6 +10665,35 @@ app.get('/api/admin/marketing/coupons/:id/usage', authenticateAdmin, async (req,
 app.get('/api/admin/marketing/abandoned-carts', authenticateAdmin, async (req, res) => {
     try {
         const result = await marketingDB.getAbandonedCarts(req.query);
+        // Enrich customer_name: resolve real names from Shopify for email-derived names
+        if (result.data && result.data.length > 0) {
+            // Deduplicate by email — only lookup each unique email once
+            const cartsNeedingLookup = result.data.filter(c => c.customer_name && !c.customer_name.includes(' ') && c.customer_email);
+            const uniqueEmails = [...new Set(cartsNeedingLookup.map(c => c.customer_email))];
+            // Resolve names for unique emails only (sequential to respect Shopify rate limits)
+            const emailToName = new Map();
+            for (const email of uniqueEmails) {
+                // Check cache first to skip API calls entirely
+                const cached = _customerNameCache.get(email);
+                if (cached && (Date.now() - cached.ts < CUSTOMER_NAME_CACHE_TTL)) {
+                    if (cached.name) emailToName.set(email, cached.name);
+                    continue;
+                }
+                try {
+                    const resolved = await resolveCustomerDisplayName({ customer_email: email, customer_name: null });
+                    if (resolved && resolved !== 'there') emailToName.set(email, resolved);
+                } catch (e) { /* ignore */ }
+            }
+            // Apply resolved names to all matching carts
+            for (const cart of cartsNeedingLookup) {
+                const resolved = emailToName.get(cart.customer_email);
+                if (resolved && resolved !== cart.customer_name) {
+                    cart.customer_name = resolved;
+                    // Persist resolved name to DB so future lookups skip Shopify
+                    supabase.from('marketing_abandoned_carts').update({ customer_name: resolved }).eq('id', cart.id).then(() => {}).catch(() => {});
+                }
+            }
+        }
         res.json({ success: true, ...result });
     } catch (error) {
         console.error('[Marketing] Abandoned carts list error:', error.message);
@@ -10614,6 +10709,39 @@ app.get('/api/admin/marketing/abandoned-carts/stats', authenticateAdmin, async (
     } catch (error) {
         console.error('[Marketing] Abandoned cart stats error:', error.message);
         res.status(500).json({ error: 'Failed to fetch abandoned cart stats' });
+    }
+});
+
+// GET /api/admin/marketing/abandoned-carts/recovered - List recovered carts
+app.get('/api/admin/marketing/abandoned-carts/recovered', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getRecoveredCarts(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Recovered carts list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch recovered carts' });
+    }
+});
+
+// GET /api/admin/marketing/abandoned-carts/recovered/stats - Recovered cart statistics
+app.get('/api/admin/marketing/abandoned-carts/recovered/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getRecoveredCartStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Recovered cart stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch recovered cart stats' });
+    }
+});
+
+// POST /api/admin/marketing/abandoned-carts/scan-recoveries - Manual trigger to scan Shopify orders for recovery matching
+app.post('/api/admin/marketing/abandoned-carts/scan-recoveries', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await scanShopifyOrdersForRecoveries();
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Scan recoveries error:', error.message);
+        res.status(500).json({ error: 'Failed to scan for recoveries' });
     }
 });
 
@@ -10703,13 +10831,19 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
         }
 
         // Build variables pool from cart data
-        // Derive display name: prefer customer_name, fallback to email prefix
-        const displayName = cart.customer_name || (cart.customer_email ? cart.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim() : 'there');
+        // Resolve display name: try customer_name -> Shopify lookup -> email prefix -> 'there'
+        const displayName = await resolveCustomerDisplayName(cart);
+        // Add UTM tracking to checkout URL for smart recovery attribution
+        const rawCheckoutUrl = cart.checkout_url || 'https://offcomfrt.com';
+        const utmParams = `utm_source=whatsapp&utm_medium=abandoned_cart&utm_campaign=reminder_${reminderType || 'manual'}&utm_content=cart_${cart.id}`;
+        const trackedCheckoutUrl = rawCheckoutUrl.includes('?')
+            ? `${rawCheckoutUrl}&${utmParams}`
+            : `${rawCheckoutUrl}?${utmParams}`;
         const varPool = [
             displayName,
             `${cart.items?.length || 0} item(s)`,
             `₹${cart.cart_value}`,
-            cart.checkout_url || 'https://offcomfrt.com',
+            trackedCheckoutUrl,
             cart.customer_phone || '',
             cart.customer_email || ''
         ];
@@ -10808,19 +10942,213 @@ app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateA
 app.post('/api/admin/marketing/abandoned-carts/:id/mark-recovered', authenticateAdmin, async (req, res) => {
     try {
         const { recoveredOrderId, recoveredOrderName, recoveredAmount } = req.body;
+        const now = new Date().toISOString();
+
+        // Get current cart to compute recovery time
+        const cart = await marketingDB.getAbandonedCartById(req.params.id);
+        if (!cart) return res.status(404).json({ error: 'Cart not found' });
+
+        const timeToRecovery = cart.created_at
+            ? ((Date.now() - new Date(cart.created_at).getTime()) / (1000 * 60 * 60)).toFixed(2)
+            : null;
 
         await marketingDB.updateAbandonedCart(req.params.id, {
             recoveryStatus: 'recovered',
-            recoveredAt: new Date().toISOString(),
+            recoveredAt: now,
             recoveredOrderId: recoveredOrderId || null,
             recoveredOrderName: recoveredOrderName || null,
-            recoveredAmount: recoveredAmount || 0
+            recoveredAmount: recoveredAmount || cart.cart_value || 0,
+            recoveryChannel: 'direct',
+            recoveryDetectedAt: now,
+            recoveryDetectionMethod: 'manual',
+            timeToRecoveryHours: timeToRecovery ? parseFloat(timeToRecovery) : null
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'recovered',
+            entityType: 'abandoned_cart',
+            entityId: parseInt(req.params.id),
+            entityName: `Cart ${cart.cart_token?.substring(0, 8) || req.params.id}`,
+            actor: req.adminUser || 'admin',
+            actorType: 'admin',
+            newValues: { recoveredOrderId, recoveredOrderName, recoveredAmount: recoveredAmount || cart.cart_value, method: 'manual' },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
         });
 
         res.json({ success: true, message: 'Cart marked as recovered' });
     } catch (error) {
         console.error('[Marketing] Mark recovered error:', error.message);
         res.status(500).json({ error: 'Failed to mark as recovered' });
+    }
+});
+
+// ── Shopify Order Webhook (Auto Recovery Detection) ──
+
+async function markCartAsRecovered(cart, orderData, detectionMethod) {
+    const now = new Date().toISOString();
+    const timeToRecovery = cart.created_at
+        ? ((Date.now() - new Date(cart.created_at).getTime()) / (1000 * 60 * 60)).toFixed(2)
+        : null;
+
+    // Smart recovery channel attribution
+    let channel = 'direct'; // came back on their own
+
+    // 1. Check if order has UTM/referral attributes indicating WhatsApp click
+    const orderAttrs = orderData.note_attributes || [];
+    const utmSource = orderAttrs.find(a => a.name === 'utm_source' || a.name === 'referral_source');
+    const utmMedium = orderAttrs.find(a => a.name === 'utm_medium');
+    if (utmSource && String(utmSource.value).toLowerCase() === 'whatsapp') {
+        channel = 'whatsapp';
+    } else if (utmMedium && String(utmMedium.value).toLowerCase() === 'abandoned_cart') {
+        channel = 'whatsapp';
+    }
+    // 2. Check Shopify referrals
+    else if (orderData.referring_site && orderData.referring_site.includes('whatsapp')) {
+        channel = 'whatsapp';
+    }
+    // 3. Heuristic: if a reminder was sent within 24h of the order, likely WhatsApp-driven
+    else if (cart.reminder_count > 0 && cart.last_reminder_at) {
+        const lastReminderTime = new Date(cart.last_reminder_at).getTime();
+        const orderTime = new Date(orderData.created_at || now).getTime();
+        if (orderTime - lastReminderTime < 24 * 60 * 60 * 1000) {
+            channel = 'whatsapp';
+        }
+    }
+
+    // 4. Check if a coupon code was used (likely from a coupon reminder)
+    const discountCodes = orderData.discount_codes || [];
+    if (discountCodes.length > 0 && channel === 'direct') {
+        channel = 'coupon';
+    }
+
+    await marketingDB.updateAbandonedCart(cart.id, {
+        recoveryStatus: 'recovered',
+        recoveredAt: now,
+        recoveredOrderId: String(orderData.id || ''),
+        recoveredOrderName: orderData.name || orderData.order_number || '',
+        recoveredAmount: parseFloat(orderData.total_price) || cart.cart_value || 0,
+        recoveryChannel: channel,
+        recoveryDetectedAt: now,
+        recoveryDetectionMethod: detectionMethod,
+        timeToRecoveryHours: timeToRecovery ? parseFloat(timeToRecovery) : null
+    });
+
+    await marketingDB.createAuditLog({
+        action: 'auto_recovered',
+        entityType: 'abandoned_cart',
+        entityId: cart.id,
+        entityName: `Cart ${cart.cart_token?.substring(0, 8) || cart.id}`,
+        actor: detectionMethod,
+        actorType: 'system',
+        newValues: {
+            orderId: orderData.id,
+            orderName: orderData.name,
+            orderTotal: orderData.total_price,
+            channel,
+            method: detectionMethod,
+            timeToRecoveryHours: timeToRecovery
+        },
+        ipAddress: null,
+        userAgent: null
+    });
+
+    return { cartId: cart.id, channel, timeToRecoveryHours: timeToRecovery };
+}
+
+/**
+ * Scan Shopify orders for the last 7 days and match to non-recovered abandoned carts.
+ * Used both by the cron job and the manual trigger endpoint.
+ */
+async function scanShopifyOrdersForRecoveries() {
+    if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
+        throw new Error('Shopify API not configured');
+    }
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    let recoveredCount = 0;
+    let scannedOrders = 0;
+    const recoveredCarts = [];
+
+    try {
+        // Fetch orders from the last 7 days using Shopify API
+        let endpoint = `orders.json?status=any&created_at_min=${sevenDaysAgo}&fields=id,name,email,phone,created_at,total_price,customer,line_items,discount_codes,note_attributes,referring_site&limit=250`;
+
+        while (endpoint) {
+            const data = await shopifyAPI(endpoint);
+            const orders = data.orders || [];
+            scannedOrders += orders.length;
+
+            for (const order of orders) {
+                const orderEmail = order.email || (order.customer && order.customer.email) || null;
+                const orderPhone = order.phone || (order.customer && order.customer.phone) || null;
+
+                if (!orderEmail && !orderPhone) continue;
+
+                // Find matching abandoned cart with smart product overlap scoring
+                const orderItems = order.line_items || [];
+                const matchingCart = await marketingDB.findMatchingAbandonedCart(orderEmail, orderPhone, orderItems);
+
+                if (matchingCart) {
+                    const result = await markCartAsRecovered(matchingCart, order, 'cron_scan');
+                    recoveredCount++;
+                    recoveredCarts.push(result);
+                    console.log(`[Recovery Scan] Auto-detected recovery: Cart ${matchingCart.id} → Order ${order.name} (${orderEmail || orderPhone})`);
+                }
+            }
+
+            // Check for next page
+            endpoint = data.nextUrl ? data.nextUrl.replace(/^https?:\/\/[^/]+\//, '') : null;
+        }
+
+        console.log(`[Recovery Scan] Scanned ${scannedOrders} orders, found ${recoveredCount} recoveries`);
+        return { scannedOrders, recoveredCount, recoveredCarts };
+    } catch (error) {
+        console.error('[Recovery Scan] Error:', error.message);
+        throw error;
+    }
+}
+
+// POST /api/webhooks/shopify/orders-create - Shopify order webhook for auto recovery detection
+app.post('/api/webhooks/shopify/orders-create', express.json(), async (req, res) => {
+    try {
+        // Verify webhook signature if SHOPIFY_WEBHOOK_SECRET is set
+        const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+        if (webhookSecret) {
+            const crypto = require('crypto');
+            const hmac = crypto.createHmac('sha256', webhookSecret);
+            const digest = hmac.update(req.rawBody || JSON.stringify(req.body)).digest('base64');
+            const signature = req.headers['x-shopify-hmac-sha256'];
+            if (signature && digest !== signature) {
+                console.warn('[Shopify Webhook] Invalid signature from IP:', req.ip);
+                return res.status(401).json({ error: 'Invalid webhook signature' });
+            }
+        }
+
+        const order = req.body;
+        const orderEmail = order.email || (order.customer && order.customer.email) || null;
+        const orderPhone = order.phone || (order.customer && order.customer.phone) || null;
+
+        console.log(`[Shopify Order Webhook] Order ${order.name || order.id} for ${orderEmail || orderPhone || 'unknown'}`);
+
+        if (!orderEmail && !orderPhone) {
+            // No customer info to match, just acknowledge
+            return res.json({ received: true });
+        }
+
+        // Find matching abandoned cart with smart product overlap scoring
+        const matchingCart = await marketingDB.findMatchingAbandonedCart(orderEmail, orderPhone, order.line_items || []);
+
+        if (matchingCart) {
+            await markCartAsRecovered(matchingCart, order, 'shopify_webhook');
+            console.log(`[Shopify Order Webhook] Auto-recovered cart ${matchingCart.id} → Order ${order.name}`);
+        }
+
+        res.json({ received: true, recovered: !!matchingCart });
+    } catch (error) {
+        console.error('[Shopify Order Webhook] Error:', error.message);
+        // Always return 200 to Shopify so it doesn't retry
+        res.status(200).json({ received: true, error: 'Processing failed' });
     }
 });
 
@@ -10910,7 +11238,40 @@ app.post('/api/webhooks/gokwik/abandoned-cart', express.json(), async (req, res)
                 }
             } catch (e) { /* ignore parse errors */ }
         }
-        // 4. Fallback: derive name from email prefix (e.g. "brunosbro404" from email)
+        // 4. shipping_address_details_pii (may be a JSON string or object)
+        if (!customerName && payload.shipping_address_details_pii) {
+            try {
+                const shipping = typeof payload.shipping_address_details_pii === 'string'
+                    ? JSON.parse(payload.shipping_address_details_pii)
+                    : payload.shipping_address_details_pii;
+                if (shipping.first_name || shipping.last_name) {
+                    customerName = `${shipping.first_name || ''} ${shipping.last_name || ''}`.trim();
+                } else if (shipping.name) {
+                    customerName = shipping.name;
+                }
+            } catch (e) { /* ignore parse errors */ }
+        }
+        // 5. shipping_address object (flat fields)
+        if (!customerName && payload.shipping_address && typeof payload.shipping_address === 'object') {
+            const sa = payload.shipping_address;
+            if (sa.first_name || sa.last_name) {
+                customerName = `${sa.first_name || ''} ${sa.last_name || ''}`.trim();
+            } else if (sa.name) {
+                customerName = sa.name;
+            }
+        }
+        // 6. Try Shopify customer lookup by email for a real name (uses cache)
+        if (!customerName && customerEmail) {
+            try {
+                const resolved = await resolveCustomerDisplayName({ customer_email: customerEmail, customer_name: null });
+                // resolveCustomerDisplayName returns email-derived name as last resort;
+                // only use if it's a real name (has space) or not email-derived
+                if (resolved && resolved !== 'there' && resolved.includes(' ')) {
+                    customerName = resolved;
+                }
+            } catch (e) { /* ignore Shopify lookup errors */ }
+        }
+        // 7. Fallback: derive name from email prefix (e.g. "brunosbro404" from email)
         if (!customerName && customerEmail) {
             customerName = customerEmail.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').trim();
             // Capitalize first letter of each word
@@ -11144,13 +11505,17 @@ async function processAbandonedCartReminders() {
                 }
 
                 // Build variables pool from cart data
-                // Derive display name: prefer customer_name, fallback to email prefix
-                const displayName = cart.customer_name || (cart.customer_email ? cart.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim() : 'there');
+                // Resolve display name: try customer_name -> Shopify lookup -> email prefix -> 'there'
+                const displayName = await resolveCustomerDisplayName(cart);
+                // Add UTM tracking to checkout URL for smart recovery attribution
+                const cronRawUrl = cart.checkout_url || 'https://offcomfrt.com';
+                const cronUtm = `utm_source=whatsapp&utm_medium=abandoned_cart&utm_campaign=reminder_${reminderType}&utm_content=cart_${cart.id}`;
+                const cronTrackedUrl = cronRawUrl.includes('?') ? `${cronRawUrl}&${cronUtm}` : `${cronRawUrl}?${cronUtm}`;
                 const varPool = [
                     displayName,
                     `${cart.items?.length || 0} item(s)`,
                     `₹${cart.cart_value}`,
-                    cart.checkout_url || 'https://offcomfrt.com',
+                    cronTrackedUrl,
                     cart.customer_phone || '',
                     cart.customer_email || ''
                 ];
@@ -11218,7 +11583,7 @@ async function processAbandonedCartReminders() {
                     prebuiltComponents
                 ).catch(async () => {
                     // Fallback to bot
-                    const fallbackName = cart.customer_name || (cart.customer_email ? cart.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()).trim() : 'there');
+                    const fallbackName = await resolveCustomerDisplayName(cart);
                     const messageText = `Hi ${fallbackName}! You left items worth ₹${cart.cart_value} in your cart. ` +
                         `Complete your purchase now! ${cart.checkout_url || ''}`;
                     return metaWhatsApp.sendViaBot({
@@ -11251,6 +11616,23 @@ async function processAbandonedCartReminders() {
         }
 
         console.log('[Marketing Cron] Abandoned cart reminder processing complete');
+
+        // Smart auto-expire: mark carts as expired if they are 7+ days old and still not recovered
+        const { data: expiredCarts, error: expireErr } = await supabase
+            .from('marketing_abandoned_carts')
+            .select('id')
+            .in('recovery_status', ['pending', 'first_reminder_sent', 'second_reminder_sent', 'final_reminder_sent'])
+            .lt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+
+        if (!expireErr && expiredCarts && expiredCarts.length > 0) {
+            const { error: updateErr } = await supabase
+                .from('marketing_abandoned_carts')
+                .update({ recovery_status: 'expired', updated_at: new Date().toISOString() })
+                .in('id', expiredCarts.map(c => c.id));
+            if (!updateErr) {
+                console.log(`[Marketing Cron] Auto-expired ${expiredCarts.length} abandoned carts (7+ days old)`);
+            }
+        }
     } catch (error) {
         console.error('[Marketing Cron] Abandoned cart reminder error:', error.message);
     }

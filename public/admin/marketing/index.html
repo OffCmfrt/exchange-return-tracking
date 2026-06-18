@@ -68,6 +68,9 @@
             <a href="#" class="nav-item" data-section="abandoned-carts" data-tooltip="Abandoned Carts" onclick="switchSection('abandoned-carts')">
                 <i class="fas fa-shopping-cart"></i><span>Abandoned Carts</span>
             </a>
+            <a href="#" class="nav-item" data-section="recovered-carts" data-tooltip="Recovered Carts" onclick="switchSection('recovered-carts')">
+                <i class="fas fa-check-circle"></i><span>Recovered Carts</span>
+            </a>
             <a href="#" class="nav-item" data-section="analytics" data-tooltip="Analytics" onclick="switchSection('analytics')">
                 <i class="fas fa-chart-bar"></i><span>Analytics</span>
             </a>
@@ -288,6 +291,36 @@
             </div>
             <div class="stats-grid stats-grid-sm" id="cartStats"></div>
             <div class="card"><div class="card-header"><h3>Abandoned Carts</h3><div class="card-actions"><span id="sourceBreakdown" class="text-muted small"></span></div></div><div class="card-body"><div class="table-container"><table class="data-table" id="cartsTable"><thead><tr><th>Customer</th><th>Phone</th><th>Source</th><th>Cart Value</th><th>Items</th><th>Status</th><th>Reminders</th><th>Created</th><th>Actions</th></tr></thead><tbody id="cartsBody"></tbody></table></div><div id="cartsPagination" class="pagination"></div></div></div>
+        </section>
+
+        <!-- Recovered Carts Section -->
+        <section id="section-recovered-carts" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="recoveredSource" class="form-select" onchange="loadRecoveredCarts()"><option value="">All Sources</option><option value="gokwik">Gokwik</option><option value="shopify">Shopify</option></select>
+                    <select id="recoveredChannel" class="form-select" onchange="loadRecoveredCarts()"><option value="">All Channels</option><option value="whatsapp">WhatsApp</option><option value="direct">Direct</option><option value="coupon">Coupon</option></select>
+                    <select id="recoveredMethod" class="form-select" onchange="loadRecoveredCarts()"><option value="">Detection: All</option><option value="shopify_webhook">Auto (Webhook)</option><option value="cron_scan">Auto (Cron Scan)</option><option value="manual">Manual</option></select>
+                    <input type="date" id="recoveredDateFrom" class="form-input" onchange="loadRecoveredCarts()">
+                    <input type="date" id="recoveredDateTo" class="form-input" onchange="loadRecoveredCarts()">
+                </div>
+                <button class="btn btn-secondary" onclick="scanRecoveries()" title="Scan Shopify orders for new recoveries"><i class="fas fa-search"></i> Scan Orders</button>
+            </div>
+            <div class="stats-grid stats-grid-sm" id="recoveredStats"></div>
+            <div class="card">
+                <div class="card-header">
+                    <h3>Recovered Carts</h3>
+                    <div class="card-actions"><span id="recoveryMethodBreakdown" class="text-muted small"></span></div>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="data-table" id="recoveredTable">
+                            <thead><tr><th>Customer</th><th>Source</th><th>Cart Value</th><th>Recovered Amount</th><th>Order</th><th>Channel</th><th>Detected By</th><th>Recovery Time</th><th>Recovered At</th><th>Actions</th></tr></thead>
+                            <tbody id="recoveredBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="recoveredPagination" class="pagination"></div>
+                </div>
+            </div>
         </section>
 
         <!-- Analytics Section -->
