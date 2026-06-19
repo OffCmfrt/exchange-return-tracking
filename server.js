@@ -5400,7 +5400,7 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
             whatsappPhone      // optional: edited phone number
         } = req.body;
 
-        // 1. Validate request exists and is in 'delivered' status
+        // 1. Validate request exists and is in 'delivered' status (final approval only)
         const requestDetails = await getRequestById(requestId);
         if (!requestDetails) {
             return res.status(404).json({ error: 'Request not found' });
@@ -5482,7 +5482,7 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
                     
                     whatsappSent = true;
                     whatsappMessageId = whatsappResult?.messageId || null;
-                    console.log(`[${requestId}] ✅ WhatsApp template sent successfully. Message ID: ${whatsappMessageId}`);
+                    console.log(`[approve-discount][${requestId}] ✅ WhatsApp template sent successfully. Message ID: ${whatsappMessageId}`);
                     
                     // Update database with WhatsApp status
                     await updateRequestStatus(requestId, {
@@ -5492,7 +5492,7 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
                     });
                 } catch (error) {
                     whatsappError = error.message;
-                    console.error(`[${requestId}] ❌ WhatsApp send failed:`, error.message);
+                    console.error(`[approve-discount][${requestId}] ❌ WhatsApp send failed:`, error.message);
                     
                     // Update database with error
                     await updateRequestStatus(requestId, {

@@ -2572,10 +2572,17 @@
         }
         
         if (discountSection) {
-            // Show discount code section for all request types
-            // For returns: approve button will auto-create coupon
-            // For exchanges: coupon only created via explicit "Send & Create" button
-            discountSection.classList.remove('hidden');
+            // Show discount code section for most cases, but HIDE for pickup initiation
+            // pending/pickup_pending returns: HIDE (no coupon during pickup initiation)
+            // delivered returns: SHOW (approve-with-discount at QC pass)
+            // exchanges: SHOW (use "Send Coupon & Message" button)
+            // other active returns (pickup_booked, in_transit, etc.): SHOW (manual send coupon)
+            const isPendingReturn = data.type === 'return' && ['pending', 'pickup_pending'].includes(data.status);
+            if (isPendingReturn) {
+                discountSection.classList.add('hidden');
+            } else {
+                discountSection.classList.remove('hidden');
+            }
             
             // Populate WhatsApp phone with customer's phone
             const whatsappPhoneInput = document.getElementById('whatsappPhone');
