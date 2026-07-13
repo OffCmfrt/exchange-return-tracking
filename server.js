@@ -5664,12 +5664,15 @@ app.post('/api/admin/reset-pickup', authenticateAdmin, async (req, res) => {
             return res.status(404).json({ error: 'Request not found' });
         }
         
-        if (requestDetails.status !== 'pickup_pending' && requestDetails.status !== 'scheduled') {
-            return res.status(400).json({ error: 'Can only reset pickup_pending or scheduled requests' });
+        // Allow reverting a pickup from any status where a pickup was attempted/booked.
+        // Useful when a carrier pickup gets cancelled and admin needs to start over.
+        const revertableStatuses = ['pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit', 'cancelled', 'failed'];
+        if (!revertableStatuses.includes(requestDetails.status)) {
+            return res.status(400).json({ error: `Cannot revert pickup from status: ${requestDetails.status}` });
         }
         
         const adminNotes = (requestDetails.adminNotes || '') + 
-            `\n[SYSTEM] Pickup reset to pending by admin (was: ${requestDetails.carrier || 'unknown'})`;
+            `\n[SYSTEM] Pickup reverted to pending by admin (was: ${requestDetails.status}, carrier: ${requestDetails.carrier || 'unknown'}, AWB: ${requestDetails.awbNumber || requestDetails.carrierAwb || 'none'})`;
         
         const request = await updateRequestStatus(requestId, {
             status: 'pending',
@@ -5761,6 +5764,116 @@ app.post('/api/admin/redispatch', authenticateAdmin, async (req, res) => {
     } catch (error) {
         console.error('Re-dispatch error:', error);
         res.status(500).json({ error: 'Failed to re-dispatch order' });
+    }
+});
+
+// ── Reusable helper: book a fresh return pickup with primary + optional fallback carrier ──
+// Returns { carrierUsed, awbNumber, shipmentId, pickupDate, fallbackReason } or throws.
+async function bookReturnPickup(requestDetails, requestId, carrierOverride = null) {
+    const carrierMode = await getCarrierMode('pickup');
+    const carrierResolution = resolveCarrier(carrierMode, carrierOverride, 'pickup');
+    console.log(`[${requestId}] bookReturnPickup: carrier mode ${carrierMode}, resolution`, carrierResolution);
+
+    // Best-effort Shopify order fetch (don't block on failure)
+    let shopifyOrder = null;
+    try {
+        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestDetails.orderNumber)}&status=any&limit=1`);
+        if (!shopifyData.orders || shopifyData.orders.length === 0) {
+            const alt = requestDetails.orderNumber.startsWith('#')
+                ? requestDetails.orderNumber.substring(1)
+                : '#' + requestDetails.orderNumber;
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(alt)}&status=any&limit=1`);
+        }
+        shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+    } catch (err) {
+        console.warn(`[${requestId}] bookReturnPickup Shopify fetch failed, using stored data:`, err.message);
+    }
+
+    const { primary: carrierToUse, useFallback } = carrierResolution;
+    const fallbackCarrier = carrierToUse === 'shiprocket' ? 'delhivery' : 'shiprocket';
+
+    const attempt = async (carrier) => {
+        if (carrier === 'shiprocket') {
+            if (!process.env.SHIPROCKET_EMAIL) throw new Error('Shiprocket not configured on server');
+            const d = await createShiprocketReturnOrder({ ...requestDetails, requestId }, shopifyOrder);
+            if (d && d.shipment_id) {
+                return { carrierUsed: 'shiprocket', awbNumber: d.awb_code, shipmentId: d.shipment_id, pickupDate: d.pickup_scheduled_date };
+            }
+            throw new Error('Shiprocket did not return shipment data');
+        } else {
+            if (!process.env.DELHIVERY_API_KEY) throw new Error('Delhivery not configured on server');
+            const d = await createDelhiveryReturnOrder({
+                ...requestDetails,
+                requestId,
+                orderNumber: requestDetails.orderNumber,
+                customerPhone: requestDetails.customerPhone
+            }, shopifyOrder);
+            if (d && d.waybill) {
+                return { carrierUsed: 'delhivery', awbNumber: d.waybill, shipmentId: d.shipment_id, pickupDate: new Date().toISOString() };
+            }
+            throw new Error('Delhivery did not return waybill data');
+        }
+    };
+
+    let result = null;
+    let fallbackReason = null;
+    try {
+        result = await attempt(carrierToUse);
+    } catch (primaryError) {
+        if (!useFallback) throw primaryError;
+        fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
+        console.warn(`[${requestId}] ⚠️ ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
+        try {
+            result = await attempt(fallbackCarrier);
+        } catch (fallbackError) {
+            throw new Error(`Both carriers failed: ${primaryError.message} | ${fallbackError.message}`);
+        }
+    }
+
+    if (!result || !result.carrierUsed) throw new Error('No carrier was used');
+    return { ...result, fallbackReason };
+}
+
+// Create a fresh (duplicate) return pickup for a request regardless of current status.
+// Useful when a previously booked pickup was cancelled by the carrier.
+app.post('/api/admin/create-duplicate-pickup', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, carrierOverride } = req.body;
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        const prevAwb = requestDetails.awbNumber || requestDetails.carrierAwb || 'none';
+        console.log(`[${requestId}] Creating DUPLICATE pickup (current status: ${requestDetails.status}, previous carrier: ${requestDetails.carrier || 'none'}, previous AWB: ${prevAwb})`);
+
+        const booking = await bookReturnPickup(requestDetails, requestId, carrierOverride || null);
+
+        let adminNotes = requestDetails.adminNotes || '';
+        adminNotes += `\n[SYSTEM] Duplicate pickup created via ${booking.carrierUsed}: AWB ${booking.awbNumber || 'Pending'} (previous AWB: ${prevAwb}). Previous booking may remain in carrier system.`;
+        if (booking.fallbackReason) adminNotes += `\nFallback: ${booking.fallbackReason}`;
+
+        const request = await updateRequestStatus(requestId, {
+            shipmentId: booking.shipmentId,
+            awbNumber: booking.awbNumber,
+            pickupDate: booking.pickupDate,
+            status: 'pickup_booked',
+            adminNotes,
+            carrier: booking.carrierUsed,
+            carrierShipmentId: booking.shipmentId,
+            carrierAwb: booking.awbNumber,
+            carrierFallbackReason: booking.fallbackReason || null
+        });
+
+        res.json({
+            success: true,
+            message: `Duplicate pickup created via ${booking.carrierUsed}. New AWB: ${booking.awbNumber || 'Pending'}`,
+            request
+        });
+    } catch (error) {
+        console.error('Create duplicate pickup error:', error);
+        res.status(500).json({ error: 'Failed to create duplicate pickup: ' + error.message });
     }
 });
 

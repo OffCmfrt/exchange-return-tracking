@@ -2471,21 +2471,44 @@
                 }
             }
 
-            // Add reset button for pickup_pending status
-            let resetBtn = modalActions.querySelector('button[onclick="resetPickupToPending()"]');
-            if (data.status === 'pickup_pending' || data.status === 'scheduled') {
-                if (!resetBtn) {
-                    resetBtn = document.createElement('button');
-                    resetBtn.onclick = () => resetPickupToPending();
-                    resetBtn.textContent = 'Reset to Pending';
-                    resetBtn.style.cssText = 'flex: 1; background: #ef4444; color: white; border: 1px solid #ef4444; min-width: 150px;';
-                    modalActions.appendChild(resetBtn);
+            // Pickup management buttons: available on every request so admins can
+            // create a fresh (duplicate) pickup or revert a pickup when a carrier
+            // booking gets cancelled. Shown for all pickup-flow statuses.
+            const pickupActionStatuses = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'failed'];
+            const showPickupActions = pickupActionStatuses.includes(data.status);
+
+            // Create Duplicate Pickup button (books a brand new carrier pickup)
+            let dupPickupBtn = modalActions.querySelector('button[onclick="createDuplicatePickup()"]');
+            if (showPickupActions) {
+                if (!dupPickupBtn) {
+                    dupPickupBtn = document.createElement('button');
+                    dupPickupBtn.setAttribute('onclick', 'createDuplicatePickup()');
+                    dupPickupBtn.onclick = () => createDuplicatePickup();
+                    dupPickupBtn.textContent = '📦 Create Duplicate Pickup';
+                    dupPickupBtn.style.cssText = 'flex: 1; background: #7c3aed; color: white; border: 1px solid #7c3aed; min-width: 150px; font-weight: 600;';
+                    modalActions.appendChild(dupPickupBtn);
                 }
-                resetBtn.classList.remove('hidden');
-            } else {
-                if (resetBtn) {
-                    resetBtn.classList.add('hidden');
+                dupPickupBtn.classList.remove('hidden');
+            } else if (dupPickupBtn) {
+                dupPickupBtn.classList.add('hidden');
+            }
+
+            // Revert Pickup button (clears carrier booking and resets to pending)
+            let revertPickupBtn = modalActions.querySelector('button[onclick="revertPickup()"]');
+            // Reverting only makes sense once a pickup has actually been booked/attempted
+            const revertableFrontStatuses = ['pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'cancelled', 'failed'];
+            if (revertableFrontStatuses.includes(data.status)) {
+                if (!revertPickupBtn) {
+                    revertPickupBtn = document.createElement('button');
+                    revertPickupBtn.setAttribute('onclick', 'revertPickup()');
+                    revertPickupBtn.onclick = () => revertPickup();
+                    revertPickupBtn.textContent = '↩ Revert Pickup';
+                    revertPickupBtn.style.cssText = 'flex: 1; background: #ef4444; color: white; border: 1px solid #ef4444; min-width: 150px; font-weight: 600;';
+                    modalActions.appendChild(revertPickupBtn);
                 }
+                revertPickupBtn.classList.remove('hidden');
+            } else if (revertPickupBtn) {
+                revertPickupBtn.classList.add('hidden');
             }
 
             // Add re-dispatch button for cancelled/failed orders
@@ -3208,6 +3231,70 @@
         } catch (error) {
             console.error('Reset pickup error:', error);
             alert('Failed to reset pickup');
+        }
+    }
+
+    // Revert a pickup back to pending (clears carrier booking). Works for any
+    // booked/attempted pickup status so cancelled pickups can be started over.
+    async function revertPickup() {
+        if (!currentRequest) return;
+        if (!confirm(`Revert this pickup back to pending?\n\nThis clears the current carrier booking (AWB / shipment info) so you can re-initiate or create a fresh pickup. Use this when a pickup was cancelled by the carrier.`)) return;
+
+        try {
+            const response = await fetch(`${API_URL}/admin/reset-pickup`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ requestId: currentRequest.requestId })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                alert('Pickup reverted. Request is now pending — you can re-initiate or create a duplicate pickup.');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('Failed to revert pickup: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Revert pickup error:', error);
+            alert('Failed to revert pickup');
+        }
+    }
+
+    // Create a brand new (duplicate) carrier pickup for this request regardless of
+    // current status. Useful when the original pickup was cancelled by the carrier.
+    async function createDuplicatePickup() {
+        if (!currentRequest) return;
+        const carrierOverride = document.getElementById('carrierOverride')?.value || null;
+        if (!confirm(`Create a NEW (duplicate) pickup for this request?\n\n⚠️ This books a fresh pickup with the carrier and generates a new AWB. Any previous booking may still remain in the carrier system. Use this when the original pickup was cancelled.`)) return;
+
+        try {
+            const response = await fetch(`${API_URL}/admin/create-duplicate-pickup`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    requestId: currentRequest.requestId,
+                    carrierOverride
+                })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                alert(data.message || 'Duplicate pickup created successfully.');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('Failed to create duplicate pickup: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Create duplicate pickup error:', error);
+            alert('Failed to create duplicate pickup');
         }
     }
 
