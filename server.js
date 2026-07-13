@@ -56,6 +56,24 @@ function trackSuspicious(ip, action) {
     }
 }
 
+// Periodically prune stale entries so the Map doesn't grow unbounded (memory leak fix).
+// Without this, every distinct IP that ever triggers trackSuspicious leaves a permanent
+// record, causing RSS to creep up over days. This drops IPs whose attempts have all
+// aged out of the tracking window and trims expired timestamps from the rest.
+const SUSPICIOUS_CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // every 10 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, record] of suspiciousActivity) {
+        const recent = record.timestamps.filter(ts => now - ts < ATTEMPT_WINDOW_MS);
+        if (recent.length === 0) {
+            suspiciousActivity.delete(ip);
+        } else {
+            record.timestamps = recent;
+            record.count = recent.length;
+        }
+    }
+}, SUSPICIOUS_CLEANUP_INTERVAL_MS).unref();
+
 const cors = require('cors');
 const crypto = require('crypto');
 const path = require('path');
