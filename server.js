@@ -2278,9 +2278,13 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         console.log(`🔢 Seller GST: ${sellerGstTin}`);
 
         // Build payload for Delhivery CMU API
-        // For forward dispatch (exchange), use 'fws' prefix to avoid duplicate order errors
+        // For forward dispatch (exchange), use 'fws' prefix to avoid duplicate order errors.
+        // When re-booking a fresh pickup (e.g. a previous booking was cancelled), a unique
+        // suffix (e.g. '-R1') must be appended so Delhivery treats it as a NEW order instead
+        // of rejecting it as a "Duplicate order id" and echoing back the stale waybill.
         const orderIdPrefix = requestData.type === 'exchange' ? 'fws-' : '';
-        const delhiveryOrderId = `${orderIdPrefix}${requestData.requestId}`;
+        const orderIdSuffix = requestData.delhiveryOrderIdSuffix || '';
+        const delhiveryOrderId = `${orderIdPrefix}${requestData.requestId}${orderIdSuffix}`;
         
         console.log(` Delhivery Order Type: ${requestData.type || 'return'}, Order ID: ${delhiveryOrderId}`);
         
@@ -5769,10 +5773,14 @@ app.post('/api/admin/redispatch', authenticateAdmin, async (req, res) => {
 
 // ── Reusable helper: book a fresh return pickup with primary + optional fallback carrier ──
 // Returns { carrierUsed, awbNumber, shipmentId, pickupDate, fallbackReason } or throws.
-async function bookReturnPickup(requestDetails, requestId, carrierOverride = null) {
+async function bookReturnPickup(requestDetails, requestId, carrierOverride = null, options = {}) {
     const carrierMode = await getCarrierMode('pickup');
     const carrierResolution = resolveCarrier(carrierMode, carrierOverride, 'pickup');
     console.log(`[${requestId}] bookReturnPickup: carrier mode ${carrierMode}, resolution`, carrierResolution);
+
+    // Optional unique suffix for the Delhivery order id so a fresh/duplicate pickup is not
+    // rejected as a "Duplicate order id" (which would silently re-adopt the stale waybill).
+    const delhiveryOrderIdSuffix = options.delhiveryOrderIdSuffix || '';
 
     // Best-effort Shopify order fetch (don't block on failure)
     let shopifyOrder = null;
@@ -5806,7 +5814,8 @@ async function bookReturnPickup(requestDetails, requestId, carrierOverride = nul
                 ...requestDetails,
                 requestId,
                 orderNumber: requestDetails.orderNumber,
-                customerPhone: requestDetails.customerPhone
+                customerPhone: requestDetails.customerPhone,
+                delhiveryOrderIdSuffix
             }, shopifyOrder);
             if (d && d.waybill) {
                 return { carrierUsed: 'delhivery', awbNumber: d.waybill, shipmentId: d.shipment_id, pickupDate: new Date().toISOString() };
@@ -5848,7 +5857,14 @@ app.post('/api/admin/create-duplicate-pickup', authenticateAdmin, async (req, re
         const prevAwb = requestDetails.awbNumber || requestDetails.carrierAwb || 'none';
         console.log(`[${requestId}] Creating DUPLICATE pickup (current status: ${requestDetails.status}, previous carrier: ${requestDetails.carrier || 'none'}, previous AWB: ${prevAwb})`);
 
-        const booking = await bookReturnPickup(requestDetails, requestId, carrierOverride || null);
+        // Delhivery rejects a re-used order id ("Duplicate order id") and echoes back the
+        // stale waybill, so a fresh pickup must carry a unique order id. Derive the next
+        // retry number from how many duplicate pickups were previously logged for this request.
+        const priorDuplicateCount = ((requestDetails.adminNotes || '').match(/\[SYSTEM\] Duplicate pickup created/g) || []).length;
+        const retryNumber = priorDuplicateCount + 1;
+        const delhiveryOrderIdSuffix = `-R${retryNumber}`;
+
+        const booking = await bookReturnPickup(requestDetails, requestId, carrierOverride || null, { delhiveryOrderIdSuffix });
 
         let adminNotes = requestDetails.adminNotes || '';
         adminNotes += `\n[SYSTEM] Duplicate pickup created via ${booking.carrierUsed}: AWB ${booking.awbNumber || 'Pending'} (previous AWB: ${prevAwb}). Previous booking may remain in carrier system.`;
