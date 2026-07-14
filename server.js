@@ -1857,20 +1857,42 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
 
         console.log('🚀 Creating Shiprocket Return. Payload:', JSON.stringify(payload, null, 2));
 
-        const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/return', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
+        // POST helper so we can transparently refresh an expired token and retry once.
+        const postReturn = async (authToken) => {
+            const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/return', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${authToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            return response.json();
+        };
 
-        const data = await response.json();
+        let activeToken = token;
+        let data = await postReturn(activeToken);
+
+        // The cached token can be stale (Shiprocket returns 401/token_expired even though our
+        // local 24h expiry hasn't elapsed). Invalidate it, fetch a fresh one, and retry once.
+        if (data && (data.status_code === 401 || data.message === 'token_expired')) {
+            console.warn('[Shiprocket 401] Return token expired. Refreshing token and retrying...');
+            shiprocketToken = null;
+            shiprocketTokenExpiry = null;
+            activeToken = await getShiprocketToken();
+            data = await postReturn(activeToken);
+        }
+
         console.log('📦 Shiprocket Response:', JSON.stringify(data, null, 2));
 
-        if (data.status_code === 400 || data.status_code === 422 || (data.errors && Object.keys(data.errors).length > 0)) {
-            console.error('❌ Shiprocket Validation Error:', JSON.stringify(data));
+        if (
+            data.status_code === 400 ||
+            data.status_code === 401 ||
+            data.status_code === 422 ||
+            data.message === 'token_expired' ||
+            (data.errors && Object.keys(data.errors).length > 0)
+        ) {
+            console.error('❌ Shiprocket Error/Validation:', JSON.stringify(data));
             return null;
         }
 
@@ -2079,16 +2101,39 @@ async function createShiprocketForwardOrder(requestData) {
 
         console.log('🚀 Creating Shiprocket Forward Order:', JSON.stringify(payload, null, 2));
 
-        const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        // POST helper so we can transparently refresh an expired token and retry once.
+        const postForward = async (authToken) => {
+            const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const body = await response.json();
+            return { response, body };
+        };
 
-        const data = await response.json();
+        let activeToken = token;
+        let { response, body: data } = await postForward(activeToken);
+
+        // The cached token can be stale (Shiprocket returns 401/token_expired even though our
+        // local 24h expiry hasn't elapsed). Invalidate it, fetch a fresh one, and retry once.
+        if (response.status === 401 || (data && data.message === 'token_expired')) {
+            console.warn('[Shiprocket 401] Forward token expired. Refreshing token and retrying...');
+            shiprocketToken = null;
+            shiprocketTokenExpiry = null;
+            activeToken = await getShiprocketToken();
+            ({ response, body: data } = await postForward(activeToken));
+        }
+
         console.log('📦 Shiprocket Forward Response:', JSON.stringify(data, null, 2));
 
-        if (data.status_code === 400 || data.status_code === 422 || (data.errors && Object.keys(data.errors).length > 0)) {
+        if (
+            data.status_code === 400 ||
+            data.status_code === 401 ||
+            data.status_code === 422 ||
+            data.message === 'token_expired' ||
+            (data.errors && Object.keys(data.errors).length > 0)
+        ) {
             console.error('❌ Shiprocket Validation Error (Forward):', JSON.stringify(data));
             console.error('❌ Payload that caused error:', JSON.stringify(payload, null, 2));
             console.error('❌ Items being sent:', JSON.stringify(orderItems, null, 2));
