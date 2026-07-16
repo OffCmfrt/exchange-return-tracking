@@ -1,0 +1,53 @@
+================================================================================
+FORWARD ORDER RECOVERY SUMMARY
+================================================================================
+Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Method: Delhivery Forward Dispatch
+
+================================================================================
+✅ SUCCESSFULLY RECOVERED (12 orders)
+================================================================================
+
+REQ-40602: AWB 54716210001945
+REQ-52395: AWB 54716210001956
+REQ-85787: AWB 54716210001960
+REQ-29995: AWB 54716210001971
+REQ-76559: AWB 54716210001982
+REQ-29252: AWB 54716210001993
+REQ-43490: AWB 54716210002004
+REQ-37156: AWB 54716210002015
+REQ-76322: AWB 54716210002026
+REQ-66602: AWB 54716210002030
+REQ-10309: AWB 54716210002041
+REQ-41721: AWB 54716210002052
+
+================================================================================
+❌ FAILED - Insufficient Delhivery Balance (8 orders)
+================================================================================
+
+REQ-60414: FAILED - Add balance to Delhivery account
+REQ-66532: FAILED - Add balance to Delhivery account
+REQ-13161: FAILED - Add balance to Delhivery account
+REQ-94765: FAILED - Add balance to Delhivery account
+REQ-35188: FAILED - Add balance to Delhivery account
+REQ-57939: FAILED - Add balance to Delhivery account
+REQ-22347: FAILED - Add balance to Delhivery account
+REQ-51923: FAILED - Add balance to Delhivery account
+
+================================================================================
+TOTALS
+================================================================================
+✅ Success: 12
+❌ Failed: 8 (due to insufficient Delhivery balance)
+📝 Total: 20
+
+================================================================================
+NEXT STEPS
+================================================================================
+1. The 12 successful orders have been updated in the database
+2. To recover the remaining 8 orders:
+   a. Add balance to your Delhivery account
+   b. Re-run: node recover-forward-orders-delhivery.js
+
+3. All orders now use the correct Delhivery forward dispatch format (fws- prefix)
+4. The approval logic has been fixed to prevent this issue in the future

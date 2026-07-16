@@ -1,0 +1,3242 @@
+﻿{% layout none %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>Influencer HQ - Admin</title>
+{% comment %}
+ OFFCOMFRT — Influencer Admin Dashboard (Ultra-Premium Edition)
+ Monochromatic B&W • Razor-Sharp Borders • Micro-Animations
+{% endcomment %}
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+ background: #000000;
+ margin: 0;
+ padding: 0;
+ overflow-x: auto;
+}
+:root {
+ --bg: #000000;
+ --surface: #0a0a0a;
+ --surface-2: #111111;
+ --border: #1f1f1f;
+ --border-hover: #3a3a3a;
+ --text: #ffffff;
+ --muted: #606060;
+ --subtle: #282828;
+ --accent-line: #ffffff;
+ --danger: #ff3b3b;
+ --success: #22c55e;
+ --warning: #f59e0b;
+ --radius: 0px;
+ --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ia-wrap {
+ font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+ background: var(--bg);
+ color: var(--text);
+ min-height: 100vh;
+ -webkit-font-smoothing: antialiased;
+}
+/* ── LOADING ── */
+.ia-loading {
+ position: fixed; inset: 0;
+ background: var(--bg);
+ display: flex; flex-direction: column;
+ align-items: center; justify-content: center;
+ z-index: 9999;
+ gap: 1.5rem;
+ transition: opacity 0.4s ease;
+}
+.ia-loading.out { opacity: 0; pointer-events: none; }
+.ia-spinner {
+ width: 36px; height: 36px;
+ border: 2px solid var(--border);
+ border-top-color: var(--text);
+ border-radius: 50%;
+ animation: spin 0.8s linear infinite;
+}
+.ia-loading p {
+ font-size: 0.7rem;
+ letter-spacing: 0.25em;
+ text-transform: uppercase;
+ color: var(--muted);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.ia-spin { animation: spin 1s linear infinite; }
+/* ── AUTH ── */
+.ia-auth {
+ display: flex; align-items: center; justify-content: center;
+ min-height: 100vh;
+}
+.ia-auth-card {
+ width: 100%; max-width: 380px;
+ border: 1px solid var(--border);
+ background: var(--surface);
+ padding: 3rem;
+ animation: fadeUp 0.4s ease both;
+}
+.ia-auth-logo {
+ font-size: 0.65rem;
+ letter-spacing: 0.4em;
+ text-transform: uppercase;
+ color: var(--muted);
+ margin-bottom: 2.5rem;
+ text-align: center;
+}
+.ia-auth-card h2 {
+ font-size: 1.4rem;
+ font-weight: 700;
+ letter-spacing: 0.05em;
+ text-transform: uppercase;
+ margin-bottom: 2rem;
+ text-align: center;
+}
+.ia-auth-err {
+ font-size: 0.75rem;
+ color: var(--danger);
+ text-align: center;
+ margin-top: 1rem;
+ display: none;
+}
+.ia-auth-err.show { display: block; }
+/* ── LAYOUT ── */
+.ia-layout { display: flex; min-height: 100vh; }
+.ia-sidebar {
+ width: 220px;
+ background: var(--surface);
+ border-right: 1px solid var(--border);
+ padding: 2rem 0;
+ display: flex;
+ flex-direction: column;
+ position: fixed; top: 0; left: 0; bottom: 0;
+ z-index: 100;
+ transition: transform var(--transition);
+ box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+}
+.ia-sidebar.collapsed {
+ transform: translateX(-100%);
+}
+.ia-sidebar-toggle {
+ display: flex;
+ position: fixed;
+ top: 1.5rem;
+ left: 230px;
+ z-index: 101;
+ width: 28px;
+ height: 28px;
+ background: var(--surface);
+ border: 1px solid var(--border);
+ border-radius: 2px;
+ cursor: pointer;
+ align-items: center;
+ justify-content: center;
+ transition: all var(--transition);
+}
+.ia-sidebar-toggle.shifted {
+ left: 1rem;
+}
+.ia-sidebar-toggle:hover {
+ background: var(--subtle);
+ border-color: var(--border-hover);
+}
+.ia-sidebar-toggle svg {
+ width: 16px;
+ height: 16px;
+ stroke: var(--text);
+ transition: transform var(--transition);
+}
+.ia-sidebar-toggle.shifted svg {
+ transform: rotate(180deg);
+}
+.ia-overlay {
+ display: none;
+ position: fixed;
+ inset: 0;
+ background: rgba(0, 0, 0, 0.5);
+ z-index: 99;
+ backdrop-filter: blur(2px);
+}
+.ia-overlay.active {
+ display: block;
+}
+.ia-sidebar-logo {
+ padding: 0 1.5rem 2rem;
+ border-bottom: 1px solid var(--border);
+ margin-bottom: 1.5rem;
+}
+.ia-sidebar-logo span {
+ font-size: 0.6rem;
+ letter-spacing: 0.4em;
+ text-transform: uppercase;
+ color: var(--muted);
+ display: block;
+ margin-bottom: 0.3rem;
+}
+.ia-sidebar-logo strong {
+ font-size: 0.9rem;
+ font-weight: 700;
+ letter-spacing: 0.1em;
+ text-transform: uppercase;
+}
+.ia-sidebar-nav {
+ flex: 1;
+ padding: 0 1rem;
+}
+.ia-nav-item {
+ display: flex; align-items: center; gap: 0.75rem;
+ padding: 0.7rem 0.75rem;
+ border-radius: 2px;
+ font-size: 0.78rem;
+ font-weight: 500;
+ letter-spacing: 0.05em;
+ color: var(--muted);
+ cursor: pointer;
+ transition: all var(--transition);
+ text-transform: uppercase;
+}
+.ia-nav-item:hover, .ia-nav-item.active { color: var(--text); background: var(--subtle); }
+.ia-sidebar-footer {
+ padding: 1.5rem;
+ border-top: 1px solid var(--border);
+}
+.ia-logout-btn {
+ width: 100%;
+ font-size: 0.7rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ padding: 0.6rem 1rem;
+ background: transparent;
+ border: 1px solid var(--border);
+ color: var(--muted);
+ cursor: pointer;
+ transition: all var(--transition);
+ font-family: inherit;
+}
+.ia-logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+/* ── MAIN ── */
+.ia-main {
+ flex: 1;
+ margin-left: 220px;
+ display: flex;
+ flex-direction: column;
+ min-height: 100vh;
+ transition: margin-left var(--transition);
+}
+.ia-main.expanded {
+ margin-left: 0;
+}
+.ia-topbar {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ padding: 1.5rem 2.5rem;
+ border-bottom: 1px solid var(--border);
+ background: var(--bg);
+ position: sticky; top: 0;
+ z-index: 50;
+}
+.ia-topbar-mobile-toggle {
+ display: none;
+ background: none;
+ border: none;
+ cursor: pointer;
+ padding: 0.5rem;
+ margin-right: 1rem;
+}
+.ia-topbar-mobile-toggle svg {
+ width: 24px;
+ height: 24px;
+ stroke: var(--text);
+}
+.ia-topbar h1 {
+ font-size: 1rem;
+ font-weight: 700;
+ letter-spacing: 0.15em;
+ text-transform: uppercase;
+}
+.ia-topbar-meta {
+ font-size: 0.7rem;
+ color: var(--muted);
+ letter-spacing: 0.1em;
+}
+.ia-content { padding: 2rem 1.5rem; flex: 1; max-width: 100%; overflow-x: visible; }
+/* Messages page – properly aligned and centered on all devices */
+#page-messages {
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.ia-messages-container {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.ia-messages-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+.ia-messages-header h2 { margin: 0; }
+.ia-messages-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25rem;
+}
+.ia-messages-filter-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 1.5rem;
+}
+.ia-messages-filter-row select {
+  width: 100%;
+  max-width: 320px;
+}
+.ia-messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+@media (max-width: 640px) {
+  #page-messages { padding: 1.25rem 1rem; }
+  .ia-messages-header { margin-bottom: 1.25rem; }
+  .ia-messages-header h2 { font-size: 1.1rem; }
+  .ia-messages-header .ia-btn { width: 100%; justify-content: center; }
+  .ia-messages-filter-row select { max-width: 100%; }
+}
+/* ── STAT STRIP ── */
+.ia-stat-strip {
+ display: grid;
+ grid-template-columns: repeat(3, 1fr);
+ gap: 1px;
+ background: var(--border);
+ border: 1px solid var(--border);
+ margin-bottom: 2.5rem;
+}
+.ia-stat-cell {
+ background: var(--surface);
+ padding: 1.75rem 2rem;
+ position: relative;
+ overflow: hidden;
+ transition: background var(--transition);
+}
+.ia-stat-cell:hover { background: var(--surface-2); }
+.ia-stat-cell::before {
+ content: '';
+ position: absolute;
+ bottom: 0; left: 0; right: 0;
+ height: 2px;
+ background: var(--text);
+ transform: scaleX(0);
+ transform-origin: left;
+ transition: transform 0.4s cubic-bezier(0.4,0,0.2,1);
+}
+.ia-stat-cell:hover::before { transform: scaleX(1); }
+.ia-stat-label {
+ font-size: 0.65rem;
+ letter-spacing: 0.25em;
+ text-transform: uppercase;
+ color: var(--muted);
+ margin-bottom: 0.75rem;
+ font-weight: 500;
+}
+.ia-stat-value {
+ font-size: 2.2rem;
+ font-weight: 900;
+ line-height: 1;
+ letter-spacing: -0.02em;
+}
+/* ── TABLE SECTION ── */
+.ia-section-header {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ margin-bottom: 1.25rem;
+}
+.ia-section-title {
+ font-size: 0.65rem;
+ letter-spacing: 0.3em;
+ text-transform: uppercase;
+ color: var(--muted);
+ font-weight: 600;
+}
+.ia-table-wrap {
+ border: 1px solid var(--border);
+ overflow-y: visible;
+ -webkit-overflow-scrolling: touch;
+ position: relative;
+}
+/* Custom scrollbar for table */
+.ia-table-wrap::-webkit-scrollbar {
+ height: 8px;
+}
+.ia-table-wrap::-webkit-scrollbar-track {
+ background: var(--surface);
+}
+.ia-table-wrap::-webkit-scrollbar-thumb {
+ background: var(--border-hover);
+ border-radius: 4px;
+}
+.ia-table-wrap::-webkit-scrollbar-thumb:hover {
+ background: var(--muted);
+}
+.ia-table {
+ width: 100%;
+ border-collapse: collapse;
+}
+.ia-table thead tr {
+ background: var(--surface);
+ border-bottom: 1px solid var(--border);
+}
+.ia-table th {
+ padding: 0.85rem 0.6rem;
+ font-size: 0.58rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ color: var(--muted);
+ text-align: left;
+ font-weight: 600;
+ white-space: nowrap;
+}
+.ia-table td {
+ padding: 0.9rem 0.6rem;
+ border-bottom: 1px solid var(--border);
+ font-size: 0.8rem;
+ vertical-align: middle;
+}
+/* Actions column - ensure buttons fit */
+.ia-table th:last-child,
+.ia-table td:last-child {
+ white-space: nowrap;
+}
+.ia-table tbody tr { transition: background var(--transition); }
+.ia-table tbody tr:hover td { background: var(--surface); }
+.ia-table tbody tr:last-child td { border-bottom: none; }
+.ia-table .td-name { font-weight: 600; letter-spacing: 0.02em; }
+.ia-table .td-code {
+ font-family: 'SF Mono', 'Fira Code', monospace;
+ font-size: 0.78rem;
+ background: var(--subtle);
+ padding: 0.2rem 0.6rem;
+ letter-spacing: 0.08em;
+ border: 1px solid var(--border);
+ display: inline-block;
+}
+.ia-table .td-commission {
+ font-weight: 700;
+ font-size: 0.9rem;
+}
+.ia-table .td-discount {
+ font-weight: 700;
+ font-size: 0.9rem;
+ color: var(--success);
+}
+.ia-table .td-usage {
+ font-size: 0.85rem;
+ color: var(--muted);
+ text-align: center;
+}
+.ia-table .td-orders {
+ color: var(--muted);
+ font-size: 0.8rem;
+}
+.ia-table .td-date {
+ color: var(--muted);
+ font-size: 0.75rem;
+}
+.ia-copy-btn {
+ display: inline-flex; align-items: center; gap: 0.3rem;
+ padding: 0.3rem 0.55rem;
+ background: transparent;
+ border: 1px solid var(--border);
+ color: var(--muted);
+ font-size: 0.6rem;
+ letter-spacing: 0.08em;
+ text-transform: uppercase;
+ cursor: pointer;
+ font-family: inherit;
+ transition: all var(--transition);
+ white-space: nowrap;
+}
+.ia-copy-btn:hover { border-color: var(--text); color: var(--text); }
+.ia-copy-btn.copied { border-color: var(--success); color: var(--success); }
+/* Row action buttons */
+.ia-row-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: nowrap; }
+.ia-action-btn {
+ padding: 0.35rem 0.65rem;
+ font-size: 0.55rem;
+ letter-spacing: 0.12em;
+ text-transform: uppercase;
+ font-weight: 700;
+ font-family: inherit;
+ cursor: pointer;
+ border: 1px solid;
+ background: transparent;
+ border-radius: 4px;
+ transition: all 0.2s ease;
+ white-space: nowrap;
+ position: relative;
+ z-index: 1;
+ pointer-events: auto;
+}
+.ia-action-btn.view { border-color: var(--success); color: var(--success); background: rgba(34, 197, 94, 0.08); }
+.ia-action-btn.view:hover { background: rgba(34, 197, 94, 0.18); transform: translateY(-1px); }
+.ia-action-btn.payouts { border-color: var(--border); color: var(--muted); }
+.ia-action-btn.payouts:hover { border-color: var(--text); color: var(--text); }
+.ia-action-btn.edit { border-color: var(--border); color: var(--muted); }
+.ia-action-btn.edit:hover { border-color: var(--text); color: var(--text); }
+.ia-action-btn.approve { border-color: var(--success); color: var(--success); background: rgba(34, 197, 94, 0.08); }
+.ia-action-btn.approve:hover { background: rgba(34, 197, 94, 0.18); }
+.ia-action-btn.reject { border-color: var(--danger); color: var(--danger); }
+.ia-action-btn.reject:hover { background: rgba(239, 68, 68, 0.1); }
+.ia-action-btn.remove { border-color: transparent; color: var(--muted); }
+.ia-action-btn.remove:hover { border-color: var(--danger); color: var(--danger); background: rgba(239, 68, 68, 0.08); }
+/* ── EMPTY STATE ── */
+.ia-empty {
+ text-align: center;
+ padding: 5rem 2rem;
+ color: var(--muted);
+}
+.ia-empty h3 {
+ font-size: 0.8rem;
+ text-transform: uppercase;
+ letter-spacing: 0.2em;
+ margin-bottom: 0.5rem;
+ color: var(--text);
+}
+.ia-empty p { font-size: 0.78rem; }
+/* ── BUTTONS ── */
+.ia-btn {
+ display: inline-flex; align-items: center; gap: 0.5rem;
+ padding: 0.75rem 1.5rem;
+ font-family: inherit;
+ font-weight: 600;
+ font-size: 0.72rem;
+ letter-spacing: 0.15em;
+ text-transform: uppercase;
+ cursor: pointer;
+ border: none;
+ transition: all var(--transition);
+}
+.ia-btn-primary {
+ background: var(--text);
+ color: var(--bg);
+}
+.ia-btn-primary:hover {
+ background: #d4d4d4;
+ transform: translateY(-1px);
+}
+.ia-btn-ghost {
+ background: transparent;
+ color: var(--muted);
+ border: 1px solid var(--border);
+}
+.ia-btn-ghost:hover { border-color: var(--border-hover); color: var(--text); }
+.ia-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+/* ── FORM ── */
+.ia-form-group { margin-bottom: 1rem; }
+.ia-form-group label {
+ display: block;
+ font-size: 0.62rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ color: var(--muted);
+ margin-bottom: 0.5rem;
+ font-weight: 600;
+}
+.ia-input {
+ width: 100%;
+ background: var(--bg);
+ border: 1px solid var(--border);
+ padding: 0.8rem 1rem;
+ color: var(--text);
+ font-family: inherit;
+ font-size: 0.88rem;
+ transition: border-color var(--transition);
+ outline: none;
+}
+.ia-input:focus { border-color: var(--text); }
+.ia-input::placeholder { color: var(--muted); }
+.ia-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.ia-form-hint {
+ font-size: 0.65rem;
+ color: var(--muted);
+ margin-top: 0.4rem;
+ letter-spacing: 0.05em;
+}
+/* ── MODAL ── */
+.ia-modal-overlay {
+ position: fixed !important; inset: 0 !important;
+ background: rgba(0,0,0,0.85) !important;
+ backdrop-filter: blur(8px);
+ display: none; align-items: center; justify-content: center;
+ z-index: 99999 !important;
+ padding: 1rem;
+}
+.ia-modal-overlay.open { display: flex !important; }
+.ia-modal-box {
+ background: #0a0a0a !important;
+ border: 1px solid #1f1f1f !important;
+ width: 100% !important; max-width: 520px !important;
+ max-height: 90vh !important;
+ overflow-y: auto !important;
+ padding: 2rem !important;
+ color: #ffffff !important;
+ position: relative !important;
+ z-index: 100000 !important;
+}
+.ia-modal-header {
+ display: flex; align-items: center; justify-content: space-between;
+ margin-bottom: 1.5rem;
+ padding-bottom: 1rem;
+ border-bottom: 1px solid var(--border);
+}
+.ia-modal-title {
+ font-size: 0.8rem;
+ font-weight: 700;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+}
+.ia-modal-close {
+ background: none; border: none;
+ color: var(--muted); cursor: pointer;
+ font-size: 1.2rem; line-height: 1;
+ padding: 0.25rem;
+ transition: color var(--transition);
+}
+.ia-modal-close:hover { color: var(--text); }
+.ia-modal-actions {
+ display: flex; gap: 0.75rem;
+ margin-top: 1.5rem;
+ padding-top: 1rem;
+ border-top: 1px solid var(--border);
+}
+.ia-modal-actions .ia-btn { flex: 1; justify-content: center; }
+.ia-modal-error {
+ font-size: 0.72rem;
+ color: var(--danger);
+ margin-top: 0.75rem;
+ display: none;
+}
+.ia-modal-error.show { display: block; }
+/* ── TOAST ── */
+.ia-toast {
+ position: fixed;
+ bottom: 2rem; right: 2rem;
+ background: var(--text);
+ color: var(--bg);
+ padding: 1rem 1.5rem;
+ font-size: 0.78rem;
+ font-weight: 600;
+ letter-spacing: 0.05em;
+ border-left: 3px solid var(--bg);
+ transform: translateY(4rem);
+ opacity: 0;
+ transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+ z-index: 9000;
+ pointer-events: none;
+}
+.ia-toast.show { transform: translateY(0); opacity: 1; }
+.ia-toast.error { background: var(--danger); color: #fff; }
+/* ── STATS MODAL STYLES ── */
+.ia-stats-filter {
+ background: var(--surface);
+ border: 1px solid var(--border);
+ padding: 1.5rem;
+ margin-bottom: 1.5rem;
+}
+.ia-filter-row {
+ display: flex;
+ gap: 1rem;
+ flex-wrap: wrap;
+}
+.ia-filter-group {
+ flex: 1;
+ min-width: 150px;
+}
+.ia-filter-group label {
+ display: block;
+ font-size: 0.6rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ color: var(--muted);
+ margin-bottom: 0.5rem;
+ font-weight: 600;
+}
+.ia-filter-label {
+ display: block;
+ font-size: 0.6rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ color: var(--muted);
+ margin-bottom: 0.5rem;
+ font-weight: 600;
+}
+.ia-range-buttons {
+ display: flex;
+ gap: 0;
+ border: 1px solid var(--border);
+}
+.ia-range-btn {
+ padding: 0.5rem 1rem;
+ font-size: 0.65rem;
+ letter-spacing: 0.1em;
+ text-transform: uppercase;
+ font-weight: 600;
+ font-family: inherit;
+ background: transparent;
+ border: none;
+ border-right: 1px solid var(--border);
+ color: var(--muted);
+ cursor: pointer;
+ transition: all var(--transition);
+}
+.ia-range-btn:last-child { border-right: none; }
+.ia-range-btn:hover { color: var(--text); background: var(--surface-2); }
+.ia-range-btn.active {
+ background: var(--text);
+ color: var(--bg);
+}
+.ia-stats-grid {
+ display: grid;
+ grid-template-columns: repeat(4, 1fr);
+ gap: 1px;
+ background: var(--border);
+ border: 1px solid var(--border);
+}
+.ia-stat-box {
+ background: var(--surface);
+ padding: 1.5rem;
+ text-align: center;
+}
+.ia-stat-box.highlight {
+ background: var(--surface-2);
+}
+.ia-stat-box-label {
+ font-size: 0.6rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ color: var(--muted);
+ margin-bottom: 0.75rem;
+}
+.ia-stat-box-value {
+ font-size: 1.75rem;
+ font-weight: 900;
+ letter-spacing: -0.02em;
+ color: var(--text);
+}
+.ia-stat-box.highlight .ia-stat-box-value {
+ color: var(--success);
+}
+.ia-stat-box-sub {
+ font-size: 0.65rem;
+ color: var(--muted);
+ margin-top: 0.5rem;
+ letter-spacing: 0.1em;
+}
+.ia-conversions-list {
+ border: 1px solid var(--border);
+ max-height: 300px;
+ overflow-y: auto;
+}
+.ia-conversion-item {
+ display: flex;
+ justify-content: space-between;
+ align-items: center;
+ padding: 1rem 1.25rem;
+ border-bottom: 1px solid var(--border);
+ background: var(--surface);
+ transition: background var(--transition);
+}
+.ia-conversion-item:hover { background: var(--surface-2); }
+.ia-conversion-item:last-child { border-bottom: none; }
+.ia-conversion-order {
+ font-weight: 600;
+ font-size: 0.85rem;
+ letter-spacing: 0.02em;
+}
+.ia-conversion-date {
+ font-size: 0.7rem;
+ color: var(--muted);
+ margin-top: 0.2rem;
+}
+.ia-conversion-total {
+ font-weight: 700;
+ font-size: 0.95rem;
+ color: var(--success);
+}
+.ia-conversion-empty {
+ text-align: center;
+ padding: 3rem;
+ color: var(--muted);
+ font-size: 0.8rem;
+}
+.ia-conversion-loading {
+ text-align: center;
+ padding: 2rem;
+}
+.ia-conversion-loading::after {
+ content: '';
+ display: inline-block;
+ width: 24px;
+ height: 24px;
+ border: 2px solid var(--border);
+ border-top-color: var(--text);
+ border-radius: 50%;
+ animation: spin 0.8s linear infinite;
+}
+/* ── LEADERBOARD ── */
+.ia-leaderboard-card {
+ border: 1px solid var(--border);
+ background: var(--surface);
+ margin-bottom: 2rem;
+}
+.ia-leaderboard-header {
+ display: flex; justify-content: space-between; align-items: center;
+ padding: 1.25rem 1.5rem;
+ border-bottom: 1px solid var(--border);
+}
+.ia-leaderboard-header h3 {
+ font-size: 0.85rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.ia-lb-range-btns { display: flex; gap: 0.5rem; }
+.ia-lb-range-btn {
+ padding: 0.35rem 0.75rem; font-size: 0.7rem; letter-spacing: 0.05em;
+ background: transparent; border: 1px solid var(--border); color: var(--muted);
+ cursor: pointer; transition: all var(--transition);
+}
+.ia-lb-range-btn.active, .ia-lb-range-btn:hover {
+ background: var(--text); color: var(--bg); border-color: var(--text);
+}
+.ia-lb-table { width: 100%; border-collapse: collapse; }
+.ia-lb-table th {
+ text-align: left; padding: 0.75rem 1.5rem; font-size: 0.6rem;
+ letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted);
+ border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.ia-lb-table td {
+ padding: 0.85rem 1.5rem; font-size: 0.8rem; border-bottom: 1px solid var(--border);
+}
+.ia-lb-table tr:last-child td { border-bottom: none; }
+.ia-lb-rank {
+ display: inline-flex; align-items: center; justify-content: center;
+ width: 24px; height: 24px; border-radius: 50%;
+ background: var(--subtle); font-size: 0.7rem; font-weight: 700;
+}
+.ia-lb-rank.top1 { background: var(--text); color: var(--bg); }
+.ia-lb-name { font-weight: 600; }
+.ia-lb-revenue { font-weight: 700; }
+.ia-lb-empty { text-align: center; padding: 2rem; color: var(--muted); font-size: 0.8rem; }
+/* ── PREMIUM LEADERBOARD PAGE ─ */
+.ia-lb-page-header {
+ display: flex;
+ justify-content: space-between;
+ align-items: flex-start;
+ margin-bottom: 2rem;
+ padding-bottom: 1.5rem;
+ border-bottom: 1px solid var(--border);
+}
+.ia-lb-page-title {
+ font-size: 1.75rem;
+ font-weight: 800;
+ letter-spacing: -0.02em;
+ margin: 0 0 0.5rem 0;
+ background: linear-gradient(135deg, #fff 0%, #a0aec0 100%);
+ -webkit-background-clip: text;
+ -webkit-text-fill-color: transparent;
+ background-clip: text;
+}
+.ia-lb-page-subtitle {
+ font-size: 0.9rem;
+ color: var(--muted);
+ margin: 0;
+}
+.ia-lb-range-selector {
+ display: flex;
+ gap: 0.5rem;
+ background: var(--surface);
+ padding: 0.5rem;
+ border: 1px solid var(--border);
+ border-radius: 8px;
+}
+.ia-lb-range-selector .ia-lb-range-btn {
+ padding: 0.5rem 1rem;
+ font-size: 0.75rem;
+ border-radius: 6px;
+}
+.ia-lb-stats-grid {
+ display: grid;
+ grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+ gap: 1.5rem;
+ margin-bottom: 2.5rem;
+}
+.ia-lb-stat-card {
+ background: var(--surface);
+ border: 1px solid var(--border);
+ border-radius: 12px;
+ padding: 1.5rem;
+ display: flex;
+ align-items: center;
+ gap: 1rem;
+ transition: all var(--transition);
+}
+.ia-lb-stat-card:hover {
+ transform: translateY(-2px);
+ box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+ border-color: var(--border-hover);
+}
+.ia-lb-stat-icon {
+ width: 48px;
+ height: 48px;
+ border-radius: 12px;
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ flex-shrink: 0;
+}
+.ia-lb-stat-label {
+ font-size: 0.75rem;
+ color: var(--muted);
+ text-transform: uppercase;
+ letter-spacing: 0.05em;
+ margin-bottom: 0.25rem;
+}
+.ia-lb-stat-value {
+ font-size: 1.5rem;
+ font-weight: 800;
+ letter-spacing: -0.02em;
+}
+/* Podium */
+.ia-lb-podium-container {
+ margin-bottom: 2.5rem;
+ min-height: 280px;
+}
+.ia-lb-podium-loading {
+ text-align: center;
+ padding: 4rem;
+ color: var(--muted);
+}
+.ia-lb-podium {
+ display: flex;
+ justify-content: center;
+ align-items: flex-end;
+ gap: 1.5rem;
+ padding: 2rem 0;
+}
+.ia-lb-podium-item {
+ display: flex;
+ flex-direction: column;
+ align-items: center;
+ text-align: center;
+ transition: all var(--transition);
+}
+.ia-lb-podium-item:hover {
+ transform: translateY(-5px);
+}
+.ia-lb-podium-avatar {
+ width: 80px;
+ height: 80px;
+ border-radius: 50%;
+ background: var(--subtle);
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ font-size: 1.75rem;
+ font-weight: 800;
+ margin-bottom: 1rem;
+ border: 3px solid var(--border);
+ position: relative;
+}
+.ia-lb-podium-item.rank-1 .ia-lb-podium-avatar {
+ width: 100px;
+ height: 100px;
+ font-size: 2.25rem;
+ background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+ border-color: #ffd700;
+ color: #1a1a1a;
+}
+.ia-lb-podium-item.rank-2 .ia-lb-podium-avatar {
+ background: linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 100%);
+ border-color: #c0c0c0;
+ color: #1a1a1a;
+}
+.ia-lb-podium-item.rank-3 .ia-lb-podium-avatar {
+ background: linear-gradient(135deg, #cd7f32 0%, #e8a87c 100%);
+ border-color: #cd7f32;
+ color: #1a1a1a;
+}
+.ia-lb-podium-badge {
+ position: absolute;
+ top: -8px;
+ right: -8px;
+ width: 28px;
+ height: 28px;
+ border-radius: 50%;
+ background: var(--text);
+ color: var(--bg);
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ font-size: 0.75rem;
+ font-weight: 800;
+ border: 2px solid var(--bg);
+}
+.ia-lb-podium-name {
+ font-size: 1rem;
+ font-weight: 700;
+ margin-bottom: 0.25rem;
+ max-width: 120px;
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+}
+.ia-lb-podium-code {
+ font-size: 0.7rem;
+ color: var(--muted);
+ margin-bottom: 0.5rem;
+}
+.ia-lb-podium-revenue {
+ font-size: 1.25rem;
+ font-weight: 800;
+ margin-bottom: 0.25rem;
+}
+.ia-lb-podium-orders {
+ font-size: 0.75rem;
+ color: var(--muted);
+}
+.ia-lb-podium-bar {
+ width: 120px;
+ margin-top: 1rem;
+}
+.ia-lb-podium-item.rank-1 .ia-lb-podium-bar {
+ height: 160px;
+ background: linear-gradient(180deg, #ffd700 0%, rgba(255, 215, 0, 0.1) 100%);
+ border-radius: 8px 8px 0 0;
+}
+.ia-lb-podium-item.rank-2 .ia-lb-podium-bar {
+ height: 120px;
+ background: linear-gradient(180deg, #c0c0c0 0%, rgba(192, 192, 192, 0.1) 100%);
+ border-radius: 8px 8px 0 0;
+}
+.ia-lb-podium-item.rank-3 .ia-lb-podium-bar {
+ height: 90px;
+ background: linear-gradient(180deg, #cd7f32 0%, rgba(205, 127, 50, 0.1) 100%);
+ border-radius: 8px 8px 0 0;
+}
+/* Full Table */
+.ia-lb-table-container {
+ background: var(--surface);
+ border: 1px solid var(--border);
+ border-radius: 12px;
+ overflow: hidden;
+}
+.ia-lb-table-header {
+ display: flex;
+ justify-content: space-between;
+ align-items: center;
+ padding: 1.25rem 1.5rem;
+ border-bottom: 1px solid var(--border);
+}
+.ia-lb-table-header h3 {
+ font-size: 1rem;
+ font-weight: 700;
+ margin: 0;
+}
+.ia-lb-search {
+ display: flex;
+ align-items: center;
+ gap: 0.5rem;
+ background: var(--bg);
+ border: 1px solid var(--border);
+ padding: 0.5rem 1rem;
+ border-radius: 8px;
+ transition: all var(--transition);
+}
+.ia-lb-search:focus-within {
+ border-color: var(--text);
+}
+.ia-lb-search svg {
+ color: var(--muted);
+ flex-shrink: 0;
+}
+.ia-lb-search input {
+ border: none;
+ background: transparent;
+ color: var(--text);
+ font-size: 0.85rem;
+ outline: none;
+ width: 200px;
+}
+.ia-lb-search input::placeholder {
+ color: var(--muted);
+}
+.ia-lb-table-wrapper {
+ overflow-x: auto;
+}
+.ia-lb-full-table {
+ width: 100%;
+ border-collapse: collapse;
+}
+.ia-lb-full-table thead {
+ background: var(--surface-2);
+}
+.ia-lb-full-table th {
+ text-align: left;
+ padding: 1rem 1.5rem;
+ font-size: 0.7rem;
+ font-weight: 700;
+ letter-spacing: 0.1em;
+ text-transform: uppercase;
+ color: var(--muted);
+ border-bottom: 1px solid var(--border);
+}
+.ia-lb-full-table td {
+ padding: 1rem 1.5rem;
+ font-size: 0.85rem;
+ border-bottom: 1px solid var(--border);
+ vertical-align: middle;
+}
+.ia-lb-full-table tbody tr {
+ transition: background var(--transition);
+}
+.ia-lb-full-table tbody tr:hover {
+ background: var(--subtle);
+}
+.ia-lb-full-table tbody tr:last-child td {
+ border-bottom: none;
+}
+.ia-lb-rank-badge {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ width: 32px;
+ height: 32px;
+ border-radius: 8px;
+ font-size: 0.85rem;
+ font-weight: 800;
+ background: var(--subtle);
+}
+.ia-lb-rank-badge.rank-1 {
+ background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+ color: #1a1a1a;
+}
+.ia-lb-rank-badge.rank-2 {
+ background: linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 100%);
+ color: #1a1a1a;
+}
+.ia-lb-rank-badge.rank-3 {
+ background: linear-gradient(135deg, #cd7f32 0%, #e8a87c 100%);
+ color: #1a1a1a;
+}
+.ia-lb-influencer-cell {
+ display: flex;
+ align-items: center;
+ gap: 0.75rem;
+}
+.ia-lb-influencer-avatar {
+ width: 36px;
+ height: 36px;
+ border-radius: 50%;
+ background: var(--subtle);
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ font-size: 0.85rem;
+ font-weight: 700;
+ flex-shrink: 0;
+}
+.ia-lb-influencer-name {
+ font-weight: 600;
+}
+.ia-lb-code {
+ font-family: 'Courier New', monospace;
+ font-size: 0.8rem;
+ color: var(--muted);
+ background: var(--bg);
+ padding: 0.25rem 0.5rem;
+ border-radius: 4px;
+}
+.ia-lb-revenue-cell {
+ font-weight: 700;
+ font-size: 0.95rem;
+}
+.ia-lb-status-badge {
+ display: inline-block;
+ padding: 0.35rem 0.75rem;
+ border-radius: 20px;
+ font-size: 0.7rem;
+ font-weight: 600;
+ text-transform: uppercase;
+ letter-spacing: 0.05em;
+}
+.ia-lb-status-badge.active {
+ background: rgba(72, 187, 120, 0.15);
+ color: #48bb78;
+ border: 1px solid rgba(72, 187, 120, 0.3);
+}
+.ia-lb-status-badge.pending {
+ background: rgba(237, 137, 54, 0.15);
+ color: #ed8936;
+ border: 1px solid rgba(237, 137, 54, 0.3);
+}
+.ia-lb-status-badge.suspended {
+ background: rgba(245, 101, 101, 0.15);
+ color: #f56565;
+ border: 1px solid rgba(245, 101, 101, 0.3);
+}
+.ia-lb-table-loading {
+ text-align: center;
+ padding: 3rem;
+ color: var(--muted);
+}
+.ia-lb-no-results {
+ text-align: center;
+ padding: 3rem;
+ color: var(--muted);
+}
+/* ── TABS ── */
+.ia-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; gap: 0; }
+.ia-tab-btn {
+ padding: 0.75rem 1.25rem; font-size: 0.7rem; letter-spacing: 0.1em;
+ text-transform: uppercase; background: transparent; border: none;
+ color: var(--muted); cursor: pointer; position: relative;
+ transition: color var(--transition);
+}
+.ia-tab-btn.active { color: var(--text); }
+.ia-tab-btn.active::after {
+ content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+ height: 2px; background: var(--text);
+}
+.ia-tab-content { display: none; }
+.ia-tab-content.active { display: block; }
+/* ── MONTHLY BARS ── */
+.ia-monthly-bars { margin-top: 1.5rem; }
+.ia-monthly-bar-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+.ia-monthly-bar-label { width: 70px; font-size: 0.7rem; color: var(--muted); text-align: right; }
+.ia-monthly-bar-track { flex: 1; height: 20px; background: var(--surface-2); position: relative; }
+.ia-monthly-bar-fill { height: 100%; background: var(--text); transition: width 0.5s ease; }
+.ia-monthly-bar-value { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 0.65rem; font-weight: 700; }
+/* ── SHIPMENT TABLE ── */
+.ia-ship-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.ia-ship-table th {
+ text-align: left; padding: 0.6rem 0.75rem; font-size: 0.6rem;
+ letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+ border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.ia-ship-table td { padding: 0.7rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.ia-ship-table tr:last-child td { border-bottom: none; }
+.ia-ship-actions { display: flex; gap: 0.4rem; }
+.ia-ship-btn-sm {
+ padding: 0.25rem 0.5rem; font-size: 0.6rem; background: transparent;
+ border: 1px solid var(--border); color: var(--muted); cursor: pointer;
+ transition: all var(--transition);
+}
+.ia-ship-btn-sm:hover { background: var(--text); color: var(--bg); }
+/* ── PAYOUT TABLE ── */
+.ia-payout-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.ia-payout-table th {
+ text-align: left; padding: 0.6rem 0.75rem; font-size: 0.6rem;
+ letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+ border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.ia-payout-table td { padding: 0.7rem 0.75rem; border-bottom: 1px solid var(--border); }
+.ia-payout-table tr:last-child td { border-bottom: none; }
+.ia-payout-toggle {
+ padding: 0.3rem 0.6rem; font-size: 0.65rem; cursor: pointer;
+ border: 1px solid var(--border); background: transparent; color: var(--muted);
+ transition: all var(--transition);
+}
+.ia-payout-toggle.paid { background: var(--success); color: #fff; border-color: var(--success); }
+/* ── BADGES ── */
+.ia-badge { display: inline-block; padding: 0.2rem 0.5rem; font-size: 0.6rem; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; }
+.ia-badge.pending { background: var(--warning); color: #000; }
+.ia-badge.received { background: var(--success); color: #fff; }
+.ia-badge.overdue { background: var(--danger); color: #fff; }
+.ia-badge.paid { background: var(--success); color: #fff; }
+.ia-badge.unpaid { background: var(--muted); color: #fff; }
+@media (max-width: 768px) {
+ .ia-stats-grid { grid-template-columns: repeat(2, 1fr); }
+ .ia-range-buttons { flex-wrap: wrap; }
+ .ia-range-btn { flex: 1; min-width: 80px; border-right: none; border-bottom: 1px solid var(--border); }
+}
+/* ── ANIMATIONS ── */
+@keyframes fadeUp {
+ from { opacity: 0; transform: translateY(12px); }
+ to { opacity: 1; transform: translateY(0); }
+}
+.ia-row-enter {
+ animation: fadeUp 0.3s ease both;
+}
+.hidden { display: none !important; }
+/* ── RESPONSIVE ── */
+/* Medium screens (laptops/tablets 901-1280px) - sidebar collapsed by default for more room */
+@media (min-width: 901px) and (max-width: 1280px) {
+ .ia-content {
+ padding: 1.5rem 1.25rem;
+ }
+ .ia-topbar {
+ padding: 1.25rem 1.5rem;
+ }
+ .ia-table {
+ }
+ .ia-table th, .ia-table td {
+ padding: 0.75rem 0.6rem;
+ font-size: 0.75rem;
+ }
+ .ia-stat-cell {
+ padding: 1.25rem 1.5rem;
+ }
+ .ia-stat-value {
+ font-size: 1.8rem;
+ }
+ 
+ /* Table fits within container */
+ .ia-table-wrap {
+ overflow-x: hidden;
+ -webkit-overflow-scrolling: touch;
+ }
+ 
+ /* Action buttons stay visible and wrap properly */
+ .ia-table th:last-child,
+ .ia-table td:last-child {
+ min-width: 180px;
+ white-space: nowrap;
+ }
+ 
+ .ia-row-actions {
+ display: flex;
+ flex-wrap: nowrap;
+ gap: 0.35rem;
+ justify-content: flex-start;
+ }
+ 
+ .ia-action-btn {
+ padding: 0.3rem 0.5rem;
+ font-size: 0.6rem;
+ }
+}
+/* Smaller laptops (1024-1100px) - extra space for actions */
+@media (min-width: 1024px) and (max-width: 1100px) {
+ .ia-table th:last-child,
+ .ia-table td:last-child {
+ min-width: 200px;
+ padding-right: 1rem;
+ }
+}
+/* Tablet range (769-900px) - compact horizontal table */
+@media (min-width: 769px) and (max-width: 900px) {
+ .ia-content {
+ padding: 1.25rem 1rem;
+ }
+ .ia-table {
+ }
+ .ia-table th, .ia-table td {
+ padding: 0.7rem 0.55rem;
+ font-size: 0.72rem;
+ }
+ .ia-table th {
+ font-size: 0.55rem;
+ }
+ .ia-action-btn {
+ padding: 0.25rem 0.4rem;
+ font-size: 0.55rem;
+ }
+}
+/* Mobile / Tablet (≤900px) */
+@media (max-width: 900px) {
+ .ia-sidebar {
+ transform: translateX(-100%);
+ box-shadow: none;
+ width: 260px;
+ }
+ 
+ .ia-sidebar.open {
+ transform: translateX(0);
+ box-shadow: 5px 0 20px rgba(0, 0, 0, 0.5);
+ }
+ 
+ .ia-sidebar-toggle {
+ display: none !important;
+ }
+ 
+ .ia-main {
+ margin-left: 0 !important;
+ width: 100%;
+ }
+ 
+ .ia-topbar {
+ padding: 1.25rem 1rem;
+ gap: 0.5rem;
+ }
+ 
+ .ia-topbar h1 {
+ font-size: 0.85rem;
+ }
+ 
+ .ia-topbar-mobile-toggle {
+ display: flex;
+ }
+ 
+ .ia-content {
+ padding: 1.25rem 0.75rem;
+ overflow-x: visible;
+ }
+ 
+ .ia-stat-strip {
+ grid-template-columns: 1fr;
+ }
+ 
+ .ia-stat-cell {
+ padding: 1.25rem 1.5rem;
+ }
+ 
+ .ia-stat-value {
+ font-size: 1.6rem;
+ }
+ 
+ /* Premium responsive table - card layout on mobile */
+ .ia-table-wrap {
+ overflow-x: visible;
+ border: none;
+ }
+ 
+ .ia-table {
+ width: 100%;
+ }
+ 
+ /* Hide table header on mobile */
+ .ia-table thead {
+ display: none;
+ }
+ 
+ /* Transform rows into premium cards */
+ .ia-table tbody tr {
+ display: block;
+ margin-bottom: 1rem;
+ border: 1px solid var(--border);
+ background: var(--surface);
+ border-radius: 8px;
+ overflow: hidden;
+ box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+ transition: all var(--transition);
+ }
+ 
+ .ia-table tbody tr:hover {
+ border-color: var(--border-hover);
+ box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+ transform: translateY(-2px);
+ }
+ 
+ .ia-table tbody td {
+ display: grid;
+ grid-template-columns: 120px 1fr;
+ gap: 0.5rem;
+ padding: 0.75rem 1rem;
+ border-bottom: 1px solid var(--border);
+ font-size: 0.8rem;
+ vertical-align: middle;
+ }
+ 
+ .ia-table tbody td:last-child {
+ border-bottom: none;
+ border-left: none;
+ box-shadow: none;
+ background: transparent;
+ position: static;
+ grid-column: 1 / -1;
+ padding-top: 1rem;
+ margin-top: 0.5rem;
+ border-top: 1px solid var(--border);
+ }
+ 
+ /* Add labels before each cell content */
+ .ia-table tbody td::before {
+ content: attr(data-label);
+ font-size: 0.65rem;
+ letter-spacing: 0.15em;
+ text-transform: uppercase;
+ color: var(--muted);
+ font-weight: 600;
+ }
+ 
+ /* Name field - special styling */
+ .ia-table tbody td:nth-child(1) {
+ background: var(--surface-2);
+ padding: 1rem;
+ grid-template-columns: 1fr;
+ gap: 0.25rem;
+ }
+ 
+ .ia-table tbody td:nth-child(1)::before {
+ content: 'Ambassador';
+ font-size: 0.6rem;
+ letter-spacing: 0.25em;
+ color: var(--muted);
+ }
+ 
+ .ia-table .td-name {
+ font-size: 1rem;
+ font-weight: 700;
+ letter-spacing: 0.02em;
+ }
+ 
+ /* Action buttons more compact on mobile */
+ .ia-action-btn {
+ padding: 0.35rem 0.6rem;
+ font-size: 0.6rem;
+ }
+ 
+ /* Ensure no horizontal overflow at page level */
+ .ia-wrap, .ia-layout, .ia-main {
+ overflow-x: visible;
+ }
+ 
+ /* Premium responsive table - card layout on mobile */
+ .ia-table-wrap {
+ overflow-x: visible;
+ border: none;
+ }
+ 
+ /* Card layout for table rows */
+ .ia-table {
+ width: 100%;
+ }
+ 
+ .ia-table thead {
+ display: none;
+ }
+ 
+ .ia-table tbody {
+ display: flex;
+ flex-direction: column;
+ gap: 0.75rem;
+ }
+ 
+ .ia-table tbody tr {
+ display: block;
+ background: var(--surface);
+ border: 1px solid var(--border);
+ border-radius: 6px;
+ padding: 1rem;
+ position: relative;
+ }
+ 
+ .ia-table tbody td {
+ display: grid;
+ grid-template-columns: 100px 1fr;
+ align-items: center;
+ padding: 0.4rem 0;
+ border: none;
+ text-align: left;
+ }
+ 
+ .ia-table tbody td::before {
+ content: attr(data-label);
+ font-size: 0.65rem;
+ font-weight: 600;
+ letter-spacing: 0.1em;
+ text-transform: uppercase;
+ color: var(--muted);
+ padding-right: 1rem;
+ }
+ 
+ .ia-table tbody td.td-name {
+ grid-column: 1 / -1;
+ font-size: 0.95rem;
+ font-weight: 700;
+ padding-bottom: 0.75rem;
+ border-bottom: 1px solid var(--border);
+ margin-bottom: 0.5rem;
+ }
+ 
+ .ia-table tbody td.td-name::before {
+ display: none;
+ }
+ 
+ /* Actions row at bottom of card */
+ .ia-table tbody td:last-child {
+ grid-column: 1 / -1;
+ padding-top: 0.75rem;
+ margin-top: 0.5rem;
+ border-top: 1px solid var(--border);
+ }
+ 
+ .ia-row-actions {
+ justify-content: flex-start;
+ flex-wrap: wrap;
+ gap: 0.5rem;
+ }
+ 
+ .ia-action-btn {
+ padding: 0.4rem 0.7rem;
+ font-size: 0.65rem;
+ }
+}
+/* Small mobile (≤480px) */
+@media (max-width: 480px) {
+ .ia-topbar h1 {
+ font-size: 0.75rem;
+ }
+ .ia-topbar-meta {
+ display: none;
+ }
+ .ia-content {
+ padding: 1rem 0.5rem;
+ }
+ .ia-stat-cell {
+ padding: 1rem 1.25rem;
+ }
+ .ia-stat-value {
+ font-size: 1.4rem;
+ }
+ 
+ /* Even more compact cards on small screens */
+ .ia-table tbody td {
+ grid-template-columns: 100px 1fr;
+ padding: 0.65rem 0.85rem;
+ font-size: 0.75rem;
+ }
+ 
+ .ia-table tbody td:nth-child(1) {
+ padding: 0.85rem;
+ }
+ 
+ .ia-table .td-name {
+ font-size: 0.9rem;
+ }
+ 
+ .ia-action-btn {
+ padding: 0.3rem 0.5rem;
+ font-size: 0.55rem;
+ }
+}
+/* ── SIDEBAR PENDING BADGE ── */
+.ia-nav-badge {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ min-width: 22px;
+ height: 20px;
+ padding: 0 6px;
+ margin-left: auto;
+ background: var(--warning);
+ color: #000;
+ font-size: 0.65rem;
+ font-weight: 800;
+ letter-spacing: 0.05em;
+ border-radius: 999px;
+}
+.ia-nav-badge.hidden { display: none; }
+/* ── STATUS FILTER BAR ── */
+.ia-filter-bar {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 0;
+ margin-bottom: 1.5rem;
+ border-bottom: 1px solid var(--border);
+}
+.ia-filter-btn {
+ display: inline-flex;
+ align-items: center;
+ gap: 0.5rem;
+ padding: 0.85rem 1.25rem;
+ background: transparent;
+ border: none;
+ border-bottom: 2px solid transparent;
+ color: var(--muted);
+ font-family: inherit;
+ font-size: 0.7rem;
+ font-weight: 700;
+ letter-spacing: 0.18em;
+ text-transform: uppercase;
+ cursor: pointer;
+ transition: color var(--transition), border-color var(--transition);
+ margin-bottom: -1px;
+}
+.ia-filter-btn:hover { color: var(--text); }
+.ia-filter-btn.active {
+ color: var(--text);
+ border-bottom-color: var(--text);
+}
+.ia-filter-count {
+ display: inline-block;
+ padding: 1px 7px;
+ background: var(--subtle);
+ color: var(--text);
+ font-size: 0.65rem;
+ font-weight: 700;
+ border-radius: 999px;
+}
+.ia-filter-btn.active .ia-filter-count {
+ background: var(--text);
+ color: var(--bg);
+}
+/* ── STATUS PILLS ── */
+.ia-pill {
+ display: inline-flex;
+ align-items: center;
+ padding: 3px 10px;
+ border: 1px solid currentColor;
+ font-size: 0.65rem;
+ font-weight: 700;
+ letter-spacing: 0.1em;
+ text-transform: uppercase;
+ border-radius: 999px;
+ white-space: nowrap;
+}
+.ia-pill.active { color: var(--success); }
+.ia-pill.pending { color: var(--warning); background: rgba(245, 158, 11, 0.08); }
+.ia-pill.suspended { color: var(--muted); }
+.ia-pill.rejected { color: var(--danger); }
+/* ── ADVANCED SEARCH ── */
+.ia-search-panel {
+ border: 1px solid var(--border);
+ background: var(--surface);
+ margin-bottom: 1.5rem;
+ overflow: hidden;
+ transition: all var(--transition);
+}
+.ia-search-header {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ padding: 1rem 1.25rem;
+ cursor: pointer;
+ user-select: none;
+ transition: background var(--transition);
+}
+.ia-search-header:hover {
+ background: var(--surface-2);
+}
+.ia-search-title {
+ display: flex;
+ align-items: center;
+ gap: 0.75rem;
+ font-size: 0.7rem;
+ font-weight: 700;
+ letter-spacing: 0.18em;
+ text-transform: uppercase;
+ color: var(--text);
+}
+.ia-search-icon {
+ width: 18px;
+ height: 18px;
+ stroke: var(--muted);
+ transition: stroke var(--transition);
+}
+.ia-search-header:hover .ia-search-icon {
+ stroke: var(--text);
+}
+.ia-search-toggle-icon {
+ width: 16px;
+ height: 16px;
+ stroke: var(--muted);
+ transition: transform var(--transition);
+}
+.ia-search-panel.open .ia-search-toggle-icon {
+ transform: rotate(180deg);
+}
+.ia-search-body {
+ max-height: 0;
+ overflow: hidden;
+ transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ia-search-panel.open .ia-search-body {
+ max-height: 400px;
+}
+.ia-search-content {
+ padding: 0 1.25rem 1.25rem;
+ display: grid;
+ grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+ gap: 1rem;
+}
+.ia-search-field label {
+ display: block;
+ font-size: 0.6rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ color: var(--muted);
+ margin-bottom: 0.5rem;
+ font-weight: 600;
+}
+.ia-search-input {
+ width: 100%;
+ background: var(--bg);
+ border: 1px solid var(--border);
+ padding: 0.7rem 0.9rem;
+ color: var(--text);
+ font-family: inherit;
+ font-size: 0.85rem;
+ transition: border-color var(--transition);
+ outline: none;
+}
+.ia-search-input:focus {
+ border-color: var(--text);
+}
+.ia-search-input::placeholder {
+ color: var(--muted);
+}
+.ia-search-actions {
+ grid-column: 1 / -1;
+ display: flex;
+ gap: 0.75rem;
+ justify-content: flex-end;
+ margin-top: 0.5rem;
+}
+.ia-search-btn {
+ padding: 0.7rem 1.5rem;
+ font-size: 0.65rem;
+ font-weight: 700;
+ letter-spacing: 0.15em;
+ text-transform: uppercase;
+ font-family: inherit;
+ cursor: pointer;
+ border: 1px solid var(--border);
+ background: transparent;
+ color: var(--muted);
+ transition: all var(--transition);
+}
+.ia-search-btn:hover {
+ border-color: var(--text);
+ color: var(--text);
+}
+.ia-search-btn.active {
+ background: var(--text);
+ color: var(--bg);
+ border-color: var(--text);
+}
+.ia-search-btn-reset {
+ padding: 0.7rem 1.5rem;
+ font-size: 0.65rem;
+ font-weight: 700;
+ letter-spacing: 0.15em;
+ text-transform: uppercase;
+ font-family: inherit;
+ cursor: pointer;
+ border: 1px solid var(--border);
+ background: transparent;
+ color: var(--muted);
+ transition: all var(--transition);
+}
+.ia-search-btn-reset:hover {
+ border-color: var(--danger);
+ color: var(--danger);
+}
+.ia-search-active-filters {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 0.5rem;
+ padding: 0.75rem 1.25rem;
+ background: var(--surface-2);
+ border-top: 1px solid var(--border);
+}
+.ia-filter-tag {
+ display: inline-flex;
+ align-items: center;
+ gap: 0.4rem;
+ padding: 0.3rem 0.7rem;
+ background: var(--subtle);
+ border: 1px solid var(--border);
+ font-size: 0.65rem;
+ font-weight: 600;
+ color: var(--text);
+ border-radius: 2px;
+}
+.ia-filter-tag-remove {
+ cursor: pointer;
+ font-size: 0.8rem;
+ line-height: 1;
+ color: var(--muted);
+ transition: color var(--transition);
+}
+.ia-filter-tag-remove:hover {
+ color: var(--danger);
+}
+/* ── BULK ACTION BAR ── */
+.ia-bulk-bar {
+ display: none;
+ align-items: center;
+ justify-content: space-between;
+ padding: 1rem 1.25rem;
+ background: var(--surface-2);
+ border: 1px solid var(--border);
+ margin-bottom: 1rem;
+ animation: fadeUp 0.3s ease;
+}
+.ia-bulk-bar.show {
+ display: flex;
+}
+.ia-bulk-info {
+ display: flex;
+ align-items: center;
+ gap: 1rem;
+}
+.ia-bulk-count {
+ font-size: 0.75rem;
+ font-weight: 700;
+ color: var(--text);
+}
+.ia-bulk-count span {
+ color: var(--success);
+ font-size: 0.9rem;
+}
+.ia-bulk-actions {
+ display: flex;
+ gap: 0.5rem;
+}
+.ia-bulk-btn {
+ padding: 0.6rem 1.2rem;
+ font-size: 0.65rem;
+ font-weight: 700;
+ letter-spacing: 0.15em;
+ text-transform: uppercase;
+ font-family: inherit;
+ cursor: pointer;
+ border: 1px solid var(--border);
+ background: transparent;
+ color: var(--text);
+ transition: all var(--transition);
+ display: inline-flex;
+ align-items: center;
+ gap: 0.5rem;
+}
+.ia-bulk-btn:hover {
+ border-color: var(--success);
+ color: var(--success);
+}
+.ia-bulk-btn.approve-all:hover {
+ background: var(--success);
+ color: #000;
+}
+.ia-bulk-btn.reject-all {
+ border-color: var(--danger);
+ color: var(--danger);
+}
+.ia-bulk-btn.reject-all:hover {
+ background: var(--danger);
+ color: #fff;
+}
+.ia-bulk-btn.deselect {
+ color: var(--muted);
+}
+.ia-bulk-btn.deselect:hover {
+ border-color: var(--muted);
+ color: var(--text);
+}
+/* ── TABLE CHECKBOX ── */
+.ia-checkbox-wrap {
+ display: flex;
+ align-items: center;
+ justify-content: center;
+}
+.ia-checkbox {
+ width: 18px;
+ height: 18px;
+ cursor: pointer;
+ accent-color: var(--success);
+ border: 2px solid var(--border);
+ transition: all var(--transition);
+}
+.ia-checkbox:hover {
+ border-color: var(--text);
+}
+.ia-checkbox:checked {
+ border-color: var(--success);
+}
+.ia-table th:first-child,
+.ia-table td:first-child {
+ width: 50px;
+ text-align: center;
+}
+/* ── ACTION BUTTON VARIANTS ── */
+.ia-action-btn.approve { border-color: var(--success); color: var(--success); }
+.ia-action-btn.approve:hover { background: var(--success); color: #000; }
+.ia-action-btn.reject { border-color: var(--danger); color: var(--danger); }
+.ia-action-btn.reject:hover { background: var(--danger); color: #fff; }
+.ia-action-btn.payouts { border-color: var(--border); color: var(--text); }
+.ia-action-btn.payouts:hover { border-color: var(--text); background: var(--text); color: var(--bg); }
+/* ── SHARE APPLY BUTTON ── */
+.ia-share-apply {
+ display: inline-flex;
+ align-items: center;
+ gap: 0.5rem;
+ padding: 0.7rem 1rem;
+ border: 1px solid var(--border);
+ background: transparent;
+ color: var(--text);
+ font-family: inherit;
+ font-size: 0.7rem;
+ font-weight: 700;
+ letter-spacing: 0.18em;
+ text-transform: uppercase;
+ cursor: pointer;
+ transition: all var(--transition);
+ margin-right: 0.75rem;
+}
+.ia-share-apply:hover { border-color: var(--text); background: var(--surface-2); }
+.ia-share-apply.copied { border-color: var(--success); color: var(--success); }
+/* ── SORT DROPDOWN ── */
+.ia-sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 0.65rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.ia-sort-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ia-sort-options {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.ia-sort-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.7rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.ia-sort-btn:hover { border-color: var(--text); color: var(--text); }
+.ia-sort-btn.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.ia-sort-btn .ia-sort-arrow { font-size: 0.6rem; line-height: 1; }
+@media (max-width: 768px) {
+  .ia-sort-bar { flex-direction: column; align-items: flex-start; }
+  .ia-sort-options { width: 100%; }
+  .ia-sort-btn { font-size: 0.65rem; padding: 0.25rem 0.5rem; }
+}
+/* ── PAYOUTS DRAWER ── */
+.ia-drawer-overlay {
+ position: fixed; inset: 0;
+ background: rgba(0, 0, 0, 0.7);
+ display: none;
+ z-index: 200;
+ animation: fadeIn 0.2s ease;
+}
+.ia-drawer-overlay.show { display: flex; justify-content: flex-end; }
+.ia-drawer {
+ width: min(560px, 100vw);
+ height: 100vh;
+ background: var(--surface);
+ border-left: 1px solid var(--border);
+ overflow-y: auto;
+ animation: slideInRight 0.3s ease;
+}
+@keyframes slideInRight {
+ from { transform: translateX(100%); }
+ to { transform: translateX(0); }
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.ia-drawer-head {
+ display: flex;
+ justify-content: space-between;
+ align-items: flex-start;
+ padding: 1.5rem 1.75rem;
+ border-bottom: 1px solid var(--border);
+ position: sticky;
+ top: 0;
+ background: var(--surface);
+ z-index: 1;
+}
+.ia-drawer-title {
+ font-size: 0.65rem;
+ letter-spacing: 0.3em;
+ text-transform: uppercase;
+ color: var(--muted);
+ font-weight: 700;
+ margin-bottom: 0.4rem;
+}
+.ia-drawer-sub {
+ font-size: 1.05rem;
+ font-weight: 600;
+ color: var(--text);
+}
+.ia-drawer-close {
+ width: 32px; height: 32px;
+ background: transparent;
+ border: 1px solid var(--border);
+ color: var(--muted);
+ font-size: 1.2rem;
+ cursor: pointer;
+ transition: all var(--transition);
+}
+.ia-drawer-close:hover { color: var(--text); border-color: var(--text); }
+.ia-drawer-body { padding: 1.5rem 1.75rem; }
+.ia-payout-summary {
+ display: grid;
+ gap: 1px;
+ background: var(--border);
+ border: 1px solid var(--border);
+ margin-bottom: 1.75rem;
+}
+.ia-payout-summary-cell {
+ background: var(--surface);
+ padding: 1rem 1.25rem;
+}
+.ia-payout-summary-cell .lbl {
+ font-size: 0.6rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ color: var(--muted);
+ font-weight: 700;
+ margin-bottom: 0.35rem;
+}
+.ia-payout-summary-cell .val {
+ font-size: 1.3rem;
+ font-weight: 800;
+ color: var(--text);
+}
+.ia-payout-form {
+ border: 1px solid var(--border);
+ background: var(--surface-2);
+ padding: 1.25rem;
+ margin-bottom: 1.75rem;
+}
+.ia-payout-form-title {
+ font-size: 0.7rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ font-weight: 700;
+ margin-bottom: 1rem;
+}
+.ia-payout-form .ia-form-group { margin-bottom: 0.75rem; }
+.ia-payout-form-row {
+ display: grid;
+ grid-template-columns: 1fr 1fr;
+ gap: 0.75rem;
+}
+.ia-payout-list-header {
+ font-size: 0.7rem;
+ letter-spacing: 0.2em;
+ text-transform: uppercase;
+ font-weight: 700;
+ margin-bottom: 0.85rem;
+ color: var(--muted);
+}
+.ia-payout-item {
+ border: 1px solid var(--border);
+ padding: 1rem 1.1rem;
+ margin-bottom: 0.6rem;
+ background: var(--surface);
+}
+.ia-payout-item-top {
+ display: flex;
+ justify-content: space-between;
+ align-items: center;
+ margin-bottom: 0.4rem;
+}
+.ia-payout-item-amt { font-size: 1.05rem; font-weight: 700; }
+.ia-payout-item-meta { font-size: 0.75rem; color: var(--muted); }
+.ia-payout-actions {
+ display: flex;
+ gap: 0.4rem;
+ margin-top: 0.6rem;
+}
+.ia-payout-actions button {
+ flex: 1;
+ padding: 0.45rem 0.5rem;
+ font-size: 0.6rem;
+ font-weight: 700;
+ letter-spacing: 0.15em;
+ text-transform: uppercase;
+ background: transparent;
+ border: 1px solid var(--border);
+ color: var(--muted);
+ cursor: pointer;
+ transition: all var(--transition);
+ font-family: inherit;
+}
+.ia-payout-actions button.pay { border-color: var(--success); color: var(--success); }
+.ia-payout-actions button.pay:hover { background: var(--success); color: #000; }
+.ia-payout-actions button.cancel { border-color: var(--danger); color: var(--danger); }
+.ia-payout-actions button.cancel:hover { background: var(--danger); color: #fff; }
+.ia-payout-empty {
+ text-align: center;
+ padding: 2rem 1rem;
+ color: var(--muted);
+ font-size: 0.85rem;
+}
+/* ── HELPER CLASSES ── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 2rem; backdrop-filter: blur(4px); }
+.modal-content { background: var(--surface); border: 1px solid var(--border); width: 100%; max-width: 700px; max-height: 90vh; overflow-y: auto; padding: 2rem; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.modal-title { font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin: 0; }
+.modal-close-btn { background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 1.5rem; line-height: 1; }
+.form-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.4rem; display: block; }
+.form-label-sm { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.3rem; display: block; }
+.form-input { font-size: 0.85rem; }
+.form-input-sm { font-size: 0.8rem; }
+.product-item { display: flex; gap: 1rem; padding: 0.75rem; background: var(--subtle); margin-bottom: 0.5rem; align-items: center; }
+.product-thumb { width: 50px; height: 50px; object-fit: contain; background: var(--bg); }
+.product-info { flex: 1; }
+.product-name { font-size: 0.8rem; font-weight: 600; margin: 0; }
+.product-meta { font-size: 0.7rem; color: var(--muted); margin: 0.2rem 0 0; }
+.info-box { padding: 1rem; background: #4facfe10; border-left: 3px solid #4facfe; margin: 1rem 0; }
+.info-box-title { font-size: 0.7rem; color: #4facfe; margin: 0; font-weight: 600; }
+.info-box-desc { font-size: 0.65rem; color: var(--muted); margin: 0.3rem 0 0; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
+.btn-row { display: flex; gap: 1rem; margin-top: 1.5rem; }
+.btn-flex { flex: 1; padding: 0.8rem; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; }
+.btn-flex-primary { flex: 1; padding: 0.8rem; background: var(--text); border: 1px solid var(--text); color: var(--bg); cursor: pointer; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; }
+
+/* ── MESSAGES ── */
+.ia-message-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.25rem;
+  transition: all var(--transition);
+}
+
+.ia-message-card:hover {
+  border-color: var(--border-hover);
+}
+
+.ia-message-card.broadcast {
+  border-left: 3px solid #3b82f6;
+}
+
+.ia-message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.ia-message-sender {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ia-message-time {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.ia-message-subject {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.ia-message-content {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.ia-badge-broadcast {
+  background: #3b82f6;
+  color: white;
+  padding: 0.2rem 0.5rem;
+  border-radius: 2px;
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+/* Modal styles (unused legacy - kept for reference) */
+.ia-modal-legacy {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.ia-modal-legacy.active {
+  display: flex;
+}
+
+.ia-modal-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 100%;
+  max-width: 600px;
+  margin: auto;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  animation: fadeUp 0.3s ease;
+}
+
+@media (max-width: 640px) {
+  .ia-modal-legacy { padding: 0.5rem; align-items: flex-start; }
+  .ia-modal-content { max-height: calc(100vh - 1rem); }
+  .ia-modal-header,
+  .ia-modal-body,
+  .ia-modal-footer { padding: 1rem !important; }
+  .ia-modal-footer { flex-wrap: wrap; }
+  .ia-modal-footer .ia-btn { width: 100%; justify-content: center; }
+}
+
+.ia-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.ia-modal-body {
+  padding: 1.5rem;
+}
+
+.ia-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.ia-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color var(--transition);
+}
+
+.ia-modal-close:hover {
+  color: var(--text);
+}
+
+.ia-form-group {
+  margin-bottom: 1.25rem;
+}
+
+.ia-form-group label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.ia-empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: var(--muted);
+}
+
+.ia-empty-state svg {
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.ia-empty-state p {
+  font-size: 0.85rem;
+}
+</style>
+</head>
+<body>
+<div class="ia-wrap">
+<div id="iaLoading" class="ia-loading">
+ <div class="ia-spinner"></div>
+ <p>Initialising Manager</p>
+ </div>
+<div id="iaAuth" class="ia-auth hidden">
+ <div class="ia-auth-card">
+ <p class="ia-auth-logo">Offcomfrt · Admin</p>
+ <h2>Manager Access</h2>
+ <form onsubmit="event.preventDefault(); handleLogin();" autocomplete="on">
+ <div class="ia-form-group" style="display:none;">
+ <label for="iaUsername">Username</label>
+ <input type="text" id="iaUsername" class="ia-input" value="admin" autocomplete="username" tabindex="-1">
+ </div>
+ <div class="ia-form-group">
+ <label for="iaPassword">System Password</label>
+ <input type="password" id="iaPassword" class="ia-input" placeholder="Enter password" autocomplete="current-password">
+ </div>
+ <button type="submit" class="ia-btn ia-btn-primary" style="width:100%;justify-content:center;" id="iaLoginBtn">
+ Authenticate
+ </button>
+ </form>
+ <p id="iaLoginErr" class="ia-auth-err">Invalid password. Try again.</p>
+ </div>
+ </div>
+<div id="iaDashboard" class="ia-layout hidden">
+<div class="ia-overlay" id="iaOverlay" onclick="toggleSidebar()"></div>
+<button class="ia-sidebar-toggle" id="iaSidebarToggle" onclick="toggleSidebarDesktop()" aria-label="Toggle sidebar">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+ <polyline points="15 18 9 12 15 6"></polyline>
+ </svg>
+ </button>
+<aside class="ia-sidebar" id="iaSidebar">
+ <div class="ia-sidebar-logo">
+ <span>Offcomfrt</span>
+ <strong>Influencer HQ</strong>
+ </div>
+ <nav class="ia-sidebar-nav">
+ <div class="ia-nav-item active" onclick="showPage('ambassadors', this)">
+ <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+ Ambassadors
+ <span class="ia-nav-badge hidden" id="iaNavPendingBadge">0</span>
+ </div>
+ <div class="ia-nav-item" onclick="showPage('shipments-reels', this)">
+ <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+ Shipments & Reels
+ </div>
+ <div class="ia-nav-item" onclick="showPage('leaderboard', this)">
+ <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 21h8m-4-4v4m-4.5-9.5L12 3l4.5 8.5M7 12h10"/></svg>
+ Leaderboard
+ </div>
+ <div class="ia-nav-item" onclick="showPage('messages', this)">
+ <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+ Messages
+ <span class="ia-nav-badge hidden" id="iaNavMessagesBadge">0</span>
+ </div>
+ </nav>
+ <div class="ia-sidebar-footer">
+ <button class="ia-logout-btn" onclick="handleLogout()">Sign Out</button>
+ </div>
+ </aside>
+<main class="ia-main">
+<div class="ia-topbar" id="iaTopbar">
+ <button class="ia-topbar-mobile-toggle" onclick="toggleSidebar()" aria-label="Toggle menu">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+ <line x1="3" y1="12" x2="21" y2="12"></line>
+ <line x1="3" y1="6" x2="21" y2="6"></line>
+ <line x1="3" y1="18" x2="21" y2="18"></line>
+ </svg>
+ </button>
+ <h1>Influencer Manager</h1>
+ <div style="display: flex; gap: 1rem; align-items: center;">
+ <button class="ia-btn" onclick="syncShopifyUsage()" id="syncShopifyBtn" title="Sync usage data from Shopify">
+ <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+ Sync Shopify Usage
+ </button>
+ <span class="ia-topbar-meta" id="iaLastUpdated"></span>
+ </div>
+ </div>
+<div class="ia-content" id="page-ambassadors">
+<div class="ia-stat-strip">
+ <div class="ia-stat-cell">
+ <div class="ia-stat-label">Total Ambassadors</div>
+ <div class="ia-stat-value" id="statTotal">—</div>
+ </div>
+ <div class="ia-stat-cell">
+ <div class="ia-stat-label">Active</div>
+ <div class="ia-stat-value" id="statActive">—</div>
+ </div>
+ <div class="ia-stat-cell">
+ <div class="ia-stat-label">Avg. Commission</div>
+ <div class="ia-stat-value" id="statAvgCommission">—</div>
+ </div>
+ </div>
+<div class="ia-section-header">
+ <span class="ia-section-title">All Ambassadors</span>
+ <div style="display: flex; align-items: center;">
+ <button class="ia-share-apply" id="iaCopyApplyBtn" onclick="copyApplyLink()">
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+ Share Apply Link
+ </button>
+ <button class="ia-btn ia-btn-primary" onclick="openAddModal()">
+ <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+ Add Ambassador
+ </button>
+ </div>
+ </div>
+<!-- Sort Bar -->
+<div class="ia-sort-bar">
+ <span class="ia-sort-label">Sort By</span>
+ <div class="ia-sort-options">
+   <button class="ia-sort-btn active" data-sort="orders-desc" onclick="setSort('orders-desc', this)">Orders <span class="ia-sort-arrow">↓</span></button>
+   <button class="ia-sort-btn" data-sort="orders-asc" onclick="setSort('orders-asc', this)">Orders <span class="ia-sort-arrow">↑</span></button>
+   <button class="ia-sort-btn" data-sort="name-asc" onclick="setSort('name-asc', this)">Name A–Z</button>
+   <button class="ia-sort-btn" data-sort="name-desc" onclick="setSort('name-desc', this)">Name Z–A</button>
+   <button class="ia-sort-btn" data-sort="date-desc" onclick="setSort('date-desc', this)">Newest First</button>
+   <button class="ia-sort-btn" data-sort="date-asc" onclick="setSort('date-asc', this)">Oldest First</button>
+   <button class="ia-sort-btn" data-sort="commission-desc" onclick="setSort('commission-desc', this)">Commission <span class="ia-sort-arrow">↓</span></button>
+   <button class="ia-sort-btn" data-sort="status" onclick="setSort('status', this)">Status</button>
+ </div>
+</div>
+<div class="ia-filter-bar" id="iaFilterBar">
+ <button class="ia-filter-btn active" data-filter="all" onclick="setStatusFilter('all')">
+ All <span class="ia-filter-count" id="fcAll">0</span>
+ </button>
+ <button class="ia-filter-btn" data-filter="pending" onclick="setStatusFilter('pending')">
+ Pending <span class="ia-filter-count" id="fcPending">0</span>
+ </button>
+ <button class="ia-filter-btn" data-filter="active" onclick="setStatusFilter('active')">
+ Active <span class="ia-filter-count" id="fcActive">0</span>
+ </button>
+ <button class="ia-filter-btn" data-filter="suspended" onclick="setStatusFilter('suspended')">
+ Suspended <span class="ia-filter-count" id="fcSuspended">0</span>
+ </button>
+ <button class="ia-filter-btn" data-filter="rejected" onclick="setStatusFilter('rejected')">
+ Rejected <span class="ia-filter-count" id="fcRejected">0</span>
+ </button>
+ </div>
+<div class="ia-search-panel" id="iaSearchPanel">
+ <div class="ia-search-header" onclick="toggleSearchPanel()">
+ <div class="ia-search-title">
+ <svg class="ia-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+ <circle cx="11" cy="11" r="8"></circle>
+ <path d="m21 21-4.35-4.35"></path>
+ </svg>
+ Advanced Search
+ </div>
+ <svg class="ia-search-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+ <polyline points="6 9 12 15 18 9"></polyline>
+ </svg>
+ </div>
+ <div class="ia-search-body">
+ <div class="ia-search-content">
+ <div class="ia-search-field">
+ <label for="searchName">Name</label>
+ <input type="text" id="searchName" class="ia-search-input" placeholder="Search by name...">
+ </div>
+ <div class="ia-search-field">
+ <label for="searchCode">Referral Code</label>
+ <input type="text" id="searchCode" class="ia-search-input" placeholder="Search by code..." style="text-transform:uppercase;">
+ </div>
+ <div class="ia-search-field">
+ <label for="searchPhone">Phone</label>
+ <input type="text" id="searchPhone" class="ia-search-input" placeholder="Search by phone...">
+ </div>
+ <div class="ia-search-field">
+ <label for="searchEmail">Email</label>
+ <input type="text" id="searchEmail" class="ia-search-input" placeholder="Search by email...">
+ </div>
+ <div class="ia-search-field">
+ <label for="searchMinOrders">Min Orders</label>
+ <input type="number" id="searchMinOrders" class="ia-search-input" placeholder="Minimum orders" min="0">
+ </div>
+ <div class="ia-search-field">
+ <label for="searchMaxOrders">Max Orders</label>
+ <input type="number" id="searchMaxOrders" class="ia-search-input" placeholder="Maximum orders" min="0">
+ </div>
+ <div class="ia-search-field">
+ <label for="searchDateFrom">Created From</label>
+ <input type="date" id="searchDateFrom" class="ia-search-input">
+ </div>
+ <div class="ia-search-field">
+ <label for="searchDateTo">Created To</label>
+ <input type="date" id="searchDateTo" class="ia-search-input">
+ </div>
+ <div class="ia-search-actions">
+ <button class="ia-search-btn-reset" onclick="resetSearch()">Reset</button>
+ <button class="ia-search-btn active" onclick="applySearch()">Apply Search</button>
+ </div>
+ </div>
+ <div class="ia-search-active-filters" id="iaActiveFilters" style="display: none;">
+</div>
+ </div>
+ </div>
+<div class="ia-bulk-bar" id="iaBulkBar">
+ <div class="ia-bulk-info">
+ <span class="ia-bulk-count"><span id="iaSelectedCount">0</span> selected</span>
+ </div>
+ <div class="ia-bulk-actions">
+ <button class="ia-bulk-btn approve-all" onclick="bulkApprove()">
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+ Approve Selected
+ </button>
+ <button class="ia-bulk-btn reject-all" onclick="bulkReject()">
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+ Reject Selected
+ </button>
+ <button class="ia-bulk-btn deselect" onclick="clearSelection()">
+ Clear Selection
+ </button>
+ </div>
+ </div>
+ <div class="ia-table-wrap">
+ <table class="ia-table">
+ <colgroup>
+ <col style="width:40px;">
+ <col style="width:auto;">
+ <col style="width:80px;">
+ <col style="width:100px;">
+ <col style="width:105px;">
+ <col style="width:60px;">
+ <col style="width:55px;">
+ <col style="width:95px;">
+ <col style="width:90px;">
+ <col style="width:auto;">
+ </colgroup>
+ <thead>
+ <tr>
+ <th>
+ <div class="ia-checkbox-wrap">
+ <input type="checkbox" class="ia-checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+ </div>
+ </th>
+ <th>Name</th>
+ <th>Status</th>
+ <th>Phone</th>
+ <th>Referral Code</th>
+ <th>Products</th>
+ <th>Orders</th>
+ <th>Created</th>
+ <th>Portal Link</th>
+ <th>Actions</th>
+ </tr>
+ </thead>
+ <tbody id="iaTableBody">
+</tbody>
+ </table>
+ </div>
+ </div>
+<div class="ia-content" id="page-shipments-reels" style="display: none;">
+<div class="ia-lb-page-header">
+ <div>
+ <h2 class="ia-lb-page-title">Shipments & Reels Management</h2>
+ <p class="ia-lb-page-subtitle">Manage monthly reel targets, product inventory, and influencer shipments</p>
+ </div>
+ </div>
+<div class="ia-tabs" style="margin-bottom: 2rem;">
+ <button class="ia-tab-btn active" data-srtab="monthly-targets" onclick="switchSRTab('monthly-targets', this)">Monthly Targets</button>
+ <button class="ia-tab-btn" data-srtab="inventory" onclick="switchSRTab('inventory', this)">Product Inventory</button>
+ <button class="ia-tab-btn" data-srtab="product-requests" onclick="switchSRTab('product-requests', this)">Product Requests</button>
+ <button class="ia-tab-btn" data-srtab="all-shipments" onclick="switchSRTab('all-shipments', this)">All Shipments</button>
+ </div>
+<div id="sr-tab-monthly-targets" class="sr-tab-content active">
+ <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+ <span style="font-size: 0.75rem; color: var(--muted);">Set and track monthly reel quotas for ambassadors</span>
+ <button class="ia-btn ia-btn-primary" onclick="openReelTargetModal()" style="padding: 0.5rem 1rem; font-size: 0.7rem;">
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+ Set Monthly Target
+ </button>
+ </div>
+<div style="display: flex; gap: 1rem; margin-bottom: 2rem; align-items: center;">
+ <div class="ia-form-group" style="margin: 0;">
+ <label for="srTargetMonth" style="font-size: 0.65rem; color: var(--muted); margin-bottom: 0.3rem;">Month</label>
+ <select id="srTargetMonth" class="ia-input" onchange="loadMonthlyTargets()">
+ <option value="1">January</option>
+ <option value="2">February</option>
+ <option value="3">March</option>
+ <option value="4">April</option>
+ <option value="5">May</option>
+ <option value="6">June</option>
+ <option value="7">July</option>
+ <option value="8">August</option>
+ <option value="9">September</option>
+ <option value="10">October</option>
+ <option value="11">November</option>
+ <option value="12">December</option>
+ </select>
+ </div>
+ <div class="ia-form-group" style="margin: 0;">
+ <label for="srTargetYear" style="font-size: 0.65rem; color: var(--muted); margin-bottom: 0.3rem;">Year</label>
+ <input type="number" id="srTargetYear" class="ia-input" value="2026" onchange="loadMonthlyTargets()" style="width: 100px;">
+ </div>
+ </div>
+<div class="ia-lb-stats-grid" id="srTargetSummary" style="margin-bottom: 2rem; display: none;">
+ <div class="ia-lb-stat-card">
+ <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+ <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+ </div>
+ <div>
+ <div class="ia-lb-stat-label">Total Ambassadors</div>
+ <div class="ia-lb-stat-value" id="srTotalInfluencers">0</div>
+ </div>
+ </div>
+ <div class="ia-lb-stat-card">
+ <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+ <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+ </div>
+ <div>
+ <div class="ia-lb-stat-label">On Track</div>
+ <div class="ia-lb-stat-value" id="srOnTrack">0</div>
+ </div>
+ </div>
+ <div class="ia-lb-stat-card">
+ <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+ <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+ </div>
+ <div>
+ <div class="ia-lb-stat-label">Behind Target</div>
+ <div class="ia-lb-stat-value" id="srBehind">0</div>
+ </div>
+ </div>
+ <div class="ia-lb-stat-card">
+ <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+ <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+ </div>
+ <div>
+ <div class="ia-lb-stat-label">Completed</div>
+ <div class="ia-lb-stat-value" id="srCompleted">0</div>
+ </div>
+ </div>
+ </div>
+<div id="srTargetsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem;">
+ <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);">
+ <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+ <p>Select a month and year to view targets</p>
+ </div>
+ </div>
+ </div>
+<div id="sr-tab-inventory" class="sr-tab-content" style="display: none;">
+ <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+ <div>
+ <span style="font-size: 0.75rem; color: var(--muted); display: block;">Browse available inventory and assign to ambassadors</span>
+ <span style="font-size: 0.65rem; color: var(--success, #22c55e); margin-top: 0.25rem; display: block;">Only showing products with available stock</span>
+ </div>
+ <div style="display: flex; gap: 0.5rem; align-items: center;">
+ <input type="text" id="srProductSearch" class="ia-input" placeholder="Search products..." style="width: 250px; font-size: 0.8rem;" onkeyup="if(event.key==='Enter') searchShopifyProducts(1)">
+ <button class="ia-btn ia-btn-primary" onclick="searchShopifyProducts(1)" style="padding: 0.6rem 1.2rem; font-size: 0.7rem; white-space: nowrap;">Search</button>
+ </div>
+ </div>
+<div id="srBulkToolbar" style="display: none; padding: 1rem; background: var(--subtle); border: 1px solid var(--border); margin-bottom: 1.25rem; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+ <div style="display: flex; align-items: center; gap: 1rem;">
+ <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+ <input type="checkbox" id="srSelectAll" onchange="toggleSelectAll()" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--text, #000);">
+ Select All
+ </label>
+ <span id="srSelectedCount" style="font-size: 0.75rem; color: var(--muted);">0 products selected</span>
+ </div>
+ <button class="ia-btn ia-btn-primary" onclick="openBulkAssignModal()" id="srBulkAssignBtn" disabled style="padding: 0.6rem 1.5rem; font-size: 0.75rem; opacity: 0.5; cursor: not-allowed;">
+ Assign Selected to Ambassador
+ </button>
+ </div>
+<div id="srProductGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.25rem;">
+ <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--muted);">
+ <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.3;"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+ <p class="form-input-sm">Search for products from Shopify inventory</p>
+ <p style="font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem;">Products will auto-load when you open this tab</p>
+ </div>
+ </div>
+<div id="srShowMoreWrap" style="display: none; flex-direction: column; align-items: center; gap: 0.5rem; margin-top: 1.5rem; padding: 1rem;">
+ <button class="ia-btn ia-btn-primary" id="srShowMoreBtn" onclick="searchShopifyProducts(srCurrentPage + 1, true)" style="padding: 0.7rem 2.5rem; font-size: 0.75rem; letter-spacing: 0.1em;">Show More Products</button>
+ <span id="srLoadedCount" style="font-size: 0.65rem; color: var(--muted);"></span>
+ </div>
+ </div>
+<div id="sr-tab-product-requests" class="sr-tab-content" style="display: none;">
+ <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+ <span style="font-size: 0.75rem; color: var(--muted);">Review and approve ambassador product requests</span>
+ <div style="display: flex; gap: 0.5rem; align-items: center;">
+ <div id="prBulkActionBar" style="display: none; align-items: center; gap: 0.5rem; margin-right: 0.75rem;">
+ <span id="prBulkCount" style="font-size: 0.7rem; color: #4facfe; font-weight: 600;">0 selected</span>
+ <button class="ia-btn ia-btn-primary" onclick="bulkApproveProductRequests()" style="padding: 0.35rem 0.75rem; font-size: 0.65rem; background: linear-gradient(135deg, #00c853, #00e676); border: none;">Approve Combined</button>
+ <button class="ia-btn" onclick="clearProductRequestSelection()" style="padding: 0.35rem 0.75rem; font-size: 0.65rem;">Clear</button>
+ </div>
+ <select id="srRequestFilter" class="ia-input" onchange="loadProductRequests()" style="width: 150px;">
+ <option value="">All Status</option>
+ <option value="pending">Pending</option>
+ <option value="approved">Approved</option>
+ <option value="rejected">Rejected</option>
+ <option value="shipped">Shipped</option>
+ <option value="delivered">Delivered</option>
+ </select>
+ </div>
+ </div>
+<div style="overflow-x: auto;">
+ <table class="ia-table">
+ <thead>
+ <tr>
+ <th style="width: 36px; text-align: center;"><input type="checkbox" id="prSelectAllCheckbox" onchange="toggleAllProductRequests(this)" style="cursor: pointer;"></th>
+ <th>Ambassador</th>
+ <th>Product</th>
+ <th>Reason</th>
+ <th>Shipping Address</th>
+ <th>Status</th>
+ <th>Date</th>
+ <th>Actions</th>
+ </tr>
+ </thead>
+ <tbody id="srRequestsTableBody">
+ <tr>
+ <td colspan="8" style="text-align: center; padding: 3rem; color: var(--muted);">
+ Loading product requests...
+ </td>
+ </tr>
+ </tbody>
+ </table>
+ </div>
+ </div>
+<div id="sr-tab-all-shipments" class="sr-tab-content" style="display: none;">
+ <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+ <span style="font-size: 0.75rem; color: var(--muted);">View all product shipments and reel tracking</span>
+ <button class="ia-btn ia-btn-primary" onclick="openAddShipmentModal()" style="padding: 0.5rem 1rem; font-size: 0.7rem;">
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+ Create Shipment
+ </button>
+ </div>
+<div style="overflow-x: auto;">
+ <table class="ia-table">
+ <thead>
+ <tr>
+ <th>Ambassador</th>
+ <th>Product</th>
+ <th>Sent Date</th>
+ <th>Reel Due</th>
+ <th>Reel Status</th>
+ <th>Monthly Target</th>
+ <th>Tracking</th>
+ <th>Actions</th>
+ </tr>
+ </thead>
+ <tbody id="srShipmentsTableBody">
+ <tr>
+ <td colspan="8" style="text-align: center; padding: 3rem; color: var(--muted);">
+ Loading shipments...
+ </td>
+ </tr>
+ </tbody>
+ </table>
+ </div>
+ </div>
+ </div>
+<div class="ia-content" id="page-leaderboard" style="display: none;">
+<div class="ia-lb-page-header">
+ <div>
+ <h2 class="ia-lb-page-title">Performance Leaderboard</h2>
+ <p class="ia-lb-page-subtitle">Track top-performing ambassadors and their impact</p>
+ </div>
+ <div class="ia-lb-range-selector">
+ <button class="ia-lb-range-btn active" data-lbrange="30d" onclick="loadFullLeaderboard('30d', this)">30 Days</button>
+ <button class="ia-lb-range-btn" data-lbrange="90d" onclick="loadFullLeaderboard('90d', this)">90 Days</button>
+ <button class="ia-lb-range-btn" data-lbrange="6m" onclick="loadFullLeaderboard('6m', this)">6 Months</button>
+ <button class="ia-lb-range-btn" data-lbrange="all" onclick="loadFullLeaderboard('all', this)">All Time</button>
+ </div>
+ </div>
+<div class="ia-lb-stats-grid">
+ <div class="ia-lb-stat-card">
+ <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+ <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+ </div>
+ <div>
+ <div class="ia-lb-stat-label">Total Revenue</div>
+ <div class="ia-lb-stat-value" id="lbTotalRevenue">₹0</div>
+ </div>
+ </div>
+ <div class="ia-lb-stat-card">
+ <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+ <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 7V5a4 4 0 0 0-8 0v2"/></svg>
+ </div>
+ <div>
+ <div class="ia-lb-stat-label">Total Orders</div>
+ <div class="ia-lb-stat-value" id="lbTotalOrders">0</div>
+ </div>
+ </div>
+ <div class="ia-lb-stat-card">
+ <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+ <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+ </div>
+ <div>
+ <div class="ia-lb-stat-label">Active Influencers</div>
+ <div class="ia-lb-stat-value" id="lbActiveInfluencers">0</div>
+ </div>
+ </div>
+ <div class="ia-lb-stat-card">
+ <div class="ia-lb-stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+ <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+ </div>
+ <div>
+ <div class="ia-lb-stat-label">Avg Revenue/Influencer</div>
+ <div class="ia-lb-stat-value" id="lbAvgRevenue">₹0</div>
+ </div>
+ </div>
+ </div>
+<div class="ia-lb-podium-container" id="lbPodium">
+ <div class="ia-lb-podium-loading">Loading podium...</div>
+ </div>
+<div class="ia-lb-table-container">
+ <div class="ia-lb-table-header">
+ <h3>Complete Rankings</h3>
+ <div class="ia-lb-search">
+ <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+ <input type="text" id="lbSearchInput" placeholder="Search influencers..." oninput="filterLeaderboard()">
+ </div>
+ </div>
+ <div class="ia-lb-table-wrapper">
+ <table class="ia-lb-full-table">
+ <thead>
+ <tr>
+ <th>Rank</th>
+ <th>Influencer</th>
+ <th>Code</th>
+ <th>Revenue</th>
+ <th>Orders</th>
+ <th>Avg Order Value</th>
+ <th>Commission</th>
+ <th>Status</th>
+ </tr>
+ </thead>
+ <tbody id="lbFullTableBody">
+ <tr>
+ <td colspan="8" class="ia-lb-table-loading">Loading rankings...</td>
+ </tr>
+ </tbody>
+ </table>
+ </div>
+ </div>
+ </div>
+ </main>
+ </div>
+ <div id="iaAddModal" class="ia-modal-overlay" onclick="handleOverlayClick(event, 'iaAddModal')">
+ <div class="ia-modal-box">
+ <div class="ia-modal-header">
+ <span class="ia-modal-title">Add New Ambassador</span>
+ <button class="ia-modal-close" onclick="closeModal('iaAddModal')">&times;</button>
+ </div>
+ <div class="ia-form-group">
+ <label for="addName">Full Name</label>
+ <input type="text" id="addName" class="ia-input" placeholder="e.g. Rahul Sharma">
+ </div>
+ <div class="ia-form-group">
+ <label for="addPhone">Phone Number (For Portal Login)</label>
+ <input type="text" id="addPhone" class="ia-input" placeholder="e.g. 9876543210">
+ </div>
+ <div class="ia-form-row">
+ <div class="ia-form-group">
+ <label for="addCode">Shopify Discount Code</label>
+ <input type="text" id="addCode" class="ia-input" placeholder="e.g. RAHUL10" style="text-transform:uppercase;">
+ </div>
+ <div class="ia-form-group">
+ <label for="addCommission">Commission Rate (%)</label>
+ <input type="number" id="addCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5" value="7">
+ <p class="ia-form-hint">What they actually earn (admin only)</p>
+ </div>
+ <div class="ia-form-group">
+ <label for="addDisplayedCommission">Displayed Commission (%)</label>
+ <input type="number" id="addDisplayedCommission" class="ia-input" placeholder="7" min="0" max="100" step="0.5" value="7">
+ <p class="ia-form-hint">What influencers see in their portal</p>
+ </div>
+ </div>
+ <div class="ia-form-row">
+ <div class="ia-form-group">
+ <label for="addDiscountValue">Customer Discount (%)</label>
+ <input type="number" id="addDiscountValue" class="ia-input" placeholder="10" min="0" max="100" step="0.5" value="10">
+ <p class="ia-form-hint">Discount customers get (default: same as commission)</p>
+ </div>
+ <div class="ia-form-group">
+ <label for="addUsageLimit">Usage Limit</label>
+ <input type="number" id="addUsageLimit" class="ia-input" placeholder="Leave blank = unlimited" min="1">
+ <p class="ia-form-hint">Max uses (blank = unlimited)</p>
+ </div>
+ </div>
+ <p id="addError" class="ia-modal-error">Failed to add. Code might already exist.</p>
+ <div class="ia-modal-actions">
+ <button class="ia-btn ia-btn-ghost" onclick="closeModal('iaAddModal')">Cancel</button>
+ <button class="ia-btn ia-btn-primary" id="addSubmitBtn" onclick="submitAdd()">Create Link</button>
+ </div>
+ </div>
+ </div>
+<div id="iaStatsModal" class="ia-modal-overlay" onclick="handleOverlayClick(event, 'iaStatsModal')">
+ <div class="ia-modal-box" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+ <div class="ia-modal-header">
+ <span class="ia-modal-title" id="statsModalTitle">Ambassador Performance</span>
+ <button class="ia-modal-close" onclick="closeModal('iaStatsModal')">&times;</button>
+ </div>
+<div class="ia-stats-filter">
+ <div class="ia-filter-row">
+ <div class="ia-filter-group">
+ <span class="ia-filter-label">Date Range</span>
+ <div class="ia-range-buttons">
+ <button class="ia-range-btn" data-range="30d" onclick="setStatsRange('30d')">30 Days</button>
+ <button class="ia-range-btn" data-range="90d" onclick="setStatsRange('90d')">90 Days</button>
+ <button class="ia-range-btn active" data-range="all" onclick="setStatsRange('all')">All Time</button>
+ <button class="ia-range-btn" data-range="custom" onclick="toggleCustomDate()">Custom</button>
+ </div>
+ </div>
+ </div>
+ <div class="ia-filter-row" id="customDateRow" style="display: none;">
+ <div class="ia-filter-group">
+ <label for="statsStartDate">Start Date</label>
+ <input type="date" id="statsStartDate" class="ia-input">
+ </div>
+ <div class="ia-filter-group">
+ <label for="statsEndDate">End Date</label>
+ <input type="date" id="statsEndDate" class="ia-input">
+ </div>
+ <div class="ia-filter-group" style="display: flex; align-items: flex-end;">
+ <button class="ia-btn ia-btn-primary" onclick="applyCustomDate()">Apply</button>
+ </div>
+ </div>
+ </div>
+<div class="ia-tabs">
+ <button class="ia-tab-btn active" data-tab="overview" onclick="switchTab('overview', this)">Overview</button>
+ <button class="ia-tab-btn" data-tab="shipments" onclick="switchTab('shipments', this)">Shipments & Reels</button>
+ <button class="ia-tab-btn" data-tab="payouts" onclick="switchTab('payouts', this)">Payouts</button>
+ </div>
+<div class="ia-tab-content active" id="tab-overview">
+<div class="ia-stats-grid" id="statsGrid">
+ <div class="ia-stat-box">
+ <div class="ia-stat-box-label">Total Revenue</div>
+ <div class="ia-stat-box-value" id="statTotalRevenue">—</div>
+ </div>
+ <div class="ia-stat-box">
+ <div class="ia-stat-box-label">Total Orders</div>
+ <div class="ia-stat-box-value" id="statTotalOrders">—</div>
+ </div>
+ <div class="ia-stat-box">
+ <div class="ia-stat-box-label">Avg. Order Value</div>
+ <div class="ia-stat-box-value" id="statAov">—</div>
+ </div>
+ <div class="ia-stat-box highlight">
+ <div class="ia-stat-box-label">Estimated Earnings</div>
+ <div class="ia-stat-box-value" id="statEarnings">—</div>
+ <div class="ia-stat-box-sub" id="statCommissionRate">—</div>
+ </div>
+ </div>
+<div class="ia-monthly-bars" id="monthlyBars"></div>
+<div class="ia-conversions-section">
+ <div class="ia-section-header" style="margin-top: 2rem;">
+ <span class="ia-section-title">Recent Conversions</span>
+ <span id="statsConversionsCount" style="font-size: 0.65rem; color: var(--muted);"></span>
+ </div>
+ <div class="ia-conversions-list" id="statsConversionsList">
+ <div class="ia-conversion-empty">Select a date range to view conversions</div>
+ </div>
+ </div>
+ </div>
+<div class="ia-tab-content" id="tab-shipments">
+ <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+ <span style="font-size: 0.75rem; color: var(--muted);">Product shipments and reel tracking</span>
+ <button class="ia-btn ia-btn-primary" onclick="openAddShipmentForm()" style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">
+ + Add Shipment
+ </button>
+ </div>
+ <div id="addShipmentForm" style="display: none; margin-bottom: 1.5rem; padding: 1rem; border: 1px solid var(--border); background: var(--surface-2);">
+ <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+ <div><label for="shipProductTitle" style="font-size: 0.65rem; color: var(--muted);">Product Title</label><input type="text" id="shipProductTitle" class="ia-input" placeholder="e.g. Classic T-Shirt"></div>
+ <div><label for="shipSentAt" style="font-size: 0.65rem; color: var(--muted);">Sent At</label><input type="date" id="shipSentAt" class="ia-input"></div>
+ <div><label for="shipDueDate" style="font-size: 0.65rem; color: var(--muted);">Reel Due Date</label><input type="date" id="shipDueDate" class="ia-input"></div>
+ <div><label for="shipImage" style="font-size: 0.65rem; color: var(--muted);">Image URL (optional)</label><input type="text" id="shipImage" class="ia-input" placeholder="https://..."></div>
+ </div>
+ <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+ <button class="ia-btn ia-btn-primary" onclick="submitShipment()" style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">Save</button>
+ <button class="ia-btn ia-btn-ghost" onclick="closeAddShipmentForm()" style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">Cancel</button>
+ </div>
+ </div>
+ <div style="overflow-x: auto;">
+ <table class="ia-ship-table">
+ <thead><tr><th>Product</th><th>Sent</th><th>Due</th><th>Status</th><th>Reel URL</th><th>Actions</th></tr></thead>
+ <tbody id="shipmentsTableBody"><tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--muted);">Loading...</td></tr></tbody>
+ </table>
+ </div>
+ </div>
+<div class="ia-tab-content" id="tab-payouts">
+ <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+ <span style="font-size: 0.75rem; color: var(--muted);">Monthly commission payouts</span>
+ <button class="ia-btn ia-btn-primary" onclick="generatePayouts()" style="padding: 0.4rem 0.8rem; font-size: 0.7rem;">
+ Generate Payouts
+ </button>
+ </div>
+ <div style="overflow-x: auto;">
+ <table class="ia-payout-table">
+ <thead><tr><th>Month</th><th>Orders</th><th>Revenue</th><th>Commission %</th><th>Amount Due</th><th>Status</th><th>Action</th></tr></thead>
+ <tbody id="payoutsTableBody"><tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--muted);">Loading...</td></tr></tbody>
+ </table>
+ </div>
+ </div>
+ <div class="ia-modal-actions">
+ <button class="ia-btn ia-btn-ghost" onclick="closeModal('iaStatsModal')">Close</button>
+ </div>
+ </div>
+ </div>
+<div class="ia-drawer-overlay" id="iaPayoutsDrawer" onclick="handleDrawerOverlay(event)">
+ <aside class="ia-drawer" onclick="event.stopPropagation()">
+ <div class="ia-drawer-head">
+ <div>
+ <div class="ia-drawer-title">Payouts Ledger</div>
+ <div class="ia-drawer-sub"><span id="iaPayoutDrawerName">—</span> · <span id="iaPayoutDrawerCode" style="color:var(--muted);font-weight:500;font-size:0.85rem;">—</span></div>
+ </div>
+ <button class="ia-drawer-close" onclick="closePayoutsDrawer()" aria-label="Close">×</button>
+ </div>
+ <div class="ia-drawer-body">
+ <div class="ia-payout-summary" style="grid-template-columns: repeat(2, 1fr);">
+ <div class="ia-payout-summary-cell">
+ <div class="lbl">Total Paid</div>
+ <div class="val" id="iaDrawerTotalPaid">₹0</div>
+ </div>
+ <div class="ia-payout-summary-cell">
+ <div class="lbl">Pending</div>
+ <div class="val" id="iaDrawerPending">₹0</div>
+ </div>
+ </div>
+ <div class="ia-payout-form">
+ <div class="ia-payout-form-title">Add Payout</div>
+ <div class="ia-payout-form-row">
+ <div class="ia-form-group">
+ <label for="poStart" style="font-size:0.65rem;">Period Start</label>
+ <input type="date" id="poStart" class="ia-input">
+ </div>
+ <div class="ia-form-group">
+ <label for="poEnd" style="font-size:0.65rem;">Period End</label>
+ <input type="date" id="poEnd" class="ia-input">
+ </div>
+ </div>
+ <div class="ia-payout-form-row">
+ <div class="ia-form-group">
+ <label for="poAmount" style="font-size:0.65rem;">Amount (INR)</label>
+ <input type="number" id="poAmount" class="ia-input" min="0" step="0.01" placeholder="0.00">
+ </div>
+ <div class="ia-form-group">
+ <label for="poRef" style="font-size:0.65rem;">Reference (Optional)</label>
+ <input type="text" id="poRef" class="ia-input" placeholder="UPI ref / Txn ID">
+ </div>
+ </div>
+ <div class="ia-form-group">
+ <label for="poNotes" style="font-size:0.65rem;">Notes (Optional)</label>
+ <input type="text" id="poNotes" class="ia-input" placeholder="Internal note">
+ </div>
+ <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+ <button class="ia-btn ia-btn-primary" id="iaAddPayoutBtn" onclick="submitNewPayout()" style="flex:1;">Record Payout</button>
+ <button class="ia-btn" onclick="clearPayoutForm()" style="flex:0 0 auto;">Reset</button>
+ </div>
+ </div>
+ <div class="ia-payout-list-header">History</div>
+ <div id="iaPayoutList">
+ <div class="ia-payout-empty">Loading…</div>
+ </div>
+ </div>
+ </aside>
+ </div>
+
+<!-- Messages Page -->
+<div class="ia-content hidden" id="page-messages">
+  <div class="ia-messages-container">
+    <div class="ia-messages-header">
+      <h2 class="ia-lb-page-title">Message Center</h2>
+      <button class="ia-btn ia-btn-primary" onclick="openNewMessageModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        New Message
+      </button>
+    </div>
+
+    <!-- Message Filters -->
+    <div class="ia-messages-tabs">
+      <button class="ia-tab-btn active" onclick="filterMessages('all', this)">All Messages</button>
+      <button class="ia-tab-btn" onclick="filterMessages('direct', this)">Direct</button>
+      <button class="ia-tab-btn" onclick="filterMessages('broadcast', this)">Broadcasts</button>
+    </div>
+
+    <!-- Influencer Filter Dropdown -->
+    <div class="ia-messages-filter-row">
+      <select id="messageInfluencerFilter" onchange="filterByInfluencer()" style="padding: 0.6rem 2rem 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font-size: 0.8rem;">
+        <option value="">All Influencers</option>
+      </select>
+    </div>
+
+    <!-- Messages List -->
+    <div id="messagesList" class="ia-messages-list">
+      <div class="ia-empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <p>No messages yet</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Message Modal -->
+<div class="ia-modal-overlay" id="newMessageModalOverlay" onclick="handleOverlayClick(event, 'newMessageModalOverlay')">
+<div class="ia-modal-box" id="newMessageModal" style="max-width:600px;">
+  <div class="ia-modal-content">
+    <div class="ia-modal-header">
+      <h3>Send Message</h3>
+      <button class="ia-modal-close" onclick="closeNewMessageModal()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="ia-modal-body">
+      <!-- Message Type Toggle -->
+      <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+        <label style="flex: 1; cursor: pointer;">
+          <input type="radio" name="messageType" value="direct" checked onchange="toggleMessageType()" style="margin-right: 0.5rem;">
+          Direct Message
+        </label>
+        <label style="flex: 1; cursor: pointer;">
+          <input type="radio" name="messageType" value="broadcast" onchange="toggleMessageType()" style="margin-right: 0.5rem;">
+          Broadcast to All
+        </label>
+      </div>
+
+      <!-- Recipient Select (hidden for broadcast) -->
+      <div class="ia-form-group" id="recipientSelectGroup">
+        <label>Select Influencer</label>
+        <select id="messageRecipient" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text);">
+          <option value="">Loading...</option>
+        </select>
+      </div>
+
+      <!-- Subject -->
+      <div class="ia-form-group">
+        <label>Subject (Optional)</label>
+        <input type="text" id="messageSubject" placeholder="Enter subject..." style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text);">
+      </div>
+
+      <!-- Message Content -->
+      <div class="ia-form-group">
+        <label>Message *</label>
+        <textarea id="messageContent" rows="6" placeholder="Type your message..." required style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); resize: vertical; font-family: inherit;"></textarea>
+      </div>
+    </div>
+    <div class="ia-modal-footer">
+      <button class="ia-btn" onclick="closeNewMessageModal()">Cancel</button>
+      <button class="ia-btn ia-btn-primary" onclick="sendMessage()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+        Send Message
+      </button>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="iaToast" class="ia-toast"></div>
+</div>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>">
+
+<script src="{{ 'admin-dashboard.js' | asset_url }}" defer></script>
+<!-- Load bulk shipment functions from external file -->
+<script src="{{ 'bulk-shipment.js' | asset_url }}" defer></script>
+</body>
+</html>

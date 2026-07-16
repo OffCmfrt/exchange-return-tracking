@@ -1,0 +1,11942 @@
+const express = require('express');
+const rateLimit = require('express-rate-limit');
+const winston = require('winston');
+const jwt = require('jsonwebtoken');
+const helmet = require('helmet');
+
+// Environment check
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Create the logger
+const logger = winston.createLogger({
+    level: isProduction ? 'error' : 'warn',
+    format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.json()
+    ),
+    transports: [
+        new winston.transports.Console(),
+    ]
+});
+
+// Rate limit event handler with logging
+function rateLimitHandler(req, res, next, options) {
+    const logData = {
+        timestamp: new Date().toISOString(),
+        ip: req.ip,
+        method: req.method,
+        url: req.originalUrl,
+        userAgent: req.headers['user-agent']
+    };
+    logger.warn('Rate limit exceeded', logData);
+    res.status(options.statusCode).json({ error: 'Too many requests, please try again later.' });
+}
+
+// Simple suspicious activity tracker (in-memory, reset every hour)
+const suspiciousActivity = new Map();
+const SUSPICIOUS_THRESHOLD = 10;
+const ATTEMPT_WINDOW_MS = 60 * 60 * 1000;
+
+function trackSuspicious(ip, action) {
+    const now = Date.now();
+    let record = suspiciousActivity.get(ip);
+
+    if (!record) {
+        record = { count: 0, lastAction: null, timestamps: [] };
+        suspiciousActivity.set(ip, record);
+    }
+
+    record.timestamps = record.timestamps.filter(ts => now - ts < ATTEMPT_WINDOW_MS);
+    record.timestamps.push(now);
+    record.count = record.timestamps.length;
+    record.lastAction = action;
+
+    if (record.count >= SUSPICIOUS_THRESHOLD) {
+        logger.warn(`Suspicious activity detected from IP ${ip}`, { count: record.count });
+    }
+}
+
+// Periodically prune stale entries so the Map doesn't grow unbounded (memory leak fix).
+// Without this, every distinct IP that ever triggers trackSuspicious leaves a permanent
+// record, causing RSS to creep up over days. This drops IPs whose attempts have all
+// aged out of the tracking window and trims expired timestamps from the rest.
+const SUSPICIOUS_CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // every 10 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, record] of suspiciousActivity) {
+        const recent = record.timestamps.filter(ts => now - ts < ATTEMPT_WINDOW_MS);
+        if (recent.length === 0) {
+            suspiciousActivity.delete(ip);
+        } else {
+            record.timestamps = recent;
+            record.count = recent.length;
+        }
+    }
+}, SUSPICIOUS_CLEANUP_INTERVAL_MS).unref();
+
+const cors = require('cors');
+const crypto = require('crypto');
+const path = require('path');
+require('dotenv').config();
+const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const Razorpay = require('razorpay');
+
+// Gokwik webhook signature verification
+function verifyGokwikWebhook(payload, signature, secret) {
+    if (!signature || !secret) return false;
+    const hmac = crypto.createHmac('sha256', secret);
+    const digest = hmac.update(payload).digest('hex');
+    try {
+        return crypto.timingSafeEqual(
+            Buffer.from(signature, 'hex'),
+            Buffer.from(digest, 'hex')
+        );
+    } catch {
+        return false;
+    }
+}
+
+// In-memory cache for Shopify customer name lookups (avoids repeated API calls)
+const _customerNameCache = new Map();
+const CUSTOMER_NAME_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+// Resolve the best customer display name from cart data
+// Tries: customer_name -> Shopify lookup by email (cached) -> email prefix -> 'there'
+async function resolveCustomerDisplayName(cart) {
+    // If we have a real name (has a space suggesting first+last, or is a single real name), use it
+    if (cart.customer_name && cart.customer_name.includes(' ')) {
+        return cart.customer_name;
+    }
+    // Single-word customer_name might be email-derived; try Shopify lookup for a real name
+    if (cart.customer_email) {
+        // Check cache first
+        const cached = _customerNameCache.get(cart.customer_email);
+        if (cached && (Date.now() - cached.ts < CUSTOMER_NAME_CACHE_TTL)) {
+            return cached.name;
+        }
+        try {
+            const shopifyCustomerData = await shopifyAPI(`customers.json?email=${encodeURIComponent(cart.customer_email)}&limit=1`);
+            let resolvedName = null;
+            if (shopifyCustomerData?.customers?.[0]) {
+                const sc = shopifyCustomerData.customers[0];
+                resolvedName = `${sc.first_name || ''} ${sc.last_name || ''}`.trim() || null;
+                if (!resolvedName && sc.default_address?.name) resolvedName = sc.default_address.name;
+                if (!resolvedName && (sc.default_address?.first_name || sc.default_address?.last_name)) {
+                    resolvedName = `${sc.default_address.first_name || ''} ${sc.default_address.last_name || ''}`.trim();
+                }
+            }
+            // Cache the result (even null so we don't re-lookup emails with no Shopify customer)
+            _customerNameCache.set(cart.customer_email, { name: resolvedName, ts: Date.now() });
+            // Evict stale entries if cache grows too large
+            if (_customerNameCache.size > 500) {
+                const cutoff = Date.now() - CUSTOMER_NAME_CACHE_TTL;
+                for (const [key, val] of _customerNameCache) {
+                    if (val.ts < cutoff) _customerNameCache.delete(key);
+                }
+            }
+            if (resolvedName) return resolvedName;
+        } catch (e) { /* ignore Shopify lookup errors */ }
+    }
+    // Fallback to existing customer_name if present
+    if (cart.customer_name) return cart.customer_name;
+    // Last resort: derive from email prefix
+    if (cart.customer_email) {
+        return cart.customer_email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
+    }
+    return 'there';
+}
+
+const app = express();
+
+// Trust Render's proxy so express-rate-limit can read real client IPs
+app.set('trust proxy', 1);
+
+// Deploy timestamp: 2026-05-01 - Admin dashboard with permissive CSP
+// Serve admin dashboard BEFORE helmet (to bypass CSP restrictions)
+app.get('/admin', (req, res) => {
+    // Custom CSP for admin - allows inline scripts and event handlers
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
+    res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
+});
+
+// Marketing dashboard - same permissive CSP as admin dashboard
+app.get('/admin/marketing', (req, res) => {
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
+    res.sendFile(path.join(__dirname, 'public', 'admin', 'marketing', 'index.html'));
+});
+
+// Security middleware - Helmet for security headers (applied AFTER admin routes)
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+            connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "https:"],
+        },
+    },
+    crossOriginEmbedderPolicy: false,
+}));
+
+// JWT Configuration
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET && isProduction) {
+    console.error('FATAL: JWT_SECRET environment variable is required in production');
+    process.exit(1);
+}
+
+// Token expiration time (24 hours)
+const TOKEN_EXPIRY = '24h';
+
+// CORS Configuration - Allow all origins for Shopify embedded app
+// Note: In production, consider restricting to your Shopify domain
+const corsOptions = {
+    origin: true, // Allow all origins
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+
+// Rate limiters
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 mins
+    max: 100, // limit each IP to 100 requests per windowMs
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: 'Too many requests from this IP, please try again after 15 minutes.',
+    handler: rateLimitHandler
+});
+
+const writeLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 20, // Max 20 requests per IP per hour for write
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many submissions from this IP, please try again after an hour.',
+    handler: rateLimitHandler
+});
+
+
+
+
+// Apply general API rate limiter
+app.use('/api/', apiLimiter);
+
+// Apply stricter limits on sensitive write endpoints
+app.post('/api/submit-return', writeLimiter);
+app.post('/api/submit-exchange', writeLimiter);
+app.post('/api/admin/', writeLimiter);
+app.post('/api/admin/*', writeLimiter);
+app.post('/api/influencer/apply', writeLimiter);
+
+// Request timeout protection - abort requests taking longer than 30 seconds
+app.use((req, res, next) => {
+    // Safety net: make res.json and res.send no-ops if headers already sent.
+    // This prevents ERR_HTTP_HEADERS_SENT crashes when the timeout fires but
+    // the async route handler is still running and later tries to respond.
+    const origJson = res.json.bind(res);
+    const origSend = res.send.bind(res);
+    res.json = function (body) {
+        if (res.headersSent) return res;
+        return origJson(body);
+    };
+    res.send = function (body) {
+        if (res.headersSent) return res;
+        return origSend(body);
+    };
+
+    res.setTimeout(30000, () => {
+        console.warn(`[Timeout] Request aborted: ${req.method} ${req.originalUrl}`);
+        if (!res.headersSent) {
+            res.status(503).json({ error: 'Request timeout - operation took too long' });
+        }
+    });
+    next();
+});
+
+const PORT = process.env.PORT || 3000;
+
+// Force rebuild: Deployment verified 2026-04-30 20:00 IST
+// Admin dashboard frontend hosted on Render with full backend connectivity
+
+// JWT Token Generation Helper
+function generateToken(payload) {
+    if (!JWT_SECRET) {
+        // Fallback for development only
+        return crypto.randomBytes(32).toString('hex');
+    }
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+}
+
+// JWT Token Verification Helper
+function verifyToken(token) {
+    if (!JWT_SECRET) {
+        return null; // Development fallback
+    }
+    try {
+        return jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        return null;
+    }
+}
+
+// Supabase Database
+const {
+    createRequest,
+    getRequestById,
+    getRequestsByOrderNumber,
+    getAllRequests,
+    getRequestStats,
+    updateRequestData,
+    updateRequestStatus,
+    saveAgentNotes,
+    deleteRequests,
+    getSetting,
+    updateSetting,
+    getAllInfluencers,
+    createInfluencer,
+    updateInfluencer,
+    deleteInfluencer,
+    getInfluencerByToken,
+    getInfluencerById,
+    listPendingInfluencers,
+    isReferralCodeTaken,
+    isEmailTaken,
+    isPhoneTaken,
+    listPayouts,
+    createPayout,
+    updatePayoutStatus,
+    getPayoutById,
+    createShipment,
+    listShipments,
+    listShipmentsByInfluencer,
+    updateShipment,
+    deleteShipment,
+    getShipmentById,
+    listPayoutsByInfluencer,
+    upsertPayout,
+    createReelTarget,
+    getReelTargetsByInfluencer,
+    getReelTargetProgress,
+    createProductRequest,
+    getProductRequests,
+    updateProductRequest,
+    getProductRequestById,
+    convertFromSnakeCase,
+    createMessage,
+    getAdminMessages,
+    getInfluencerMessages,
+    markMessageAsRead,
+    getUnreadMessageCount
+} = require('./config/db-helpers');
+const supabase = require('./config/supabase');
+
+// Marketing Dashboard modules (isolated from return/exchange logic)
+const marketingDB = require('./config/marketing-db-helpers');
+const metaWhatsApp = require('./config/meta-whatsapp');
+
+async function generateUniqueRequestId() {
+    let isUnique = false;
+    let requestId;
+    let retryCount = 0;
+    while (!isUnique && retryCount < 10) {
+        requestId = 'REQ-' + Math.floor(10000 + Math.random() * 90000);
+        const existing = await getRequestById(requestId);
+        if (!existing) {
+            isUnique = true;
+        }
+        retryCount++;
+    }
+    if (!isUnique) {
+        requestId = 'REQ-' + Date.now().toString().slice(-5);
+    }
+    return requestId;
+}
+
+// Body parsing middleware
+app.use(express.json({
+    verify: (req, res, buf) => {
+        req.rawBody = buf.toString();
+    }
+}));
+app.use(express.static('public'));
+
+// Serve favicon.ico to prevent 404
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).end(); // No content
+});
+
+// In-memory storage for OAuth tokens and payment processing
+const storage = {
+    accessToken: null,
+    processingPayments: new Set() // Dedup guard: prevent double-processing same payment
+};
+
+// ==================== BACKGROUND SYNC JOB ====================
+const cron = require('node-cron');
+
+// Background sync job - runs 4 times per day (6AM, 12PM, 6PM, 12AM IST)
+let isSyncRunning = false;
+let lastSyncTimestamp = null;
+
+// Helper function to sync a single request with retry logic
+async function syncWithRetry(req, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await syncSingleRequest(req);
+            
+            // Update sync tracking fields (if they exist in DB)
+            try {
+                const { createClient } = require('@supabase/supabase-js');
+                const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+                await supabase
+                    .from('requests')
+                    .update({
+                        last_sync_attempt: new Date().toISOString(),
+                        sync_retry_count: 0,
+                        last_sync_error: null
+                    })
+                    .eq('request_id', req.requestId);
+            } catch (dbError) {
+                // Ignore if columns don't exist yet (migration not run)
+            }
+            
+            return { success: true, attempts: attempt };
+        } catch (error) {
+            if (attempt === maxRetries) {
+                // Final failure - log permanently
+                try {
+                    const { createClient } = require('@supabase/supabase-js');
+                    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+                    await supabase
+                        .from('requests')
+                        .update({
+                            last_sync_attempt: new Date().toISOString(),
+                            sync_retry_count: attempt,
+                            last_sync_error: error.message
+                        })
+                        .eq('request_id', req.requestId);
+                } catch (dbError) {
+                    // Ignore if columns don't exist yet
+                }
+                
+                console.error(`[${req.requestId}] Sync failed after ${maxRetries} attempts:`, error.message);
+                return { success: false, attempts: attempt, error: error.message };
+            } else {
+                // Wait before retry (exponential backoff: 2s, 4s, 8s)
+                const waitTime = 1000 * Math.pow(2, attempt);
+                console.warn(`[${req.requestId}] Sync attempt ${attempt} failed, retrying in ${waitTime/1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+}
+
+async function performBackgroundSync() {
+    if (isSyncRunning) {
+        console.log('[Background Sync] Sync already running, skipping...');
+        return { success: false, message: 'Sync already running' };
+    }
+    
+    isSyncRunning = true;
+    const syncStartTime = new Date();
+    console.log('[Background Sync] Starting automated sync...');
+    
+    // Initialize metrics tracking
+    const syncMetrics = {
+        total: 0,
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        carrierBreakdown: {
+            shiprocket: { success: 0, failed: 0 },
+            delhivery: { success: 0, failed: 0 },
+            unknown: { success: 0, failed: 0 }
+        },
+        errors: []
+    };
+    
+    try {
+        // Fetch only active requests (not all requests)
+        const { data: activeRequests, error } = await supabase
+            .from('requests')
+            .select('*')
+            .or('status.eq.pending,status.eq.pickup_pending,status.eq.pickup_booked,status.eq.scheduled,status.eq.picked_up,status.eq.in_transit')
+            .not('awb_number', 'is', null)
+            .order('created_at', { ascending: false });
+        
+        if (error || !activeRequests) {
+            console.error('[Background Sync] Error fetching requests:', error);
+            return { success: false, error: error?.message || 'No requests found' };
+        }
+        
+        syncMetrics.total = activeRequests.length;
+        console.log(`[Background Sync] Processing ${activeRequests.length} active requests...`);
+        
+        const BATCH_SIZE = 5; // Process 5 at a time to avoid overwhelming carrier APIs
+        
+        for (let i = 0; i < activeRequests.length; i += BATCH_SIZE) {
+            const batch = activeRequests.slice(i, i + BATCH_SIZE);
+            
+            // Process batch in parallel
+            const results = await Promise.allSettled(batch.map(async (req) => {
+                const carrier = req.carrier || detectCarrier(req);
+                const result = await syncWithRetry(req, 3);
+                
+                // Update metrics
+                if (result.success) {
+                    syncMetrics.success++;
+                    if (syncMetrics.carrierBreakdown[carrier]) {
+                        syncMetrics.carrierBreakdown[carrier].success++;
+                    }
+                } else {
+                    syncMetrics.failed++;
+                    if (syncMetrics.carrierBreakdown[carrier]) {
+                        syncMetrics.carrierBreakdown[carrier].failed++;
+                    }
+                    syncMetrics.errors.push({
+                        requestId: req.requestId,
+                        carrier: carrier,
+                        error: result.error
+                    });
+                }
+                
+                return { requestId: req.requestId, ...result };
+            }));
+            
+            // Log batch progress
+            const batchSuccess = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+            const batchFailed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.success)).length;
+            console.log(`[Background Sync] Batch ${Math.floor(i/BATCH_SIZE) + 1} complete: ${batchSuccess} success, ${batchFailed} failed`);
+        }
+        
+        lastSyncTimestamp = new Date().toISOString();
+        const syncDuration = ((new Date() - syncStartTime) / 1000).toFixed(2);
+        
+        // Log detailed summary
+        console.log(`\n[Background Sync] ========== SYNC SUMMARY ==========`);
+        console.log(`[Background Sync] Duration: ${syncDuration}s`);
+        console.log(`[Background Sync] Total: ${syncMetrics.total}, Success: ${syncMetrics.success}, Failed: ${syncMetrics.failed}, Skipped: ${syncMetrics.skipped}`);
+        console.log(`[Background Sync] Shiprocket: ${syncMetrics.carrierBreakdown.shiprocket.success} success, ${syncMetrics.carrierBreakdown.shiprocket.failed} failed`);
+        console.log(`[Background Sync] Delhivery: ${syncMetrics.carrierBreakdown.delhivery.success} success, ${syncMetrics.carrierBreakdown.delhivery.failed} failed`);
+        
+        if (syncMetrics.errors.length > 0) {
+            console.log(`[Background Sync] Errors:`);
+            syncMetrics.errors.slice(0, 5).forEach(err => {
+                console.log(`  - ${err.requestId} (${err.carrier}): ${err.error}`);
+            });
+            if (syncMetrics.errors.length > 5) {
+                console.log(`  ... and ${syncMetrics.errors.length - 5} more errors`);
+            }
+        }
+        console.log(`[Background Sync] ====================================\n`);
+        
+        return { success: true, metrics: syncMetrics };
+    } catch (error) {
+        console.error('[Background Sync] Fatal error:', error);
+        return { success: false, error: error.message, metrics: syncMetrics };
+    } finally {
+        isSyncRunning = false;
+    }
+}
+
+// Helper function to detect carrier based on request data
+function detectCarrier(req) {
+    // Check explicit carrier field first
+    if (req.carrier === 'delhivery' || req.carrier === 'shiprocket') {
+        return req.carrier;
+    }
+    
+    // Check AWB number patterns
+    if (req.awbNumber) {
+        // Delhivery waybills are typically 12+ digits
+        if (/^\d{12,}$/.test(req.awbNumber)) {
+            return 'delhivery';
+        }
+        // Shiprocket shipment IDs start with 'SR'
+        if (req.shipmentId && req.shipmentId.toString().startsWith('SR')) {
+            return 'shiprocket';
+        }
+    }
+    
+    // Check forward carrier
+    if (req.forwardCarrier) {
+        return req.forwardCarrier;
+    }
+    
+    // Default to shiprocket for backward compatibility
+    return 'shiprocket';
+}
+
+// Helper function to map carrier-specific status to internal status enum
+function mapCarrierStatus(carrierStatus, carrier = 'shiprocket') {
+    if (!carrierStatus) return null;
+    
+    const statusUpper = carrierStatus.toUpperCase();
+    
+    // Common status mappings for both carriers
+    if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
+        return { status: 'delivered', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
+        return { status: 'picked_up', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || 
+        statusUpper.includes('OUT FOR DELIVERY') || statusUpper.includes('DISPATCHED')) {
+        return { status: 'in_transit', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('SCHEDULED') || statusUpper.includes('PICKUP SCHEDULED')) {
+        return { status: 'scheduled', shouldUpdate: true };
+    }
+    
+    if (statusUpper.includes('PICKUP GENERATED') || statusUpper.includes('AWB ASSIGNED') || 
+        statusUpper.includes('PICKUP CREATED') || statusUpper.includes('REGISTERED')) {
+        return { status: 'pickup_pending', shouldUpdate: true };
+    }
+    
+    // Delhivery pickup assigned status - pickup is confirmed/booked but not yet picked up
+    if (statusUpper.includes('PICKUP ASSIGNED') || statusUpper.includes('ASSIGNED')) {
+        return { status: 'pickup_booked', shouldUpdate: true };
+    }
+    
+    // Exception statuses - add admin note but don't change status automatically
+    if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || 
+        statusUpper.includes('CANCELLED') || statusUpper.includes('MISROUTED') || 
+        statusUpper.includes('DELAYED')) {
+        return { status: 'exception', shouldUpdate: false, needsNote: true };
+    }
+    
+    // Unknown status - don't update
+    return { status: null, shouldUpdate: false };
+}
+
+// Extract sync logic into reusable function
+async function syncSingleRequest(req) {
+    const carrier = detectCarrier(req);
+    
+    // Return shipment sync
+    if (['pending', 'pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
+        let trackingData = null;
+        let currentStatus = null;
+        let newAwb = null;
+        
+        // Fetch tracking based on carrier
+        if (req.awbNumber) {
+            try {
+                if (carrier === 'delhivery') {
+                    console.log(`[${req.requestId}] Fetching Delhivery tracking for AWB: ${req.awbNumber}`);
+                    trackingData = await getDelhiveryTracking(req.awbNumber);
+                    
+                    if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
+                        const shipment = trackingData.shipments[0];
+                        currentStatus = shipment.status || shipment.delivered_status;
+                        newAwb = shipment.waybill_code || req.awbNumber;
+                    }
+                } else {
+                    // Shiprocket
+                    trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
+                    
+                    if (trackingData && trackingData.tracking_data) {
+                        const tracking = trackingData.tracking_data;
+                        currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                        newAwb = tracking.shipment_track?.[0]?.awb_code || tracking.awb_code;
+                    }
+                }
+            } catch (e) {
+                console.warn(`[Sync] ${carrier} AWB ${req.awbNumber} (${req.requestId}) fetch failed: ${e.message}`);
+            }
+        }
+        
+        // Fallback to shipment ID for Shiprocket
+        if (!trackingData && carrier === 'shiprocket' && req.shipmentId) {
+            try { 
+                trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`);
+                if (trackingData && trackingData.tracking_data) {
+                    const tracking = trackingData.tracking_data;
+                    currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                }
+            } catch (e) {
+                console.warn(`[Sync] Shiprocket ShipmentID ${req.shipmentId} (${req.requestId}) fetch failed: ${e.message}`);
+            }
+        }
+        
+        // Process tracking data
+        if (currentStatus) {
+            const statusMapping = mapCarrierStatus(currentStatus, carrier);
+            
+            if (statusMapping && statusMapping.shouldUpdate && statusMapping.status) {
+                let newStatus = statusMapping.status;
+                
+                // Build update object
+                const updates = { status: newStatus };
+                if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
+                if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
+                if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
+                if (newAwb && newAwb !== req.awbNumber) updates.awbNumber = newAwb;
+                
+                await updateRequestStatus(req.requestId, updates);
+                console.log(`[${req.requestId}] Status updated: ${req.status} → ${newStatus} (${carrier})`);
+            }
+            
+            // Add admin note for exception statuses
+            if (statusMapping && statusMapping.needsNote) {
+                const note = `\n[Sync Log ${new Date().toLocaleDateString('en-IN')}] ${carrier} status: ${currentStatus}`;
+                if (!req.adminNotes || !req.adminNotes.includes(currentStatus)) {
+                    await updateRequestStatus(req.requestId, { 
+                        adminNotes: (req.adminNotes || '') + note 
+                    });
+                    console.log(`[${req.requestId}] Exception note added: ${currentStatus}`);
+                }
+            }
+        }
+    }
+    
+    // Forward shipment sync for exchanges
+    if (req.type === 'exchange' && req.forwardAwbNumber && req.forwardStatus !== 'delivered') {
+        try {
+            const forwardCarrier = req.forwardCarrier || carrier;
+            let forwardTrack = null;
+            let forwardCurrentStatus = null;
+            
+            if (forwardCarrier === 'delhivery') {
+                console.log(`[${req.requestId}] Fetching Delhivery forward tracking for AWB: ${req.forwardAwbNumber}`);
+                forwardTrack = await getDelhiveryTracking(req.forwardAwbNumber);
+                
+                if (forwardTrack && forwardTrack.shipments && forwardTrack.shipments.length > 0) {
+                    const shipment = forwardTrack.shipments[0];
+                    forwardCurrentStatus = shipment.status || shipment.delivered_status;
+                }
+            } else {
+                // Shiprocket
+                forwardTrack = await shiprocketAPI(`/courier/track/awb/${req.forwardAwbNumber}`);
+                
+                if (forwardTrack && forwardTrack.tracking_data) {
+                    const tracking = forwardTrack.tracking_data;
+                    forwardCurrentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                }
+            }
+            
+            if (forwardCurrentStatus) {
+                const forwardStatusMapping = mapCarrierStatus(forwardCurrentStatus, forwardCarrier);
+                
+                if (forwardStatusMapping && forwardStatusMapping.shouldUpdate && forwardStatusMapping.status) {
+                    const newForwardStatus = forwardStatusMapping.status;
+                    
+                    if (newForwardStatus !== req.forwardStatus) {
+                        console.log(`[${req.requestId}] Updating Forward Status: ${req.forwardStatus} → ${newForwardStatus} (${forwardCarrier})`);
+                        await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
+                    }
+                }
+                
+                // Add note for forward exceptions
+                if (forwardStatusMapping && forwardStatusMapping.needsNote) {
+                    const note = `\n[Forward Sync Log ${new Date().toLocaleDateString('en-IN')}] ${forwardCarrier} status: ${forwardCurrentStatus}`;
+                    if (!req.adminNotes || !req.adminNotes.includes(forwardCurrentStatus)) {
+                        await updateRequestStatus(req.requestId, { 
+                            adminNotes: (req.adminNotes || '') + note 
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            console.error(`[${req.requestId}] Forward Sync Failed:`, e.message);
+        }
+    }
+}
+
+// Schedule sync to run 4 times per day (6AM, 12PM, 6PM, 12AM IST)
+// Cron format: minute hour * * *
+cron.schedule('0 0,6,12,18 * * *', () => {
+    performBackgroundSync();
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata" // IST timezone
+});
+
+// Run initial sync on server startup (after 30 seconds to allow full initialization)
+setTimeout(() => {
+    console.log('[Background Sync] Running initial sync on startup...');
+    performBackgroundSync();
+}, 30000);
+
+console.log('✅ Background sync scheduled: 4 times daily (6AM, 12PM, 6PM, 12AM IST)');
+
+// ==================== SHOPIFY INFLUENCER USAGE SYNC ====================
+
+// Background sync job for Shopify discount code usage - runs 4 times per day (6AM, 12PM, 6PM, 12AM IST)
+let isShopifySyncRunning = false;
+let lastShopifySyncTimestamp = null;
+
+async function performShopifyUsageSync() {
+    if (isShopifySyncRunning) {
+        console.log('[Shopify Usage Sync] Sync already running, skipping...');
+        return;
+    }
+
+    isShopifySyncRunning = true;
+    lastShopifySyncTimestamp = new Date().toISOString();
+    const syncStartedAt = new Date();
+
+    console.log('[Shopify Usage Sync] Starting Shopify usage & stats sync (INCREMENTAL)...');
+
+    try {
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+        // Fetch all active influencers and build a code -> influencer map
+        const { data: influencers, error } = await supabase
+            .from('influencers')
+            .select('*')
+            .eq('is_active', true);
+
+        if (error) {
+            console.error('[Shopify Usage Sync] Error fetching influencers:', error);
+            return;
+        }
+
+        const codeToInfluencer = new Map();
+        for (const inf of influencers) {
+            if (inf.referral_code) {
+                codeToInfluencer.set(inf.referral_code.toUpperCase(), inf);
+            }
+        }
+
+        // Read last sync timestamp for incremental fetch
+        let updatedAtMin = null;
+        try {
+            const { data: meta } = await supabase
+                .from('sync_metadata')
+                .select('value')
+                .eq('key', 'last_shopify_order_sync')
+                .single();
+            if (meta && meta.value) {
+                updatedAtMin = meta.value;
+            }
+        } catch (e) {
+            // sync_metadata table may not exist yet; fall back to full scan
+            console.log('[Shopify Usage Sync] sync_metadata missing, using 180-day fallback');
+        }
+
+        if (!updatedAtMin) {
+            // First run: fetch last 180 days
+            const d = new Date();
+            d.setDate(d.getDate() - 180);
+            updatedAtMin = d.toISOString();
+            console.log(`[Shopify Usage Sync] First run - fetching last 180 days since ${updatedAtMin}`);
+        } else {
+            console.log(`[Shopify Usage Sync] Incremental fetch since ${updatedAtMin}`);
+        }
+
+        // Fetch orders from Shopify using updated_at_min so we catch both new and modified orders
+        let nextUrl = `orders.json?status=any&limit=250&fields=id,name,total_price,discount_codes,created_at,updated_at,currency,financial_status,fulfillment_status,cancelled_at,customer&updated_at_min=${encodeURIComponent(updatedAtMin)}`;
+        let pageCount = 0;
+        let totalFetched = 0;
+        let upsertedCount = 0;
+        const affectedInfluencerIds = new Set();
+
+        while (nextUrl && pageCount < 40) {
+            pageCount++;
+
+            const fullUrl = nextUrl.startsWith('http') ? nextUrl : `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/${nextUrl}`;
+            const response = await fetch(fullUrl, {
+                headers: {
+                    'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                console.error(`[Shopify Usage Sync] ❌ Shopify API error ${response.status}`);
+                break;
+            }
+
+            const data = await response.json();
+            const batch = data.orders || [];
+            totalFetched += batch.length;
+
+            // Filter to orders that use a tracked influencer's code, then map to DB rows
+            const rows = [];
+            for (const order of batch) {
+                if (!order.discount_codes || order.discount_codes.length === 0) continue;
+
+                // Find the first matching influencer code on this order
+                let matchedInfluencer = null;
+                let matchedCode = null;
+                for (const dc of order.discount_codes) {
+                    const up = (dc.code || '').toUpperCase();
+                    const inf = codeToInfluencer.get(up);
+                    if (inf) {
+                        matchedInfluencer = inf;
+                        matchedCode = dc.code;
+                        break;
+                    }
+                }
+                if (!matchedInfluencer) continue;
+
+                const customerName = order.customer
+                    ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() || 'Guest'
+                    : 'Guest';
+
+                rows.push({
+                    shopify_order_id: order.id,
+                    influencer_id: matchedInfluencer.id,
+                    referral_code: matchedCode,
+                    order_name: order.name,
+                    total_price: parseFloat(order.total_price || 0),
+                    currency: order.currency || 'INR',
+                    financial_status: order.financial_status,
+                    fulfillment_status: order.fulfillment_status,
+                    customer_name: customerName,
+                    cancelled_at: order.cancelled_at,
+                    order_created_at: order.created_at,
+                    order_updated_at: order.updated_at,
+                    synced_at: new Date().toISOString()
+                });
+                affectedInfluencerIds.add(matchedInfluencer.id);
+            }
+
+            // Batch upsert to influencer_orders
+            if (rows.length > 0) {
+                const { error: upsertErr } = await supabase
+                    .from('influencer_orders')
+                    .upsert(rows, { onConflict: 'shopify_order_id' });
+                if (upsertErr) {
+                    console.error(`[Shopify Usage Sync] ❌ Upsert error:`, upsertErr.message);
+                } else {
+                    upsertedCount += rows.length;
+                }
+            }
+
+            console.log(`[Shopify Usage Sync] Page ${pageCount}: ${batch.length} orders (matched: ${rows.length}, upserted total: ${upsertedCount})`);
+
+            // Extract next URL from Link header (lowercase 'link')
+            const linkHeader = response.headers.get('link');
+            nextUrl = null;
+            if (linkHeader) {
+                const matches = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+                if (matches) {
+                    nextUrl = matches[1];
+                }
+            }
+        }
+
+        console.log(`[Shopify Usage Sync] ✅ Fetched ${totalFetched} orders, upserted ${upsertedCount} attributed orders`);
+
+        // Recalculate aggregate stats for affected influencers using the DB table
+        let syncedCount = 0;
+        let failedCount = 0;
+
+        // Also recalculate for ALL influencers on first run (updatedAtMin was 180 days ago)
+        const influencersToRefresh = affectedInfluencerIds.size > 0
+            ? influencers.filter(i => affectedInfluencerIds.has(i.id))
+            : influencers;
+
+        for (const influencer of influencersToRefresh) {
+            try {
+                // Aggregate stats from influencer_orders table (paid, non-cancelled only)
+                const { data: orderRows, error: aggErr } = await supabase
+                    .from('influencer_orders')
+                    .select('total_price, financial_status, cancelled_at, order_created_at, order_name, currency, customer_name, shopify_order_id')
+                    .eq('influencer_id', influencer.id)
+                    .is('cancelled_at', null)
+                    .in('financial_status', ['paid', 'partially_paid', 'pending', 'authorized'])
+                    .order('order_created_at', { ascending: false });
+
+                if (aggErr) {
+                    console.error(`[Shopify Usage Sync] ❌ ${influencer.name} - Aggregate error:`, aggErr.message);
+                    failedCount++;
+                    continue;
+                }
+
+                const usageCount = (orderRows || []).length;
+                const totalRevenue = (orderRows || []).reduce((s, r) => s + parseFloat(r.total_price || 0), 0);
+                const commissionRate = parseFloat(influencer.commission_rate || 7);
+                const estimatedEarnings = totalRevenue * (commissionRate / 100);
+
+                // Cache top 20 recent conversions as JSONB for zero-query admin rendering
+                const recentCache = (orderRows || []).slice(0, 20).map(r => ({
+                    id: r.shopify_order_id,
+                    orderName: r.order_name,
+                    total: parseFloat(r.total_price).toFixed(2),
+                    currency: r.currency || 'INR',
+                    date: r.order_created_at,
+                    customerName: r.customer_name || 'Guest'
+                }));
+
+                const { error: updateError } = await supabase
+                    .from('influencers')
+                    .update({
+                        usage_count: usageCount,
+                        total_revenue: totalRevenue,
+                        total_orders: usageCount,
+                        estimated_earnings: estimatedEarnings,
+                        stats_last_updated: new Date().toISOString(),
+                        stats_date_range: 'all_time',
+                        last_synced_at: new Date().toISOString(),
+                        recent_conversions_cache: recentCache,
+                        recent_conversions_updated_at: new Date().toISOString()
+                    })
+                    .eq('id', influencer.id);
+
+                if (updateError) {
+                    console.error(`[Shopify Usage Sync] ❌ ${influencer.name} - Error updating: ${updateError.message}`);
+                    failedCount++;
+                } else {
+                    console.log(`[Shopify Usage Sync] ✅ ${influencer.name} (${influencer.referral_code}) - Orders: ${usageCount}, Revenue: ₹${totalRevenue.toFixed(2)}, Earnings: ₹${estimatedEarnings.toFixed(2)}`);
+                    syncedCount++;
+                }
+            } catch (err) {
+                console.error(`[Shopify Usage Sync] ❌ ${influencer.name} - Error: ${err.message}`);
+                failedCount++;
+            }
+        }
+
+        // Persist the sync watermark (use start time so we don't miss orders updated mid-sync)
+        try {
+            await supabase
+                .from('sync_metadata')
+                .upsert({
+                    key: 'last_shopify_order_sync',
+                    value: syncStartedAt.toISOString(),
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'key' });
+        } catch (e) {
+            console.error('[Shopify Usage Sync] Failed to update sync watermark:', e.message);
+        }
+
+        console.log(`\n[Shopify Usage Sync] ✅ Completed: ${syncedCount} synced, ${failedCount} failed, ${totalFetched} orders scanned, ${upsertedCount} upserted`);
+
+    } catch (error) {
+        console.error('[Shopify Usage Sync] Fatal error:', error);
+    } finally {
+        isShopifySyncRunning = false;
+    }
+}
+
+// Schedule Shopify usage sync - 4 times daily (6AM, 12PM, 6PM, 12AM IST)
+cron.schedule('0 0,6,12,18 * * *', () => {
+    performShopifyUsageSync();
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata" // IST timezone
+});
+
+// Run initial Shopify usage sync on server startup (after 45 seconds)
+setTimeout(() => {
+    console.log('[Shopify Usage Sync] Running initial sync on startup...');
+    performShopifyUsageSync();
+}, 45000);
+
+console.log('✅ Shopify influencer usage sync scheduled: 4 times daily (6AM, 12PM, 6PM, 12AM IST)');
+
+// ==================== MARKETING CRON JOBS ====================
+// Abandoned cart reminders - every 30 minutes
+cron.schedule('*/30 * * * *', () => {
+    processAbandonedCartReminders();
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
+});
+console.log('✅ Marketing: Abandoned cart reminders scheduled (every 30 minutes)');
+
+// Recovery scan - every 6 hours, check Shopify orders against abandoned carts
+cron.schedule('0 */6 * * *', async () => {
+    try {
+        if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) return;
+        console.log('[Marketing Cron] Running recovery scan...');
+        const result = await scanShopifyOrdersForRecoveries();
+        console.log(`[Marketing Cron] Recovery scan complete: ${result.recoveredCount} new recoveries from ${result.scannedOrders} orders`);
+    } catch (err) {
+        console.error('[Marketing Cron] Recovery scan error:', err.message);
+    }
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
+});
+console.log('✅ Marketing: Recovery scan scheduled (every 6 hours)');
+
+// Daily analytics aggregation - at 2AM IST
+cron.schedule('0 2 * * *', () => {
+    aggregateDailyMarketingAnalytics();
+}, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
+});
+console.log('✅ Marketing: Daily analytics aggregation scheduled (2AM IST)');
+
+// ==================== CLOUDINARY CONFIG ====================
+
+let uploadStorage;
+try {
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+        throw new Error('Missing Cloudinary Environment Variables');
+    }
+
+    cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+
+    uploadStorage = new CloudinaryStorage({
+        cloudinary: cloudinary,
+        params: {
+            folder: 'returns',
+            allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'heic', 'heif'],
+        },
+    });
+    console.log('✅ Cloudinary storage configured successfully');
+} catch (error) {
+    console.error('⚠️ Cloudinary configuration failed:', error.message);
+    console.warn('⚠️ Falling back to MemoryStorage (Warning: High RAM usage with multiple uploads)');
+    uploadStorage = multer.memoryStorage();
+}
+
+const upload = multer({ storage: uploadStorage });
+
+// ==================== RAZORPAY CONFIG ====================
+let razorpay;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    razorpay = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
+    console.log('✅ Razorpay initialized');
+} else {
+    console.warn('⚠️ Razorpay credentials missing - Payments may fail or be unverified');
+}
+
+// ==================== OAUTH ROUTES ====================
+
+// Start OAuth installation
+app.get('/auth/install', (req, res) => {
+    const shop = process.env.SHOPIFY_STORE;
+    const clientId = process.env.SHOPIFY_CLIENT_ID;
+    const redirectUri = process.env.SHOPIFY_REDIRECT_URI;
+    const scopes = 'read_orders,write_orders,read_products,read_customers';
+
+    const state = crypto.randomBytes(16).toString('hex');
+    storage.oauthState = state;
+
+
+    const authUrl = `https://${shop}/admin/oauth/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${redirectUri}&state=${state}`;
+
+    res.redirect(authUrl);
+});
+
+// OAuth callback - Protected in production
+app.get('/auth/callback', async (req, res) => {
+    // Block OAuth callback in production if already configured
+    if (isProduction && process.env.SHOPIFY_ACCESS_TOKEN) {
+        return res.status(403).json({ error: 'OAuth callback is disabled in production. Shopify is already configured.' });
+    }
+
+    const { code, shop } = req.query;
+
+    // Validate that we have the required parameters
+    if (!code || !shop) {
+        return res.status(400).json({ error: 'Invalid OAuth callback - missing code or shop parameter' });
+    }
+
+    // Verify shop matches our configured store
+    if (shop !== process.env.SHOPIFY_STORE) {
+        return res.status(400).json({ error: 'Invalid OAuth callback - shop mismatch' });
+    }
+
+    try {
+        // Exchange code for access token
+        const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                client_id: process.env.SHOPIFY_CLIENT_ID,
+                client_secret: process.env.SHOPIFY_CLIENT_SECRET,
+                code
+            })
+        });
+
+        const data = await tokenResponse.json();
+        storage.accessToken = data.access_token;
+
+        // In production, don't expose the token in the response
+        if (isProduction) {
+            return res.json({ 
+                success: true, 
+                message: 'Authorization successful. Token has been stored securely.' 
+            });
+        }
+
+        // Development only: Show token for setup
+        res.send(`
+      <h1>✅ Authorization Successful!</h1>
+      <h2>Your Access Token:</h2>
+      <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-wrap: break-word;">${data.access_token}</pre>
+      <p><strong>IMPORTANT:</strong> Copy this token and add it to your Render environment variables as <code>SHOPIFY_ACCESS_TOKEN</code></p>
+      <p>After adding the token, your service will be fully operational!</p>
+    `);
+    } catch (error) {
+        res.status(500).send(`OAuth error: ${error.message}`);
+    }
+});
+
+// ==================== API RETRY HELPER ====================
+
+/**
+ * A wrapper around fetch that retries on network errors (like ECONNRESET)
+ * @param {string} url - The URL to fetch
+ * @param {object} options - Fetch options
+ * @param {number} retries - Maximum number of retries
+ * @param {number} backoff - Initial backoff delay in ms
+ */
+async function fetchWithRetry(url, options = {}, retries = 3, backoff = 500) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            return response;
+        } catch (error) {
+            // If it's the last retry, throw the error
+            if (i === retries - 1) throw error;
+
+            console.warn(`[Network Retry] Attempt ${i + 1}/${retries} failed for ${url}. Error: ${error.message}. Retrying in ${backoff}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoff));
+            backoff *= 2; // Exponential backoff
+        }
+    }
+}
+
+// ==================== SHOPIFY API HELPER ====================
+
+async function shopifyAPI(endpoint, options = {}) {
+    const token = process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken;
+    const shop = process.env.SHOPIFY_STORE;
+
+    if (!token) {
+        throw new Error('Not authorized. Please complete OAuth flow first.');
+    }
+
+    // Check if endpoint is already a full URL (from pagination Link header)
+    const isFullUrl = endpoint.startsWith('http');
+    const url = isFullUrl ? endpoint : `https://${shop}/admin/api/2024-01/${endpoint}`;
+
+    const response = await fetchWithRetry(url, {
+        ...options,
+        headers: {
+            'X-Shopify-Access-Token': token,
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Shopify API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    // Extract FULL next URL from Link header (not just page_info)
+    const linkHeader = response.headers.get('Link');
+    if (linkHeader) {
+        const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+        if (nextMatch) {
+            data.nextUrl = nextMatch[1]; // Store the full URL
+        }
+    }
+    
+    return data;
+}
+
+// ==================== FETCH ALL SHOPIFY PRODUCTS (CURSOR PAGINATION) ====================
+
+// In-memory product cache (refreshes every 5 minutes)
+let _shopifyProductCache = { data: null, timestamp: 0 };
+const PRODUCT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function fetchAllShopifyProducts(forceRefresh = false) {
+    // Return cached data if still fresh
+    if (!forceRefresh && _shopifyProductCache.data && (Date.now() - _shopifyProductCache.timestamp < PRODUCT_CACHE_TTL)) {
+        return _shopifyProductCache.data;
+    }
+    
+    let allProducts = [];
+    let endpoint = `products.json?limit=250&status=active&fields=id,title,handle,body_html,images,image,variants,product_type,vendor,tags`;
+    let pageCount = 0;
+    const MAX_PAGES = 20; // Safety limit (250 * 20 = 5000 products max)
+    
+    while (endpoint && pageCount < MAX_PAGES) {
+        const data = await shopifyAPI(endpoint);
+        const products = data.products || [];
+        allProducts = allProducts.concat(products);
+        pageCount++;
+        
+        // Follow cursor pagination via nextUrl from Link header
+        if (data.nextUrl) {
+            endpoint = data.nextUrl; // shopifyAPI handles full URLs
+        } else {
+            break;
+        }
+    }
+    
+    console.log(`[Shopify] Fetched ${allProducts.length} total active products across ${pageCount} page(s)`);
+    
+    // Cache the results
+    _shopifyProductCache = { data: allProducts, timestamp: Date.now() };
+    return allProducts;
+}
+
+// Filter products to only those with inventory > 0
+function filterProductsWithInventory(products) {
+    return products
+        .map(p => {
+            const availableVariants = (p.variants || []).filter(v => v.inventory_quantity > 0);
+            if (availableVariants.length === 0) return null;
+            return { ...p, variants: availableVariants };
+        })
+        .filter(Boolean);
+}
+
+// ==================== SHOPIFY DISCOUNT CODE HELPERS ====================
+
+async function createShopifyDiscountCode(code, value, valueType, usageLimit, title) {
+    try {
+        // Backward compatibility: if valueType is a number, shift arguments
+        let finalValueType, finalUsageLimit, finalTitle, finalValue;
+        
+        if (typeof valueType === 'number') {
+            // Old signature: createShopifyDiscountCode(code, percentage, usageLimit, title)
+            finalValueType = 'percentage';
+            finalUsageLimit = valueType;
+            finalTitle = usageLimit;
+            finalValue = `-${value}`;
+        } else {
+            // New signature: createShopifyDiscountCode(code, value, valueType, usageLimit, title)
+            finalValueType = valueType || 'percentage';
+            finalUsageLimit = usageLimit;
+            finalTitle = title;
+            finalValue = typeof value === 'string' ? value : `-${value}`;
+        }
+
+        // --- DUPLICATE CHECK: search for existing discount code before creating ---
+        const upperCode = code.toUpperCase();
+        try {
+            // Use Shopify's direct discount code search (single API call, no pagination)
+            const searchResp = await shopifyAPI(`discount_codes.json?code=${encodeURIComponent(upperCode)}`);
+            const existingCodes = searchResp.discount_codes || [];
+            const match = existingCodes.find(c => c.code && c.code.toUpperCase() === upperCode);
+            if (match) {
+                console.log(`♻️  Discount code ${upperCode} already exists (Price Rule: ${match.price_rule_id}, Code ID: ${match.id}), updating value to ${finalValue} (${finalValueType})`);
+                // UPDATE the existing price rule with the admin's new value — never silently skip
+                try {
+                    await shopifyAPI(`price_rules/${match.price_rule_id}.json`, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            price_rule: {
+                                value: finalValue,
+                                value_type: finalValueType
+                            }
+                        })
+                    });
+                    console.log(`✅ Updated existing price rule ${match.price_rule_id} value to ${finalValue}`);
+                } catch (updateErr) {
+                    console.warn(`⚠️ Could not update existing price rule ${match.price_rule_id}:`, updateErr.message);
+                }
+                return { priceRuleId: match.price_rule_id, discountCodeId: match.id, code: upperCode };
+            }
+        } catch (searchErr) {
+            console.warn('⚠️ Could not search existing discount codes, proceeding with creation:', searchErr.message);
+        }
+        // --- END DUPLICATE CHECK ---
+
+        // Step 1: Create Price Rule
+        console.log(`[createShopifyDiscount] Creating price rule for ${code.toUpperCase()}: value_type=${finalValueType}, value=${finalValue}, usage_limit=${finalUsageLimit || 'unlimited'}`);
+        const priceRulePayload = {
+            price_rule: {
+                title: finalTitle || `Influencer: ${code}`,
+                target_type: 'line_item',
+                target_selection: 'all',
+                allocation_method: 'across',
+                value_type: finalValueType,
+                value: finalValue,
+                customer_selection: 'all',
+                once_per_customer: finalValueType === 'fixed_amount' ? true : false,
+                starts_at: new Date().toISOString()
+            }
+        };
+
+        // Set usage_limit on price_rule itself (total uses across all customers)
+        if (finalUsageLimit && finalUsageLimit > 0) {
+            priceRulePayload.price_rule.usage_limit = finalUsageLimit;
+        }
+
+        const priceRuleResponse = await shopifyAPI('price_rules.json', {
+            method: 'POST',
+            body: JSON.stringify(priceRulePayload)
+        });
+
+        const priceRuleId = priceRuleResponse.price_rule.id;
+
+        // Step 2: Create Discount Code attached to Price Rule
+        const discountCodePayload = {
+            discount_code: {
+                code: code.toUpperCase()
+            }
+        };
+
+        const discountCodeResponse = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
+            method: 'POST',
+            body: JSON.stringify(discountCodePayload)
+        });
+
+        const discountCodeId = discountCodeResponse.discount_code.id;
+
+        console.log(`✅ Created Shopify discount code: ${code.toUpperCase()} | type=${finalValueType} value=${finalValue} usage_limit=${finalUsageLimit || 'unlimited'} (Price Rule ID: ${priceRuleId}, Discount Code ID: ${discountCodeId})`);
+
+        return { priceRuleId, discountCodeId, code: code.toUpperCase() };
+    } catch (error) {
+        console.error('❌ Failed to create Shopify discount code:', error.message);
+        throw error;
+    }
+}
+
+async function updateShopifyDiscountCode(priceRuleId, newCode, newPercentage, newUsageLimit) {
+    try {
+        // Update percentage on Price Rule
+        if (newPercentage !== undefined) {
+            await shopifyAPI(`price_rules/${priceRuleId}.json`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    price_rule: {
+                        value: `-${newPercentage}`
+                    }
+                })
+            });
+        }
+
+        // Update usage limit on Price Rule
+        if (newUsageLimit !== undefined) {
+            await shopifyAPI(`price_rules/${priceRuleId}.json`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    price_rule: {
+                        allocation_limit: newUsageLimit || null  // null = unlimited
+                    }
+                })
+            });
+        }
+
+        // If code changed, create new discount code and remove old one
+        if (newCode) {
+            // Get existing discount codes
+            const existingCodes = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`);
+            const oldCodeId = existingCodes.discount_codes?.[0]?.id;
+
+            // Create new code
+            const newCodePayload = {
+                discount_code: {
+                    code: newCode.toUpperCase()
+                }
+            };
+            await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
+                method: 'POST',
+                body: JSON.stringify(newCodePayload)
+            });
+
+            // Remove old code if exists
+            if (oldCodeId) {
+                await shopifyAPI(`price_rules/${priceRuleId}/discount_codes/${oldCodeId}.json`, {
+                    method: 'DELETE'
+                });
+            }
+
+            // Get new discount code ID
+            const updatedCodes = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`);
+            const newDiscountCodeId = updatedCodes.discount_codes?.[0]?.id;
+
+            console.log(`✅ Updated Shopify discount code to: ${newCode} (Discount Code ID: ${newDiscountCodeId})`);
+            return { priceRuleId, discountCodeId: newDiscountCodeId };
+        }
+
+        console.log(`✅ Updated Shopify discount code (Price Rule ID: ${priceRuleId})`);
+        return { priceRuleId };
+    } catch (error) {
+        console.error('❌ Failed to update Shopify discount code:', error.message);
+        throw error;
+    }
+}
+
+async function disableShopifyDiscountCode(priceRuleId) {
+    try {
+        await shopifyAPI(`price_rules/${priceRuleId}.json`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                price_rule: {
+                    ends_at: new Date().toISOString()
+                }
+            })
+        });
+        console.log(`✅ Disabled Shopify discount code (Price Rule ID: ${priceRuleId})`);
+    } catch (error) {
+        console.error('❌ Failed to disable Shopify discount code:', error.message);
+        // Don't throw - we still want to proceed with deletion even if Shopify fails
+    }
+}
+
+/**
+ * Create a DRAFT Shopify price rule without attaching a discount code.
+ * The code is effectively unusable in Shopify until activateShopifyDiscountCode() is called.
+ * Used by the influencer self-signup flow (hybrid auto-approve).
+ */
+async function createShopifyDiscountDraft(code, percentage, usageLimit, title) {
+    try {
+        const priceRulePayload = {
+            price_rule: {
+                title: title || `Influencer (Pending): ${code}`,
+                target_type: 'line_item',
+                target_selection: 'all',
+                allocation_method: 'across',
+                value_type: 'percentage',
+                value: `-${percentage}`,
+                customer_selection: 'all',
+                starts_at: new Date().toISOString()
+            }
+        };
+
+        const priceRuleResponse = await shopifyAPI('price_rules.json', {
+            method: 'POST',
+            body: JSON.stringify(priceRulePayload)
+        });
+
+        const priceRuleId = priceRuleResponse.price_rule.id;
+
+        if (usageLimit && usageLimit > 0) {
+            await shopifyAPI(`price_rules/${priceRuleId}.json`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    price_rule: { allocation_limit: usageLimit }
+                })
+            });
+        }
+
+        console.log(`📝 Created DRAFT Shopify price rule for ${code} (Price Rule ID: ${priceRuleId}, no discount_code attached)`);
+        return { priceRuleId };
+    } catch (error) {
+        console.error('❌ Failed to create Shopify discount draft:', error.message);
+        throw error;
+    }
+}
+
+/**
+ * Activate a draft price rule by attaching the actual discount_code entry.
+ * Called from the admin Approve action.
+ */
+async function activateShopifyDiscountCode(priceRuleId, code) {
+    try {
+        // Check if a discount code already exists on this price rule
+        const existing = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`);
+        const existingCodes = existing.discount_codes || [];
+        const upperCode = code.toUpperCase();
+
+        // Look for an exact match
+        const match = existingCodes.find(c => c.code && c.code.toUpperCase() === upperCode);
+        if (match) {
+            console.log(`✅ Shopify discount code ${code} already exists (Discount Code ID: ${match.id}), skipping duplicate creation`);
+            return { discountCodeId: match.id };
+        }
+
+        // If other codes exist but don't match, remove them first (stale codes)
+        for (const old of existingCodes) {
+            try {
+                await shopifyAPI(`price_rules/${priceRuleId}/discount_codes/${old.id}.json`, { method: 'DELETE' });
+                console.log(`🗑️ Removed stale discount code "${old.code}" (ID: ${old.id}) from price rule ${priceRuleId}`);
+            } catch (e) {
+                console.warn(`⚠️ Could not remove stale code ${old.id}:`, e.message);
+            }
+        }
+
+        const discountCodePayload = {
+            discount_code: { code: upperCode }
+        };
+
+        const discountCodeResponse = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
+            method: 'POST',
+            body: JSON.stringify(discountCodePayload)
+        });
+
+        const discountCodeId = discountCodeResponse.discount_code.id;
+        console.log(`✅ Activated Shopify discount code ${code} (Discount Code ID: ${discountCodeId})`);
+        return { discountCodeId };
+    } catch (error) {
+        console.error('❌ Failed to activate Shopify discount code:', error.message);
+        throw error;
+    }
+}
+
+/**
+ * Resolve which carrier to use based on settings and optional override
+ * @param {string} carrierMode - The carrier mode setting (e.g., 'shiprocket_only', 'delhivery_only', 'shiprocket_with_fallback', 'delhivery_with_fallback')
+ * @param {string} carrierOverride - Optional per-request override ('shiprocket' or 'delhivery')
+ * @param {string} operationType - 'pickup' or 'dispatch' for logging
+ * @returns {object} - { primary: 'shiprocket'|'delhivery', useFallback: boolean }
+ */
+function resolveCarrier(carrierMode, carrierOverride = null, operationType = 'pickup') {
+    // If admin overrides on a per-request basis, use that as primary but still allow fallback
+    if (carrierOverride === 'shiprocket') {
+        console.log(`[${operationType}] Carrier override: Shiprocket (with fallback if enabled)`);
+        // Check if the carrier mode allows fallback
+        const allowsFallback = carrierMode.includes('with_fallback');
+        return { primary: 'shiprocket', useFallback: allowsFallback };
+    }
+    if (carrierOverride === 'delhivery') {
+        console.log(`[${operationType}] Carrier override: Delhivery (with fallback if enabled)`);
+        // Check if the carrier mode allows fallback
+        const allowsFallback = carrierMode.includes('with_fallback');
+        return { primary: 'delhivery', useFallback: allowsFallback };
+    }
+
+    // Resolve based on carrier mode setting
+    const validModes = ['shiprocket_only', 'delhivery_only', 'shiprocket_with_fallback', 'delhivery_with_fallback'];
+    if (!validModes.includes(carrierMode)) {
+        console.warn(`[${operationType}] Invalid carrier mode '${carrierMode}', defaulting to shiprocket_with_fallback`);
+        carrierMode = 'shiprocket_with_fallback';
+    }
+
+    switch (carrierMode) {
+        case 'shiprocket_only':
+            return { primary: 'shiprocket', useFallback: false };
+        case 'delhivery_only':
+            return { primary: 'delhivery', useFallback: false };
+        case 'shiprocket_with_fallback':
+            return { primary: 'shiprocket', useFallback: true };
+        case 'delhivery_with_fallback':
+            return { primary: 'delhivery', useFallback: true };
+        default:
+            return { primary: 'shiprocket', useFallback: true };
+    }
+}
+
+/**
+ * Get the appropriate carrier mode setting based on operation type
+ * @param {string} operationType - 'pickup' or 'dispatch'
+ * @returns {Promise<string>} - The carrier mode setting
+ */
+async function getCarrierMode(operationType = 'pickup') {
+    const settingKey = operationType === 'dispatch' ? 'carrier_mode_dispatch' : 'carrier_mode_pickup';
+    const fallbackKey = 'carrier_mode'; // Legacy single setting for backward compatibility
+    
+    let carrierMode = await getSetting(settingKey, null);
+    
+    // Fallback to legacy carrier_mode if new setting doesn't exist
+    if (!carrierMode) {
+        carrierMode = await getSetting(fallbackKey, 'shiprocket_with_fallback');
+    }
+    
+    console.log(`[${operationType}] Carrier mode setting (${settingKey}): ${carrierMode}`);
+    return carrierMode;
+}
+
+// ==================== SHIPROCKET API HELPER ====================
+
+let shiprocketToken = null;
+let shiprocketTokenExpiry = null;
+
+async function getShiprocketToken() {
+    // Return cached token if still valid
+    if (shiprocketToken && shiprocketTokenExpiry && Date.now() < shiprocketTokenExpiry) {
+        return shiprocketToken;
+    }
+
+    // Get new token
+    try {
+        const response = await fetchWithRetry('https://apiv2.shiprocket.in/v1/external/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: process.env.SHIPROCKET_EMAIL,
+                password: process.env.SHIPROCKET_PASSWORD
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Shiprocket auth failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        shiprocketToken = data.token;
+        shiprocketTokenExpiry = Date.now() + (24 * 60 * 60 * 1000); // Reduce to 24 hours for safety
+
+        return shiprocketToken;
+    } catch (error) {
+        console.error('Shiprocket authentication error:', error);
+        throw error;
+    }
+}
+
+async function shiprocketAPI(endpoint, options = {}, retries = 2) {
+    let token = await getShiprocketToken();
+
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const response = await fetchWithRetry(`https://apiv2.shiprocket.in/v1/external${endpoint}`, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                // On 401, invalidate token and retry with a fresh one
+                if (response.status === 401) {
+                    console.warn(`[Shiprocket 401] Token expired for ${endpoint}. Refreshing token...`);
+                    shiprocketToken = null;
+                    shiprocketTokenExpiry = null;
+                    token = await getShiprocketToken();
+                    if (i < retries) continue;
+                }
+                // Retry on 5xx errors
+                if (response.status >= 500 && i < retries) {
+                    console.warn(`[Shiprocket Retry] Status ${response.status} for ${endpoint}. Attempt ${i + 1}/${retries + 1}.`);
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                    continue;
+                }
+                throw new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
+            }
+
+            return response.json();
+        } catch (error) {
+            if (i === retries) throw error;
+            console.warn(`[Shiprocket Exception Retry] Attempt ${i + 1}/${retries + 1}. Error: ${error.message}`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        }
+    }
+}
+
+
+// ==================== SHIPROCKET HELPERS ====================
+
+/**
+ * Ensures an email is valid for Shiprocket, with fallbacks.
+ */
+function getValidEmail(inputEmail, shopifyOrder) {
+    const isValid = (email) => {
+        if (!email || typeof email !== 'string') return false;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    };
+
+    if (isValid(inputEmail)) return inputEmail;
+
+    if (shopifyOrder) {
+        if (isValid(shopifyOrder.email)) return shopifyOrder.email;
+        if (shopifyOrder.customer && isValid(shopifyOrder.customer.email)) return shopifyOrder.customer.email;
+    }
+
+    // Default placeholder email to ensure label creation doesn't fail
+    return 'returns@offcomfort.com';
+}
+
+async function createShiprocketReturnOrder(requestData, shopifyOrder) {
+    try {
+        const token = getShiprocketToken ? await getShiprocketToken() : null; // Ensure token function exists
+
+        // Fetch Shopify Order if missing with robust name matching
+        if (!shopifyOrder) {
+            try {
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    console.log(`[${requestData.requestId}] Order not found by "${orderName}", retrying with "${altName}"...`);
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                }
+
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+                if (!shopifyOrder) console.warn(`[${requestData.requestId}] ⚠️ Shopify order not found even with fuzzy lookup for: ${orderName}`);
+            } catch (e) {
+                console.error(`[${requestData.requestId}] Failed to fetch original order:`, e);
+            }
+        }
+
+        const address = shopifyOrder ? (shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address)) : null;
+
+        if (!address) {
+            console.error(`[${requestData.requestId}] ❌ Shiprocket Error: No address found. ShopifyOrder fetched: ${!!shopifyOrder}`);
+            return null;
+        }
+
+        const orderDate = new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0];
+
+        // Fetch dynamic warehouse location settings
+        const warehouseLocation = await getSetting('warehouse_location', null);
+
+        let shippingCustomerName = 'BURB MANUFACTURES PVT LTD';
+        let shippingAddress = 'VILLAGE - BAIRAWAS, NEAR GOVT. SCHOOL';
+        let shippingAddress2 = '';
+        let shippingCity = 'MAHENDERGARH';
+        let shippingState = 'Haryana';
+        let shippingCountry = 'IN';
+        let shippingPincode = '123028';
+        let shippingEmail = 'returns@offcomfort.com';
+        let shippingPhone = '9138514222';
+
+        if (warehouseLocation) {
+            shippingCustomerName = warehouseLocation.name || shippingCustomerName;
+            shippingAddress = warehouseLocation.address || warehouseLocation.address_line_1 || shippingAddress;
+            shippingAddress2 = warehouseLocation.address_2 || warehouseLocation.address_line_2 || shippingAddress2;
+            shippingCity = warehouseLocation.city || shippingCity;
+            shippingState = warehouseLocation.state || shippingState;
+            shippingCountry = warehouseLocation.country || shippingCountry;
+            shippingPincode = warehouseLocation.pin_code || warehouseLocation.pincode || shippingPincode;
+            shippingEmail = warehouseLocation.email || shippingEmail;
+            shippingPhone = warehouseLocation.phone || shippingPhone;
+        }
+
+        const returnItems = requestData.items.map(item => ({
+            name: item.name,
+            sku: item.sku || String(item.variantId || item.id), // Fallback SKU
+            units: parseInt(item.quantity) || 1,
+            selling_price: parseFloat(item.price) || 0,
+            discount: 0,
+            tax: 0
+        }));
+
+        const payload = {
+            order_id: requestData.requestId,
+            order_date: orderDate,
+            channel_id: '', // Optional
+
+            // Pickup Details (Customer Address)
+            pickup_customer_name: address.first_name,
+            pickup_last_name: address.last_name || '',
+            pickup_address: ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 190),
+            pickup_address_2: '',
+            pickup_city: address.city,
+            pickup_state: address.province,
+            pickup_country: address.country_code || 'IN',
+            pickup_pincode: address.zip,
+            pickup_email: getValidEmail(shopifyOrder?.email, shopifyOrder),
+            pickup_phone: (() => {
+                let rawPhone = requestData.customerPhone || address.phone || shopifyOrder?.phone || '9999999999';
+                let digits = String(rawPhone).replace(/\D/g, '');
+                return digits.length >= 10 ? digits.slice(-10) : '9999999999';
+            })(),
+
+            // Shipping Details (Warehouse - Destination)
+            shipping_customer_name: shippingCustomerName,
+            shipping_last_name: '',
+            shipping_address: ((shippingAddress || '') + ' ' + (shippingAddress2 || '')).trim().substring(0, 190),
+            shipping_address_2: '',
+            shipping_city: shippingCity,
+            shipping_state: shippingState,
+            shipping_country: shippingCountry,
+            shipping_pincode: shippingPincode,
+            shipping_email: shippingEmail,
+            shipping_phone: shippingPhone,
+
+            order_items: returnItems,
+            payment_method: 'Prepaid',
+            total_discount: 0,
+            sub_total: returnItems.reduce((sum, item) => sum + (item.selling_price * item.units), 0),
+            length: 10,
+            breadth: 10,
+            height: 10,
+            weight: 0.5
+        };
+
+        console.log('🚀 Creating Shiprocket Return. Payload:', JSON.stringify(payload, null, 2));
+
+        // POST helper so we can transparently refresh an expired token and retry once.
+        const postReturn = async (authToken) => {
+            const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/return', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${authToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            return response.json();
+        };
+
+        let activeToken = token;
+        let data = await postReturn(activeToken);
+
+        // The cached token can be stale (Shiprocket returns 401/token_expired even though our
+        // local 24h expiry hasn't elapsed). Invalidate it, fetch a fresh one, and retry once.
+        if (data && (data.status_code === 401 || data.message === 'token_expired')) {
+            console.warn('[Shiprocket 401] Return token expired. Refreshing token and retrying...');
+            shiprocketToken = null;
+            shiprocketTokenExpiry = null;
+            activeToken = await getShiprocketToken();
+            data = await postReturn(activeToken);
+        }
+
+        console.log('📦 Shiprocket Response:', JSON.stringify(data, null, 2));
+
+        if (
+            data.status_code === 400 ||
+            data.status_code === 401 ||
+            data.status_code === 422 ||
+            data.message === 'token_expired' ||
+            (data.errors && Object.keys(data.errors).length > 0)
+        ) {
+            console.error('❌ Shiprocket Error/Validation:', JSON.stringify(data));
+            return null;
+        }
+
+        return data;
+    } catch (error) {
+        console.error('❌ Failed to create Shiprocket return:', error);
+        return null;
+    }
+}
+
+async function createShiprocketForwardOrder(requestData) {
+    try {
+        const token = await getShiprocketToken();
+
+        // 1. Fetch Shopify Order if we need ANY missing data (Address or Customer)
+        let shopifyOrder = null;
+        const needsAddress = !requestData.newAddress;
+        const needsCustomer = !requestData.customerName || requestData.customerName === 'Customer' || !requestData.customerPhone || requestData.customerPhone === 'null';
+
+        if (needsAddress || needsCustomer) {
+            try {
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+                // Robust lookup: try with/without '#'
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                }
+
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+            } catch (e) {
+                console.error('Failed to fetch original order for forward creation:', e);
+            }
+        }
+
+        // 2. Determine Address
+        let billingAddress = requestData.newAddress;
+        let billingCity = requestData.newCity;
+        let billingPincode = requestData.newPincode;
+        let billingState = requestData.newState;
+
+        // If any modified address field is missing, fall back to original shipping address
+        if (!billingAddress || !billingState || !billingCity || !billingPincode) {
+            if (requestData.shippingAddress && (!billingAddress || !billingCity)) {
+                // Use stored original address components first
+                billingAddress = billingAddress || requestData.shippingAddress;
+                billingCity = billingCity || requestData.shippingCity || '';
+                billingState = billingState || requestData.shippingState || '';
+                billingPincode = billingPincode || requestData.shippingPincode || '';
+            }
+            if (!billingAddress && shopifyOrder && shopifyOrder.shipping_address) {
+                billingAddress = shopifyOrder.shipping_address.address1;
+                billingCity = billingCity || shopifyOrder.shipping_address.city;
+                billingPincode = billingPincode || shopifyOrder.shipping_address.zip;
+                billingState = billingState || shopifyOrder.shipping_address.province;
+            } else if (!billingAddress && requestData.shippingAddress) {
+                // FALLBACK: Parse from concatenated string: "Addr1, Addr2, City, State, Pincode, Country"
+                const parts = requestData.shippingAddress.split(',').map(p => p.trim());
+                billingAddress = parts.slice(0, -4).join(', ') || parts[0];
+                billingCity = billingCity || parts[parts.length - 4] || '';
+                billingState = billingState || parts[parts.length - 3] || '';
+                billingPincode = billingPincode || parts[parts.length - 2] || '';
+
+                // Last ditch: regex for pincode if not found
+                if (!billingPincode.match(/^\d{6}$/)) {
+                    const pinMatch = requestData.shippingAddress.match(/\b\d{6}\b/);
+                    if (pinMatch) billingPincode = pinMatch[0];
+                }
+            }
+        }
+        // Final fallback: ensure no field is undefined
+        billingState = billingState || '';
+        billingCity = billingCity || '';
+        billingPincode = billingPincode || '';
+
+        // 3. Determine Customer Details
+        let customerName = requestData.customerName;
+        if (!customerName || customerName === 'Customer' || customerName === 'null') {
+            if (shopifyOrder) {
+                customerName = `${shopifyOrder.customer?.first_name || ''} ${shopifyOrder.customer?.last_name || ''}`.trim();
+                if (!customerName) customerName = shopifyOrder.shipping_address?.name || 'Customer';
+            } else {
+                customerName = 'Customer';
+            }
+        }
+
+        let customerPhone = requestData.customerPhone;
+        // Check for null string or placeholder
+        if (!customerPhone || customerPhone === 'null' || customerPhone === '9999999999') {
+            if (shopifyOrder) {
+                customerPhone = shopifyOrder.shipping_address?.phone || shopifyOrder.customer?.phone || '';
+            }
+        }
+
+        // Sanitize to exactly 10 digits for Shiprocket rules
+        let cleanPhone = String(customerPhone).replace(/\D/g, '');
+        customerPhone = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : '9999999999';
+
+
+        // Sanitize Phone (Shiprocket requires 10 digits for India)
+        // Remove all non-digits
+        customerPhone = (customerPhone || '').replace(/\D/g, '');
+        // If it starts with 91 and is 12 digits, remove 91
+        if (customerPhone.length === 12 && customerPhone.startsWith('91')) {
+            customerPhone = customerPhone.substring(2);
+        }
+        // If still > 10 digits, take last 10 (risky but often correct for mobile)
+        if (customerPhone.length > 10) {
+            customerPhone = customerPhone.slice(-10);
+        }
+        // If invalid/empty, fallback to dummy but log warning
+        if (customerPhone.length < 10) {
+            console.warn(`⚠️ Invalid phone number for ${requestData.requestId}: ${customerPhone}. Using fallback.`);
+            customerPhone = '9999999999';
+        }
+
+        // Forward Order Items (Replacement Items)
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        console.log(`[${requestData.requestId}] 📦 Processing ${items.length} replacement item(s) for forward order`);
+        
+        const orderItems = [];
+        
+        for (const item of items) {
+            const isDifferentProduct = item.replacementProductId && item.replacementProductId !== item.productId;
+            const title = item.replacementProductTitle || item.name;
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const finalName = title + variantStr;
+            let finalVariantId = (item.replacementVariantId && item.replacementVariantId !== 'Same') ? item.replacementVariantId : (item.variantId || item.id);
+
+            console.log(`[${requestData.requestId}] Item: ${title}`);
+            console.log(`  - Original: ${item.name} (Variant: ${item.variant})`);
+            console.log(`  - Replacement: ${finalName}`);
+            console.log(`  - Variant ID: ${finalVariantId}`);
+            console.log(`  - Price: ₹${item.replacementPrice || item.price}`);
+            console.log(`  - Quantity: ${item.quantity}`);
+
+            // Validate variant exists in Shopify if we have a product ID
+            if (item.replacementProductId && finalVariantId && finalVariantId !== 'Same') {
+                try {
+                    console.log(`[${requestData.requestId}] 🔍 Validating variant ${finalVariantId} in Shopify...`);
+                    const variantsData = await shopifyAPI(`products/${item.replacementProductId}/variants.json`);
+                    const variants = variantsData.variants || [];
+                    const variantExists = variants.find(v => v.id.toString() === finalVariantId.toString());
+                    
+                    if (variantExists) {
+                        console.log(`[${requestData.requestId}] ✅ Variant confirmed: ${variantExists.title} (ID: ${variantExists.id})`);
+                        console.log(`[${requestData.requestId}]    Inventory: ${variantExists.inventory_quantity} units`);
+                    } else {
+                        console.warn(`[${requestData.requestId}] ⚠️ Variant ${finalVariantId} NOT FOUND in product ${item.replacementProductId}!`);
+                        console.warn(`[${requestData.requestId}]    Available variants:`, variants.map(v => ({ id: v.id, title: v.title })));
+                        
+                        // Try to find matching variant by title
+                        if (item.replacementVariant) {
+                            const matchingVariant = variants.find(v => 
+                                v.title === item.replacementVariant ||
+                                v.option1 === item.replacementVariant ||
+                                v.option2 === item.replacementVariant
+                            );
+                            if (matchingVariant) {
+                                console.log(`[${requestData.requestId}] ✅ Found matching variant by title: ${matchingVariant.title} (ID: ${matchingVariant.id})`);
+                                finalVariantId = matchingVariant.id;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[${requestData.requestId}] ❌ Failed to validate variant:`, e.message);
+                }
+            }
+
+            orderItems.push({
+                name: finalName,
+                sku: String(finalVariantId) + '-EXCH',
+                units: parseInt(item.quantity) || 1,
+                selling_price: parseFloat(item.replacementPrice || item.price) || 0,
+                discount: 0,
+                tax: 0
+            });
+        }
+
+        // Fetch dynamic warehouse location settings
+        const warehouseLocation = await getSetting('warehouse_location', null);
+        const pickupLocationNickname = warehouseLocation && warehouseLocation.pickup_location
+            ? warehouseLocation.pickup_location
+            : 'Primary';
+
+        const payload = {
+            order_id: requestData.requestId + '-FWD',
+            order_date: new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0],
+            pickup_location: pickupLocationNickname, // Dynamically set from Shiprocket settings
+            billing_customer_name: customerName,
+            billing_last_name: '',
+            billing_address: (billingAddress || 'Address not available').substring(0, 190),
+            billing_city: billingCity || billingState || 'City',
+            billing_pincode: billingPincode || '110001',
+            billing_state: billingState || billingCity || 'State', // Shiprocket requires state
+            billing_country: 'India',
+            billing_email: getValidEmail(requestData.email, shopifyOrder),
+            billing_phone: customerPhone,
+            shipping_is_billing: true,
+            order_items: orderItems,
+            payment_method: 'Prepaid',
+            sub_total: orderItems.reduce((sum, item) => sum + (item.selling_price * item.units), 0),
+            length: 10, breadth: 10, height: 10, weight: 0.5
+        };
+
+        console.log('🚀 Creating Shiprocket Forward Order:', JSON.stringify(payload, null, 2));
+
+        // POST helper so we can transparently refresh an expired token and retry once.
+        const postForward = async (authToken) => {
+            const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const body = await response.json();
+            return { response, body };
+        };
+
+        let activeToken = token;
+        let { response, body: data } = await postForward(activeToken);
+
+        // The cached token can be stale (Shiprocket returns 401/token_expired even though our
+        // local 24h expiry hasn't elapsed). Invalidate it, fetch a fresh one, and retry once.
+        if (response.status === 401 || (data && data.message === 'token_expired')) {
+            console.warn('[Shiprocket 401] Forward token expired. Refreshing token and retrying...');
+            shiprocketToken = null;
+            shiprocketTokenExpiry = null;
+            activeToken = await getShiprocketToken();
+            ({ response, body: data } = await postForward(activeToken));
+        }
+
+        console.log('📦 Shiprocket Forward Response:', JSON.stringify(data, null, 2));
+
+        if (
+            data.status_code === 400 ||
+            data.status_code === 401 ||
+            data.status_code === 422 ||
+            data.message === 'token_expired' ||
+            (data.errors && Object.keys(data.errors).length > 0)
+        ) {
+            console.error('❌ Shiprocket Validation Error (Forward):', JSON.stringify(data));
+            console.error('❌ Payload that caused error:', JSON.stringify(payload, null, 2));
+            console.error('❌ Items being sent:', JSON.stringify(orderItems, null, 2));
+            return null;
+        }
+
+        if (!response.ok) {
+            console.error(`❌ Shiprocket API Error (HTTP ${response.status}):`, JSON.stringify(data));
+            console.error('❌ Payload that caused error:', JSON.stringify(payload, null, 2));
+            return null;
+        }
+
+        return data;
+    } catch (error) {
+        console.error('❌ Failed to create forward order:', error);
+        return null;
+    }
+}
+
+// ==================== DELHIVERY API HELPER ====================
+
+/**
+ * Delhivery API wrapper with retry logic
+ */
+async function delhiveryAPI(endpoint, options = {}, retries = 2) {
+    const apiKey = process.env.DELHIVERY_API_KEY;
+    if (!apiKey) {
+        throw new Error('Delhivery API key not configured');
+    }
+
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const response = await fetchWithRetry(`https://track.delhivery.com/api${endpoint}`, {
+                ...options,
+                headers: {
+                    'Authorization': `Token ${apiKey}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                // Retry on 5xx errors
+                if (response.status >= 500 && i < retries) {
+                    console.warn(`[Delhivery Retry] Status ${response.status} for ${endpoint}. Attempt ${i + 1}/${retries + 1}.`);
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                    continue;
+                }
+                throw new Error(`Delhivery API error: ${response.status} - ${errorText}`);
+            }
+
+            return response.json();
+        } catch (error) {
+            if (i === retries) throw error;
+            console.warn(`[Delhivery Exception Retry] Attempt ${i + 1}/${retries + 1}. Error: ${error.message}`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        }
+    }
+}
+
+/**
+ * Create return pickup order via Delhivery
+ */
+async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
+    try {
+        // Fetch Shopify Order if missing
+        if (!shopifyOrder) {
+            try {
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    console.log(`[${requestData.requestId}] Order not found by "${orderName}", retrying with "${altName}"...`);
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                }
+
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+                if (!shopifyOrder) console.warn(`[${requestData.requestId}] ⚠️ Shopify order not found even with fuzzy lookup for: ${orderName}`);
+            } catch (e) {
+                console.error(`[${requestData.requestId}] Failed to fetch original order:`, e);
+            }
+        }
+
+        const address = shopifyOrder ? (shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address)) : null;
+
+        if (!address) {
+            console.error(`[${requestData.requestId}] ❌ Delhivery Error: No address found. ShopifyOrder fetched: ${!!shopifyOrder}`);
+            return null;
+        }
+
+        // Fetch dynamic warehouse location settings
+        const warehouseLocation = await getSetting('warehouse_location', null);
+
+        // Customer (pickup) details
+        const customerName = `${address.first_name || ''} ${address.last_name || ''}`.trim() || 'Customer';
+        const customerAddress = ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 190);
+        const customerCity = address.city || 'City';
+        const customerState = address.province || 'State';
+        const customerPincode = address.zip;
+        const customerCountry = address.country_code || 'IN';
+        
+        let customerPhone = requestData.customerPhone || address.phone || shopifyOrder?.phone || '9999999999';
+        let digits = String(customerPhone).replace(/\D/g, '');
+        customerPhone = digits.length >= 10 ? digits.slice(-10) : '9999999999';
+
+        // Warehouse (return) details
+        let returnName = 'BURB MANUFACTURES PVT LTD';
+        let returnAddress = 'VILLAGE - BAIRAWAS, NEAR GOVT. SCHOOL';
+        let returnCity = 'MAHENDERGARH';
+        let returnState = 'Haryana';
+        let returnCountry = 'IN';
+        let returnPincode = '123028';
+        let returnEmail = 'returns@offcomfort.com';
+        let returnPhone = '9138514222';
+
+        if (warehouseLocation) {
+            returnName = warehouseLocation.name || returnName;
+            returnAddress = warehouseLocation.address || warehouseLocation.address_line_1 || returnAddress;
+            returnCity = warehouseLocation.city || returnCity;
+            returnState = warehouseLocation.state || returnState;
+            returnCountry = warehouseLocation.country || returnCountry;
+            returnPincode = warehouseLocation.pin_code || warehouseLocation.pincode || returnPincode;
+            returnEmail = warehouseLocation.email || returnEmail;
+            returnPhone = warehouseLocation.phone || returnPhone;
+        }
+
+        // Sanitize addresses - Delhivery doesn't accept: &, #, %, ;, \
+        const sanitizeAddress = (str) => {
+            if (!str) return '';
+            return str.replace(/[&#%;\\]/g, '').trim();
+        };
+
+        // Get Delhivery pickup location nickname
+        // Priority: 1. Delhivery-specific setting, 2. Warehouse pickup_location, 3. Env variable, 4. Default
+        const delhiveryPickupLocationSetting = await getSetting('delhivery_pickup_location', null);
+        const pickupLocationNickname = delhiveryPickupLocationSetting 
+            || (warehouseLocation && warehouseLocation.pickup_location)
+            || process.env.DELHIVERY_PICKUP_LOCATION 
+            || 'Primary';
+
+        console.log(`📍 Using Delhivery pickup location: ${pickupLocationNickname}`);
+
+        // Process items/products for Delhivery
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        console.log(`📦 Processing ${items.length} item(s) for Delhivery order`);
+        
+        const products = [];
+        let totalQuantity = 0;
+        let totalAmount = 0;
+        let productsDesc = [];
+        for (const item of items) {
+            const title = item.replacementProductTitle || item.name;
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const productName = title + variantStr;
+            const quantity = parseInt(item.quantity) || 1;
+            const price = parseFloat(item.replacementPrice || item.price) || 0;
+            
+            console.log(`  - Product: ${productName}`);
+            console.log(`    Quantity: ${quantity}`);
+            console.log(`    Price: ₹${price}`);
+            
+            totalQuantity += quantity;
+            totalAmount += (price * quantity);
+            productsDesc.push(productName);
+            
+            products.push({
+                name: sanitizeAddress(productName),
+                quantity: quantity,
+                price: price,
+                selling_price: price,
+                sku: String(item.replacementVariantId || item.variantId || item.id || '') + '-EXCH',
+                hsn_code: '9965'  // Default HSN for apparel/general goods
+            });
+        }
+
+        // Get GST TIN for Delhivery (mandatory per Delhivery docs)
+        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AAKFO0351L1Z7';
+        const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;
+        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 30;
+        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 40;
+        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 2;
+
+        console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+        console.log(`📊 Total Quantity: ${totalQuantity}, Total Amount: ₹${totalAmount}`);
+        console.log(`🔢 Seller GST: ${sellerGstTin}`);
+
+        // Build payload for Delhivery CMU API
+        // For forward dispatch (exchange), use 'fws' prefix to avoid duplicate order errors.
+        // When re-booking a fresh pickup (e.g. a previous booking was cancelled), a unique
+        // suffix (e.g. '-R1') must be appended so Delhivery treats it as a NEW order instead
+        // of rejecting it as a "Duplicate order id" and echoing back the stale waybill.
+        const orderIdPrefix = requestData.type === 'exchange' ? 'fws-' : '';
+        const orderIdSuffix = requestData.delhiveryOrderIdSuffix || '';
+        const delhiveryOrderId = `${orderIdPrefix}${requestData.requestId}${orderIdSuffix}`;
+        
+        console.log(` Delhivery Order Type: ${requestData.type || 'return'}, Order ID: ${delhiveryOrderId}`);
+        
+        const payload = {
+            shipments: [{
+                name: sanitizeAddress(customerName),
+                add: sanitizeAddress(customerAddress),
+                pin: customerPincode,
+                city: sanitizeAddress(customerCity),
+                state: sanitizeAddress(customerState),
+                country: customerCountry,
+                phone: customerPhone,
+                payment_mode: 'Pickup', // For reverse pickup
+                order: delhiveryOrderId,
+                cod_amount: 0,
+                order_date: new Date().toISOString().split('T')[0],
+                total_amount: totalAmount,
+                quantity: totalQuantity,
+                weight: pkgWeight,
+                shipment_width: pkgWidth,
+                shipment_height: pkgHeight,
+                shipment_length: pkgLength,
+                products_desc: productsDesc.join(', '),
+                hsn_code: '9965',
+                return_pin: returnPincode,
+                return_add: sanitizeAddress(returnAddress),
+                return_city: sanitizeAddress(returnCity),
+                return_state: sanitizeAddress(returnState),
+                return_country: returnCountry,
+                return_phone: returnPhone,
+                seller_gst_tin: sellerGstTin,  // Mandatory for GST compliance
+                products: products  // Include product details
+            }],
+            pickup_location: {
+                name: pickupLocationNickname,
+                add: sanitizeAddress(returnAddress),
+                pin: returnPincode,
+                city: sanitizeAddress(returnCity),
+                state: sanitizeAddress(returnState),
+                country: returnCountry,
+                phone: returnPhone
+            }
+        };
+
+        console.log(`🚀 Creating Delhivery Return Order. Payload:`, JSON.stringify(payload, null, 2));
+
+        // Delhivery requires format=json&data=<json_string> in the body
+        const bodyString = `format=json&data=${JSON.stringify(payload)}`;
+
+        const response = await fetch('https://track.delhivery.com/api/cmu/create.json', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Token ${process.env.DELHIVERY_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: bodyString
+        });
+
+        const data = await response.json();
+        console.log(`📦 Delhivery Response:`, JSON.stringify(data, null, 2));
+
+        // First, check if we have packages data - even with errors, packages might contain useful data
+        if (data && data.packages && data.packages.length > 0) {
+            const pkg = data.packages[0];
+            
+            // If we have a waybill but status is Fail with duplicate error, recover it
+            if (pkg.waybill && pkg.status === 'Fail' && pkg.remarks && pkg.remarks.some(r => r.toLowerCase().includes('duplicate'))) {
+                console.warn(`⚠️ Delhivery duplicate order detected for ${requestData.requestId}. Using existing waybill: ${pkg.waybill}`);
+                return {
+                    waybill: pkg.waybill,
+                    shipment_id: pkg.refnum || requestData.requestId,
+                    success: true,
+                    data: { ...data, recovered: true, duplicateOrder: true }
+                };
+            }
+            
+            // Handle duplicate order error without waybill - try to retrieve existing waybill
+            if (pkg.status === 'Fail' && pkg.remarks && pkg.remarks.some(r => r.toLowerCase().includes('duplicate'))) {
+                console.warn(`⚠️ Delhivery duplicate order detected for ${requestData.requestId}. Attempting to retrieve existing waybill...`);
+                
+                // Try to get tracking info using the order reference
+                try {
+                    const trackingData = await delhiveryAPI(`/v1/packages/json/?refnos=${requestData.requestId}`);
+                    if (trackingData && trackingData.packages && trackingData.packages.length > 0) {
+                        const existingPkg = trackingData.packages[0];
+                        if (existingPkg.waybill_code || existingPkg.awb) {
+                            const existingWaybill = existingPkg.waybill_code || existingPkg.awb;
+                            console.log(`✅ Retrieved existing waybill for duplicate order: ${existingWaybill}`);
+                            return {
+                                waybill: existingWaybill,
+                                shipment_id: existingPkg.refnum || requestData.requestId,
+                                success: true,
+                                data: { ...data, recovered: true, existingWaybill }
+                            };
+                        }
+                    }
+                } catch (recoverError) {
+                    console.error(`❌ Failed to recover existing waybill:`, recoverError.message);
+                }
+                
+                // If recovery failed, throw error with specific message
+                throw new Error(`Delhivery duplicate order: ${requestData.requestId} already exists. ${pkg.remarks.join(', ')}`);
+            }
+            
+            // Check for success
+            if (pkg.status === 'Success' && pkg.waybill) {
+                return {
+                    waybill: pkg.waybill,
+                    shipment_id: pkg.refnum || null,
+                    success: true,
+                    data: data
+                };
+            } else if (pkg.status && pkg.status !== 'Success') {
+                console.error(`❌ Delhivery package status: ${pkg.status}`);
+                const errorMsg = pkg.remarks && pkg.remarks.length > 0 ? pkg.remarks.join(', ') : pkg.status;
+                throw new Error(`Delhivery package error: ${errorMsg}`);
+            }
+        }
+
+        // Check for error responses (only if no packages data was processed)
+        if (data && data.rmk) {
+            console.error(`❌ Delhivery Error: ${data.rmk}`);
+            throw new Error(`Delhivery API Error: ${data.rmk}`);
+        }
+
+        if (data && data.message) {
+            console.error(`❌ Delhivery Message: ${data.message}`);
+            throw new Error(`Delhivery API Error: ${data.message}`);
+        }
+
+        // Check alternative response formats
+        if (data && data.shipments && data.shipments.length > 0) {
+            const shipment = data.shipments[0];
+            return {
+                waybill: shipment.waybill_code || shipment.awb_code || null,
+                shipment_id: shipment.shipment_id || null,
+                success: true,
+                data: data
+            };
+        } else if (data.status === 'success' || data.success) {
+            // Alternative success response format
+            return {
+                waybill: data.waybill_code || data.awb_code || data.waybill || null,
+                shipment_id: data.shipment_id || null,
+                success: true,
+                data: data
+            };
+        } else {
+            console.error('❌ Delhivery Error: Unexpected response format', JSON.stringify(data));
+            throw new Error(`Delhivery unexpected response: ${JSON.stringify(data).substring(0, 200)}`);
+        }
+    } catch (error) {
+        console.error('❌ Failed to create Delhivery return:', error);
+        return null;
+    }
+}
+
+/**
+ * Create Delhivery Forward Order (for exchange/replacement dispatch)
+ * This sends item FROM warehouse TO customer (opposite of return pickup)
+ */
+async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
+    try {
+        console.log(`\n📦 Creating Delhivery Forward Order for ${requestData.requestId}...`);
+        
+        // Fetch Shopify Order if we need customer address
+        if (!shopifyOrder && requestData.orderNumber) {
+            try {
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                }
+
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+            } catch (e) {
+                console.error(`[${requestData.requestId}] Failed to fetch Shopify order:`, e.message);
+            }
+        }
+
+        // Get warehouse location for pickup (FROM warehouse)
+        const warehouseLocation = await getSetting('warehouse_location', null);
+        
+        if (!warehouseLocation) {
+            console.error(`[${requestData.requestId}] ❌ No warehouse location configured`);
+            return null;
+        }
+
+        console.log('✅ Using warehouse from settings:', warehouseLocation.nickname || warehouseLocation.name);
+        console.log('📦 Warehouse Details:');
+        console.log(`   Name: ${warehouseLocation.name}`);
+        console.log(`   Address: ${warehouseLocation.address}`);
+        console.log(`   City: ${warehouseLocation.city}, ${warehouseLocation.state} ${warehouseLocation.pin_code || warehouseLocation.pincode}`);
+        console.log(`   Phone: ${warehouseLocation.phone}`);
+
+        // Customer details (TO customer) - use new_* fields for exchange address, fall back to original
+        // Note: Influencer flows pass customerAddress/customerCity/etc, exchange flows use shippingAddress/newAddress
+        let customerName = requestData.newName || requestData.customerName || 'Customer';
+        let customerAddress = requestData.newAddress || requestData.shippingAddress || requestData.customerAddress || '';
+        let customerCity = requestData.newCity || requestData.shippingCity || requestData.customerCity || '';
+        let customerState = requestData.newState || requestData.shippingState || requestData.customerState || '';
+        let customerPincode = requestData.newPincode || requestData.shippingPincode || requestData.customerPincode || '';
+        let customerPhone = requestData.customerPhone || requestData.newPhone || '9999999999';
+
+        // Parser: extract city/state/pincode from combined address string if missing
+        // Indian address format: "street, area, CITY, STATE, PINCODE, Country"
+        if (customerAddress && (!customerPincode || !customerCity || !customerState)) {
+            const addrParts = customerAddress.split(',').map(s => s.trim()).filter(Boolean);
+            if (addrParts.length >= 3) {
+                // Try to find pincode (6-digit number) in the address parts
+                const pincodeIdx = addrParts.findIndex(p => /^\d{6}$/.test(p));
+                if (pincodeIdx > 0) {
+                    if (!customerPincode) customerPincode = addrParts[pincodeIdx];
+                    if (!customerState && pincodeIdx >= 2) customerState = addrParts[pincodeIdx - 1];
+                    if (!customerCity && pincodeIdx >= 3) customerCity = addrParts[pincodeIdx - 2];
+                } else {
+                    // No 6-digit pincode found, try to extract from end: ..., City, State, Country
+                    const lastPart = addrParts[addrParts.length - 1];
+                    const isCountry = /^(india|IN)$/i.test(lastPart);
+                    const endIdx = isCountry ? addrParts.length - 2 : addrParts.length - 1;
+                    if (!customerState && endIdx >= 1) customerState = addrParts[endIdx];
+                    if (!customerCity && endIdx >= 2) customerCity = addrParts[endIdx - 1];
+                }
+            }
+            console.log(`[Address Parser] Parsed from combined address: city=${customerCity}, state=${customerState}, pin=${customerPincode}`);
+        }
+
+        // Shopify fallback: if still missing city/state/pincode, fetch from Shopify order
+        if (shopifyOrder && (!customerPincode || !customerCity || !customerState)) {
+            const address = shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address);
+            if (address) {
+                customerName = `${address.first_name || ''} ${address.last_name || ''}`.trim() || customerName;
+                if (!customerAddress) customerAddress = ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 190);
+                customerCity = customerCity || address.city || '';
+                customerState = customerState || address.province || '';
+                customerPincode = customerPincode || address.zip || '';
+                customerPhone = customerPhone || address.phone || shopifyOrder?.phone || '9999999999';
+                console.log(`[Shopify Fallback] Filled from Shopify: city=${customerCity}, state=${customerState}, pin=${customerPincode}`);
+            }
+        }
+
+        // Deep fallback: if address is STILL empty, try to fetch Shopify order using order_number from DB
+        if (!customerAddress) {
+            const orderNum = requestData.orderNumber || requestData.order_number;
+            if (orderNum && !shopifyOrder) {
+                console.log(`[Address Recovery] Address empty, attempting Shopify fetch for order: ${orderNum}`);
+                try {
+                    let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNum)}&status=any&limit=1`);
+                    if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                        const altName = orderNum.startsWith('#') ? orderNum.substring(1) : `#${orderNum}`;
+                        shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                    }
+                    const fetchedOrder = shopifyData.orders && shopifyData.orders[0];
+                    if (fetchedOrder) {
+                        const addr = fetchedOrder.shipping_address || (fetchedOrder.customer && fetchedOrder.customer.default_address);
+                        if (addr) {
+                            customerName = `${addr.first_name || ''} ${addr.last_name || ''}`.trim() || customerName;
+                            customerAddress = ((addr.address1 || '') + ' ' + (addr.address2 || '')).trim().substring(0, 190);
+                            customerCity = customerCity || addr.city || '';
+                            customerState = customerState || addr.province || '';
+                            customerPincode = customerPincode || addr.zip || '';
+                            customerPhone = (customerPhone && customerPhone !== '9999999999') ? customerPhone : (addr.phone || fetchedOrder.phone || '9999999999');
+                            console.log(`[Address Recovery] ✅ Recovered from Shopify: ${customerAddress}, ${customerCity}, ${customerState} ${customerPincode}`);
+                        }
+                    } else {
+                        console.warn(`[Address Recovery] ⚠️ Order ${orderNum} not found in Shopify`);
+                    }
+                } catch (shopifyErr) {
+                    console.error(`[Address Recovery] ❌ Shopify fetch failed:`, shopifyErr.message);
+                }
+            }
+        }
+
+        // Final validation: ensure address is not empty before sending to Delhivery
+        if (!customerAddress) {
+            console.error(`[${requestData.requestId}] ❌ Customer address is EMPTY after all resolution attempts`);
+            console.error(`   requestData keys: ${Object.keys(requestData).join(', ')}`);
+            console.error(`   orderNumber: ${requestData.orderNumber || requestData.order_number || 'N/A'}`);
+            console.error(`   newAddress: ${requestData.newAddress || 'N/A'}`);
+            console.error(`   shippingAddress: ${requestData.shippingAddress || 'N/A'}`);
+            return null;
+        }
+
+        // Validate phone number
+        let digits = String(customerPhone).replace(/\D/g, '');
+        customerPhone = digits.length >= 10 ? digits.slice(-10) : '9999999999';
+
+        // Sanitize addresses - Delhivery doesn't accept: &, #, %, ;, \
+        const sanitizeAddress = (str) => {
+            if (!str) return '';
+            return str.replace(/[&#%;\\]/g, '').trim();
+        };
+
+        // Build forward order ID with fws- prefix (required by Delhivery for forward shipments)
+        const forwardOrderId = `fws-${requestData.requestId}`;
+
+        // Get Delhivery pickup location nickname
+        const delhiveryPickupLocationSetting = await getSetting('delhivery_pickup_location', null);
+        const pickupLocationNickname = delhiveryPickupLocationSetting 
+            || (warehouseLocation && warehouseLocation.pickup_location)
+            || process.env.DELHIVERY_PICKUP_LOCATION 
+            || 'Primary';
+
+        console.log(` Using Delhivery pickup location: ${pickupLocationNickname}`);
+        console.log(`📦 Forward Order: FROM warehouse TO customer`);
+        console.log(`   Order ID: ${forwardOrderId}`);
+        console.log(`   From: ${warehouseLocation.city}, ${warehouseLocation.state}`);
+        console.log(`   To: ${customerCity}, ${customerState}`);
+
+        // Process items/products for Delhivery
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        console.log(`📦 Processing ${items.length} item(s) for Delhivery forward order`);
+        
+        const products = [];
+        let totalQuantity = 0;
+        let totalAmount = 0;
+        let productsDesc = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const isDifferentProduct = item.replacementProductId && item.replacementProductId !== item.productId;
+            const title = item.replacementProductTitle || item.name;
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const productName = title + variantStr;
+            const quantity = parseInt(item.quantity) || 1;
+            const price = parseFloat(item.replacementPrice || item.price) || 0;
+            
+            console.log(`  - Product: ${productName}`);
+            console.log(`    Quantity: ${quantity}`);
+            console.log(`    Price: ₹${price}`);
+            
+            totalQuantity += quantity;
+            totalAmount += (price * quantity);
+            productsDesc.push(productName);
+
+            // Generate unique SKU - use product ID first, fallback to sanitized product name
+            // This prevents Delhivery from merging different products with the same SKU
+            const rawSku = item.replacementVariantId || item.variantId || item.id || '';
+            const sku = rawSku
+                ? String(rawSku) + '-EXCH'
+                : productName.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').substring(0, 30).toUpperCase() + '-EXCH';
+            
+            products.push({
+                name: sanitizeAddress(productName),
+                quantity: quantity,
+                price: price,
+                selling_price: price,
+                sku: sku,
+                hsn_code: '9965'  // Default HSN for apparel/general goods
+            });
+        }
+
+        // Get GST TIN for Delhivery (mandatory per Delhivery docs)
+        const sellerGstTin = process.env.DELHIVERY_SELLER_GST || '06AAKFO0351L1Z7';
+
+        // Default package dimensions and weight (configurable via env)
+        const pkgWeight = parseFloat(process.env.DELHIVERY_DEFAULT_WEIGHT) || 500;  // grams
+        const pkgLength = parseFloat(process.env.DELHIVERY_DEFAULT_LENGTH) || 30;   // cm
+        const pkgWidth = parseFloat(process.env.DELHIVERY_DEFAULT_WIDTH) || 40;     // cm
+        const pkgHeight = parseFloat(process.env.DELHIVERY_DEFAULT_HEIGHT) || 2;    // cm
+
+        console.log(`✅ Prepared ${products.length} product(s) for Delhivery`);
+        console.log(`📊 Total Quantity: ${totalQuantity}, Total Amount: ₹${totalAmount}`);
+        console.log(`📦 Package: ${pkgWeight}g, ${pkgLength}x${pkgWidth}x${pkgHeight}cm`);
+        console.log(`🔢 Seller GST: ${sellerGstTin}`);
+
+        // Build payload for Delhivery CMU API - FORWARD direction
+        // Single shipment with all products listed individually
+        const payload = {
+            shipments: [{
+                order: forwardOrderId,
+                name: sanitizeAddress(customerName),
+                add: sanitizeAddress(customerAddress),
+                pin: customerPincode,
+                city: sanitizeAddress(customerCity),
+                state: sanitizeAddress(customerState),
+                country: "India",
+                phone: customerPhone,
+                payment_mode: "Prepaid",
+                cod_amount: 0,
+                order_date: new Date().toISOString().split('T')[0],
+                total_amount: totalAmount,
+                quantity: totalQuantity,
+                weight: pkgWeight,
+                shipment_width: pkgWidth,
+                shipment_height: pkgHeight,
+                shipment_length: pkgLength,
+                products_desc: productsDesc.join(', '),
+                hsn_code: '9965',
+                pickup_location: pickupLocationNickname,
+                seller_gst_tin: sellerGstTin,
+                products: products
+            }],
+            pickup_location: {
+                name: pickupLocationNickname,
+                add: sanitizeAddress(warehouseLocation.address || warehouseLocation.address_line_1),
+                pin: warehouseLocation.pin_code || warehouseLocation.pincode,
+                city: sanitizeAddress(warehouseLocation.city),
+                state: sanitizeAddress(warehouseLocation.state || 'Haryana'),
+                country: 'IN',
+                phone: warehouseLocation.phone
+            }
+        };
+
+        console.log('🚀 Sending to Delhivery CMU API...');
+        console.log('📦 Payload:', JSON.stringify(payload, null, 2));
+
+        const response = await fetch('https://track.delhivery.com/api/cmu/create.json', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Token ${process.env.DELHIVERY_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: `format=json&data=${JSON.stringify(payload)}`
+        });
+
+        const data = await response.json();
+        console.log('📦 Delhivery Response:', JSON.stringify(data, null, 2));
+
+        if (data.error || data.status === "Error") {
+            console.error('❌ Delhivery Error:', data.error || data.message);
+            return null;
+        }
+
+        // Extract waybill(s) and shipment details - support multiple packages for multi-product orders
+        const packages = data.packages || [];
+        const waybills = packages.map(pkg => pkg.waybill).filter(Boolean);
+        const shipmentIds = packages.map(pkg => pkg.shipment_id || forwardOrderId);
+        
+        if (waybills.length > 0) {
+            console.log(`✅ Delhivery Forward Success!`);
+            waybills.forEach((wb, i) => {
+                console.log(`   Package ${i + 1} - Waybill: ${wb}, Order: ${packages[i]?.refnum || forwardOrderId}`);
+            });
+                    
+            return {
+                waybill: waybills[0],  // Primary waybill (first package)
+                waybills: waybills,    // All waybills for multi-product orders
+                shipment_id: shipmentIds[0],
+                shipment_ids: shipmentIds,
+                order_id: forwardOrderId,
+                package_count: packages.length
+            };
+        } else {
+            console.error('❌ Delhivery did not return waybill');
+            console.error('   Error:', data.rmk || data.error);
+            return null;
+        }
+
+    } catch (error) {
+        console.error(`❌ Error creating Delhivery forward order:`, error.message);
+        return null;
+    }
+}
+
+/**
+ * Get Delhivery tracking details
+ */
+async function getDelhiveryTracking(waybill) {
+    if (!waybill || !process.env.DELHIVERY_API_KEY) return null;
+    try {
+        const trackingData = await delhiveryAPI(`/v1/packages/json/?waybill=${waybill}`);
+        if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
+            return trackingData;
+        }
+    } catch (error) {
+        console.error('Delhivery tracking fetch error:', error.message);
+    }
+    return null;
+}
+
+/**
+ * Schedule pickup via Shiprocket with Delhivery fallback
+ * This function is used by admin create-request endpoint
+ */
+async function schedulePickup(token, requestId, order, items, type, carrierOverride = null) {
+    try {
+        // Get carrier mode from settings
+        const carrierMode = await getCarrierMode('pickup');
+        const carrierResolution = resolveCarrier(carrierMode, carrierOverride, 'pickup');
+        console.log(`[${requestId}] Scheduling pickup: primary=${carrierResolution.primary}, fallback=${carrierResolution.useFallback}`);
+        
+        let awbNumber = null;
+        let shipmentId = null;
+        let pickupDate = null;
+        let carrierUsed = null;
+        let fallbackReason = null;
+        
+        // Prepare request data for Shiprocket/Delhivery
+        const requestData = {
+            requestId,
+            orderNumber: order.name,
+            customerPhone: order.customer?.phone || '',
+            items: items
+        };
+
+        // Handle based on resolved carrier
+        if (carrierResolution.primary === 'shiprocket' && !carrierResolution.useFallback) {
+            // Shiprocket only mode
+            if (!process.env.SHIPROCKET_EMAIL) {
+                console.error(`[${requestId}] ❌ Shiprocket not configured`);
+                return null;
+            }
+            
+            console.log(`[${requestId}] Using Shiprocket only...`);
+            const srResponse = await createShiprocketReturnOrder(requestData, order);
+            
+            if (!srResponse || !srResponse.shipment_id) {
+                throw new Error('Shiprocket returned empty response');
+            }
+            
+            carrierUsed = 'shiprocket';
+            awbNumber = srResponse.awb_code;
+            shipmentId = srResponse.shipment_id;
+            pickupDate = srResponse.pickup_scheduled_date;
+            console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+            
+        } else if (carrierResolution.primary === 'delhivery' && !carrierResolution.useFallback) {
+            // Delhivery only mode
+            if (!process.env.DELHIVERY_API_KEY) {
+                console.error(`[${requestId}] ❌ Delhivery not configured`);
+                return null;
+            }
+            
+            console.log(`[${requestId}] Using Delhivery only...`);
+            const delhiveryResponse = await createDelhiveryReturnOrder(requestData, order);
+            
+            if (!delhiveryResponse || !delhiveryResponse.waybill) {
+                throw new Error('Delhivery returned empty response');
+            }
+            
+            carrierUsed = 'delhivery';
+            awbNumber = delhiveryResponse.waybill;
+            shipmentId = delhiveryResponse.shipment_id;
+            pickupDate = new Date().toISOString();
+            console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
+            
+        } else {
+            // Fallback mode: try primary, then fallback if it fails
+            console.log(`[${requestId}] Using ${carrierResolution.primary} with fallback...`);
+            
+            let primaryResponse = null;
+            const primaryCarrier = carrierResolution.primary;
+
+            try {
+                if (primaryCarrier === 'shiprocket') {
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
+                    }
+                    primaryResponse = await createShiprocketReturnOrder(requestData, order);
+                } else {
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    primaryResponse = await createDelhiveryReturnOrder(requestData, order);
+                }
+
+                if (!primaryResponse || (primaryResponse.shipment_id || primaryResponse.waybill)) {
+                    // Check if response is valid
+                    const isValid = primaryCarrier === 'shiprocket' 
+                        ? (primaryResponse && primaryResponse.shipment_id)
+                        : (primaryResponse && primaryResponse.waybill);
+                    if (!isValid) {
+                        throw new Error(`${primaryCarrier} returned empty response`);
+                    }
+                }
+            } catch (primaryError) {
+                // Fallback to other carrier
+                fallbackReason = `${primaryCarrier} failed: ${primaryError.message}`;
+                console.warn(`[${requestId}] ⚠️ ${primaryCarrier} failed, falling back to ${primaryCarrier === 'shiprocket' ? 'Delhivery' : 'Shiprocket'}:`, primaryError.message);
+                
+                const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
+                const fallbackEnv = fallbackCarrier === 'shiprocket' ? process.env.SHIPROCKET_EMAIL : process.env.DELHIVERY_API_KEY;
+                
+                if (fallbackEnv) {
+                    try {
+                        const fallbackResponse = fallbackCarrier === 'shiprocket'
+                            ? await createShiprocketReturnOrder(requestData, order)
+                            : await createDelhiveryReturnOrder(requestData, order);
+                        
+                        const isValid = fallbackCarrier === 'shiprocket'
+                            ? (fallbackResponse && fallbackResponse.shipment_id)
+                            : (fallbackResponse && fallbackResponse.waybill);
+                        
+                        if (isValid) {
+                            carrierUsed = fallbackCarrier;
+                            awbNumber = fallbackCarrier === 'shiprocket' ? fallbackResponse.awb_code : fallbackResponse.waybill;
+                            shipmentId = fallbackResponse.shipment_id;
+                            pickupDate = fallbackCarrier === 'shiprocket' ? fallbackResponse.pickup_scheduled_date : new Date().toISOString();
+                            
+                            console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success: AWB ${awbNumber}`);
+                        } else {
+                            throw new Error(`${fallbackCarrier} also failed to create shipment`);
+                        }
+                    } catch (fallbackError) {
+                        console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
+                        return null;
+                    }
+                } else {
+                    console.error(`[${requestId}] ❌ ${primaryCarrier} failed and ${fallbackCarrier} not configured`);
+                    return null;
+                }
+            }
+
+            // If primary succeeded
+            if (primaryResponse) {
+                carrierUsed = primaryCarrier;
+                awbNumber = primaryCarrier === 'shiprocket' ? primaryResponse.awb_code : primaryResponse.waybill;
+                shipmentId = primaryResponse.shipment_id;
+                pickupDate = primaryCarrier === 'shiprocket' ? primaryResponse.pickup_scheduled_date : new Date().toISOString();
+                console.log(`[${requestId}] ✅ ${primaryCarrier} success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+            }
+        }
+
+        return {
+            awbNumber,
+            shipmentId,
+            pickupDate,
+            carrier: carrierUsed,
+            fallbackReason: fallbackReason
+        };
+    } catch (error) {
+        console.error(`[${requestId}] schedulePickup error:`, error.message);
+        return null;
+    }
+}
+
+async function createShopifyExchangeOrder(requestData) {
+    try {
+        console.log('Creating Shopify Exchange Order for:', requestData.requestId);
+
+        // Fetch original order with robust name matching
+        let orderName = requestData.orderNumber;
+        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+        if (!shopifyData.orders || shopifyData.orders.length === 0) {
+            const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+        }
+
+        const originalOrder = shopifyData.orders && shopifyData.orders[0];
+
+        if (!originalOrder) {
+            console.error('Original order not found for exchange creation');
+            return null;
+        }
+
+        // Determine Address
+        let shippingAddress = { ...originalOrder.shipping_address };
+        if (requestData.newAddress) {
+            shippingAddress = {
+                address1: requestData.newAddress,
+                city: requestData.newCity,
+                province: requestData.newState,
+                zip: requestData.newPincode,
+                country: 'India',
+                first_name: requestData.customerName?.split(' ')[0] || originalOrder.customer?.first_name || 'Customer',
+                last_name: requestData.customerName?.split(' ').slice(1).join(' ') || originalOrder.customer?.last_name || '',
+                phone: requestData.customerPhone || originalOrder.shipping_address?.phone
+            };
+        }
+
+        let items = requestData.items;
+        if (typeof items === 'string') { try { items = JSON.parse(items); } catch (e) { items = []; } }
+        const lineItems = [];
+
+        for (const item of items) {
+            let variantId = item.replacementVariantId;
+
+            // If variantId is missing (legacy request) or "Same", try to resolve it
+            if ((!variantId || variantId === 'Same') && item.replacementVariant && item.productId) {
+                try {
+                    const variantsData = await shopifyAPI(`products/${item.productId}/variants.json`);
+                    const variants = variantsData.variants || [];
+                    const variant = variants.find(v =>
+                        v.title === item.replacementVariant ||
+                        v.option1 === item.replacementVariant ||
+                        v.option2 === item.replacementVariant ||
+                        v.id.toString() === item.replacementVariant
+                    );
+                    if (variant) variantId = variant.id;
+                } catch (e) {
+                    console.error(`Failed to fetch variants for product ${item.productId}:`, e);
+                }
+            }
+
+            if (variantId && variantId !== 'Same') {
+                lineItems.push({
+                    variant_id: variantId,
+                    quantity: parseInt(item.quantity) || 1
+                });
+            } else if (variantId === 'Same') {
+                // If still "Same", use original variantId
+                lineItems.push({
+                    variant_id: item.variantId,
+                    quantity: parseInt(item.quantity) || 1
+                });
+            } else {
+                console.warn(`No valid replacement variant identified for item ${item.name} (Request ${requestData.requestId})`);
+            }
+        }
+
+        if (lineItems.length === 0) {
+            console.error('No valid replacement items identified for Shopify Order creation.');
+            return null;
+        }
+
+        const orderPayload = {
+            order: {
+                line_items: lineItems,
+                shipping_address: shippingAddress,
+                billing_address: shippingAddress,
+                customer: {
+                    id: originalOrder.customer?.id
+                },
+                financial_status: 'paid',
+                send_receipt: true,
+                tags: `Exchange, Replacement, Orig-${requestData.orderNumber}`,
+                note: `Exchange for Request ${requestData.requestId}. Reason: ${requestData.reason}`
+            }
+        };
+
+        const response = await shopifyAPI('orders.json', {
+            method: 'POST',
+            body: JSON.stringify(orderPayload)
+        });
+
+        if (response.order) {
+            console.log('✅ Shopify Exchange Order Created:', response.order.name);
+            return response.order;
+        } else {
+            console.error('Failed to create Shopify order:', response);
+            return null;
+        }
+
+    } catch (error) {
+        console.error('Failed to create Shopify exchange order:', error);
+        return null;
+    }
+}
+
+// ==================== CONFIG ENDPOINT ====================
+
+// Get frontend configuration (Razorpay key, etc.)
+app.get('/api/config', async (req, res) => {
+    res.json({
+        razorpayKey: process.env.RAZORPAY_KEY_ID || null,
+        allowReturns: await getSetting('allow_returns', true),
+        allowExchanges: await getSetting('allow_exchanges', true)
+    });
+});
+
+// ==================== PUBLIC API ENDPOINTS ====================
+
+// Get order details
+app.post('/api/get-order', async (req, res) => {
+    try {
+        const { orderNumber, email } = req.body;
+
+        const data = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&email=${encodeURIComponent(email)}&status=any&limit=1`);
+
+        if (!data.orders || data.orders.length === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        res.json(data.orders[0]);
+    } catch (error) {
+        console.error('Get order error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Helper to get Shiprocket tracking details
+async function getShiprocketTracking(awb) {
+    if (!awb || !process.env.SHIPROCKET_EMAIL || !process.env.SHIPROCKET_PASSWORD) return null;
+    try {
+        const trackingData = await shiprocketAPI(`/courier/track/awb/${awb}`);
+        if (trackingData && trackingData.tracking_data) {
+            return trackingData.tracking_data;
+        }
+    } catch (error) {
+        console.error('Shiprocket tracking fetch error:', error.message);
+    }
+    return null;
+}
+
+// Lookup order (improved with better error handling)
+app.post('/api/lookup-order', async (req, res) => {
+    try {
+        console.log('--- LOOKUP REQUEST ---');
+        console.log('Body:', req.body);
+        console.log('Headers:', req.headers['content-type']);
+
+        const { orderNumber, email } = req.body;
+
+        if (!orderNumber || !email) {
+            console.log('Lookup attempt with missing fields:', { orderNumber, email });
+            return res.status(400).json({
+                error: 'Order number and email/phone are required',
+                isEligible: false
+            });
+        }
+
+        console.log('Looking up order:', orderNumber, 'for email:', email);
+
+        // Try to fetch order from Shopify
+        let data;
+        try {
+            // 1. Try exact match
+            data = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&status=any&limit=5`);
+
+            // 2. If no result, try adding/removing '#'
+            if (!data.orders || data.orders.length === 0) {
+                let retryOrderNumber = orderNumber;
+                if (orderNumber.startsWith('#')) {
+                    retryOrderNumber = orderNumber.substring(1);
+                } else {
+                    retryOrderNumber = '#' + orderNumber;
+                }
+
+                console.log(`Retrying lookup with: ${retryOrderNumber}`);
+                data = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=5`);
+            }
+        } catch (apiError) {
+            console.error('Shopify API Error:', apiError.message);
+            return res.status(500).json({
+                error: 'Failed to connect to Shopify API',
+                details: apiError.message
+            });
+        }
+
+        if (!data.orders || data.orders.length === 0) {
+            console.log('No orders found for:', orderNumber);
+            return res.status(404).json({
+                error: 'Order not found',
+                isEligible: false,
+                eligibilityMessage: `Order ${orderNumber} not found. Please check your order number.`
+            });
+        }
+
+        // Find order matching email OR phone
+        const normalizedInput = email ? email.toLowerCase().trim() : '';
+        const inputDigits = normalizedInput.replace(/\D/g, '');
+
+        const order = data.orders.find(o => {
+            const customerEmail = o.customer?.email?.toLowerCase() || '';
+            const customerPhone = o.customer?.phone?.replace(/\D/g, '') || '';
+            const shippingPhone = o.shipping_address?.phone?.replace(/\D/g, '') || '';
+
+            // Check Email
+            if (customerEmail && customerEmail === normalizedInput) return true;
+
+            // Check Phone (loose match for last 10 digits)
+            if (inputDigits.length >= 10) {
+                if (customerPhone.endsWith(inputDigits.slice(-10))) return true;
+                if (shippingPhone.endsWith(inputDigits.slice(-10))) return true;
+            }
+            return false;
+        });
+
+        if (!order) {
+            console.log('Order found but email/phone does not match');
+            return res.status(404).json({
+                error: 'Order not found',
+                isEligible: false,
+                eligibilityMessage: 'Order not found with this email/phone. Please check your details.'
+            });
+        }
+
+        console.log('Order found:', order.name);
+
+        // ── One request per order guard ──────────────────────────────────────────
+        // Check BEFORE eligibility so the form never loads for duplicate orders
+        try {
+            const existingForOrder = await getRequestsByOrderNumber(order.name);
+            const activeForOrder = existingForOrder.filter(r => r.status !== 'rejected' && r.status !== 'waiting_payment');
+            if (activeForOrder.length > 0) {
+                const existing = activeForOrder[0];
+                console.log(`Order ${order.name} already has active request ${existing.requestId}`);
+                return res.status(400).json({
+                    isEligible: false,
+                    alreadyHasRequest: true,
+                    existingRequestId: existing.requestId,
+                    existingRequestType: existing.type,
+                    error: `A ${existing.type} request (${existing.requestId}) already exists for this order. Track it at the Track Request page.`,
+                    eligibilityMessage: `A ${existing.type} request (${existing.requestId}) has already been raised for this order. You can track it on the Track Request page.`
+                });
+            }
+        } catch (dupCheckErr) {
+            // Non-fatal — if duplicate check fails, continue and let submit-time guard catch it
+            console.warn('Duplicate check failed (non-fatal):', dupCheckErr.message);
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
+        const isFulfilled = order.fulfillment_status === 'fulfilled';
+
+        // Fetch delivery date BEFORE eligibility check so we can base window on it
+        let deliveredDate = null;
+        if (order.fulfillments && order.fulfillments.length > 0) {
+            const fulfillment = order.fulfillments[0];
+            const awb = fulfillment.tracking_number;
+            console.log('Fulfillment found. AWB:', awb);
+
+            if (awb) {
+                const tracking = await getShiprocketTracking(awb);
+                console.log('Tracking data fetched:', tracking ? 'Yes' : 'No');
+
+                if (tracking) {
+                    // Only use the ACTUAL delivered_date — NOT estimated dates (etd/edd).
+                    // Using estimated dates caused orders to fail the return window check
+                    // even when they were delivered today or still in transit.
+                    deliveredDate = tracking.delivered_date || null;
+                    console.log('Extracted deliveredDate (actual only):', deliveredDate);
+                }
+            }
+        } else {
+            console.log('No fulfillments found for order');
+        }
+
+        // Eligibility: Check cutoff date first
+        const CUTOFF_ENABLED = await getSetting('cutoff_date_enabled', false);
+        const CUTOFF_DATE = await getSetting('cutoff_date', null);
+        
+        if (CUTOFF_ENABLED && CUTOFF_DATE && order.created_at) {
+            const orderDate = new Date(order.created_at);
+            const cutoff = new Date(CUTOFF_DATE);
+            // Set cutoff to end of day for inclusive comparison
+            cutoff.setHours(23, 59, 59, 999);
+            
+            if (orderDate < cutoff) {
+                return res.status(200).json({
+                    isEligible: false,
+                    eligibilityMessage: `This order is not eligible for return/exchange as it was placed before the cutoff date (${CUTOFF_DATE}).`,
+                    order: {
+                        orderNumber: order.name,
+                        customerName: order.customer
+                            ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+                            : 'Customer',
+                        email: order.customer?.email || email,
+                        phone: order.customer?.phone || order.shipping_address?.phone || '',
+                        orderDate: order.created_at,
+                        totalAmount: order.total_price,
+                        items: order.line_items.map(item => ({
+                            id: item.id,
+                            productId: item.product_id,
+                            variantId: item.variant_id,
+                            name: item.name,
+                            variant: item.variant_title || 'Default',
+                            quantity: item.quantity,
+                            price: item.price,
+                            image: item.properties?.image ||
+                                (item.product_id ? `https://cdn.shopify.com/shopifycloud/placeholder.jpg` : '')
+                        }))
+                    }
+                });
+            }
+        }
+
+        // Eligibility: Check window mode (delivery date vs order date)
+        const RETURN_WINDOW_DAYS = await getSetting('return_window_days', 2);
+        const RETURN_WINDOW_MODE = await getSetting('return_window_mode', 'delivery');
+        let daysSinceReference = null;
+        let isWithinWindow = false;
+        let referenceDate = null;
+
+        if (RETURN_WINDOW_MODE === 'order') {
+            // Calculate from order date
+            referenceDate = order.created_at;
+            if (referenceDate) {
+                const orderDate = new Date(referenceDate);
+                daysSinceReference = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
+                isWithinWindow = daysSinceReference <= RETURN_WINDOW_DAYS;
+            }
+        } else {
+            // Calculate from delivery date (default behavior)
+            if (deliveredDate) {
+                referenceDate = deliveredDate;
+                const delivered = new Date(deliveredDate);
+                daysSinceReference = (Date.now() - delivered.getTime()) / (1000 * 60 * 60 * 24);
+                isWithinWindow = daysSinceReference <= RETURN_WINDOW_DAYS;
+            } else if (isFulfilled) {
+                // No delivery date available yet — allow if fulfilled (pickup pending)
+                isWithinWindow = true;
+            }
+        }
+
+        const windowTypeText = RETURN_WINDOW_MODE === 'order' ? 'order date' : 'delivery';
+        const eligibilityMessage = RETURN_WINDOW_MODE === 'order'
+            ? (!isWithinWindow
+                ? `Return/exchange window has closed. Requests must be raised within ${RETURN_WINDOW_DAYS} days of order date.`
+                : 'Order is eligible for exchange/return')
+            : (!isFulfilled
+                ? 'Order must be delivered before exchange/return'
+                : !isWithinWindow
+                    ? `Return/exchange window has closed. Requests must be raised within ${RETURN_WINDOW_DAYS} days of delivery.`
+                    : 'Order is eligible for exchange/return');
+
+        console.log('Eligibility:', { isFulfilled, deliveredDate, referenceDate, daysSinceReference, isWithinWindow, returnWindowMode: RETURN_WINDOW_MODE });
+
+        // Fetch product images and variants for inventory check
+        const productIds = [...new Set(order.line_items.map(item => item.product_id).filter(id => id))];
+        const productDataMap = {}; // Stores images and variants
+
+        if (productIds.length > 0) {
+            try {
+                // Fetch fields: id, image, images, variants (for inventory)
+                const productsData = await shopifyAPI(`products.json?ids=${productIds.join(',')}&fields=id,image,images,variants`);
+                if (productsData.products) {
+                    productsData.products.forEach(p => {
+                        let imageUrl = null;
+                        if (p.image) {
+                            imageUrl = p.image.src;
+                        } else if (p.images && p.images.length > 0) {
+                            imageUrl = p.images[0].src;
+                        }
+
+                        // Process variants
+                        const variants = p.variants.map(v => ({
+                            id: v.id,
+                            title: v.title,
+                            price: v.price,
+                            inventory_quantity: v.inventory_quantity,
+                            inventory_policy: v.inventory_policy,
+                            inventory_management: v.inventory_management
+                        }));
+
+                        productDataMap[p.id] = {
+                            image: imageUrl,
+                            variants: variants
+                        };
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch product data:', err);
+                // Continue without extra data
+            }
+        }
+
+        // Format shipping address
+        let shippingAddress = 'No shipping address';
+        if (order.shipping_address) {
+            const addr = order.shipping_address;
+            shippingAddress = [
+                addr.address1,
+                addr.address2,
+                addr.city,
+                addr.province,
+                addr.zip,
+                addr.country
+            ].filter(part => part).join(', ');
+        }
+
+        res.json({
+            isEligible: isFulfilled && isWithinWindow,
+            eligibilityMessage,
+            productVariants: productDataMap, // Send variants to frontend
+            order: {
+                orderNumber: order.name,
+                customerName: order.customer
+                    ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+                    : 'Customer',
+                email: order.customer?.email || email,
+                phone: order.customer?.phone || order.shipping_address?.phone || '',
+                orderDate: order.created_at,
+                deliveredDate: deliveredDate, // NEW FIELD
+                totalAmount: order.total_price,
+                shippingAddress,
+                items: order.line_items.map(item => {
+                    const pData = productDataMap[item.product_id] || {};
+                    return {
+                        id: item.id,
+                        productId: item.product_id,
+                        variantId: item.variant_id,
+                        name: item.name,
+                        variant: item.variant_title || 'Default',
+                        quantity: item.quantity,
+                        price: item.price,
+                        image: pData.image || (item.properties && item.properties.image) || `https://cdn.shopify.com/shopifycloud/placeholder.jpg`
+                    };
+                })
+            }
+        });
+    } catch (error) {
+        console.error('Lookup order error:', error);
+        res.status(500).json({
+            error: 'Internal server error',
+            details: error.message
+        });
+    }
+});
+
+// Search products for exchange
+app.get('/api/products/search', async (req, res) => {
+    try {
+        const query = req.query.q || '';
+        // Fetch products - limit to 50 for performance
+        const data = await shopifyAPI(`products.json?limit=50&fields=id,title,image,variants`);
+
+        let products = data.products || [];
+
+        if (query) {
+            const lowerQuery = query.toLowerCase();
+            products = products.filter(p =>
+                p.title.toLowerCase().includes(lowerQuery) ||
+                p.id.toString() === query
+            );
+        }
+
+        const formatted = products.map(p => ({
+            id: p.id,
+            title: p.title,
+            image: p.image ? p.image.src : (p.images && p.images.length > 0 ? p.images[0].src : null),
+            variants: p.variants.map(v => ({
+                id: v.id,
+                title: v.title,
+                price: v.price,
+                inventory_quantity: v.inventory_quantity,
+                inventory_policy: v.inventory_policy,
+                inventory_management: v.inventory_management
+            }))
+        }));
+
+        res.json(formatted);
+    } catch (error) {
+        console.error('Product search error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get product variants with full info
+app.post('/api/get-variants', async (req, res) => {
+    try {
+        const { productId } = req.body;
+        const data = await shopifyAPI(`products/${productId}.json?fields=id,title,image,variants`);
+
+        if (!data.product) return res.status(404).json({ error: 'Product not found' });
+
+        const p = data.product;
+        res.json({
+            id: p.id,
+            title: p.title,
+            image: p.image ? p.image.src : (p.images && p.images.length > 0 ? p.images[0].src : null),
+            variants: p.variants.map(v => ({
+                id: v.id,
+                title: v.title,
+                price: v.price,
+                inventory_quantity: v.inventory_quantity,
+                inventory_policy: v.inventory_policy,
+                inventory_management: v.inventory_management
+            }))
+        });
+    } catch (error) {
+        console.error('Get variants error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== WHATSAPP BOT INTEGRATION ====================
+
+async function sendWhatsAppNotification(phone, message, type, requestId, templateData = null) {
+    if (!phone || !message) return null;
+
+    // Use environment variable or default to localhost:3000 (standard for local dev)
+    const botUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:3000';
+    const internalToken = process.env.WHATSAPP_INTERNAL_TOKEN || '';
+
+    try {
+        console.log(`[${requestId}] 📤 Sending WhatsApp notification to ${phone}`);
+        // Ensure fetch is available (Node 18+)
+        const response = await fetch(`${botUrl}/api/internal/send-notification`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'x-internal-token': internalToken
+            },
+            body: JSON.stringify({ phone, message, type, requestId, templateData })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            console.log(`[${requestId}] ✅ WhatsApp notification sent: ${data.messageId}`);
+            return { success: true, messageId: data.messageId, fallback: data.fallback };
+        } else {
+            console.warn(`[${requestId}] ⚠️ WhatsApp notification failed: ${data.error}`);
+            throw new Error(data.error || 'WhatsApp send failed');
+        }
+    } catch (error) {
+        console.error(`[${requestId}] ❌ WhatsApp notification error:`, error.message);
+        throw error;
+    }
+}
+
+/**
+ * Finalize a request after payment is confirmed (either via frontend response or webhook)
+ */
+async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) {
+    console.log(`[${requestId}] 🚀 Finalizing request after payment confirmation. PaymentId: ${paymentId}`);
+
+    try {
+        const request = await getRequestById(requestId);
+        if (!request) {
+            console.error(`[${requestId}] ❌ Cannot finalize: Request not found in DB`);
+            return { success: false, error: 'Request not found' };
+        }
+
+        if (request.status !== 'waiting_payment' && request.status !== 'pending') {
+            console.log(`[${requestId}] ℹ️ Request already fully processed (Status: ${request.status})`);
+            return { success: true, alreadyProcessed: true };
+        }
+
+        // 1. Prepare Updates
+        const updates = {
+            paymentId: paymentId,
+            paymentAmount: paymentAmount,
+            status: 'pending' // Default status after payment
+        };
+
+        // 2. Auto-Pickup: only for paid non-fee-waived requests.
+        // Fee-waived (defective/wrong_item) stay 'pending' for admin review before pickup.
+        const isFeeWaived = request.reason === 'defective' || request.reason === 'wrong_item';
+        let awbNumber = null;
+        let shipmentId = null;
+        let pickupDate = null;
+
+        if (!isFeeWaived) {
+            // Get carrier mode from settings
+            const carrierMode = await getCarrierMode('pickup');
+            const carrierResolution = resolveCarrier(carrierMode, null, 'pickup');
+            console.log(`[${requestId}] Initiating background pickup: primary=${carrierResolution.primary}, fallback=${carrierResolution.useFallback}`);
+            
+            const requestData = {
+                requestId,
+                orderNumber: request.orderNumber,
+                customerPhone: request.customerPhone,
+                items: request.items
+            };
+            
+            let carrierUsed = null;
+            let fallbackReason = null;
+
+            try {
+                if (carrierResolution.primary === 'shiprocket' && !carrierResolution.useFallback) {
+                    // Shiprocket only mode
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
+                    }
+                    
+                    console.log(`[${requestId}] Using Shiprocket only...`);
+                    const srResponse = await createShiprocketReturnOrder(requestData, null);
+                    
+                    if (!srResponse || !srResponse.shipment_id) {
+                        throw new Error('Shiprocket returned empty response');
+                    }
+                    
+                    carrierUsed = 'shiprocket';
+                    awbNumber = srResponse.awb_code;
+                    shipmentId = srResponse.shipment_id;
+                    pickupDate = srResponse.pickup_scheduled_date;
+                    console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    
+                } else if (carrierResolution.primary === 'delhivery' && !carrierResolution.useFallback) {
+                    // Delhivery only mode
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    
+                    console.log(`[${requestId}] Using Delhivery only...`);
+                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, null);
+                    
+                    if (!delhiveryResponse || !delhiveryResponse.waybill) {
+                        throw new Error('Delhivery returned empty response');
+                    }
+                    
+                    carrierUsed = 'delhivery';
+                    awbNumber = delhiveryResponse.waybill;
+                    shipmentId = delhiveryResponse.shipment_id;
+                    pickupDate = new Date().toISOString();
+                    console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
+                    
+                } else {
+                    // Fallback mode
+                    console.log(`[${requestId}] Using ${carrierResolution.primary} with fallback...`);
+                    let primaryResponse = null;
+                    const primaryCarrier = carrierResolution.primary;
+
+                    try {
+                        if (primaryCarrier === 'shiprocket') {
+                            if (!process.env.SHIPROCKET_EMAIL) {
+                                throw new Error('Shiprocket not configured');
+                            }
+                            primaryResponse = await createShiprocketReturnOrder(requestData, null);
+                            if (!primaryResponse || !primaryResponse.shipment_id) {
+                                throw new Error('Shiprocket returned empty response');
+                            }
+                        } else {
+                            if (!process.env.DELHIVERY_API_KEY) {
+                                throw new Error('Delhivery not configured');
+                            }
+                            primaryResponse = await createDelhiveryReturnOrder(requestData, null);
+                            if (!primaryResponse || !primaryResponse.waybill) {
+                                throw new Error('Delhivery returned empty response');
+                            }
+                        }
+                    } catch (primaryError) {
+                        // Fallback to other carrier
+                        fallbackReason = `${primaryCarrier} failed: ${primaryError.message}`;
+                        console.warn(`[${requestId}] ⚠️ ${primaryCarrier} failed, falling back to ${primaryCarrier === 'shiprocket' ? 'Delhivery' : 'Shiprocket'}:`, primaryError.message);
+                        
+                        const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
+                        const fallbackEnv = fallbackCarrier === 'shiprocket' ? process.env.SHIPROCKET_EMAIL : process.env.DELHIVERY_API_KEY;
+                        
+                        if (fallbackEnv) {
+                            try {
+                                const fallbackResponse = fallbackCarrier === 'shiprocket'
+                                    ? await createShiprocketReturnOrder(requestData, null)
+                                    : await createDelhiveryReturnOrder(requestData, null);
+                                
+                                const isValid = fallbackCarrier === 'shiprocket'
+                                    ? (fallbackResponse && fallbackResponse.shipment_id)
+                                    : (fallbackResponse && fallbackResponse.waybill);
+                                
+                                if (isValid) {
+                                    carrierUsed = fallbackCarrier;
+                                    awbNumber = fallbackCarrier === 'shiprocket' ? fallbackResponse.awb_code : fallbackResponse.waybill;
+                                    shipmentId = fallbackResponse.shipment_id;
+                                    pickupDate = fallbackCarrier === 'shiprocket' ? fallbackResponse.pickup_scheduled_date : new Date().toISOString();
+                                    console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success: AWB ${awbNumber}`);
+                                } else {
+                                    throw new Error(`${fallbackCarrier} also failed to create shipment`);
+                                }
+                            } catch (fallbackError) {
+                                console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
+                                throw fallbackError;
+                            }
+                        } else {
+                            console.error(`[${requestId}] ❌ ${primaryCarrier} failed and ${fallbackCarrier} not configured`);
+                            throw primaryError;
+                        }
+                    }
+
+                    // If primary succeeded
+                    if (primaryResponse) {
+                        carrierUsed = primaryCarrier;
+                        awbNumber = primaryCarrier === 'shiprocket' ? primaryResponse.awb_code : primaryResponse.waybill;
+                        shipmentId = primaryResponse.shipment_id;
+                        pickupDate = primaryCarrier === 'shiprocket' ? primaryResponse.pickup_scheduled_date : new Date().toISOString();
+                        console.log(`[${requestId}] ✅ ${primaryCarrier} success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    }
+                }
+
+                // Update with success data
+                if (carrierUsed) {
+                    updates.status = 'pickup_booked';
+                    updates.awbNumber = awbNumber;
+                    updates.shipmentId = shipmentId;
+                    updates.pickupDate = pickupDate;
+                    updates.carrier = carrierUsed;
+                    updates.carrierShipmentId = shipmentId;
+                    updates.carrierAwb = awbNumber;
+                    if (fallbackReason) {
+                        updates.carrierFallbackReason = fallbackReason;
+                    }
+                    console.log(`[${requestId}] ✅ Background Auto-Pickup Success: ${shipmentId}`);
+                }
+            } catch (error) {
+                console.error(`[${requestId}] ❌ Background pickup failed:`, error.message);
+                // Keep status as 'pending' for manual admin intervention
+            }
+        } else if (isFeeWaived) {
+            console.log(`[${requestId}] Fee-waived reason (${request.reason}): keeping pending for admin review.`);
+        }
+
+        // 3. Save to DB
+        await updateRequestStatus(requestId, updates);
+        console.log(`[${requestId}] ✅ Request finalized and updated in DB`);
+
+        // 4. Send WhatsApp Notification
+        const customerName = request.customerName || 'Customer';
+        const typeLabel = request.type === 'exchange' ? 'Exchange' : 'Return';
+        const message = `Payment confirmed for your ${typeLabel} Request ${requestId}. Status: ${updates.status.replace('_', ' ')}. We've recorded your request and will process it shortly.`;
+        sendWhatsAppNotification(request.customerPhone, message, request.type, requestId).catch(err => console.error(err));
+
+        return { success: true, status: updates.status };
+    } catch (error) {
+        console.error(`[${requestId}] ❌ Finalize Error:`, error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Submit exchange request
+app.post('/api/submit-exchange', upload.any(), async (req, res) => {
+    const allowExchanges = await getSetting('allow_exchanges', true);
+    if (!allowExchanges) {
+        return res.status(403).json({ error: 'Exchanges are currently disabled by the administrator.' });
+    }
+
+    let requestId = await generateUniqueRequestId();
+    console.log(`[${requestId}] 📥 Received exchange submission`);
+    console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
+    console.log(`[${requestId}] Files:`, req.files ? req.files.length : 0);
+
+    try {
+        // Parse items if string
+        let items = req.body.items;
+        if (typeof items === 'string') {
+            try {
+                items = JSON.parse(items);
+            } catch (e) {
+                console.error(`[${requestId}] Failed to parse items:`, e);
+                items = [];
+            }
+        }
+
+        console.log(`[${requestId}] Order: ${req.body.orderNumber}, Items: ${items.length}, PaymentId: ${req.body.paymentId || 'None'}, Amount: ${req.body.paymentAmount || 0}`);
+
+        // ── One request per order guard ──────────────────────────────────────────
+        const existingRequests = await getRequestsByOrderNumber(req.body.orderNumber);
+        const activeExisting = existingRequests.filter(r => r.status !== 'rejected');
+        let reuseRequestId = null; // Will be set if resubmitting a waiting_payment request
+        if (activeExisting.length > 0) {
+            if (activeExisting[0].status === 'waiting_payment') {
+                reuseRequestId = activeExisting[0].requestId;
+                console.log(`[${requestId}] ♻️  Reusing REQ ID ${reuseRequestId} (was waiting_payment)`);
+            } else {
+                console.log(`[${requestId}] ❌ Duplicate blocked — ${activeExisting[0].requestId} (${activeExisting[0].status})`);
+                return res.status(400).json({
+                    error: `A request (${activeExisting[0].requestId}) already exists for this order. Only one request is allowed per order.`
+                });
+            }
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
+        // Get Cloudinary Image URLs
+        const imageUrls = req.files ? req.files.map(file => file.path) : [];
+
+        // Fetch Order for details
+        let shopifyOrder = null;
+        let originalAddressFormatted = '';
+        let shippingCity = '';
+        let shippingState = '';
+        let shippingPincode = '';
+        try {
+            // 1. Try exact match
+            let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&status=any&limit=1`);
+
+            // 2. Fuzzy retry
+            if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                let retryOrderNumber = req.body.orderNumber;
+                if (retryOrderNumber.startsWith('#')) {
+                    retryOrderNumber = retryOrderNumber.substring(1);
+                } else {
+                    retryOrderNumber = '#' + retryOrderNumber;
+                }
+                console.log(`[${requestId}] Retrying order fetch with: ${retryOrderNumber}`);
+                shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=1`);
+            }
+
+            shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+
+            if (shopifyOrder && shopifyOrder.shipping_address) {
+                const addr = shopifyOrder.shipping_address;
+                originalAddressFormatted = [
+                    addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country
+                ].filter(Boolean).join(', ');
+                
+                // Also extract individual address components
+                shippingCity = addr.city || '';
+                shippingState = addr.province || '';
+                shippingPincode = addr.zip || '';
+            }
+        } catch (err) {
+            console.error(`[${requestId}] Failed to fetch Shopify order for submission:`, err);
+        }
+
+        const customerName = req.body.customerName || (shopifyOrder?.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer');
+        const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
+        const email = req.body.email || shopifyOrder?.email;
+
+        // Verify Payment logic
+        // Fee is ONLY waived for defective/wrong items (requires manual review)
+        const isFeeWaived = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
+        let paymentVerified = false;
+
+        if (req.body.paymentId && !isFeeWaived) {
+            if (!razorpay) {
+                console.error(`[${requestId}] Payment config missing`);
+                return res.status(500).json({ error: 'Payment configuration missing on server' });
+            }
+            try {
+                const payment = await razorpay.payments.fetch(req.body.paymentId);
+                console.log(`[${requestId}] Razorpay Verification - PaymentId: ${req.body.paymentId}, Status: ${payment.status}, Amount: ${payment.amount / 100} ${payment.currency}`);
+                if (payment.status === 'captured' || payment.status === 'authorized') {
+                    paymentVerified = true;
+                } else {
+                    return res.status(400).json({ error: 'Payment not successful' });
+                }
+            } catch (payError) {
+                console.error(`[${requestId}] Payment Verification Failed:`, payError);
+                return res.status(400).json({ error: 'Invalid Payment ID' });
+            }
+        }
+
+        const needsPayment = !isFeeWaived && !paymentVerified;
+
+        console.log(`[${requestId}] Status Calculation: isFeeWaived=${isFeeWaived}, paymentVerified=${paymentVerified}, needsPayment=${needsPayment}`);
+
+
+        // Shiprocket Return Order (Auto-Pickup) Logic:
+        // - PAID reasons: auto-initiate pickup at submission
+        // - FEE-WAIVED reasons (damaged/wrong_item): go to admin for review first, pickup triggered upon admin approval
+        let awbNumber = null;
+        let shipmentId = null;
+        let pickupDate = null;
+        let carrierUsed = null;
+        let fallbackReason = null;
+
+        if (!isFeeWaived && !needsPayment) {
+            // Get carrier mode from settings
+            const carrierMode = await getSetting('carrier_mode', 'shiprocket_with_fallback');
+            console.log(`[${requestId}] Auto-Pickup with carrier mode: ${carrierMode} for paid reason: ${req.body.reason}`);
+            
+            const requestData = {
+                requestId,
+                orderNumber: req.body.orderNumber,
+                customerPhone: customerPhone,
+                items
+            };
+
+            try {
+                if (carrierMode === 'shiprocket_only') {
+                    // Shiprocket only mode
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
+                    }
+                    
+                    console.log(`[${requestId}] Using Shiprocket only...`);
+                    const srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
+                    
+                    if (!srResponse || !srResponse.shipment_id) {
+                        throw new Error('Shiprocket returned empty response');
+                    }
+                    
+                    carrierUsed = 'shiprocket';
+                    awbNumber = srResponse.awb_code;
+                    shipmentId = srResponse.shipment_id;
+                    pickupDate = srResponse.pickup_scheduled_date;
+                    console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    
+                } else if (carrierMode === 'delhivery_only') {
+                    // Delhivery only mode
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    
+                    console.log(`[${requestId}] Using Delhivery only...`);
+                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
+                    
+                    if (!delhiveryResponse || !delhiveryResponse.waybill) {
+                        throw new Error('Delhivery returned empty response');
+                    }
+                    
+                    carrierUsed = 'delhivery';
+                    awbNumber = delhiveryResponse.waybill;
+                    shipmentId = delhiveryResponse.shipment_id;
+                    pickupDate = new Date().toISOString();
+                    console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
+                    
+                } else {
+                    // Shiprocket with Delhivery fallback (default)
+                    console.log(`[${requestId}] Using Shiprocket with Delhivery fallback...`);
+                    let srResponse = null;
+
+                    try {
+                        srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
+
+                        if (!srResponse || !srResponse.shipment_id) {
+                            throw new Error('Shiprocket returned empty response');
+                        }
+                    } catch (shiprocketError) {
+                        // Fallback to Delhivery
+                        fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
+                        console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
+                        
+                        if (process.env.DELHIVERY_API_KEY) {
+                            try {
+                                const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
+                                
+                                if (delhiveryResponse && delhiveryResponse.waybill) {
+                                    carrierUsed = 'delhivery';
+                                    awbNumber = delhiveryResponse.waybill;
+                                    shipmentId = delhiveryResponse.shipment_id;
+                                    pickupDate = new Date().toISOString();
+                                    console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
+                                } else {
+                                    throw new Error('Delhivery also failed to create shipment');
+                                }
+                            } catch (delhiveryError) {
+                                console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
+                                throw delhiveryError;
+                            }
+                        } else {
+                            console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
+                            throw shiprocketError;
+                        }
+                    }
+
+                    // If Shiprocket succeeded
+                    if (srResponse && srResponse.shipment_id) {
+                        carrierUsed = 'shiprocket';
+                        awbNumber = srResponse.awb_code;
+                        shipmentId = srResponse.shipment_id;
+                        pickupDate = srResponse.pickup_scheduled_date;
+                        console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    }
+                }
+            } catch (error) {
+                console.error(`[${requestId}] ❌ Auto-pickup failed:`, error.message);
+                // Continue without shipment - will be pending
+            }
+        } else if (isFeeWaived) {
+            console.log(`[${requestId}] Reason (${req.body.reason}) is fee-waived. Deferring pickup for manual admin review.`);
+        }
+
+        try {
+            console.log(`[${requestId}] Saving Request to Database...`);
+            const requestData = {
+                ...req.body,
+                requestId,
+                email,
+                customerEmail: email,
+                customerName,
+                customerPhone,
+                items,
+                images: imageUrls,
+                type: 'exchange',
+                shippingAddress: originalAddressFormatted,
+                shippingCity: shippingCity,
+                shippingState: shippingState,
+                shippingPincode: shippingPincode,
+                awbNumber,
+                shipmentId,
+                pickupDate,
+                paymentId: req.body.paymentId || null,
+                paymentAmount: req.body.paymentAmount || 0,
+                status: needsPayment ? 'waiting_payment' : (isFeeWaived ? 'pending' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')),
+                carrier: carrierUsed,
+                carrierShipmentId: shipmentId,
+                carrierAwb: awbNumber,
+                carrierFallbackReason: fallbackReason
+            };
+
+            console.log(`[${requestId}] Final Status: ${requestData.status}, AWB: ${awbNumber}`);
+            if (reuseRequestId) {
+                // Resubmission — update existing record, keep same REQ ID
+                requestData.requestId = reuseRequestId;
+                await updateRequestData(reuseRequestId, requestData);
+            } else {
+                await createRequest(requestData);
+            }
+        } catch (dbError) {
+            console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
+            if (dbError.message.includes('column "images"')) {
+                return res.status(500).json({ error: 'Database mismatch: Please add "images" column.' });
+            }
+            throw dbError;
+        }
+
+        // If resubmitting, use the reused REQ ID for notifications and response
+        if (reuseRequestId) requestId = reuseRequestId;
+
+        console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
+        // WhatsApp notification disabled for exchange requests
+        // const message = `Hello ${customerName}, your exchange request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
+        // sendWhatsAppNotification(customerPhone, message, 'exchange', requestId).catch(err => console.error(err));
+
+        res.json({
+            success: true,
+            requestId,
+            message: 'Exchange request submitted successfully'
+        });
+    } catch (error) {
+        console.error(`[${requestId}] ❌ Submit exchange error:`, error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Submit return request
+app.post('/api/submit-return', upload.any(), async (req, res) => {
+    const allowReturns = await getSetting('allow_returns', true);
+    if (!allowReturns) {
+        return res.status(403).json({ error: 'Returns are currently disabled by the administrator.' });
+    }
+
+    let requestId = await generateUniqueRequestId();
+    console.log(`[${requestId}] 📥 Received return submission`);
+    console.log(`[${requestId}] Body Fields:`, Object.keys(req.body));
+    console.log(`[${requestId}] Files:`, req.files ? req.files.length : 0);
+
+    try {
+        // Parse items if string
+        let items = req.body.items;
+        if (typeof items === 'string') {
+            try {
+                items = JSON.parse(items);
+            } catch (e) {
+                console.error('Failed to parse items:', e);
+                items = [];
+            }
+        }
+
+        // ── One request per order guard ──────────────────────────────────────────
+        const existingRequests = await getRequestsByOrderNumber(req.body.orderNumber);
+        const activeExisting = existingRequests.filter(r => r.status !== 'rejected');
+        let reuseRequestId = null; // Will be set if resubmitting a waiting_payment request
+        if (activeExisting.length > 0) {
+            if (activeExisting[0].status === 'waiting_payment') {
+                // Reuse same REQ ID — update existing record instead of creating new
+                reuseRequestId = activeExisting[0].requestId;
+                console.log(`[${requestId}] ♻️  Reusing REQ ID ${reuseRequestId} (was waiting_payment)`);
+            } else {
+                console.log(`[${requestId}] ❌ Duplicate blocked — existing request ${activeExisting[0].requestId} for order ${req.body.orderNumber}`);
+                return res.status(400).json({
+                    error: `A return/exchange request (${activeExisting[0].requestId}) already exists for this order. Only one request is allowed per order.`
+                });
+            }
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
+        const imageUrls = req.files ? req.files.map(file => file.path) : [];
+
+        // Fetch Order for details
+        let shopifyOrder = null;
+        let originalAddressFormatted = '';
+        try {
+            // 1. Try exact match
+            let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(req.body.orderNumber)}&status=any&limit=1`);
+
+            // 2. Fuzzy retry
+            if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                let retryOrderNumber = req.body.orderNumber;
+                if (retryOrderNumber.startsWith('#')) {
+                    retryOrderNumber = retryOrderNumber.substring(1);
+                } else {
+                    retryOrderNumber = '#' + retryOrderNumber;
+                }
+                console.log(`[${requestId}] Retrying order fetch with: ${retryOrderNumber}`);
+                shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=1`);
+            }
+
+            shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+
+            if (shopifyOrder && shopifyOrder.shipping_address) {
+                const addr = shopifyOrder.shipping_address;
+                originalAddressFormatted = [
+                    addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country
+                ].filter(Boolean).join(', ');
+                
+                // Also extract individual address components
+                shippingCity = addr.city || '';
+                shippingState = addr.province || '';
+                shippingPincode = addr.zip || '';
+            }
+        } catch (err) {
+            console.error('Failed to fetch Shopify order for submission:', err);
+        }
+
+        const customerName = req.body.customerName || (shopifyOrder?.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer');
+        const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
+        const email = req.body.email || shopifyOrder?.email;
+
+        // Verify Payment logic for Return
+        const isFeeWaivedReturn = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
+        let paymentVerified = false;
+
+        if (req.body.paymentId && !isFeeWaivedReturn) {
+            if (!razorpay) return res.status(500).json({ error: 'Config error' });
+            try {
+                const payment = await razorpay.payments.fetch(req.body.paymentId);
+                console.log(`[${requestId}] Razorpay Verification (Return) - PaymentId: ${req.body.paymentId}, Status: ${payment.status}, Amount: ${payment.amount / 100} ${payment.currency}`);
+                if (payment.status === 'captured' || payment.status === 'authorized') {
+                    paymentVerified = true;
+                } else {
+                    return res.status(400).json({ error: 'Payment failed' });
+                }
+            } catch (e) {
+                console.error(`[${requestId}] Razorpay Verification Failed (Return):`, e.message);
+                return res.status(400).json({ error: 'Invalid payment' });
+            }
+        }
+
+        const needsPayment = !isFeeWaivedReturn && !paymentVerified;
+
+        console.log(`[${requestId}] Status Calculation (Return): isFeeWaivedReturn=${isFeeWaivedReturn}, paymentVerified=${paymentVerified}, needsPayment=${needsPayment}`);
+
+        // Shiprocket Return Order (Auto-Pickup) Logic:
+        // - PAID reasons: auto-initiate pickup at submission
+        // - FEE-WAIVED reasons (damaged/wrong_item): go to admin for review first, pickup triggered upon admin approval
+        let awbNumber = null;
+        let shipmentId = null;
+        let pickupDate = null;
+        let carrierUsed = null;
+        let fallbackReason = null;
+
+        if (!isFeeWaivedReturn && !needsPayment) {
+            // Get carrier mode from settings
+            const carrierMode = await getSetting('carrier_mode', 'shiprocket_with_fallback');
+            console.log(`[${requestId}] Auto-Pickup with carrier mode: ${carrierMode} for paid reason: ${req.body.reason}`);
+            
+            const requestData = {
+                requestId,
+                orderNumber: req.body.orderNumber,
+                customerPhone: customerPhone,
+                items
+            };
+
+            try {
+                if (carrierMode === 'shiprocket_only') {
+                    // Shiprocket only mode
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
+                    }
+                    
+                    console.log(`[${requestId}] Using Shiprocket only...`);
+                    const srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
+                    
+                    if (!srResponse || !srResponse.shipment_id) {
+                        throw new Error('Shiprocket returned empty response');
+                    }
+                    
+                    carrierUsed = 'shiprocket';
+                    awbNumber = srResponse.awb_code;
+                    shipmentId = srResponse.shipment_id;
+                    pickupDate = srResponse.pickup_scheduled_date;
+                    console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    
+                } else if (carrierMode === 'delhivery_only') {
+                    // Delhivery only mode
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    
+                    console.log(`[${requestId}] Using Delhivery only...`);
+                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
+                    
+                    if (!delhiveryResponse || !delhiveryResponse.waybill) {
+                        throw new Error('Delhivery returned empty response');
+                    }
+                    
+                    carrierUsed = 'delhivery';
+                    awbNumber = delhiveryResponse.waybill;
+                    shipmentId = delhiveryResponse.shipment_id;
+                    pickupDate = new Date().toISOString();
+                    console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
+                    
+                } else {
+                    // Shiprocket with Delhivery fallback (default)
+                    console.log(`[${requestId}] Using Shiprocket with Delhivery fallback...`);
+                    let srResponse = null;
+
+                    try {
+                        srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
+
+                        if (!srResponse || !srResponse.shipment_id) {
+                            throw new Error('Shiprocket returned empty response');
+                        }
+                    } catch (shiprocketError) {
+                        // Fallback to Delhivery
+                        fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
+                        console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
+                        
+                        if (process.env.DELHIVERY_API_KEY) {
+                            try {
+                                const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
+                                
+                                if (delhiveryResponse && delhiveryResponse.waybill) {
+                                    carrierUsed = 'delhivery';
+                                    awbNumber = delhiveryResponse.waybill;
+                                    shipmentId = delhiveryResponse.shipment_id;
+                                    pickupDate = new Date().toISOString();
+                                    console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
+                                } else {
+                                    throw new Error('Delhivery also failed to create shipment');
+                                }
+                            } catch (delhiveryError) {
+                                console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
+                                throw delhiveryError;
+                            }
+                        } else {
+                            console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
+                            throw shiprocketError;
+                        }
+                    }
+
+                    // If Shiprocket succeeded
+                    if (srResponse && srResponse.shipment_id) {
+                        carrierUsed = 'shiprocket';
+                        awbNumber = srResponse.awb_code;
+                        shipmentId = srResponse.shipment_id;
+                        pickupDate = srResponse.pickup_scheduled_date;
+                        console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                    }
+                }
+            } catch (error) {
+                console.error(`[${requestId}] ❌ Auto-pickup failed:`, error.message);
+                // Continue without shipment - will be pending
+            }
+        } else if (isFeeWaivedReturn) {
+            console.log(`[${requestId}] Reason (${req.body.reason}) is fee-waived. Deferring pickup for manual admin review.`);
+        }
+
+        try {
+            console.log(`[${requestId}] Saving Request to Database...`);
+            const requestData = {
+                ...req.body,
+                requestId,
+                email,
+                customerEmail: email,
+                customerName,
+                customerPhone,
+                items,
+                images: imageUrls,
+                type: 'return',
+                shippingAddress: originalAddressFormatted,
+                shippingCity: shippingCity,
+                shippingState: shippingState,
+                shippingPincode: shippingPincode,
+                awbNumber,
+                shipmentId,
+                pickupDate,
+                paymentId: req.body.paymentId || null,
+                paymentAmount: req.body.paymentAmount || 0,
+                status: needsPayment ? 'waiting_payment' : (isFeeWaivedReturn ? 'pending' : ((awbNumber || shipmentId) ? 'scheduled' : 'pending')),
+                carrier: carrierUsed,
+                carrierShipmentId: shipmentId,
+                carrierAwb: awbNumber,
+                carrierFallbackReason: fallbackReason
+            };
+
+            console.log(`[${requestId}] Final Status (Return): ${requestData.status}, AWB: ${awbNumber}`);
+            if (reuseRequestId) {
+                // Resubmission — update existing record, keep same REQ ID
+                requestData.requestId = reuseRequestId;
+                await updateRequestData(reuseRequestId, requestData);
+            } else {
+                await createRequest(requestData);
+            }
+        } catch (dbError) {
+            console.error(`[${requestId}] ❌ Database Insert Failed:`, dbError.message);
+            if (dbError.message.includes('column "images"')) {
+                return res.status(500).json({ error: 'Database mismatch: Please add "images" column.' });
+            }
+            throw dbError;
+        }
+
+        // If resubmitting, use the reused REQ ID for notifications and response
+        if (reuseRequestId) requestId = reuseRequestId;
+
+        console.log(`[${requestId}] ✅ Return Request Submitted Successfully`);
+        // WhatsApp notification disabled for return requests
+        // const message = `Hello ${customerName}, your return request for Order ${req.body.orderNumber} has been received. Request ID: ${requestId}.`;
+        // sendWhatsAppNotification(customerPhone, message, 'return', requestId).catch(err => console.error(err));
+
+        res.json({
+            success: true,
+            requestId,
+            message: 'Return request submitted successfully'
+        });
+    } catch (error) {
+        console.error('Submit return error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Track request (Return/Exchange) — accepts REQ ID or Order Number
+app.get('/api/track-request/:identifier', async (req, res) => {
+    const { identifier } = req.params;
+
+    // Helper to build complete workflow history from status timestamps
+    function buildWorkflowHistory(request) {
+        const workflow = [];
+        
+        // Define all possible workflow states with labels
+        const states = [
+            { key: 'created_at', label: 'Request Created', icon: '' },
+            { key: 'waiting_payment', label: 'Waiting Payment', icon: '' },
+            { key: 'payment_received', label: 'Payment Received', icon: '✅' },
+            { key: 'pending_admin', label: 'Pending Admin Review', icon: '👤' },
+            { key: 'pickup_booked', label: 'Pickup Booked', icon: '📦' },
+            { key: 'picked_up_at', label: 'Picked Up', icon: '' },
+            { key: 'in_transit_at', label: 'In Transit', icon: '🛣️' },
+            { key: 'out_for_delivery', label: 'Out For Delivery', icon: '🏠' },
+            { key: 'delivered_at', label: 'Delivered', icon: '✅' },
+            { key: 'inspected_at', label: 'Inspected', icon: '🔍' },
+            { key: 'approved_at', label: 'Approved', icon: '✓' },
+            { key: 'rejected_at', label: 'Rejected', icon: '✗' }
+        ];
+        
+        // Get the current status to determine which states are active
+        const currentStatus = (request.status || '').toLowerCase();
+        
+        // Build status order for returns/exchanges
+        const statusOrder = [
+            'waiting_payment',
+            'pending',
+            'pickup_booked',
+            'picked_up',
+            'in_transit',
+            'delivered',
+            'delivered (pending insp.)',
+            'inspected',
+            'approved',
+            'rejected'
+        ];
+        
+        const currentIndex = statusOrder.indexOf(currentStatus);
+        
+        states.forEach(state => {
+            const timestamp = request[state.key];
+            if (timestamp) {
+                // Determine if this state is completed, active, or future
+                let statusClass = 'completed';
+                
+                // Check if this matches current status
+                if (state.key === 'created_at' && currentIndex === 0) {
+                    statusClass = 'active';
+                } else if (state.key.replace('_at', '') === currentStatus || 
+                          state.key === currentStatus) {
+                    statusClass = 'active';
+                }
+                
+                workflow.push({
+                    label: state.label,
+                    icon: state.icon,
+                    date: new Date(timestamp).toISOString(),
+                    status: statusClass,
+                    completed: true
+                });
+            }
+        });
+        
+        // Sort by date
+        workflow.sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        return workflow;
+    }
+
+    // Helper to enrich a request with live tracking data (supports both Shiprocket and Delhivery)
+    async function enrichWithTracking(request) {
+        // Build complete workflow history from timestamps
+        request.workflowHistory = buildWorkflowHistory(request);
+        
+        // Return shipment tracking
+        if (request.awbNumber) {
+            try {
+                // Check if this is a Delhivery shipment
+                if (request.carrier === 'delhivery' || (request.carrierFallbackReason && !request.shipmentId?.startsWith('SR'))) {
+                    // Try Delhivery tracking
+                    const trackingData = await getDelhiveryTracking(request.awbNumber);
+                    if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
+                        const shipment = trackingData.shipments[0];
+                        request.shipment = {
+                            origin: trackingData.pickup_location?.name || null,
+                            destination: trackingData.return_address?.name || null,
+                            status: shipment.status || 'Pending',
+                            edd: shipment.eta || null,
+                            activities: shipment.tracking_data || [],
+                            carrier: 'delhivery'
+                        };
+                    }
+                } else {
+                    // Try Shiprocket tracking
+                    const trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`);
+                    if (trackingData && trackingData.tracking_data) {
+                        const tracking = trackingData.tracking_data;
+                        request.shipment = {
+                            origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
+                            destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
+                            status: tracking.current_status || 'Pending',
+                            edd: tracking.edd || tracking.etd || null,
+                            activities: tracking.shipment_track || [],
+                            carrier: 'shiprocket'
+                        };
+                    }
+                }
+            } catch (err) {
+                if (err.message.toLowerCase().includes('cancelled') || err.message.toLowerCase().includes('canceled')) {
+                    console.log(`[Tracking API] Return Shipment (${request.awbNumber}) is cancelled.`);
+                    request.shipment = { status: 'Cancelled', edd: null, activities: [], carrier: request.carrier || 'unknown' };
+                } else {
+                    console.error(`[Tracking API] Return Shipment (${request.awbNumber}) failed:`, err.message);
+                }
+            }
+        }
+        
+        // Forward shipment tracking (for exchanges)
+        if (request.forwardAwbNumber && process.env.SHIPROCKET_EMAIL) {
+            try {
+                const trackingData = await shiprocketAPI(`/courier/track/awb/${request.forwardAwbNumber}`);
+                if (trackingData && trackingData.tracking_data) {
+                    const tracking = trackingData.tracking_data;
+                    const activities = tracking.shipment_track || [];
+                    
+                    // DEBUG: Log first activity structure to understand Shiprocket response
+                    if (activities.length > 0) {
+                        console.log(`[DEBUG] Forward Shipment (${request.forwardAwbNumber}) - First activity:`, JSON.stringify(activities[0], null, 2));
+                    }
+                    
+                    request.forwardShipment = {
+                        awb: request.forwardAwbNumber,
+                        status: tracking.current_status || 'Scheduled',
+                        edd: tracking.edd || tracking.etd || null,
+                        activities: activities,
+                        courierName: tracking.courier_name || null,
+                        deliveredDate: tracking.delivered_date || null,
+                        deliveredTo: tracking.delivered_to || null,
+                        trackUrl: tracking.track_url || null,
+                        origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
+                        destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
+                        pickupDate: activities.length > 0 ? activities[activities.length - 1].date : null,
+                        packageCount: tracking.packages ? tracking.packages.length : null,
+                        carrier: 'shiprocket'
+                    };
+                }
+            } catch (err) {
+                if (err.message.toLowerCase().includes('cancelled') || err.message.toLowerCase().includes('canceled')) {
+                    console.log(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) is cancelled in Shiprocket.`);
+                    request.forwardShipment = { awb: request.forwardAwbNumber, status: 'Cancelled', edd: null, activities: [], carrier: 'shiprocket' };
+                } else {
+                    console.error(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) failed:`, err.message);
+                }
+            }
+        }
+        return request;
+    }
+
+    try {
+        // Detect: REQ IDs always start with 'REQ-'; everything else treated as an order number
+        const isReqId = identifier.toUpperCase().startsWith('REQ-');
+
+        console.log(`[Track Request] identifier=${identifier}, isReqId=${isReqId}`);
+
+        if (isReqId) {
+            // --- Normal path: single request by REQ ID ---
+            const request = await getRequestById(identifier);
+            if (!request) return res.status(404).json({ error: 'Request not found' });
+            
+            console.log(`[Track Request] DB status for ${identifier}:`, request.status);
+            
+            await enrichWithTracking(request);
+            console.log(`[Track Request] After enrichment, status:`, request.status);
+            return res.json(request);
+        } else {
+            // --- Order number path: may return multiple requests ---
+            const requests = await getRequestsByOrderNumber(identifier);
+            if (!requests || requests.length === 0) {
+                return res.status(404).json({ error: 'No return or exchange request found for this order number' });
+            }
+            // Enrich all with live tracking data
+            const enriched = await Promise.all(requests.map(enrichWithTracking));
+            // If exactly one, return as single object (keeps frontend backward compatible)
+            if (enriched.length === 1) return res.json(enriched[0]);
+            // Multiple: return as array under 'requests' key
+            return res.json({ multiple: true, requests: enriched });
+        }
+    } catch (error) {
+        console.error(`[Tracking Error] [${identifier}]:`, error);
+        res.status(500).json({
+            error: 'Failed to track request',
+            details: error.message
+        });
+    }
+});
+
+// Track order (IMPROVED with Shiprocket integration)
+app.post('/api/track-order', async (req, res) => {
+    try {
+        const { orderNumber, email } = req.body;
+
+        if (!orderNumber || !email) {
+            return res.status(400).json({ error: 'Order number and email are required' });
+        }
+
+        console.log('Tracking order:', orderNumber, 'for email:', email);
+
+        // Get order from Shopify
+        let shopifyData;
+        try {
+            // 1. Try exact match
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&status=any&limit=5`);
+
+            // 2. If no result, try adding/removing '#'
+            if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                let retryOrderNumber = orderNumber;
+                if (orderNumber.startsWith('#')) {
+                    retryOrderNumber = orderNumber.substring(1);
+                } else {
+                    retryOrderNumber = '#' + orderNumber;
+                }
+
+                console.log(`Retrying tracking lookup with: ${retryOrderNumber}`);
+                shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&limit=5`);
+            }
+        } catch (apiError) {
+            // Handle 404 gracefully - order simply doesn't exist
+            if (apiError.message.includes('404')) {
+                console.log(`Order ${orderNumber} not found in Shopify`);
+                return res.status(404).json({ error: 'Order not found' });
+            }
+            console.error('Shopify API Error:', apiError.message);
+            return res.status(500).json({ error: 'Failed to fetch order from Shopify' });
+        }
+
+        if (!shopifyData.orders || shopifyData.orders.length === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Find matching order by email OR phone
+        const normalizedInput = email ? email.toLowerCase().trim() : '';
+        const inputDigits = normalizedInput.replace(/\D/g, '');
+
+        const order = shopifyData.orders.find(o => {
+            const customerEmail = o.customer?.email?.toLowerCase() || '';
+            const customerPhone = o.customer?.phone?.replace(/\D/g, '') || '';
+            const shippingPhone = o.shipping_address?.phone?.replace(/\D/g, '') || '';
+
+            // Check Email
+            if (customerEmail && customerEmail === normalizedInput) return true;
+
+            // Check Phone (loose match for last 10 digits)
+            if (inputDigits.length >= 10) {
+                if (customerPhone.endsWith(inputDigits.slice(-10))) return true;
+                if (shippingPhone.endsWith(inputDigits.slice(-10))) return true;
+            }
+            return false;
+        });
+
+        if (!order) {
+            return res.status(404).json({ error: 'Order not found with this email/phone' });
+        }
+
+        // Check if order has fulfillments
+        const fulfillments = order.fulfillments || [];
+
+        if (fulfillments.length === 0) {
+            return res.json({
+                status: 'pending_shipment',
+                message: 'Your order is being processed and will be shipped soon.',
+                orderNumber: order.name,
+                customerName: order.customer
+                    ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+                    : 'Customer',
+                orderDate: order.created_at,
+                totalAmount: order.total_price
+            });
+        }
+
+        // Get tracking info from first fulfillment
+        const fulfillment = fulfillments[0];
+        const trackingNumber = fulfillment.tracking_number;
+        const trackingUrl = fulfillment.tracking_url;
+
+        // Fetch product images
+        const productIds = [...new Set(order.line_items.map(item => item.product_id).filter(id => id))];
+        const productImages = {};
+
+        if (productIds.length > 0) {
+            try {
+                const productsData = await shopifyAPI(`products.json?ids=${productIds.join(',')}&fields=id,image,images`);
+                if (productsData.products) {
+                    productsData.products.forEach(p => {
+                        if (p.image) {
+                            productImages[p.id] = p.image.src;
+                        } else if (p.images && p.images.length > 0) {
+                            productImages[p.id] = p.images[0].src;
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch product images for tracking:', err);
+            }
+        }
+
+        // Prepare basic response
+        const response = {
+            orderNumber: order.name,
+            customerName: order.customer
+                ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+                : 'Customer',
+            orderDate: order.created_at,
+            totalAmount: order.total_price,
+            currentStatus: fulfillment.shipment_status || 'Shipped',
+            awbNumber: trackingNumber || 'N/A',
+            courierName: fulfillment.tracking_company || 'N/A',
+            trackingUrl: trackingUrl || null,
+            estimatedDelivery: null,
+            items: order.line_items.map(item => ({
+                name: item.name,
+                variant: item.variant_title || 'Default',
+                quantity: item.quantity,
+                price: item.price,
+                image: productImages[item.product_id] || item.properties?.image || 'https://via.placeholder.com/200'
+            })),
+            activities: [],
+            shipment: null
+        };
+
+        // Try to get detailed tracking from Shiprocket if AWB exists
+        if (trackingNumber && process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD) {
+            try {
+                // Wrap in additional try/catch specifically for the API call to ensure we log the AWB
+                const trackingData = await shiprocketAPI(`/courier/track/awb/${trackingNumber}`);
+                console.log(`Shiprocket Tracking for ${trackingNumber}:`, trackingData?.tracking_data ? 'Success' : 'No Data');
+
+                if (trackingData && trackingData.tracking_data) {
+                    const tracking = trackingData.tracking_data;
+
+                    // Update response with Shiprocket data
+                    response.currentStatus = tracking.current_status || response.currentStatus;
+                    response.courierName = tracking.courier_name || response.courierName;
+                    response.estimatedDelivery = tracking.etd || tracking.edd || null; // Fix: Shiprocket returns 'etd'
+
+                    // Add shipment details
+                    response.shipment = {
+                        origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
+                        destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
+                        weight: tracking.weight || null,
+                        packages: tracking.packages || null,
+                        deliveredDate: tracking.delivered_date || null,
+                        deliveredTo: tracking.delivered_to || null
+                    };
+
+                    // Add tracking activities
+                    if (tracking.shipment_track && Array.isArray(tracking.shipment_track)) {
+                        response.activities = tracking.shipment_track.map(activity => ({
+                            status: activity['sr-status-label'] || activity.status,
+                            activity: activity.activity || activity['sr-status-label'],
+                            date: activity.date,
+                            location: activity.location || null
+                        }));
+                    }
+
+                    // Check if delivered
+                    response.isDelivered = tracking.current_status?.toLowerCase().includes('delivered') || false;
+
+                    // Add message for old/delivered orders
+                    const orderDate = new Date(order.created_at);
+                    const daysSinceOrder = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
+                    response.isOldOrder = daysSinceOrder > 60;
+
+                    if (response.isDelivered) {
+                        response.message = '✅ Your order has been delivered successfully!';
+                    } else if (response.isOldOrder) {
+                        response.message = 'This order is older than 60 days. Some tracking details may no longer be available.';
+                    }
+                }
+            } catch (shiprocketError) {
+                console.error('Shiprocket tracking error:', shiprocketError.message);
+                // Continue with basic Shopify data if Shiprocket fails
+            }
+        }
+
+        if (!res.headersSent) {
+            res.json(response);
+        } else {
+            console.warn('Response already sent (client may have disconnected)');
+        }
+
+    } catch (error) {
+        console.error('Track order error:', error);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to track order. Please try again.' });
+        }
+    }
+});
+
+// ==================== ADMIN ENDPOINTS ====================
+
+// Admin authentication middleware with JWT
+function authenticateAdmin(req, res, next) {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
+
+    if (!decoded || decoded.role !== 'admin') {
+        trackSuspicious(req.ip, 'invalid_admin_token');
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    req.user = decoded;
+    next();
+}
+
+// Admin login with JWT
+app.post('/api/admin/login', (req, res) => {
+    const { password } = req.body;
+
+    if (!password) {
+        return res.status(400).json({ error: 'Password required' });
+    }
+
+    if (password === process.env.ADMIN_PASSWORD) {
+        const token = generateToken({ role: 'admin', timestamp: Date.now() });
+        res.json({ success: true, token });
+    } else {
+        trackSuspicious(req.ip, 'failed_admin_login');
+        res.status(401).json({ error: 'Invalid password' });
+    }
+});
+
+// Admin: Get Settings
+app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
+    try {
+        const settings = {
+            return_window_days: await getSetting('return_window_days', 2),
+            return_window_mode: await getSetting('return_window_mode', 'delivery'),
+            allow_returns: await getSetting('allow_returns', true),
+            allow_exchanges: await getSetting('allow_exchanges', true),
+            auto_approve_reasons: await getSetting('auto_approve_reasons', ['size', 'fit']),
+            warehouse_location: await getSetting('warehouse_location', null),
+            delhivery_pickup_location: await getSetting('delhivery_pickup_location', null),
+            cutoff_date_enabled: await getSetting('cutoff_date_enabled', false),
+            cutoff_date: await getSetting('cutoff_date', null),
+            // Separate pickup/dispatch carrier settings (new)
+            carrier_mode_pickup: await getSetting('carrier_mode_pickup', null),
+            carrier_mode_dispatch: await getSetting('carrier_mode_dispatch', null),
+            // Legacy carrier mode (for backward compatibility)
+            carrier_mode: await getSetting('carrier_mode', 'shiprocket_with_fallback')
+        };
+        res.json(settings);
+    } catch (error) {
+        console.error('Get settings error:', error);
+        res.status(500).json({ error: 'Failed to get settings' });
+    }
+});
+
+// Admin: Get Shiprocket Locations
+app.get('/api/admin/shiprocket-locations', authenticateAdmin, async (req, res) => {
+    try {
+        const token = await getShiprocketToken();
+        const response = await fetchWithRetry('https://apiv2.shiprocket.in/v1/external/settings/company/pickup', {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+
+        // Shiprocket returns an array of pickup locations
+        if (data && data.data && data.data.shipping_address) {
+            res.json({ success: true, locations: data.data.shipping_address });
+        } else {
+            res.json({ success: true, locations: [] });
+        }
+    } catch (error) {
+        console.error('Get Shiprocket locations error:', error);
+        res.status(500).json({ error: 'Failed to fetch Shiprocket pickup locations' });
+    }
+});
+
+// Admin: Update Settings
+app.post('/api/admin/settings', authenticateAdmin, async (req, res) => {
+    try {
+        const { updates } = req.body;
+        if (!updates || typeof updates !== 'object') {
+            return res.status(400).json({ error: 'Invalid updates object' });
+        }
+
+        for (const [key, value] of Object.entries(updates)) {
+            await updateSetting(key, value);
+        }
+
+        res.json({ success: true, message: 'Settings updated' });
+    } catch (error) {
+        console.error('Update settings error:', error);
+        res.status(500).json({ error: 'Failed to update settings' });
+    }
+});
+
+// ==================== AGENT ENDPOINTS (Read-only + Notes) ====================
+
+// Agent auth middleware with JWT
+function authenticateAgent(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
+
+    if (!decoded || decoded.role !== 'agent') {
+        trackSuspicious(req.ip, 'invalid_agent_token');
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    req.user = decoded;
+    next();
+}
+
+// Agent login with JWT
+app.post('/api/agent/login', (req, res) => {
+    const { password } = req.body;
+    const agentPass = process.env.AGENT_PASSWORD;
+
+    if (!password) {
+        return res.status(400).json({ error: 'Password required' });
+    }
+    if (!agentPass) return res.status(503).json({ error: 'Agent access not configured' });
+    if (password !== agentPass) {
+        trackSuspicious(req.ip, 'failed_agent_login');
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    const token = generateToken({ role: 'agent', timestamp: Date.now() });
+    res.json({ success: true, token });
+});
+
+// Agent — read-only request list
+app.get('/api/agent/requests', authenticateAgent, async (req, res) => {
+    try {
+        const { status, type, search, page, limit } = req.query;
+        const result = await getAllRequests({ status, type, search, page, limit });
+        res.json({ requests: result.data, pagination: result.pagination });
+    } catch (error) {
+        console.error('Agent get requests error:', error);
+        res.status(500).json({ error: 'Failed to fetch requests' });
+    }
+});
+
+// Agent — read-only stats
+app.get('/api/agent/stats', authenticateAgent, async (req, res) => {
+    try {
+        const stats = await getRequestStats();
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+});
+
+// Agent — save notes on a request
+app.post('/api/agent/save-notes', authenticateAgent, async (req, res) => {
+    try {
+        const { requestId, notes } = req.body;
+        if (!requestId) return res.status(400).json({ error: 'requestId required' });
+        await saveAgentNotes(requestId, notes || '');
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Agent save notes error:', error);
+        res.status(500).json({ error: 'Failed to save notes' });
+    }
+});
+
+// ==========================================================================
+
+// Get all requests (admin)
+app.get('/api/admin/requests', authenticateAdmin, async (req, res) => {
+    try {
+        const { status, type, date, search, page, limit, carrier } = req.query;
+
+        // Run in parallel to reduce latency and avoid timeouts
+        const [result, stats] = await Promise.all([
+            getAllRequests({ status, type, date, search, page, limit, carrier }),
+            getRequestStats()
+        ]);
+
+        if (res.headersSent) return;
+        res.json({ requests: result.data, pagination: result.pagination, stats });
+    } catch (error) {
+        console.error('Get requests error:', error);
+        if (res.headersSent) return;
+        res.status(500).json({ error: 'Failed to fetch requests' });
+    }
+});
+
+// Get admin stats (optimized, separate endpoint)
+app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await getRequestStats();
+        res.json(stats);
+    } catch (error) {
+        console.error('Get stats error:', error);
+        res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+});
+
+// Get detailed analytics (new premium endpoint)
+app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => {
+    try {
+        const { dateRange } = req.query;
+        
+        // Calculate date range
+        const now = new Date();
+        let startDate;
+        let previousStartDate;
+        
+        switch (dateRange) {
+            case '7d':
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                previousStartDate = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+                break;
+            case '90d':
+                startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                previousStartDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+                break;
+            case '30d':
+            default:
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                previousStartDate = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+                break;
+        }
+        
+        // Fetch current period data
+        const { data: currentRequests, error: currentError } = await supabase
+            .from('requests')
+            .select('*')
+            .gte('created_at', startDate.toISOString());
+        
+        if (currentError) throw currentError;
+        
+        // Fetch previous period data for comparison
+        const { data: previousRequests, error: previousError } = await supabase
+            .from('requests')
+            .select('*')
+            .gte('created_at', previousStartDate.toISOString())
+            .lt('created_at', startDate.toISOString());
+        
+        if (previousError) throw previousError;
+        
+        // Calculate stats for current period
+        const stats = {
+            total: currentRequests.length,
+            pending: currentRequests.filter(r => r.status === 'pending').length,
+            waitingPayment: currentRequests.filter(r => r.status === 'waiting_payment').length,
+            approved: currentRequests.filter(r => r.status === 'approved').length,
+            rejected: currentRequests.filter(r => r.status === 'rejected').length,
+            returns: currentRequests.filter(r => r.type === 'return').length,
+            exchanges: currentRequests.filter(r => r.type === 'exchange').length,
+            totalRevenue: currentRequests.reduce((sum, r) => {
+                // Try total_amount first, then calculate from items
+                if (r.total_amount) return sum + r.total_amount;
+                // Calculate from items array
+                if (r.items && Array.isArray(r.items)) {
+                    const itemsTotal = r.items.reduce((itemSum, item) => {
+                        const price = parseFloat(item.price) || 0;
+                        const quantity = parseInt(item.quantity) || 1;
+                        return itemSum + (price * quantity);
+                    }, 0);
+                    return sum + itemsTotal;
+                }
+                return sum;
+            }, 0)
+        };
+        
+        // Calculate stats for previous period
+        const previousStats = {
+            total: previousRequests.length,
+            totalRevenue: previousRequests.reduce((sum, r) => {
+                // Try total_amount first, then calculate from items
+                if (r.total_amount) return sum + r.total_amount;
+                // Calculate from items array
+                if (r.items && Array.isArray(r.items)) {
+                    const itemsTotal = r.items.reduce((itemSum, item) => {
+                        const price = parseFloat(item.price) || 0;
+                        const quantity = parseInt(item.quantity) || 1;
+                        return itemSum + (price * quantity);
+                    }, 0);
+                    return sum + itemsTotal;
+                }
+                return sum;
+            }, 0)
+        };
+        
+        // Calculate comparisons
+        const totalChange = previousStats.total > 0 
+            ? Math.round(((stats.total - previousStats.total) / previousStats.total) * 100) 
+            : 0;
+        
+        const valueChange = previousStats.totalRevenue > 0 
+            ? Math.round(((stats.totalRevenue - previousStats.totalRevenue) / previousStats.totalRevenue) * 100) 
+            : 0;
+        
+        // Status distribution
+        const statusDistribution = {};
+        currentRequests.forEach(r => {
+            statusDistribution[r.status] = (statusDistribution[r.status] || 0) + 1;
+        });
+        
+        // Return reasons breakdown
+        const reasons = {};
+        currentRequests.forEach(r => {
+            if (r.reason) {
+                reasons[r.reason] = (reasons[r.reason] || 0) + 1;
+            }
+        });
+        
+        // Carrier statistics
+        const carrierStats = {};
+        currentRequests.forEach(r => {
+            if (r.carrier) {
+                if (!carrierStats[r.carrier]) {
+                    carrierStats[r.carrier] = { total: 0, success: 0 };
+                }
+                carrierStats[r.carrier].total++;
+                if (['delivered', 'approved'].includes(r.status)) {
+                    carrierStats[r.carrier].success++;
+                }
+            }
+        });
+        
+        // Time series data (chronological order: oldest to newest)
+        const timeSeries = [];
+        const days = dateRange === '7d' ? 7 : dateRange === '90d' ? 90 : 30;
+        
+        for (let i = 0; i < days; i++) {
+            const date = new Date(now.getTime() - (days - 1 - i) * 24 * 60 * 60 * 1000);
+            const dateStr = date.toISOString().split('T')[0];
+            const nextDate = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+            
+            const dayRequests = currentRequests.filter(r => {
+                const reqDate = new Date(r.created_at);
+                return reqDate >= date && reqDate < nextDate;
+            });
+            
+            timeSeries.push({
+                date: dateStr,
+                total: dayRequests.length,
+                returns: dayRequests.filter(r => r.type === 'return').length,
+                exchanges: dayRequests.filter(r => r.type === 'exchange').length
+            });
+        }
+        
+        // Sort chronologically (oldest to newest)
+        timeSeries.sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        // Calculate average processing time
+        const completedRequests = currentRequests.filter(r => 
+            ['approved', 'rejected', 'delivered'].includes(r.status) && r.updated_at
+        );
+        
+        let avgProcessingTime = 0;
+        if (completedRequests.length > 0) {
+            const totalTime = completedRequests.reduce((sum, r) => {
+                const created = new Date(r.created_at);
+                const updated = new Date(r.updated_at);
+                return sum + (updated - created);
+            }, 0);
+            avgProcessingTime = totalTime / completedRequests.length / (1000 * 60 * 60 * 24); // Convert to days
+        }
+        
+        // Insights
+        const insights = {
+            topReason: Object.entries(reasons).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A',
+            topReasonCount: Object.entries(reasons).sort((a, b) => b[1] - a[1])[0]?.[1] || 0,
+            peakDay: timeSeries.sort((a, b) => b.total - a.total)[0]?.date || 'N/A',
+            peakDayCount: timeSeries.sort((a, b) => b.total - a.total)[0]?.total || 0,
+            carrierSuccessRate: Object.keys(carrierStats).length > 0 
+                ? Math.round(
+                    (Object.values(carrierStats).reduce((sum, c) => sum + c.success, 0) / 
+                     Object.values(carrierStats).reduce((sum, c) => sum + c.total, 0)) * 100
+                  ) + '%'
+                : 'N/A'
+        };
+        
+        res.json({
+            stats,
+            comparison: {
+                totalChange,
+                valueChange,
+                previousTotal: previousStats.total
+            },
+            statusDistribution,
+            reasons,
+            carrierStats,
+            timeSeries,
+            avgProcessingTime,
+            insights
+        });
+        
+    } catch (error) {
+        console.error('Get detailed analytics error:', error);
+        res.status(500).json({ error: 'Failed to fetch detailed analytics' });
+    }
+});
+
+// Approve request (admin) - supports legacy endpoints
+app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve-exchange'], authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, notes, carrierOverride } = req.body;
+
+        // Get request details first
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        let adminNotes = notes || '';
+        let newStatus = 'approved';
+        let updates = { adminNotes };
+
+        // 1. Initial Approval or Re-initiate -> Initiate Pickup
+        if (requestDetails.status === 'pending' || requestDetails.status === 'pickup_pending') {
+            // If re-initiating pickup_pending, log and add note
+            if (requestDetails.status === 'pickup_pending') {
+                console.log(`[${requestId}] RE-INITIATING pickup (was already pickup_pending). Previous carrier: ${requestDetails.carrier || 'unknown'}`);
+                adminNotes += `\n--- Pickup Re-initiated by Admin (Previous: ${requestDetails.carrier || 'unknown'}) ---`;
+            }
+            
+            // Get carrier mode from settings (supports separate pickup/dispatch settings)
+            const carrierMode = await getCarrierMode('pickup');
+            const carrierResolution = resolveCarrier(carrierMode, carrierOverride, 'pickup');
+            console.log(`[${requestId}] Admin authorized pickup. Carrier mode: ${carrierMode}, Resolution:`, carrierResolution);
+
+            // Try to fetch Shopify order but don't block on failure
+            let shopifyOrder = null;
+            try {
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestDetails.orderNumber)}&status=any&limit=1`);
+                // Fuzzy retry with/without '#'
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const alt = requestDetails.orderNumber.startsWith('#')
+                        ? requestDetails.orderNumber.substring(1)
+                        : '#' + requestDetails.orderNumber;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(alt)}&status=any&limit=1`);
+                }
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+                if (!shopifyOrder) console.warn(`[${requestId}] Shopify order not found for ${requestDetails.orderNumber} — Will use stored request data as fallback.`);
+            } catch (err) {
+                console.warn(`[${requestId}] Shopify fetch failed, proceeding with stored data:`, err.message);
+            }
+
+            let awbNumber = null;
+            let shipmentId = null;
+            let pickupDate = null;
+            let carrierUsed = null;
+            let fallbackReason = null;
+
+            try {
+                const { primary: carrierToUse, useFallback } = carrierResolution;
+                const fallbackCarrier = carrierToUse === 'shiprocket' ? 'delhivery' : 'shiprocket';
+
+                // Try primary carrier
+                try {
+                    if (carrierToUse === 'shiprocket') {
+                        if (!process.env.SHIPROCKET_EMAIL) {
+                            throw new Error('Shiprocket not configured on server');
+                        }
+                        
+                        console.log(`[${requestId}] Using Shiprocket (fallback: ${useFallback})...`);
+                        const shiprocketData = await createShiprocketReturnOrder({
+                            ...requestDetails,
+                            requestId
+                        }, shopifyOrder);
+
+                        if (shiprocketData && shiprocketData.shipment_id) {
+                            carrierUsed = 'shiprocket';
+                            awbNumber = shiprocketData.awb_code;
+                            shipmentId = shiprocketData.shipment_id;
+                            pickupDate = shiprocketData.pickup_scheduled_date;
+                            console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                        } else {
+                            throw new Error('Shiprocket did not return shipment data');
+                        }
+                    } else if (carrierToUse === 'delhivery') {
+                        if (!process.env.DELHIVERY_API_KEY) {
+                            throw new Error('Delhivery not configured on server');
+                        }
+                        
+                        console.log(`[${requestId}] Using Delhivery (fallback: ${useFallback})...`);
+                        const delhiveryData = await createDelhiveryReturnOrder({
+                            ...requestDetails,
+                            requestId,
+                            orderNumber: requestDetails.orderNumber,
+                            customerPhone: requestDetails.customerPhone
+                        }, shopifyOrder);
+
+                        if (delhiveryData && delhiveryData.waybill) {
+                            carrierUsed = 'delhivery';
+                            awbNumber = delhiveryData.waybill;
+                            shipmentId = delhiveryData.shipment_id;
+                            pickupDate = new Date().toISOString();
+                            console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
+                        } else {
+                            const errorMsg = delhiveryData ? 'Delhivery returned incomplete data' : 'Delhivery did not return waybill data';
+                            console.error(`[${requestId}] ❌ ${errorMsg}`, delhiveryData);
+                            throw new Error(errorMsg);
+                        }
+                    }
+                } catch (primaryError) {
+                    // If fallback is enabled, try the fallback carrier
+                    if (useFallback) {
+                        fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
+                        console.warn(`[${requestId}] ⚠️ ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
+                        
+                        try {
+                            if (fallbackCarrier === 'shiprocket') {
+                                if (!process.env.SHIPROCKET_EMAIL) {
+                                    throw new Error('Shiprocket not configured for fallback');
+                                }
+                                
+                                const shiprocketData = await createShiprocketReturnOrder({
+                                    ...requestDetails,
+                                    requestId
+                                }, shopifyOrder);
+
+                                if (shiprocketData && shiprocketData.shipment_id) {
+                                    carrierUsed = 'shiprocket';
+                                    awbNumber = shiprocketData.awb_code;
+                                    shipmentId = shiprocketData.shipment_id;
+                                    pickupDate = shiprocketData.pickup_scheduled_date;
+                                    console.log(`[${requestId}] ✅ Shiprocket fallback success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                                } else {
+                                    throw new Error('Shiprocket did not return shipment data');
+                                }
+                            } else if (fallbackCarrier === 'delhivery') {
+                                if (!process.env.DELHIVERY_API_KEY) {
+                                    throw new Error('Delhivery not configured for fallback');
+                                }
+                                
+                                const delhiveryData = await createDelhiveryReturnOrder({
+                                    ...requestDetails,
+                                    requestId,
+                                    orderNumber: requestDetails.orderNumber,
+                                    customerPhone: requestDetails.customerPhone
+                                }, shopifyOrder);
+
+                                if (delhiveryData && delhiveryData.waybill) {
+                                    carrierUsed = 'delhivery';
+                                    awbNumber = delhiveryData.waybill;
+                                    shipmentId = delhiveryData.shipment_id;
+                                    pickupDate = new Date().toISOString();
+                                    console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
+                                } else {
+                                    const errorMsg = delhiveryData ? 'Delhivery fallback returned incomplete data' : 'Delhivery fallback did not return waybill data';
+                                    console.error(`[${requestId}] ❌ ${errorMsg}`, delhiveryData);
+                                    throw new Error(errorMsg);
+                                }
+                            }
+                        } catch (fallbackError) {
+                            console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
+                            throw new Error(`Both carriers failed: ${primaryError.message} | ${fallbackError.message}`);
+                        }
+                    } else {
+                        // No fallback enabled, just throw the primary error
+                        throw primaryError;
+                    }
+                }
+
+                // Update with success data
+                if (carrierUsed) {
+                    updates.shipmentId = shipmentId;
+                    updates.awbNumber = awbNumber;
+                    updates.pickupDate = pickupDate;
+                    updates.carrier = carrierUsed;
+                    updates.carrierShipmentId = shipmentId;
+                    updates.carrierAwb = awbNumber;
+                    if (fallbackReason) {
+                        updates.carrierFallbackReason = fallbackReason;
+                    }
+                    updates.status = 'pickup_booked';
+                    updates.adminNotes = adminNotes + `\nPickup scheduled via ${carrierUsed}: AWB ${awbNumber || 'Pending'}`;
+
+                    const request = await updateRequestStatus(requestId, updates);
+                    return res.json({ success: true, message: `Pickup initiated via ${carrierUsed} and status updated to pickup_booked`, request });
+                } else {
+                    throw new Error('No carrier was used');
+                }
+            } catch (carrierError) {
+                console.error(`[${requestId}] Pickup initiation failed:`, carrierError);
+                return res.status(500).json({ error: 'Failed to initiate pickup: ' + carrierError.message });
+            }
+        }
+
+        // 2. Final Approval -> Quality Check Passed -> Process Resolution
+        // Trigger Forward Shipment based on carrier settings (Shiprocket and/or Delhivery)
+        if (requestDetails.type === 'exchange' && requestDetails.status !== 'approved') {
+            console.log(`[${requestId}] Finalizing exchange resolution...`);
+
+            // Get carrier mode for dispatch (forward shipment)
+            const carrierMode = await getCarrierMode('dispatch');
+            const carrierResolution = resolveCarrier(carrierMode, null, 'dispatch');
+            
+            console.log(`[${requestId}] 🚀 Creating Forward Shipment for Exchange with carrier: ${carrierResolution.primary}${carrierResolution.useFallback ? ' (with fallback)' : ''}`);
+            
+            let items = requestDetails.items;
+            if (typeof items === 'string') { 
+                try { 
+                    items = JSON.parse(items); 
+                    console.log(`[${requestId}] 📋 Parsed items from JSON string: ${items.length} item(s)`);
+                } catch (e) { 
+                    console.error(`[${requestId}] ❌ Failed to parse items JSON:`, e);
+                    items = []; 
+                } 
+            }
+
+            // Log item details before creating forward order
+            console.log(`[${requestId}] 📦 Items to be dispatched:`);
+            items.forEach((item, idx) => {
+                console.log(`  ${idx + 1}. ${item.replacementProductTitle || item.name}`);
+                console.log(`     Variant: ${item.replacementVariant || item.variant}`);
+                console.log(`     Variant ID: ${item.replacementVariantId || item.variantId}`);
+                console.log(`     Qty: ${item.quantity}`);
+            });
+
+            // Create forward order based on carrier mode
+            let forwardOrder = null;
+            let carrierUsed = null;
+
+            const primaryCarrier = carrierResolution.primary;
+            const useFallback = carrierResolution.useFallback;
+
+            try {
+                if (primaryCarrier === 'shiprocket') {
+                    if (!process.env.SHIPROCKET_EMAIL) {
+                        throw new Error('Shiprocket not configured');
+                    }
+                    console.log(`[${requestId}] Using Shiprocket for forward dispatch...`);
+                    forwardOrder = await createShiprocketForwardOrder({ ...requestDetails, items });
+                    carrierUsed = 'shiprocket';
+                    
+                    if (!forwardOrder || !forwardOrder.shipment_id) {
+                        throw new Error('Shiprocket returned empty response');
+                    }
+                } else if (primaryCarrier === 'delhivery') {
+                    if (!process.env.DELHIVERY_API_KEY) {
+                        throw new Error('Delhivery not configured');
+                    }
+                    console.log(`[${requestId}] Using Delhivery for forward dispatch...`);
+                    forwardOrder = await createDelhiveryForwardOrder({ ...requestDetails, items });
+                    carrierUsed = 'delhivery';
+                    
+                    if (!forwardOrder || !forwardOrder.waybill) {
+                        throw new Error('Delhivery returned empty response');
+                    }
+                }
+            } catch (primaryError) {
+                console.error(`[${requestId}] ❌ Primary carrier (${primaryCarrier}) failed:`, primaryError.message);
+                
+                // Try fallback if enabled
+                if (useFallback) {
+                    const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
+                    const fallbackEnv = fallbackCarrier === 'shiprocket' ? process.env.SHIPROCKET_EMAIL : process.env.DELHIVERY_API_KEY;
+                    
+                    if (fallbackEnv) {
+                        try {
+                            console.log(`[${requestId}] ⚠️ Falling back to ${fallbackCarrier}...`);
+                            forwardOrder = fallbackCarrier === 'shiprocket'
+                                ? await createShiprocketForwardOrder({ ...requestDetails, items })
+                                : await createDelhiveryForwardOrder({ ...requestDetails, items });
+                            carrierUsed = fallbackCarrier;
+                            
+                            const isValid = fallbackCarrier === 'shiprocket'
+                                ? (forwardOrder && forwardOrder.shipment_id)
+                                : (forwardOrder && forwardOrder.waybill);
+                            
+                            if (!isValid) {
+                                throw new Error(`${fallbackCarrier} also failed to create forward shipment`);
+                            }
+                            
+                            console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success`);
+                        } catch (fallbackError) {
+                            console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
+                            forwardOrder = null;
+                        }
+                    } else {
+                        console.error(`[${requestId}] ❌ ${primaryCarrier} failed and ${fallbackCarrier} not configured`);
+                        forwardOrder = null;
+                    }
+                } else {
+                    console.error(`[${requestId}] ❌ ${primaryCarrier} failed and fallback not enabled`);
+                    forwardOrder = null;
+                }
+            }
+
+            if (forwardOrder && (forwardOrder.shipment_id || forwardOrder.waybill)) {
+                const shipmentInfo = carrierUsed === 'shiprocket' 
+                    ? `Shiprocket ID: ${forwardOrder.shipment_id}` 
+                    : `Delhivery AWB: ${forwardOrder.waybill}`;
+                adminNotes += `\nReplacement Shipment Created (${carrierUsed}: ${shipmentInfo})`;
+                updates.forwardShipmentId = String(forwardOrder.shipment_id || forwardOrder.order_id);
+                updates.forwardAwbNumber = forwardOrder.awb_code || forwardOrder.waybill || '';
+                updates.forwardStatus = 'scheduled';
+                updates.forwardCarrier = carrierUsed;
+                // Only mark as approved if forward shipment was successfully created
+                updates.status = 'approved';
+            } else {
+                // Forward shipment creation failed - do NOT mark as approved
+                adminNotes += `\nFailed to create replacement shipment. Check logs.`;
+                console.error(`[${requestId}] ❌ Forward shipment creation failed. Status will remain as: ${requestDetails.status}`);
+                // Keep the current status instead of marking as approved
+                updates.status = requestDetails.status;
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to create forward shipment. Please check logs and try again.',
+                    requestId: requestId
+                });
+            }
+        } else {
+            // For non-exchange types or already approved, just mark as approved
+            updates.status = 'approved';
+        }
+
+        const request = await updateRequestStatus(requestId, {
+            ...updates,
+            adminNotes: adminNotes
+        });
+
+        res.json({ success: true, message: 'Request approved successfully', request });
+    } catch (error) {
+        console.error('Approve request error:', error);
+        res.status(500).json({ error: 'Failed to approve request' });
+    }
+});
+
+// Approve return with discount code creation (admin)
+app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (req, res) => {
+    try {
+        const { 
+            requestId, 
+            notes, 
+            discountCode,      // e.g., "RETURN10" or "REFUND500"
+            discountValue,     // e.g., 10 (for 10%) or 500 (for ₹500)
+            discountType,      // 'percentage' or 'fixed'
+            usageLimit,        // optional, null = unlimited
+            sendWhatsApp,      // boolean: send via WhatsApp?
+            whatsappPhone      // optional: edited phone number
+        } = req.body;
+
+        // 1. Validate request exists and is in 'delivered' status (final approval only)
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        if (requestDetails.status !== 'delivered') {
+            return res.status(400).json({ 
+                error: 'Can only approve with discount for delivered returns' 
+            });
+        }
+        if (requestDetails.type !== 'return') {
+            return res.status(400).json({ error: 'Only for return requests' });
+        }
+
+        // 2. Create Shopify discount code (auto-generate if not provided)
+        let shopifyResult = null;
+        let discountCodeGenerated = null;
+        
+        if (discountValue) {
+            const finalCode = discountCode || `RETURN${requestId.slice(-6).toUpperCase()}`;
+            const valueType = discountType === 'fixed' ? 'fixed_amount' : 'percentage';
+            const title = `Return Compensation: ${requestDetails.orderNumber}`;
+            
+            console.log(`[approve-discount][${requestId}] Creating Shopify discount: code=${finalCode}, value=${discountValue}, type=${valueType}, usage=${usageLimit || 'unlimited'}`);
+            shopifyResult = await createShopifyDiscountCode(
+                finalCode,
+                parseFloat(discountValue),
+                valueType,
+                usageLimit || null,
+                title
+            );
+            
+            discountCodeGenerated = finalCode.toUpperCase();
+            console.log(`[approve-discount][${requestId}] ✅ Shopify discount created: ${discountCodeGenerated} (value=${discountValue}, type=${valueType})`);
+        }
+
+        // 3. Update request status to 'approved' with discount info
+        let adminNotes = notes || '';
+        if (discountCodeGenerated) {
+            adminNotes += `\n--- Discount Code Issued ---\nCode: ${discountCodeGenerated}\nValue: ${discountType === 'fixed' ? '₹' + discountValue : discountValue + '%'}\nUsage Limit: ${usageLimit || 'Unlimited'}`;
+        }
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'approved',
+            adminNotes,
+            discountCode: discountCodeGenerated || null,
+            discountValue: discountValue || null,
+            discountType: discountType || null,
+            approvedAt: new Date().toISOString()
+        });
+
+        // 4. Send WhatsApp notification if requested
+        let whatsappSent = false;
+        let whatsappMessageId = null;
+        let whatsappError = null;
+        
+        if (sendWhatsApp && discountCodeGenerated) {
+            const phoneToSend = whatsappPhone || requestDetails.customerPhone;
+            if (phoneToSend) {
+                const valueTypeLabel = discountType === 'fixed' ? `₹${discountValue}` : `${discountValue}%`;
+                const customerName = requestDetails.customerName || 'Valued Customer';
+                const message = `Hi ${customerName}! 👋\n\nGreat news! Your return for order *${requestDetails.orderNumber}* has been approved and processed successfully. ✅\n\n🎁 *Your Exclusive Compensation:*\n━━━━━━━━━━━━━━━━━\n💰 Discount Code: *${discountCodeGenerated}*\n💎 Value: ${valueTypeLabel}\n📝 Usage: ${usageLimit ? usageLimit + ' time(s)' : 'Unlimited'}\n━━━━━━━━━━━━━━━━━\n\nSimply apply this code at checkout on any product in our store!\n\nThank you for your patience and trust in us. We look forward to serving you again! 🙏\n\nNeed help? Reply to this message.`;
+                
+                try {
+                    const whatsappResult = await sendWhatsAppNotification(
+                        phoneToSend,
+                        message,
+                        'return_approved_with_discount',
+                        requestId,
+                        {
+                            templateName: 'return_approved_discount',
+                            customerName: customerName,
+                            orderNumber: requestDetails.orderNumber,
+                            discountCode: discountCodeGenerated,
+                            value: discountValue,
+                            valueType: discountType === 'fixed' ? 'fixed_amount' : 'percentage',
+                            usage: usageLimit ? `${usageLimit} time(s)` : 'Unlimited'
+                        }
+                    );
+                    
+                    whatsappSent = true;
+                    whatsappMessageId = whatsappResult?.messageId || null;
+                    console.log(`[approve-discount][${requestId}] ✅ WhatsApp template sent successfully. Message ID: ${whatsappMessageId}`);
+                    
+                    // Update database with WhatsApp status
+                    await updateRequestStatus(requestId, {
+                        whatsappSent: true,
+                        whatsappMessageId: whatsappMessageId,
+                        whatsappSentAt: new Date().toISOString()
+                    });
+                } catch (error) {
+                    whatsappError = error.message;
+                    console.error(`[approve-discount][${requestId}] ❌ WhatsApp send failed:`, error.message);
+                    
+                    // Update database with error
+                    await updateRequestStatus(requestId, {
+                        whatsappSent: false,
+                        whatsappError: error.message
+                    });
+                }
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'Return approved with discount code',
+            discountCode: discountCodeGenerated,
+            whatsappSent,
+            whatsappMessageId,
+            whatsappError,
+            request 
+        });
+    } catch (error) {
+        console.error('Approve return with discount error:', error);
+        res.status(500).json({ 
+            error: 'Failed to approve return with discount: ' + error.message 
+        });
+    }
+});
+
+// ── Send Coupon Code (create discount + send WhatsApp message, no status change) ──
+app.post('/api/admin/send-coupon-code', authenticateAdmin, async (req, res) => {
+    try {
+        const {
+            requestId,
+            discountCode,
+            discountValue,
+            discountType,
+            usageLimit,
+            sendWhatsApp,
+            whatsappPhone
+        } = req.body;
+
+        if (!requestId) {
+            return res.status(400).json({ error: 'Request ID is required' });
+        }
+        if (!discountValue || parseFloat(discountValue) <= 0) {
+            return res.status(400).json({ error: 'Discount value is required' });
+        }
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        // 1. Create Shopify discount code
+        const finalCode = discountCode || `RETURN${requestId.slice(-6).toUpperCase()}`;
+        const valueType = discountType === 'fixed' ? 'fixed_amount' : 'percentage';
+        const title = `Return Compensation: ${requestDetails.orderNumber}`;
+
+        console.log(`[send-coupon][${requestId}] Creating Shopify discount: code=${finalCode}, value=${discountValue}, type=${valueType}, usage=${usageLimit || 'unlimited'}`);
+
+        let shopifyResult = null;
+        try {
+            shopifyResult = await createShopifyDiscountCode(
+                finalCode,
+                parseFloat(discountValue),
+                valueType,
+                usageLimit || null,
+                title
+            );
+            console.log(`[send-coupon][${requestId}] ✅ Shopify discount created: ${finalCode.toUpperCase()} (value=${discountValue}, type=${valueType})`);
+        } catch (shopifyError) {
+            console.error(`[send-coupon][${requestId}] ❌ Shopify discount creation failed:`, shopifyError.message);
+            return res.status(500).json({ error: 'Failed to create discount code in Shopify: ' + shopifyError.message });
+        }
+
+        const discountCodeGenerated = finalCode.toUpperCase();
+
+        // 2. Save coupon info to request notes (without changing status)
+        const couponNote = `\n--- Coupon Code Sent ---\nCode: ${discountCodeGenerated}\nValue: ${discountType === 'fixed' ? '₹' + discountValue : discountValue + '%'}\nUsage Limit: ${usageLimit || 'Unlimited'}\nSent At: ${new Date().toLocaleString('en-IN')}`;
+        const existingNotes = requestDetails.adminNotes || '';
+        await updateRequestStatus(requestId, {
+            adminNotes: existingNotes + couponNote,
+            discountCode: discountCodeGenerated,
+            discountValue: parseFloat(discountValue),
+            discountType: discountType || 'percentage'
+        });
+
+        // 3. Send WhatsApp notification if requested
+        let whatsappSent = false;
+        let whatsappMessageId = null;
+        let whatsappError = null;
+
+        if (sendWhatsApp) {
+            const phoneToSend = whatsappPhone || requestDetails.customerPhone;
+            if (phoneToSend) {
+                const valueTypeLabel = discountType === 'fixed' ? `₹${discountValue}` : `${discountValue}%`;
+                const customerName = requestDetails.customerName || 'Valued Customer';
+                const message = `Hi ${customerName}! 👋\n\nGreat news! Your return for order *${requestDetails.orderNumber}* has been approved and processed successfully. ✅\n\n🎁 *Your Exclusive Compensation:*\n━━━━━━━━━━━━━━━━━\n💰 Discount Code: *${discountCodeGenerated}*\n💎 Value: ${valueTypeLabel}\n📝 Usage: ${usageLimit ? usageLimit + ' time(s)' : 'Unlimited'}\n━━━━━━━━━━━━━━━━━\n\nSimply apply this code at checkout on any product in our store!\n\nThank you for your patience and trust in us. We look forward to serving you again! 🙏\n\nNeed help? Reply to this message.`;
+
+                try {
+                    const whatsappResult = await sendWhatsAppNotification(
+                        phoneToSend,
+                        message,
+                        'return_approved_with_discount',
+                        requestId,
+                        {
+                            templateName: 'return_approved_discount',
+                            customerName: customerName,
+                            orderNumber: requestDetails.orderNumber,
+                            discountCode: discountCodeGenerated,
+                            value: parseFloat(discountValue),
+                            valueType: discountType === 'fixed' ? 'fixed_amount' : 'percentage',
+                            usage: usageLimit ? `${usageLimit} time(s)` : 'Unlimited'
+                        }
+                    );
+
+                    whatsappSent = true;
+                    whatsappMessageId = whatsappResult?.messageId || null;
+                    console.log(`[send-coupon][${requestId}] ✅ WhatsApp template sent. Message ID: ${whatsappMessageId}`);
+                } catch (error) {
+                    whatsappError = error.message;
+                    console.error(`[send-coupon][${requestId}] ❌ WhatsApp send failed:`, error.message);
+                }
+            } else {
+                whatsappError = 'No phone number available';
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Coupon code created and message sent',
+            discountCode: discountCodeGenerated,
+            discountValue: parseFloat(discountValue),
+            discountType: discountType || 'percentage',
+            whatsappSent,
+            whatsappMessageId,
+            whatsappError
+        });
+    } catch (error) {
+        console.error('Send coupon code error:', error);
+        res.status(500).json({ error: 'Failed to send coupon: ' + error.message });
+    }
+});
+
+// Reset pickup to pending (for fixing failed carrier bookings)
+app.post('/api/admin/reset-pickup', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.body;
+        
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        
+        // Allow reverting a pickup from any status where a pickup was attempted/booked.
+        // Useful when a carrier pickup gets cancelled and admin needs to start over.
+        const revertableStatuses = ['pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit', 'cancelled', 'failed'];
+        if (!revertableStatuses.includes(requestDetails.status)) {
+            return res.status(400).json({ error: `Cannot revert pickup from status: ${requestDetails.status}` });
+        }
+        
+        const adminNotes = (requestDetails.adminNotes || '') + 
+            `\n[SYSTEM] Pickup reverted to pending by admin (was: ${requestDetails.status}, carrier: ${requestDetails.carrier || 'unknown'}, AWB: ${requestDetails.awbNumber || requestDetails.carrierAwb || 'none'})`;
+        
+        const request = await updateRequestStatus(requestId, {
+            status: 'pending',
+            carrier: null,
+            carrierAwb: null,
+            carrierShipmentId: null,
+            awbNumber: null,
+            shipmentId: null,
+            pickupDate: null,
+            adminNotes
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Request reset to pending status',
+            request
+        });
+    } catch (error) {
+        console.error('Reset pickup error:', error);
+        res.status(500).json({ error: 'Failed to reset pickup' });
+    }
+});
+
+// Mark request as delivered/received manually (admin override)
+app.post('/api/admin/mark-delivered', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.body;
+        console.log(`[${requestId}] Manual Override: Marking as Delivered`);
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'delivered',
+            deliveredAt: new Date().toISOString()
+        });
+
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        res.json({ success: true, message: 'Request marked as delivered/received', request });
+
+    } catch (error) {
+        console.error('Mark delivered error:', error);
+        res.status(500).json({ error: 'Failed to update status' });
+    }
+});
+
+// Re-dispatch cancelled or failed orders (admin)
+app.post('/api/admin/redispatch', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, carrierOverride } = req.body;
+        
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        
+        // Only allow re-dispatch for cancelled or failed orders
+        if (requestDetails.status !== 'cancelled' && requestDetails.status !== 'failed') {
+            return res.status(400).json({ 
+                error: 'Can only re-dispatch cancelled or failed orders',
+                currentStatus: requestDetails.status
+            });
+        }
+        
+        console.log(`[${requestId}] RE-DISPATCHING order (was ${requestDetails.status}). Previous carrier: ${requestDetails.carrier || 'none'}`);
+        
+        // Clear previous carrier info and reset to pending for re-processing
+        const adminNotes = (requestDetails.adminNotes || '') + 
+            `\n[SYSTEM] Order re-dispatched by admin from ${requestDetails.status} status (Previous carrier: ${requestDetails.carrier || 'none'})`;
+        
+        const request = await updateRequestStatus(requestId, {
+            status: 'pending',
+            carrier: null,
+            carrierAwb: null,
+            carrierShipmentId: null,
+            awbNumber: null,
+            shipmentId: null,
+            pickupDate: null,
+            forwardAwbNumber: null,
+            forwardShipmentId: null,
+            adminNotes
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Order reset to pending for re-dispatch. You can now approve it again.',
+            request
+        });
+    } catch (error) {
+        console.error('Re-dispatch error:', error);
+        res.status(500).json({ error: 'Failed to re-dispatch order' });
+    }
+});
+
+// ── Reusable helper: book a fresh return pickup with primary + optional fallback carrier ──
+// Returns { carrierUsed, awbNumber, shipmentId, pickupDate, fallbackReason } or throws.
+async function bookReturnPickup(requestDetails, requestId, carrierOverride = null, options = {}) {
+    const carrierMode = await getCarrierMode('pickup');
+    const carrierResolution = resolveCarrier(carrierMode, carrierOverride, 'pickup');
+    console.log(`[${requestId}] bookReturnPickup: carrier mode ${carrierMode}, resolution`, carrierResolution);
+
+    // Optional unique suffix for the Delhivery order id so a fresh/duplicate pickup is not
+    // rejected as a "Duplicate order id" (which would silently re-adopt the stale waybill).
+    const delhiveryOrderIdSuffix = options.delhiveryOrderIdSuffix || '';
+
+    // Best-effort Shopify order fetch (don't block on failure)
+    let shopifyOrder = null;
+    try {
+        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestDetails.orderNumber)}&status=any&limit=1`);
+        if (!shopifyData.orders || shopifyData.orders.length === 0) {
+            const alt = requestDetails.orderNumber.startsWith('#')
+                ? requestDetails.orderNumber.substring(1)
+                : '#' + requestDetails.orderNumber;
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(alt)}&status=any&limit=1`);
+        }
+        shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+    } catch (err) {
+        console.warn(`[${requestId}] bookReturnPickup Shopify fetch failed, using stored data:`, err.message);
+    }
+
+    const { primary: carrierToUse, useFallback } = carrierResolution;
+    const fallbackCarrier = carrierToUse === 'shiprocket' ? 'delhivery' : 'shiprocket';
+
+    const attempt = async (carrier) => {
+        if (carrier === 'shiprocket') {
+            if (!process.env.SHIPROCKET_EMAIL) throw new Error('Shiprocket not configured on server');
+            const d = await createShiprocketReturnOrder({ ...requestDetails, requestId }, shopifyOrder);
+            if (d && d.shipment_id) {
+                return { carrierUsed: 'shiprocket', awbNumber: d.awb_code, shipmentId: d.shipment_id, pickupDate: d.pickup_scheduled_date };
+            }
+            throw new Error('Shiprocket did not return shipment data');
+        } else {
+            if (!process.env.DELHIVERY_API_KEY) throw new Error('Delhivery not configured on server');
+            const d = await createDelhiveryReturnOrder({
+                ...requestDetails,
+                requestId,
+                orderNumber: requestDetails.orderNumber,
+                customerPhone: requestDetails.customerPhone,
+                delhiveryOrderIdSuffix
+            }, shopifyOrder);
+            if (d && d.waybill) {
+                return { carrierUsed: 'delhivery', awbNumber: d.waybill, shipmentId: d.shipment_id, pickupDate: new Date().toISOString() };
+            }
+            throw new Error('Delhivery did not return waybill data');
+        }
+    };
+
+    let result = null;
+    let fallbackReason = null;
+    try {
+        result = await attempt(carrierToUse);
+    } catch (primaryError) {
+        if (!useFallback) throw primaryError;
+        fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
+        console.warn(`[${requestId}] ⚠️ ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
+        try {
+            result = await attempt(fallbackCarrier);
+        } catch (fallbackError) {
+            throw new Error(`Both carriers failed: ${primaryError.message} | ${fallbackError.message}`);
+        }
+    }
+
+    if (!result || !result.carrierUsed) throw new Error('No carrier was used');
+    return { ...result, fallbackReason };
+}
+
+// Create a fresh (duplicate) return pickup for a request regardless of current status.
+// Useful when a previously booked pickup was cancelled by the carrier.
+app.post('/api/admin/create-duplicate-pickup', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, carrierOverride } = req.body;
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        const prevAwb = requestDetails.awbNumber || requestDetails.carrierAwb || 'none';
+        console.log(`[${requestId}] Creating DUPLICATE pickup (current status: ${requestDetails.status}, previous carrier: ${requestDetails.carrier || 'none'}, previous AWB: ${prevAwb})`);
+
+        // Delhivery rejects a re-used order id ("Duplicate order id") and echoes back the
+        // stale waybill, so a fresh pickup must carry a unique order id. Derive the next
+        // retry number from how many duplicate pickups were previously logged for this request.
+        const priorDuplicateCount = ((requestDetails.adminNotes || '').match(/\[SYSTEM\] Duplicate pickup created/g) || []).length;
+        const retryNumber = priorDuplicateCount + 1;
+        const delhiveryOrderIdSuffix = `-R${retryNumber}`;
+
+        const booking = await bookReturnPickup(requestDetails, requestId, carrierOverride || null, { delhiveryOrderIdSuffix });
+
+        let adminNotes = requestDetails.adminNotes || '';
+        adminNotes += `\n[SYSTEM] Duplicate pickup created via ${booking.carrierUsed}: AWB ${booking.awbNumber || 'Pending'} (previous AWB: ${prevAwb}). Previous booking may remain in carrier system.`;
+        if (booking.fallbackReason) adminNotes += `\nFallback: ${booking.fallbackReason}`;
+
+        const request = await updateRequestStatus(requestId, {
+            shipmentId: booking.shipmentId,
+            awbNumber: booking.awbNumber,
+            pickupDate: booking.pickupDate,
+            status: 'pickup_booked',
+            adminNotes,
+            carrier: booking.carrierUsed,
+            carrierShipmentId: booking.shipmentId,
+            carrierAwb: booking.awbNumber,
+            carrierFallbackReason: booking.fallbackReason || null
+        });
+
+        res.json({
+            success: true,
+            message: `Duplicate pickup created via ${booking.carrierUsed}. New AWB: ${booking.awbNumber || 'Pending'}`,
+            request
+        });
+    } catch (error) {
+        console.error('Create duplicate pickup error:', error);
+        res.status(500).json({ error: 'Failed to create duplicate pickup: ' + error.message });
+    }
+});
+
+// ── Admin: Update exchange details (items, phone, address) ──
+app.put('/api/admin/update-request/:requestId', authenticateAdmin, async (req, res) => {
+    const requestId = req.params.requestId;
+    const { items, customerPhone, newAddress, newCity, newPincode, newState, customerName } = req.body;
+    
+    console.log(`[ADMIN UPDATE] ${requestId} — Exchange details modification started`);
+    console.log(`[ADMIN UPDATE] ${requestId} — Request body:`, { items: items?.length, customerPhone, newAddress, newCity, newState, newPincode, customerName });
+    
+    try {
+        // Validate request exists
+        const existingRequest = await getRequestById(requestId);
+        if (!existingRequest) {
+            console.log(`[ADMIN UPDATE] ${requestId} — Request not found`);
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        
+        // Only allow modifications for exchange requests
+        if (existingRequest.type !== 'exchange') {
+            console.log(`[ADMIN UPDATE] ${requestId} — Not an exchange request (type: ${existingRequest.type})`);
+            return res.status(400).json({ 
+                error: 'Can only modify exchange requests' 
+            });
+        }
+        
+        // Only allow modifications for requests that haven't been shipped yet
+        const blockedStatuses = ['shipped', 'delivered', 'resolved'];
+        if (blockedStatuses.includes(existingRequest.status)) {
+            console.log(`[ADMIN UPDATE] ${requestId} — Cannot modify request with status: ${existingRequest.status}`);
+            return res.status(400).json({ 
+                error: 'Cannot modify request after shipment has been initiated' 
+            });
+        }
+        
+        const updateData = {};
+        
+        // Update items if provided
+        if (items && Array.isArray(items) && items.length > 0) {
+            // Validate each item has required fields
+            for (const item of items) {
+                if (!item.replacementVariantId || !item.replacementProductTitle) {
+                    console.log(`[ADMIN UPDATE] ${requestId} — Invalid item data: missing replacementVariantId or replacementProductTitle`);
+                    return res.status(400).json({ 
+                        error: 'Each item must have replacementVariantId and replacementProductTitle' 
+                    });
+                }
+            }
+            updateData.items = JSON.stringify(items);
+            console.log(`[ADMIN UPDATE] ${requestId} — Updating ${items.length} item(s)`);
+        }
+        
+        // Update customer phone if provided
+        if (customerPhone !== undefined) {
+            updateData.customer_phone = customerPhone;
+            console.log(`[ADMIN UPDATE] ${requestId} — Updating customer phone`);
+        }
+        
+        // Update shipping address fields if provided
+        if (newAddress !== undefined) updateData.new_address = newAddress;
+        if (newCity !== undefined) updateData.new_city = newCity;
+        if (newPincode !== undefined) updateData.new_pincode = newPincode;
+        if (newState !== undefined) updateData.new_state = newState;
+        if (customerName !== undefined) updateData.customer_name = customerName;
+        
+        // Verify at least one field is being updated
+        if (Object.keys(updateData).length === 0) {
+            console.log(`[ADMIN UPDATE] ${requestId} — No fields to update`);
+            return res.status(400).json({ 
+                error: 'No valid fields to update' 
+            });
+        }
+        
+        // Add audit trail
+        const timestamp = new Date().toISOString();
+        updateData.admin_notes = `[${timestamp}] Exchange details modified by admin\n` + 
+            (existingRequest.admin_notes || '');
+        updateData.updated_at = timestamp;
+        
+        console.log(`[ADMIN UPDATE] ${requestId} — Update data:`, updateData);
+        
+        // Perform update
+        const { data, error } = await supabase
+            .from('requests')
+            .update(updateData)
+            .eq('request_id', requestId)
+            .select()
+            .single();
+        
+        if (error) {
+            console.error(`[ADMIN UPDATE] ${requestId} — Database update error:`, error);
+            return res.status(500).json({ error: 'Failed to update request' });
+        }
+        
+        console.log(`[ADMIN UPDATE] ${requestId} — ✅ Successfully updated`);
+        
+        res.json({ 
+            success: true, 
+            message: 'Request updated successfully',
+            data: convertFromSnakeCase(data)
+        });
+    } catch (error) {
+        console.error(`[ADMIN UPDATE] ${requestId} — Error:`, error);
+        res.status(500).json({ error: 'Failed to update request' });
+    }
+});
+
+// ── Admin: Manually create a request (bypasses eligibility + duplicate checks) ──
+app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
+    const requestId = await generateUniqueRequestId();
+    console.log(`[ADMIN CREATE] ${requestId} — Manual request creation started`);
+
+    try {
+        const { orderNumber, type, reason, comments, items, overrideExisting } = req.body;
+
+        if (!orderNumber || !type || !reason) {
+            return res.status(400).json({ error: 'orderNumber, type, and reason are required' });
+        }
+        if (!['return', 'exchange'].includes(type)) {
+            return res.status(400).json({ error: 'type must be "return" or "exchange"' });
+        }
+
+        // ── Fetch order from Shopify ──────────────────────────────────────────
+        const shopifyResponse = await fetch(
+            `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2023-10/orders.json?name=${encodeURIComponent(orderNumber)}&status=any&fields=id,name,email,customer,line_items,fulfillment_status,fulfillments`,
+            { headers: { 'X-Shopify-Access-Token': process.env.SHOPIFY_ADMIN_TOKEN } }
+        );
+        const shopifyData = await shopifyResponse.json();
+        const order = shopifyData.orders && shopifyData.orders[0];
+        if (!order) {
+            return res.status(404).json({ error: `Order ${orderNumber} not found in Shopify` });
+        }
+
+        const customerName = order.customer ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() : 'N/A';
+        const customerEmail = order.customer ? order.customer.email : (order.email || '');
+        const customerPhone = order.customer ? order.customer.phone : '';
+
+        // ── Optional: block if active request already exists (unless overrideExisting=true) ──
+        if (!overrideExisting) {
+            const existing = await getRequestsByOrderNumber(order.name);
+            const active = existing.filter(r => r.status !== 'rejected' && r.status !== 'waiting_payment');
+            if (active.length > 0) {
+                return res.status(409).json({
+                    error: `Order already has an active request (${active[0].requestId}). Pass overrideExisting: true to create anyway.`,
+                    existingRequestId: active[0].requestId
+                });
+            }
+        }
+
+        // ── Build items list ──────────────────────────────────────────────────
+        let parsedItems = [];
+        if (items && items.length > 0) {
+            parsedItems = items;
+        } else {
+            // Default: use all line items from Shopify
+            parsedItems = (order.line_items || []).map(li => ({
+                name: li.title,
+                variant: li.variant_title || 'Default',
+                quantity: li.quantity,
+                price: li.price,
+                image: null,
+                lineItemId: li.id
+            }));
+        }
+
+        // ── Schedule pickup via carrier (respects carrier_mode setting) ────────────────────────────────────
+        let awbNumber = null, shipmentId = null, pickupDate = null, carrierUsed = null, fallbackReason = null;
+        try {
+            const shiprocketToken = await getShiprocketToken();
+            if (shiprocketToken) {
+                const pickupResult = await schedulePickup(shiprocketToken, requestId, order, parsedItems, type);
+                if (pickupResult) {
+                    awbNumber = pickupResult.awbNumber;
+                    shipmentId = pickupResult.shipmentId;
+                    pickupDate = pickupResult.pickupDate;
+                    carrierUsed = pickupResult.carrier;
+                    fallbackReason = pickupResult.fallbackReason;
+                }
+            }
+        } catch (srErr) {
+            console.warn(`[ADMIN CREATE] Pickup scheduling failed (non-fatal):`, srErr.message);
+        }
+
+        // ── Insert into DB ────────────────────────────────────────────────────
+        // Use shipping_address (primary) or fulfillment destination (fallback)
+        const addr = order.shipping_address || (order.fulfillments && order.fulfillments[0] && order.fulfillments[0].destination);
+        const shippingAddress = addr
+            ? [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country].filter(Boolean).join(', ')
+            : '';
+        const shippingCity = addr ? (addr.city || '') : '';
+        const shippingState = addr ? (addr.province || '') : '';
+        const shippingPincode = addr ? (addr.zip || '') : '';
+
+        await createRequest({
+            requestId,
+            orderNumber: order.name,
+            email: customerEmail,
+            customerName,
+            customerEmail,
+            customerPhone,
+            type,
+            status: (awbNumber || shipmentId) ? 'scheduled' : 'pending',
+            reason,
+            comments: comments || '',
+            items: parsedItems,
+            shippingAddress,
+            shippingCity,
+            shippingState,
+            shippingPincode,
+            awbNumber,
+            shipmentId,
+            pickupDate,
+            carrier: carrierUsed || 'shiprocket',
+            carrierShipmentId: shipmentId,
+            carrierAwb: awbNumber,
+            carrierFallbackReason: fallbackReason,
+            adminNotes: `Manually created by admin on ${new Date().toLocaleDateString('en-IN')}`
+        });
+
+        console.log(`[ADMIN CREATE] ${requestId} ✅ Created successfully (Carrier: ${carrierUsed || 'N/A'}, AWB: ${awbNumber || 'N/A'})`);
+
+        res.json({
+            success: true,
+            requestId,
+            awbNumber: awbNumber || null,
+            shipmentId: shipmentId || null,
+            pickupDate: pickupDate || null,
+            carrier: carrierUsed || null,
+            status: (awbNumber || shipmentId) ? 'scheduled' : 'pending',
+            message: `Request ${requestId} created successfully`
+        });
+
+    } catch (error) {
+        console.error(`[ADMIN CREATE] Error:`, error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ── Admin: Lookup order for manual request creation (no eligibility check) ──
+app.post('/api/admin/lookup-order-force', authenticateAdmin, async (req, res) => {
+    try {
+        const { orderNumber } = req.body;
+        if (!orderNumber) return res.status(400).json({ error: 'orderNumber required' });
+
+        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderNumber)}&status=any&fields=id,name,email,customer,line_items,fulfillment_status,fulfillments,financial_status`);
+
+        if (!shopifyData.orders || shopifyData.orders.length === 0) {
+            const retryOrderNumber = orderNumber.startsWith('#') ? orderNumber.substring(1) : '#' + orderNumber;
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(retryOrderNumber)}&status=any&fields=id,name,email,customer,line_items,fulfillment_status,fulfillments,financial_status`);
+        }
+        const order = shopifyData.orders && shopifyData.orders[0];
+
+        if (!order) return res.status(404).json({ error: `Order ${orderNumber} not found` });
+
+        // Check for existing active request
+        const existingRequests = await getRequestsByOrderNumber(order.name);
+        const active = existingRequests.filter(r => r.status !== 'rejected');
+
+        res.json({
+            found: true,
+            order: {
+                name: order.name,
+                email: order.customer ? order.customer.email : order.email,
+                customerName: order.customer ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() : 'N/A',
+                customerPhone: order.customer ? order.customer.phone : '',
+                fulfillmentStatus: order.fulfillment_status,
+                lineItems: (order.line_items || []).map(li => ({
+                    id: li.id,
+                    name: li.title,
+                    variant: li.variant_title || 'Default',
+                    quantity: li.quantity,
+                    price: li.price
+                }))
+            },
+            existingRequests: active.map(r => ({ requestId: r.requestId, status: r.status, type: r.type }))
+        });
+    } catch (error) {
+        console.error('Admin lookup-order-force error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
+
+// Sync Status Endpoint - lightweight status check (sync runs automatically in background)
+app.get('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
+    try {
+        res.json({
+            success: true,
+            isRunning: isSyncRunning,
+            lastSync: lastSyncTimestamp,
+            message: isSyncRunning ? 'Sync in progress' : 'Sync completed',
+            schedule: '4 times daily (6AM, 12PM, 6PM, 12AM IST)'
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get sync status' });
+    }
+});
+
+// Manual Sync Trigger - immediately trigger background sync
+app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, forceRetry } = req.body;
+        
+        // If requestId is provided, sync only that specific request
+        if (requestId) {
+            console.log(`[Manual Sync] Admin triggered sync for single request: ${requestId}`);
+            
+            const request = await getRequestById(requestId);
+            if (!request) {
+                return res.status(404).json({ 
+                    success: false, 
+                    error: `Request ${requestId} not found` 
+                });
+            }
+            
+            // Use higher retry count for manual sync if forceRetry is true
+            const maxRetries = forceRetry ? 5 : 3;
+            const result = await syncWithRetry(request, maxRetries);
+            
+            if (result.success) {
+                return res.json({
+                    success: true,
+                    message: `Successfully synced ${requestId}`,
+                    requestId: requestId,
+                    attempts: result.attempts
+                });
+            } else {
+                return res.json({
+                    success: false,
+                    message: `Failed to sync ${requestId} after ${result.attempts} attempts`,
+                    requestId: requestId,
+                    error: result.error,
+                    attempts: result.attempts
+                });
+            }
+        }
+        
+        // Full background sync
+        if (isSyncRunning) {
+            return res.json({
+                success: false,
+                message: 'Sync is already running in the background'
+            });
+        }
+
+        console.log('[Manual Sync] Admin triggered full background sync...');
+        
+        // Wait for sync to complete and get metrics
+        const syncResult = await performBackgroundSync();
+
+        if (syncResult.success) {
+            res.json({
+                success: true,
+                message: `Sync complete! ${syncResult.metrics.success} success, ${syncResult.metrics.failed} failed`,
+                metrics: syncResult.metrics
+            });
+        } else {
+            res.json({
+                success: false,
+                message: 'Sync failed',
+                error: syncResult.error,
+                metrics: syncResult.metrics
+            });
+        }
+    } catch (error) {
+        console.error('[Manual Sync] Error:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to trigger sync',
+            details: error.message 
+        });
+    }
+});
+
+// Get Shopify usage sync status
+app.get('/api/admin/shopify-sync-status', authenticateAdmin, async (req, res) => {
+    try {
+        res.json({
+            success: true,
+            isRunning: isShopifySyncRunning,
+            lastSync: lastShopifySyncTimestamp,
+            message: isShopifySyncRunning ? 'Shopify sync in progress' : 'Shopify sync completed',
+            schedule: '4 times daily (6AM, 12PM, 6PM, 12AM IST)'
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get Shopify sync status' });
+    }
+});
+
+// Manually trigger Shopify usage sync
+app.post('/api/admin/trigger-shopify-sync', authenticateAdmin, async (req, res) => {
+    try {
+        if (isShopifySyncRunning) {
+            return res.json({
+                success: false,
+                message: 'Shopify sync is already running'
+            });
+        }
+
+        // Run sync in background
+        performShopifyUsageSync();
+
+        res.json({
+            success: true,
+            message: 'Shopify usage sync started'
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to trigger Shopify sync' });
+    }
+});
+
+
+
+// Reject request (admin) - supports legacy endpoints
+app.post(['/api/admin/reject', '/api/admin/reject-return', '/api/admin/reject-exchange'], authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, notes } = req.body;
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'rejected',
+            adminNotes: notes
+        });
+
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        res.json({ success: true, request });
+
+    } catch (error) {
+        console.error('Reject request error:', error);
+        res.status(500).json({ error: 'Failed to reject request' });
+    }
+});
+
+// Undo rejection (admin) - restore rejected request to pending status
+app.post('/api/admin/undo-rejection', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.body;
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        if (requestDetails.status !== 'rejected') {
+            return res.status(400).json({ error: 'Can only undo rejected requests' });
+        }
+
+        const adminNotes = (requestDetails.adminNotes || '') + 
+            `\n[SYSTEM] Rejection undone by admin on ${new Date().toLocaleString('en-IN')}`;
+
+        const request = await updateRequestStatus(requestId, {
+            status: 'pending',
+            adminNotes
+        });
+
+        res.json({ 
+            success: true, 
+            message: 'Request restored to pending status',
+            request 
+        });
+
+    } catch (error) {
+        console.error('Undo rejection error:', error);
+        res.status(500).json({ error: 'Failed to undo rejection' });
+    }
+});
+
+// Delete requests (admin)
+app.post('/api/admin/delete-requests', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestIds } = req.body;
+
+        if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
+            return res.status(400).json({ error: 'Invalid request IDs' });
+        }
+
+        const result = await deleteRequests(requestIds);
+
+        res.json({ success: true, count: result.count, message: `Deleted ${result.count || 0} requests` });
+    } catch (error) {
+        console.error('Delete requests error:', error);
+        res.status(500).json({ error: 'Failed to delete requests' });
+    }
+});
+
+// Bulk Initiate Pickup (Admin)
+app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) => {
+    // Disable the global 10s timeout for this long-running batch endpoint.
+    // Allow up to 5 minutes to process the batch, AND remove the global
+    // 'timeout' listener that would otherwise still fire 503 after our window
+    // expires (res.setTimeout only changes the duration, not the listeners).
+    res.removeAllListeners('timeout');
+    res.setTimeout(5 * 60 * 1000);
+
+    // Track client disconnect / response close so we stop the loop early
+    // and never attempt to write to an already-closed response.
+    let clientGone = false;
+    const onClose = () => { clientGone = true; };
+    req.on('close', onClose);
+    res.on('close', onClose);
+
+    try {
+        const { requestIds } = req.body;
+        if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
+            if (!res.headersSent) return res.status(400).json({ error: 'Invalid or missing request IDs' });
+            return;
+        }
+
+        if (!process.env.SHIPROCKET_EMAIL && !process.env.DELHIVERY_API_KEY) {
+            if (!res.headersSent) return res.status(400).json({ error: 'No carrier configured. Please configure Shiprocket or Delhivery.' });
+            return;
+        }
+
+        // Get carrier mode from settings (supports separate pickup/dispatch settings)
+        const carrierMode = await getCarrierMode('pickup');
+        const carrierResolution = resolveCarrier(carrierMode, null, 'pickup');
+        console.log(`[Bulk Pickup] Carrier mode: ${carrierMode}, Resolution:`, carrierResolution);
+
+        const results = {
+            total: requestIds.length,
+            successful: [],
+            failed: []
+        };
+
+        for (const requestId of requestIds) {
+            // Stop processing if the client disconnected or response already sent (e.g. timeout)
+            if (clientGone || res.headersSent) {
+                console.warn(`[Bulk Pickup] Aborting remaining items: client disconnected or response already sent.`);
+                break;
+            }
+
+            try {
+                const requestDetails = await getRequestById(requestId);
+                if (!requestDetails) {
+                    results.failed.push({ id: requestId, error: 'Request not found' });
+                    continue;
+                }
+
+                if (requestDetails.status !== 'pending') {
+                    results.failed.push({ id: requestId, error: `Invalid status: ${requestDetails.status}` });
+                    continue;
+                }
+
+                console.log(`[${requestId}] Admin BULK authorized pickup. Using carrier resolution...`);
+
+                let shopifyOrder = null;
+                try {
+                    let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(requestDetails.orderNumber)}&status=any&limit=1`);
+                    if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                        const alt = requestDetails.orderNumber.startsWith('#')
+                            ? requestDetails.orderNumber.substring(1)
+                            : '#' + requestDetails.orderNumber;
+                        shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(alt)}&status=any&limit=1`);
+                    }
+                    shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+                } catch (err) {
+                    console.warn(`[${requestId}] Bulk Shopify fetch failed:`, err.message);
+                }
+
+                // Use carrier resolution to determine which carrier to use
+                const { primary: carrierToUse, useFallback } = carrierResolution;
+                const fallbackCarrier = carrierToUse === 'shiprocket' ? 'delhivery' : 'shiprocket';
+                let carrierUsed = null;
+                let awbNumber = null;
+                let shipmentId = null;
+                let pickupDate = null;
+                let fallbackReason = null;
+
+                // Try primary carrier
+                try {
+                    if (carrierToUse === 'shiprocket') {
+                        if (!process.env.SHIPROCKET_EMAIL) {
+                            throw new Error('Shiprocket not configured');
+                        }
+                        
+                        const shiprocketData = await createShiprocketReturnOrder({
+                            ...requestDetails,
+                            requestId
+                        }, shopifyOrder);
+
+                        if (shiprocketData && shiprocketData.shipment_id) {
+                            carrierUsed = 'shiprocket';
+                            awbNumber = shiprocketData.awb_code;
+                            shipmentId = shiprocketData.shipment_id;
+                            pickupDate = shiprocketData.pickup_scheduled_date;
+                            console.log(`[${requestId}] ✅ Bulk Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                        } else {
+                            throw new Error('Shiprocket did not return shipment data');
+                        }
+                    } else if (carrierToUse === 'delhivery') {
+                        if (!process.env.DELHIVERY_API_KEY) {
+                            throw new Error('Delhivery not configured');
+                        }
+                        
+                        const delhiveryData = await createDelhiveryReturnOrder({
+                            ...requestDetails,
+                            requestId,
+                            orderNumber: requestDetails.orderNumber,
+                            customerPhone: requestDetails.customerPhone
+                        }, shopifyOrder);
+
+                        if (delhiveryData && delhiveryData.waybill) {
+                            carrierUsed = 'delhivery';
+                            awbNumber = delhiveryData.waybill;
+                            shipmentId = delhiveryData.shipment_id;
+                            pickupDate = new Date().toISOString();
+                            console.log(`[${requestId}] ✅ Bulk Delhivery success: AWB ${awbNumber}`);
+                        } else {
+                            throw new Error('Delhivery did not return waybill data');
+                        }
+                    }
+                } catch (primaryError) {
+                    // If fallback is enabled, try the fallback carrier
+                    if (useFallback) {
+                        fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
+                        console.warn(`[${requestId}] ⚠️ Bulk ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
+                        
+                        try {
+                            if (fallbackCarrier === 'shiprocket') {
+                                if (!process.env.SHIPROCKET_EMAIL) {
+                                    throw new Error('Shiprocket not configured for fallback');
+                                }
+                                
+                                const shiprocketData = await createShiprocketReturnOrder({
+                                    ...requestDetails,
+                                    requestId
+                                }, shopifyOrder);
+
+                                if (shiprocketData && shiprocketData.shipment_id) {
+                                    carrierUsed = 'shiprocket';
+                                    awbNumber = shiprocketData.awb_code;
+                                    shipmentId = shiprocketData.shipment_id;
+                                    pickupDate = shiprocketData.pickup_scheduled_date;
+                                    console.log(`[${requestId}] ✅ Bulk Shiprocket fallback success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
+                                } else {
+                                    throw new Error('Shiprocket did not return shipment data');
+                                }
+                            } else if (fallbackCarrier === 'delhivery') {
+                                if (!process.env.DELHIVERY_API_KEY) {
+                                    throw new Error('Delhivery not configured for fallback');
+                                }
+                                
+                                const delhiveryData = await createDelhiveryReturnOrder({
+                                    ...requestDetails,
+                                    requestId,
+                                    orderNumber: requestDetails.orderNumber,
+                                    customerPhone: requestDetails.customerPhone
+                                }, shopifyOrder);
+
+                                if (delhiveryData && delhiveryData.waybill) {
+                                    carrierUsed = 'delhivery';
+                                    awbNumber = delhiveryData.waybill;
+                                    shipmentId = delhiveryData.shipment_id;
+                                    pickupDate = new Date().toISOString();
+                                    console.log(`[${requestId}] ✅ Bulk Delhivery fallback success: AWB ${awbNumber}`);
+                                } else {
+                                    throw new Error('Delhivery did not return waybill data');
+                                }
+                            }
+                        } catch (fallbackError) {
+                            console.error(`[${requestId}] ❌ Bulk both carriers failed. Fallback error:`, fallbackError.message);
+                            throw new Error(`Both carriers failed: ${primaryError.message} | ${fallbackError.message}`);
+                        }
+                    } else {
+                        // No fallback enabled, just throw the primary error
+                        throw primaryError;
+                    }
+                }
+
+                if (carrierUsed) {
+                    let adminNotes = requestDetails.adminNotes || '';
+                    adminNotes += `\nPickup scheduled (Bulk Action) via ${carrierUsed}: AWB ${awbNumber || 'Pending'}`;
+                    if (fallbackReason) {
+                        adminNotes += `\nFallback: ${fallbackReason}`;
+                    }
+
+                    await updateRequestStatus(requestId, {
+                        shipmentId,
+                        awbNumber,
+                        pickupDate,
+                        status: 'pickup_booked',
+                        adminNotes,
+                        carrier: carrierUsed,
+                        carrierShipmentId: shipmentId,
+                        carrierAwb: awbNumber,
+                        carrierFallbackReason: fallbackReason || null
+                    });
+
+                    results.successful.push(requestId);
+                } else {
+                    throw new Error('No carrier was used');
+                }
+
+            } catch (error) {
+                console.error(`[${requestId}] Bulk initiate error:`, error.message);
+                results.failed.push({ id: requestId, error: error.message });
+            }
+        }
+
+        if (!res.headersSent) {
+            res.json({
+                success: true,
+                results,
+                message: `Processed ${results.total} requests: ${results.successful.length} successful, ${results.failed.length} failed.`
+            });
+        } else {
+            console.warn('[Bulk Pickup] Response already sent (likely timeout). Skipping final res.json().');
+        }
+
+    } catch (error) {
+        console.error('Bulk initiate pickup error:', error);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Internal server error while processing batch' });
+        }
+    } finally {
+        req.off('close', onClose);
+        res.off('close', onClose);
+    }
+});
+
+// Finalize payment from frontend
+app.post('/api/finalize-payment', async (req, res) => {
+    const { requestId, paymentId, paymentAmount } = req.body;
+    console.log(`[${requestId}] Frontend requesting finalization for payment ${paymentId}`);
+
+    if (!requestId || !paymentId) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+        const result = await finalizeRequestAfterPayment(requestId, paymentId, paymentAmount);
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Razorpay Webhook
+app.post('/api/razorpay-webhook', async (req, res) => {
+    const signature = req.headers['x-razorpay-signature'];
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+    console.log('📥 Received Razorpay Webhook');
+
+    if (secret && signature) {
+        const expectedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(req.rawBody)
+            .digest('hex');
+
+        if (signature !== expectedSignature) {
+            console.error('❌ Razorpay Webhook Signature Mismatch');
+            return res.status(400).send('Invalid signature');
+        }
+    } else if (!secret) {
+        console.warn('⚠️ RAZORPAY_WEBHOOK_SECRET missing. Skipping signature verification (DEVELOPMENT ONLY)');
+    }
+
+    const event = req.body.event;
+    const payload = req.body.payload;
+
+    if (event === 'payment.captured' || event === 'payment.authorized') {
+        const payment = payload.payment.entity;
+        const requestId = payment.notes?.requestId;
+        const paymentId = payment.id;
+        const amount = payment.amount / 100;
+
+        if (requestId && requestId.startsWith('REQ-')) {
+            // Dedup guard: Razorpay often fires the same webhook twice simultaneously
+            if (storage.processingPayments.has(paymentId)) {
+                console.log(`[${requestId}] ⏭️ Webhook duplicate: payment ${paymentId} already being processed. Skipping.`);
+            } else {
+                storage.processingPayments.add(paymentId);
+                console.log(`[${requestId}] 🛡️ Webhook Safety Net: Processing payment ${paymentId} (${amount})`);
+                try {
+                    await finalizeRequestAfterPayment(requestId, paymentId, amount);
+                } finally {
+                    storage.processingPayments.delete(paymentId);
+                }
+            }
+        } else {
+            console.log(`[Webhook] Payment ${paymentId} received but no requestId found in notes.`);
+        }
+    }
+
+    res.json({ status: 'ok' });
+});
+
+// ==================== HEALTH CHECK ====================
+
+app.get('/', (req, res) => {
+    // Minimal health check - no sensitive information exposed
+    res.json({
+        service: 'Offcomfrt Returns & Exchanges',
+        status: 'running',
+        version: '1.0.0',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// ==================== INFLUENCER ADMIN ENDPOINTS ====================
+
+// Include new fields for self-signup applications
+app.get('/api/influencer-admin/list', authenticateAdmin, async (req, res) => {
+    try {
+        const influencers = await getAllInfluencers();
+        // DEBUG: Log first influencer's shipping fields to diagnose address loading
+        if (influencers && influencers.length > 0) {
+            const sample = influencers[0];
+            console.log('[DEBUG] First influencer shipping fields from DB:', {
+                id: sample.id,
+                name: sample.name,
+                shipping_address: sample.shipping_address,
+                shipping_city: sample.shipping_city,
+                shipping_state: sample.shipping_state,
+                shipping_pin: sample.shipping_pin,
+                shipping_landmark: sample.shipping_landmark,
+                address_type: sample.address_type
+            });
+        }
+        res.json({ success: true, influencers });
+    } catch (error) {
+        console.error('List influencers error:', error);
+        res.status(500).json({ error: 'Failed to fetch influencers' });
+    }
+});
+
+// Get single influencer details (for edit modal - fresh DB read)
+app.get('/api/influencer-admin/detail/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+        console.log('[DEBUG] Single influencer detail shipping fields from DB:', {
+            id: influencer.id,
+            name: influencer.name,
+            shipping_address: influencer.shipping_address,
+            shipping_city: influencer.shipping_city,
+            shipping_state: influencer.shipping_state,
+            shipping_pin: influencer.shipping_pin,
+            shipping_landmark: influencer.shipping_landmark,
+            address_type: influencer.address_type
+        });
+        res.json({ success: true, influencer });
+    } catch (error) {
+        console.error('Detail influencer error:', error);
+        res.status(500).json({ error: 'Failed to fetch influencer' });
+    }
+});
+
+// Add new influencer (Protected by Admin Auth)
+app.post('/api/influencer-admin/add', authenticateAdmin, async (req, res) => {
+    try {
+        const { name, referralCode, commissionRate, discountValue, displayedCommissionRate, usageLimit, phone } = req.body;
+        if (!name || !referralCode) {
+            return res.status(400).json({ error: 'Name and referral code are required' });
+        }
+
+        // Generate a secure unique token for the link
+        const linkToken = crypto.randomBytes(16).toString('hex');
+
+        // Parse values
+        const commission = commissionRate !== undefined ? parseFloat(commissionRate) : 7.00;
+        const discount = discountValue !== undefined ? parseFloat(discountValue) : commission;
+        const displayedCommission = displayedCommissionRate !== undefined ? parseFloat(displayedCommissionRate) : commission;
+        const usage = usageLimit !== undefined && usageLimit !== '' ? parseInt(usageLimit) : null;
+
+        // First create the influencer in Supabase
+        const influencer = await createInfluencer({
+            name,
+            referralCode,
+            linkToken,
+            phone,
+            commissionRate: commission,
+            discountValue: discount,
+            displayedCommissionRate: displayedCommission,
+            usageLimit: usage
+        });
+
+        // Now create the Shopify discount code
+        let shopifyIds = { priceRuleId: null, discountCodeId: null };
+        let shopifyWarning = null;
+        try {
+            shopifyIds = await createShopifyDiscountCode(referralCode, discount, 'percentage', usage, `Influencer: ${name}`);
+            
+            // Update influencer with Shopify IDs
+            await updateInfluencer(influencer.id, {
+                shopifyPriceRuleId: shopifyIds.priceRuleId.toString(),
+                shopifyDiscountCodeId: shopifyIds.discountCodeId.toString()
+            });
+        } catch (shopifyError) {
+            // Log error but DON'T rollback - influencer is still valuable without Shopify sync
+            console.error('Shopify discount creation failed (non-blocking):', shopifyError.message);
+            
+            // Check if it's a permission error
+            if (shopifyError.message.includes('403') || shopifyError.message.includes('write_price_rules')) {
+                shopifyWarning = 'Shopify discount code not created: Missing write_price_rules permission. Please enable discount permissions in your Shopify app settings, or create the code manually in Shopify admin.';
+            } else {
+                shopifyWarning = `Shopify discount code not created: ${shopifyError.message}. You can create it manually in Shopify admin.`;
+            }
+        }
+
+        // Fetch updated influencer (with or without Shopify IDs)
+        const updatedInfluencer = await getInfluencerById(influencer.id);
+
+        res.json({ 
+            success: true, 
+            influencer: updatedInfluencer,
+            warning: shopifyWarning 
+        });
+    } catch (error) {
+        console.error('Add influencer error:', error);
+        res.status(500).json({ error: 'Failed to add influencer. Code might already exist.' });
+    }
+});
+
+// Update influencer (Protected by Admin Auth)
+app.patch('/api/influencer-admin/update/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, referralCode, commissionRate, discountValue, displayedCommissionRate, usageLimit, phone, shippingAddress, shippingLandmark, shippingCity, shippingState, shippingPin } = req.body;
+
+        // Get existing influencer to check for Shopify sync
+        const existingInfluencer = await getInfluencerById(id);
+        if (!existingInfluencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        // Update in Supabase first
+        const updated = await updateInfluencer(id, {
+            name,
+            referralCode,
+            commissionRate,
+            discountValue,
+            displayedCommissionRate,
+            usageLimit,
+            phone,
+            shippingAddress,
+            shippingLandmark,
+            shippingCity,
+            shippingState,
+            shippingPin
+        });
+
+        // Sync with Shopify if discount code details changed
+        const codeChanged = referralCode && referralCode !== existingInfluencer.referral_code;
+        const discountChanged = discountValue !== undefined && parseFloat(discountValue) !== parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 7);
+        const usageChanged = usageLimit !== undefined && (usageLimit === '' ? null : parseInt(usageLimit)) !== existingInfluencer.usage_limit;
+
+        if (codeChanged || discountChanged || usageChanged) {
+            const priceRuleId = existingInfluencer.shopify_price_rule_id;
+
+            if (priceRuleId) {
+                // Update existing Shopify discount
+                try {
+                    const shopifyIds = await updateShopifyDiscountCode(
+                        priceRuleId,
+                        codeChanged ? referralCode : null,
+                        discountChanged ? parseFloat(discountValue) : undefined,
+                        usageChanged ? (usageLimit === '' ? null : parseInt(usageLimit)) : undefined
+                    );
+
+                    // Update discount code ID if code changed
+                    if (shopifyIds.discountCodeId) {
+                        await updateInfluencer(id, {
+                            shopifyDiscountCodeId: shopifyIds.discountCodeId.toString()
+                        });
+                    }
+                } catch (shopifyError) {
+                    console.error('Shopify discount update failed:', shopifyError.message);
+                    // Continue anyway - don't block the update if Shopify fails
+                }
+            } else {
+                // Backfill: create new Shopify discount for older influencers
+                try {
+                    const finalCode = referralCode || existingInfluencer.referral_code;
+                    const finalDiscount = discountValue !== undefined ? parseFloat(discountValue) : parseFloat(existingInfluencer.discount_value || existingInfluencer.commission_rate || 7);
+                    const finalUsage = usageLimit !== undefined ? (usageLimit === '' ? null : parseInt(usageLimit)) : existingInfluencer.usage_limit;
+
+                    const shopifyIds = await createShopifyDiscountCode(
+                        finalCode,
+                        finalDiscount,
+                        finalUsage,
+                        `Influencer: ${name || existingInfluencer.name}`
+                    );
+
+                    await updateInfluencer(id, {
+                        shopifyPriceRuleId: shopifyIds.priceRuleId.toString(),
+                        shopifyDiscountCodeId: shopifyIds.discountCodeId.toString()
+                    });
+                } catch (shopifyError) {
+                    console.error('Shopify discount backfill failed:', shopifyError.message);
+                    // Continue anyway
+                }
+            }
+        }
+
+        // Fetch final updated influencer
+        const finalInfluencer = await getInfluencerById(id);
+        res.json({ success: true, influencer: finalInfluencer });
+    } catch (error) {
+        console.error('Update influencer error:', error);
+        res.status(500).json({ error: 'Failed to update influencer' });
+    }
+});
+
+// Remove influencer (Protected by Admin Auth)
+app.delete('/api/influencer-admin/remove/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Get influencer to check for Shopify discount code
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        // Disable Shopify discount code if it exists
+        if (influencer.shopify_price_rule_id) {
+            await disableShopifyDiscountCode(influencer.shopify_price_rule_id);
+        }
+
+        // Delete from Supabase
+        await deleteInfluencer(id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Remove influencer error:', error);
+        res.status(500).json({ error: 'Failed to remove influencer' });
+    }
+});
+
+// Get Influencer Stats for Admin (with date range filter)
+app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { range } = req.query; // '30d', '90d', 'all'
+
+        // Get influencer details
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        const referralCode = influencer.referral_code;
+        const commissionRate = parseFloat(influencer.commission_rate || 7);
+        const displayedCommissionRate = parseFloat(influencer.displayed_commission_rate || commissionRate);
+        console.log(`[Admin Influencer Stats] Fetching cached stats for ${influencer.name} (Code: ${referralCode})`);
+
+        // FAST: Read pre-calculated stats from Supabase (no Shopify API calls!)
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+        const { data: influencerData, error } = await supabase
+            .from('influencers')
+            .select('total_revenue, total_orders, estimated_earnings, stats_last_updated, stats_date_range')
+            .eq('id', id)
+            .single();
+
+        if (error) {
+            console.error('[Admin Influencer Stats] Error fetching stats:', error);
+            // Fallback: return zeros if stats columns don't exist yet
+            return res.json({
+                success: true,
+                influencer: {
+                    id: influencer.id,
+                    name: influencer.name,
+                    referralCode: influencer.referral_code,
+                    commissionRate: commissionRate,
+                    phone: influencer.phone
+                },
+                stats: {
+                    totalRevenue: '0.00',
+                    orderCount: 0,
+                    aov: '0.00',
+                    estimatedEarnings: '0.00',
+                    commissionRate,
+                    currency: 'INR',
+                    dateRange: { from: null, to: null },
+                    cached: false,
+                    message: 'Stats columns not yet added. Run SQL migration and trigger sync.'
+                },
+                recentConversions: []
+            });
+        }
+
+        const totalRevenue = parseFloat(influencerData.total_revenue || 0);
+        const orderCount = parseInt(influencerData.total_orders || 0);
+        const estimatedEarnings = parseFloat(influencerData.estimated_earnings || 0);
+        const aov = orderCount > 0 ? (totalRevenue / orderCount) : 0;
+
+        console.log(`[Admin Influencer Stats] ✅ Cached stats: ${orderCount} orders, ₹${totalRevenue} revenue`);
+
+        res.json({
+            success: true,
+            influencer: {
+                id: influencer.id,
+                name: influencer.name,
+                referralCode: influencer.referral_code,
+                commissionRate: commissionRate,
+                displayedCommissionRate: displayedCommissionRate,
+                phone: influencer.phone
+            },
+            stats: {
+                totalRevenue: totalRevenue.toFixed(2),
+                orderCount,
+                aov: aov.toFixed(2),
+                estimatedEarnings: estimatedEarnings.toFixed(2),
+                commissionRate,
+                displayedCommissionRate: displayedCommissionRate,
+                currency: 'INR',
+                dateRange: {
+                    from: influencerData.stats_date_range || 'last_60_days',
+                    to: influencerData.stats_last_updated || null
+                },
+                cached: true,
+                lastUpdated: influencerData.stats_last_updated
+            },
+            recentConversions: Array.isArray(influencer.recent_conversions_cache) ? influencer.recent_conversions_cache : []
+        });
+
+    } catch (error) {
+        console.error('Admin influencer stats error:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch influencer stats',
+            details: error.message
+        });
+    }
+});
+
+// Get Recent Conversions for an Influencer (fetches actual order details from Shopify)
+app.get('/api/influencer-admin/conversions/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { range } = req.query; // '30d', '90d', 'all'
+
+        console.log(`[Admin Conversions] Fetching cached conversions for influencer ${id} (range: ${range || 'all'})`);
+
+        // Get influencer details
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        // Calculate date range for filter
+        let createdAtMin = null;
+        if (range === '30d') {
+            const d = new Date();
+            d.setDate(d.getDate() - 30);
+            createdAtMin = d.toISOString();
+        } else if (range === '90d') {
+            const d = new Date();
+            d.setDate(d.getDate() - 90);
+            createdAtMin = d.toISOString();
+        }
+        // 'all' => no date filter (return everything we have)
+
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+        // Fast path: if range='all' AND we have a cached JSON snapshot, return it immediately
+        if (!createdAtMin && Array.isArray(influencer.recent_conversions_cache) && influencer.recent_conversions_cache.length > 0) {
+            console.log(`[Admin Conversions] ✅ Returning cached snapshot (${influencer.recent_conversions_cache.length} items)`);
+            return res.json({
+                success: true,
+                conversions: influencer.recent_conversions_cache,
+                totalCount: parseInt(influencer.total_orders || influencer.recent_conversions_cache.length),
+                cached: true,
+                lastUpdated: influencer.recent_conversions_updated_at,
+                dateRange: { from: null, to: new Date().toISOString() }
+            });
+        }
+
+        // Build query against influencer_orders (indexed, fast)
+        let query = supabase
+            .from('influencer_orders')
+            .select('shopify_order_id, order_name, total_price, currency, financial_status, customer_name, order_created_at, referral_code, cancelled_at', { count: 'exact' })
+            .eq('influencer_id', id)
+            .is('cancelled_at', null)
+            .in('financial_status', ['paid', 'partially_paid', 'pending', 'authorized'])
+            .order('order_created_at', { ascending: false })
+            .limit(20);
+
+        if (createdAtMin) {
+            query = query.gte('order_created_at', createdAtMin);
+        }
+
+        const { data: orderRows, count, error: qErr } = await query;
+
+        if (qErr) {
+            console.error('[Admin Conversions] Query error:', qErr.message);
+            return res.status(500).json({
+                error: 'Failed to fetch conversions',
+                details: qErr.message,
+                hint: 'Make sure influencer_orders table exists (run supabase_migration_influencer_orders.sql)'
+            });
+        }
+
+        const conversions = (orderRows || []).map(r => ({
+            id: r.shopify_order_id,
+            orderName: r.order_name,
+            total: parseFloat(r.total_price).toFixed(2),
+            currency: r.currency || 'INR',
+            date: r.order_created_at,
+            customerName: r.customer_name || 'Guest',
+            discountCode: r.referral_code
+        }));
+
+        console.log(`[Admin Conversions] ✅ Returned ${conversions.length} of ${count} orders`);
+
+        res.json({
+            success: true,
+            conversions,
+            totalCount: count || conversions.length,
+            cached: true,
+            dateRange: {
+                from: createdAtMin,
+                to: new Date().toISOString()
+            }
+        });
+
+    } catch (error) {
+        console.error('Admin conversions error:', error);
+        if (!res.headersSent) {
+            res.status(500).json({
+                error: 'Failed to fetch conversions',
+                details: error.message
+            });
+        }
+    }
+});
+
+// ==================== INFLUENCER APPLICATION & PAYOUT ADMIN ENDPOINTS ====================
+
+// Bulk approve multiple influencer applications
+app.post('/api/influencer-admin/bulk-approve', authenticateAdmin, async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Array of influencer IDs is required' });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        for (const id of ids) {
+            try {
+                const influencer = await getInfluencerById(id);
+                if (!influencer) {
+                    results.failed.push({ id, error: 'Influencer not found' });
+                    continue;
+                }
+
+                if (influencer.status === 'active') {
+                    results.success.push({ id, message: 'Already active' });
+                    continue;
+                }
+
+                let discountCodeId = influencer.shopify_discount_code_id;
+                let shopifyWarning = null;
+
+                // Attach the live discount code in Shopify
+                if (influencer.shopify_price_rule_id) {
+                    try {
+                        const result = await activateShopifyDiscountCode(influencer.shopify_price_rule_id, influencer.referral_code);
+                        discountCodeId = result.discountCodeId ? String(result.discountCodeId) : discountCodeId;
+                    } catch (shopifyError) {
+                        console.error(`Shopify activation failed for ${id}:`, shopifyError.message);
+                        shopifyWarning = `Shopify activation failed: ${shopifyError.message}`;
+                    }
+                } else {
+                    // No draft price rule exists. Create a fresh code.
+                    try {
+                        const discount = parseFloat(influencer.discount_value || influencer.commission_rate || 7);
+                        const usage = influencer.usage_limit || null;
+                        const shopifyIds = await createShopifyDiscountCode(
+                            influencer.referral_code,
+                            discount,
+                            'percentage',
+                            usage,
+                            `Influencer: ${influencer.name}`
+                        );
+                        await updateInfluencer(id, {
+                            shopifyPriceRuleId: String(shopifyIds.priceRuleId),
+                            shopifyDiscountCodeId: String(shopifyIds.discountCodeId)
+                        });
+                        discountCodeId = String(shopifyIds.discountCodeId);
+                    } catch (shopifyError) {
+                        console.error(`Shopify fresh-create failed for ${id}:`, shopifyError.message);
+                        shopifyWarning = `Shopify code could not be created: ${shopifyError.message}`;
+                    }
+                }
+
+                await updateInfluencer(id, {
+                    status: 'active',
+                    isActive: true,
+                    approvedAt: new Date().toISOString(),
+                    shopifyDiscountCodeId: discountCodeId || undefined
+                });
+
+                results.success.push({ id, warning: shopifyWarning });
+            } catch (error) {
+                console.error(`Bulk approve failed for ${id}:`, error);
+                results.failed.push({ id, error: error.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            results,
+            summary: {
+                total: ids.length,
+                succeeded: results.success.length,
+                failed: results.failed.length
+            }
+        });
+    } catch (error) {
+        console.error('Bulk approve error:', error);
+        res.status(500).json({ error: 'Failed to bulk approve influencers' });
+    }
+});
+
+// Bulk reject multiple influencer applications
+app.post('/api/influencer-admin/bulk-reject', authenticateAdmin, async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Array of influencer IDs is required' });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        for (const id of ids) {
+            try {
+                const influencer = await getInfluencerById(id);
+                if (!influencer) {
+                    results.failed.push({ id, error: 'Influencer not found' });
+                    continue;
+                }
+
+                if (influencer.shopify_price_rule_id) {
+                    await disableShopifyDiscountCode(influencer.shopify_price_rule_id);
+                }
+
+                await updateInfluencer(id, { status: 'rejected', isActive: false });
+                results.success.push({ id });
+            } catch (error) {
+                console.error(`Bulk reject failed for ${id}:`, error);
+                results.failed.push({ id, error: error.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            results,
+            summary: {
+                total: ids.length,
+                succeeded: results.success.length,
+                failed: results.failed.length
+            }
+        });
+    } catch (error) {
+        console.error('Bulk reject error:', error);
+        res.status(500).json({ error: 'Failed to bulk reject influencers' });
+    }
+});
+
+// Approve a pending influencer application (attaches the Shopify discount code)
+app.post('/api/influencer-admin/approve/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+        if (influencer.status === 'active') {
+            return res.json({ success: true, influencer, message: 'Already active' });
+        }
+
+        let discountCodeId = influencer.shopify_discount_code_id;
+        let shopifyWarning = null;
+
+        // Attach the live discount code in Shopify
+        if (influencer.shopify_price_rule_id) {
+            try {
+                const result = await activateShopifyDiscountCode(influencer.shopify_price_rule_id, influencer.referral_code);
+                discountCodeId = result.discountCodeId ? String(result.discountCodeId) : discountCodeId;
+            } catch (shopifyError) {
+                console.error('Shopify activation failed:', shopifyError.message);
+                shopifyWarning = `Shopify activation failed: ${shopifyError.message}. You may need to attach the discount code manually.`;
+            }
+        } else {
+            // No draft price rule exists (maybe initial draft creation failed). Create a fresh code.
+            try {
+                const discount = parseFloat(influencer.discount_value || influencer.commission_rate || 7);
+                const usage = influencer.usage_limit || null;
+                const shopifyIds = await createShopifyDiscountCode(
+                    influencer.referral_code,
+                    discount,
+                    'percentage',
+                    usage,
+                    `Influencer: ${influencer.name}`
+                );
+                await updateInfluencer(id, {
+                    shopifyPriceRuleId: String(shopifyIds.priceRuleId),
+                    shopifyDiscountCodeId: String(shopifyIds.discountCodeId)
+                });
+                discountCodeId = String(shopifyIds.discountCodeId);
+            } catch (shopifyError) {
+                console.error('Shopify fresh-create failed on approve:', shopifyError.message);
+                shopifyWarning = `Shopify code could not be created: ${shopifyError.message}`;
+            }
+        }
+
+        await updateInfluencer(id, {
+            status: 'active',
+            isActive: true,
+            approvedAt: new Date().toISOString(),
+            shopifyDiscountCodeId: discountCodeId || undefined
+        });
+
+        const updated = await getInfluencerById(id);
+        res.json({ success: true, influencer: updated, warning: shopifyWarning });
+    } catch (error) {
+        console.error('Approve influencer error:', error);
+        res.status(500).json({ error: 'Failed to approve influencer' });
+    }
+});
+
+// Reject a pending influencer application
+app.post('/api/influencer-admin/reject/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        if (influencer.shopify_price_rule_id) {
+            await disableShopifyDiscountCode(influencer.shopify_price_rule_id);
+        }
+
+        await updateInfluencer(id, { status: 'rejected', isActive: false });
+        const updated = await getInfluencerById(id);
+        res.json({ success: true, influencer: updated });
+    } catch (error) {
+        console.error('Reject influencer error:', error);
+        res.status(500).json({ error: 'Failed to reject influencer' });
+    }
+});
+
+// List payouts for an influencer (admin)
+app.get('/api/influencer-admin/payouts/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const payouts = await listPayouts(id);
+        res.json({ success: true, payouts });
+    } catch (error) {
+        console.error('List payouts error:', error);
+        res.status(500).json({ error: 'Failed to fetch payouts', details: error.message });
+    }
+});
+
+// Add a payout entry for an influencer (admin)
+app.post('/api/influencer-admin/payouts/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { periodStart, periodEnd, amount, notes, currency, reference } = req.body;
+
+        if (!periodStart || !periodEnd || amount === undefined || amount === null || amount === '') {
+            return res.status(400).json({ error: 'periodStart, periodEnd, and amount are required' });
+        }
+        if (isNaN(parseFloat(amount)) || parseFloat(amount) < 0) {
+            return res.status(400).json({ error: 'Invalid amount' });
+        }
+        if (new Date(periodStart) > new Date(periodEnd)) {
+            return res.status(400).json({ error: 'periodStart cannot be after periodEnd' });
+        }
+
+        const influencer = await getInfluencerById(id);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+
+        const payout = await createPayout({
+            influencerId: id,
+            periodStart,
+            periodEnd,
+            amount,
+            currency: currency || 'INR',
+            status: 'pending',
+            reference,
+            notes
+        });
+        res.json({ success: true, payout });
+    } catch (error) {
+        console.error('Create payout error:', error);
+        res.status(500).json({ error: 'Failed to create payout', details: error.message });
+    }
+});
+
+// Update payout status (admin: mark paid / cancel)
+app.patch('/api/influencer-admin/payouts/item/:payoutId', authenticateAdmin, async (req, res) => {
+    try {
+        const { payoutId } = req.params;
+        const { status, reference } = req.body;
+
+        if (!['paid', 'pending', 'cancelled'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid status (must be paid, pending, or cancelled)' });
+        }
+
+        const existing = await getPayoutById(payoutId);
+        if (!existing) {
+            return res.status(404).json({ error: 'Payout not found' });
+        }
+
+        const payout = await updatePayoutStatus(payoutId, status, reference);
+        res.json({ success: true, payout });
+    } catch (error) {
+        console.error('Update payout error:', error);
+        res.status(500).json({ error: 'Failed to update payout', details: error.message });
+    }
+});
+
+// GET influencer admin notes
+app.get('/api/influencer-admin/:id/notes', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('[Notes API] Fetching notes for influencer:', id, 'type:', typeof id);
+        
+        const { data: notes, error } = await supabase
+            .from('admin_notes')
+            .select('*')
+            .eq('influencer_id', id)
+            .order('created_at', { ascending: false });
+        if (error) {
+            console.error('[Notes API] Supabase error:', error);
+            throw error;
+        }
+        console.log('[Notes API] Found', notes?.length || 0, 'notes');
+        if (notes && notes.length > 0) {
+            console.log('[Notes API] Latest note:', notes[0]);
+        }
+        res.json({ success: true, notes: notes || [] });
+    } catch (error) {
+        console.error('Get notes error:', error);
+        res.json({ success: true, notes: [] });
+    }
+});
+
+// POST influencer admin note
+app.post('/api/influencer-admin/:id/notes', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { note } = req.body;
+        if (!note) return res.status(400).json({ error: 'Note text is required' });
+        const adminName = req.admin?.name || 'Admin';
+        const { data, error } = await supabase
+            .from('admin_notes')
+            .insert({ influencer_id: id, admin_name: adminName, note_text: note })
+            .select()
+            .single();
+        if (error) throw error;
+        res.json({ success: true, note: data });
+    } catch (error) {
+        console.error('Add note error:', error);
+        res.status(500).json({ error: 'Failed to add note' });
+    }
+});
+
+// PATCH influencer target/tier
+app.patch('/api/influencer-admin/:id/target', authenticateAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { monthlyTarget, tierOverride } = req.body;
+        const updates = {};
+        if (monthlyTarget !== undefined) updates.monthly_target = parseInt(monthlyTarget);
+        if (tierOverride !== undefined) updates.tier_override = parseInt(tierOverride);
+        if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No updates provided' });
+        const influencer = await updateInfluencer(id, updates);
+        res.json({ success: true, influencer });
+    } catch (error) {
+        console.error('Update target error:', error);
+        res.status(500).json({ error: 'Failed to update' });
+    }
+});
+
+// ==================== INFLUENCER PORTAL ENDPOINTS ====================
+
+// Verify Influencer Token & Get Profile
+app.get('/api/influencer/auth/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid or inactive influencer link' });
+        }
+
+        res.json({
+            success: true,
+            influencer: {
+                name: influencer.name,
+                referralCode: influencer.referral_code,
+                hasPhone: !!influencer.phone,
+                status: influencer.status || (influencer.is_active ? 'active' : 'suspended'),
+                usageLimit: influencer.usage_limit || null,
+                discountValue: influencer.discount_value || influencer.commission_rate || 7
+            }
+        });
+    } catch (error) {
+        console.error('Influencer auth error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Verify Phone Number for Influencer Login
+app.post('/api/influencer/verify', async (req, res) => {
+    try {
+        const { token, phone } = req.body;
+        const influencer = await getInfluencerByToken(token);
+
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid or inactive influencer link' });
+        }
+
+        // Match phone (clean non-digits for robust comparison)
+        const cleanDbPhone = (influencer.phone || '').replace(/\D/g, '');
+        const cleanInputPhone = (phone || '').replace(/\D/g, '');
+
+        if (cleanInputPhone === cleanDbPhone && cleanDbPhone.length > 0) {
+            res.json({ success: true });
+        } else {
+            res.status(401).json({ error: 'Incorrect phone number. Please check and try again.' });
+        }
+    } catch (error) {
+        console.error('Influencer verify error:', error);
+        res.status(500).json({ error: 'Verification failed' });
+    }
+});
+
+// Get Performance Stats for Influencer (with pagination + date range)
+app.get('/api/influencer/stats/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { range, startDate, endDate } = req.query; // '30d', '90d', 'custom', or 'all'
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid or inactive influencer link' });
+        }
+
+        const referralCode = influencer.referral_code;
+        const commissionRate = parseFloat(influencer.commission_rate || 7);
+        console.log(`[Influencer Stats] Fetching cached stats for ${influencer.name} (Code: ${referralCode}, Range: ${range || 'all'})`);
+
+        // Determine date range
+        let createdAtMin = null;
+        let createdAtMax = null;
+        if (range === '30d') {
+            const d = new Date();
+            d.setDate(d.getDate() - 30);
+            createdAtMin = d.toISOString();
+        } else if (range === '90d') {
+            const d = new Date();
+            d.setDate(d.getDate() - 90);
+            createdAtMin = d.toISOString();
+        } else if (range === 'custom' && startDate && endDate) {
+            createdAtMin = new Date(startDate).toISOString();
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            createdAtMax = end.toISOString();
+        }
+        // 'all' => no date filter
+
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+        // Fast path for range='all': use pre-aggregated stats + cached conversions
+        if (!createdAtMin && !createdAtMax) {
+            const totalRevenue = parseFloat(influencer.total_revenue || 0);
+            const orderCount = parseInt(influencer.total_orders || 0);
+            const estimatedEarnings = parseFloat(influencer.estimated_earnings || 0);
+            const aov = orderCount > 0 ? (totalRevenue / orderCount) : 0;
+            const recentConversions = Array.isArray(influencer.recent_conversions_cache)
+                ? influencer.recent_conversions_cache.map(c => ({
+                    id: c.id,
+                    name: c.orderName,
+                    total: c.total,
+                    currency: c.currency,
+                    date: c.date
+                }))
+                : [];
+
+            console.log(`[Influencer Stats] ✅ Cached all-time stats: ${orderCount} orders, ₹${totalRevenue.toFixed(2)}`);
+
+            return res.json({
+                success: true,
+                stats: {
+                    totalRevenue: totalRevenue.toFixed(2),
+                    orderCount,
+                    aov: aov.toFixed(2),
+                    estimatedEarnings: estimatedEarnings.toFixed(2),
+                    commissionRate,
+                    currency: recentConversions[0]?.currency || 'INR'
+                },
+                recentConversions,
+                cached: true,
+                lastUpdated: influencer.stats_last_updated
+            });
+        }
+
+        // Date-range query: aggregate from influencer_orders
+        let query = supabase
+            .from('influencer_orders')
+            .select('shopify_order_id, order_name, total_price, currency, order_created_at')
+            .eq('influencer_id', influencer.id)
+            .is('cancelled_at', null)
+            .in('financial_status', ['paid', 'partially_paid', 'pending', 'authorized'])
+            .order('order_created_at', { ascending: false });
+
+        if (createdAtMin) query = query.gte('order_created_at', createdAtMin);
+        if (createdAtMax) query = query.lte('order_created_at', createdAtMax);
+
+        const { data: orderRows, error: qErr } = await query;
+
+        if (qErr) {
+            console.error('[Influencer Stats] Query error:', qErr.message);
+            return res.status(500).json({
+                error: 'Failed to fetch performance data',
+                details: qErr.message,
+                hint: 'Make sure influencer_orders table exists (run supabase_migration_influencer_orders.sql)'
+            });
+        }
+
+        const orders = orderRows || [];
+        const totalRevenue = orders.reduce((s, r) => s + parseFloat(r.total_price || 0), 0);
+        const orderCount = orders.length;
+        const aov = orderCount > 0 ? (totalRevenue / orderCount) : 0;
+        const estimatedEarnings = totalRevenue * (commissionRate / 100);
+
+        const recentConversions = orders.slice(0, 20).map(r => ({
+            id: r.shopify_order_id,
+            name: r.order_name,
+            total: r.total_price,
+            currency: r.currency,
+            date: r.order_created_at
+        }));
+
+        console.log(`[Influencer Stats] ✅ Filtered stats: ${orderCount} orders, ₹${totalRevenue.toFixed(2)}`);
+
+        res.json({
+            success: true,
+            stats: {
+                totalRevenue: totalRevenue.toFixed(2),
+                orderCount,
+                aov: aov.toFixed(2),
+                estimatedEarnings: estimatedEarnings.toFixed(2),
+                commissionRate,
+                currency: orders[0]?.currency || 'INR'
+            },
+            recentConversions,
+            cached: true
+        });
+
+    } catch (error) {
+        console.error('Influencer stats error:', error);
+        if (!res.headersSent) {
+            res.status(500).json({
+                error: 'Failed to fetch performance data',
+                details: error.message
+            });
+        }
+    }
+});
+
+// ==================== INFLUENCER SELF-SIGNUP (PUBLIC) ====================
+
+// Helper: normalize and reserve a unique referral code
+function normalizeReferralCode(raw) {
+    return String(raw || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .slice(0, 20);
+}
+
+// POST /api/influencer/apply - Public self-signup
+app.post('/api/influencer/apply', async (req, res) => {
+    try {
+        const {
+            name,
+            phone,
+            email,
+            instagramHandle,
+            youtubeHandle,
+            followerCount,
+            followerTier,
+            niche,
+            city,
+            whyJoin,
+            preferredCode,
+            payoutUpi,
+            contentWeeklyCount,
+            heightCm,
+            weightKg,
+            shippingAddress,
+            shippingCity,
+            shippingState,
+            shippingPin,
+            shippingLandmark,
+            addressType,
+            selectedProducts
+        } = req.body || {};
+
+        if (!name || !phone || !email || !instagramHandle || !preferredCode) {
+            return res.status(400).json({
+                error: 'Missing required fields',
+                field: !name ? 'name' : !phone ? 'phone' : !email ? 'email' : !instagramHandle ? 'instagramHandle' : 'preferredCode'
+            });
+        }
+        if (followerCount === null || followerCount === undefined || followerCount < 0) {
+            return res.status(400).json({ error: 'Please enter a valid follower count', field: 'followerCount' });
+        }
+        if (!niche) {
+            return res.status(400).json({ error: 'Please select a niche', field: 'niche' });
+        }
+        if (!contentWeeklyCount || contentWeeklyCount < 1) {
+            return res.status(400).json({ error: 'Please enter content delivery commitment', field: 'contentWeekly' });
+        }
+        if (!heightCm || heightCm < 100) {
+            return res.status(400).json({ error: 'Please enter a valid height', field: 'heightCm' });
+        }
+        if (!weightKg || weightKg < 30) {
+            return res.status(400).json({ error: 'Please enter a valid weight', field: 'weightKg' });
+        }
+        if (!shippingAddress || !shippingCity || !shippingState || !shippingPin) {
+            return res.status(400).json({ error: 'Complete shipping address is required' });
+        }
+        if (shippingPin && shippingPin.length !== 6) {
+            return res.status(400).json({ error: 'PIN code must be 6 digits', field: 'shippingPin' });
+        }
+        if (!selectedProducts || !Array.isArray(selectedProducts) || selectedProducts.length === 0) {
+            return res.status(400).json({ error: 'Please select at least 1 product', field: 'selectedProducts' });
+        }
+        const cleanPhone = String(phone).replace(/\D/g, '');
+        if (cleanPhone.length < 10) {
+            return res.status(400).json({ error: 'Phone must be at least 10 digits', field: 'phone' });
+        }
+        const cleanEmail = String(email).trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+            return res.status(400).json({ error: 'Invalid email address', field: 'email' });
+        }
+
+        let finalCode = normalizeReferralCode(preferredCode);
+        if (finalCode.length < 4) {
+            return res.status(400).json({ error: 'Referral code must be at least 4 alphanumeric characters', field: 'preferredCode' });
+        }
+
+        // Duplicate checks
+        if (await isEmailTaken(cleanEmail)) {
+            return res.status(409).json({ error: 'This email is already registered.', field: 'email' });
+        }
+        if (await isPhoneTaken(cleanPhone)) {
+            return res.status(409).json({ error: 'This phone number is already registered.', field: 'phone' });
+        }
+
+        // Referral code: try preferred first, then one suffixed retry
+        if (await isReferralCodeTaken(finalCode)) {
+            const suffix = String(Math.floor(100 + Math.random() * 900));
+            const retryCode = (finalCode + suffix).slice(0, 20);
+            if (await isReferralCodeTaken(retryCode)) {
+                return res.status(409).json({
+                    error: 'That referral code is taken. Please choose a different one.',
+                    field: 'preferredCode'
+                });
+            }
+            finalCode = retryCode;
+        }
+
+        // ── Create influencer (pending) ──
+        const linkToken = crypto.randomBytes(16).toString('hex');
+        const followers = followerCount !== undefined && followerCount !== ''
+            ? parseInt(followerCount) || 0
+            : null;
+
+        // Calculate tier, monthly target, and validate product limit
+        const appFollowerNum = parseInt(followerCount) || 0;
+        let appTierInfo = { tier: 'Rising Star', limit: 2 };
+        if (appFollowerNum >= 500000) appTierInfo = { tier: 'Top Tier Creator', limit: 5 };
+        else if (appFollowerNum >= 100000) appTierInfo = { tier: 'Established Influencer', limit: 4 };
+        else if (appFollowerNum >= 50000) appTierInfo = { tier: 'Growing Creator', limit: 3 };
+        
+        if (selectedProducts.length > appTierInfo.limit) {
+            return res.status(400).json({ error: 'Your tier allows only ' + appTierInfo.limit + ' products', field: 'selectedProducts' });
+        }
+
+        const monthlyTarget = (parseInt(contentWeeklyCount) || 3) * 4;
+
+        const influencer = await createInfluencer({
+            name: String(name).trim(),
+            referralCode: finalCode,
+            linkToken,
+            phone: cleanPhone,
+            commissionRate: 7,
+            discountValue: 7,
+            usageLimit: null,
+            isActive: false,
+            status: 'pending',
+            email: cleanEmail,
+            instagramHandle: String(instagramHandle).trim(),
+            youtubeHandle: youtubeHandle ? String(youtubeHandle).trim() : null,
+            followerCount: followers,
+            followerTier: followerTier || tierInfo.tier,
+            niche: niche ? String(niche).trim() : null,
+            city: city ? String(city).trim() : null,
+            whyJoin: whyJoin ? String(whyJoin).trim().slice(0, 1000) : null,
+            payoutUpi: payoutUpi ? String(payoutUpi).trim() : null,
+            appliedAt: new Date().toISOString(),
+            contentWeeklyCount: parseInt(contentWeeklyCount) || 3,
+            monthlyTarget: monthlyTarget,
+            heightCm: parseFloat(heightCm) || null,
+            weightKg: parseFloat(weightKg) || null,
+            shippingAddress: String(shippingAddress).trim(),
+            shippingCity: String(shippingCity).trim(),
+            shippingState: String(shippingState).trim(),
+            shippingPin: String(shippingPin).trim(),
+            shippingLandmark: shippingLandmark ? String(shippingLandmark).trim() : null,
+            addressType: addressType || 'home',
+            selectedProducts: JSON.stringify(selectedProducts)
+        });
+
+        // ── Auto-create product requests for selected products ──
+        try {
+            for (const product of selectedProducts) {
+                const selectedSize = product.size || 'Not specified';
+                await createProductRequest({
+                    influencerId: influencer.id,
+                    productTitle: product.title || product.productTitle || 'Unknown Product',
+                    productImageUrl: product.image || product.imageUrl || product.productImageUrl || null,
+                    shopifyProductId: product.id || product.shopifyProductId || null,
+                    shopifyVariantId: product.variantId || product.shopifyVariantId || null,
+                    reason: `Selected during application - Tier: ${appTierInfo.tier} | Size: ${selectedSize}`,
+                    shippingFullName: String(name).trim(),
+                    shippingAddressLine1: String(shippingAddress).trim(),
+                    shippingAddressLine2: shippingLandmark ? String(shippingLandmark).trim() : null,
+                    shippingCity: String(shippingCity).trim(),
+                    shippingState: String(shippingState).trim(),
+                    shippingPincode: String(shippingPin).trim(),
+                    shippingPhone: cleanPhone
+                });
+            }
+            console.log(`Created ${selectedProducts.length} product request(s) for influencer ${influencer.id}`);
+        } catch (productRequestError) {
+            console.error('Failed to create product requests (non-blocking):', productRequestError);
+            // Don't fail the application if product request creation fails
+        }
+
+        // ── Create DRAFT Shopify price rule (no discount_code attached yet) ──
+        let shopifyWarning = null;
+        try {
+            const draft = await createShopifyDiscountDraft(finalCode, 7, null, `Influencer (Pending): ${name}`);
+            await updateInfluencer(influencer.id, {
+                shopifyPriceRuleId: String(draft.priceRuleId)
+            });
+        } catch (shopifyError) {
+            console.error('Shopify draft creation failed (non-blocking):', shopifyError.message);
+            shopifyWarning = 'Your application is received, but our discount system is temporarily unavailable. Our team will create your code manually.';
+        }
+
+        // Build portal URL
+        const storeBase = process.env.SHOPIFY_STORE_DOMAIN
+            ? `https://${process.env.SHOPIFY_STORE_DOMAIN.replace(/^https?:\/\//, '')}`
+            : (process.env.STORE_BASE_URL || '');
+        const portalUrl = `${storeBase}/pages/influencer-portal?token=${linkToken}`;
+
+        return res.json({
+            success: true,
+            status: 'pending',
+            referralCode: finalCode,
+            portalUrl,
+            warning: shopifyWarning,
+            message: 'Application received. Your code will be activated within 24 hours.'
+        });
+    } catch (error) {
+        console.error('Influencer apply error:', error);
+        res.status(500).json({ error: 'Failed to submit application. Please try again later.' });
+    }
+});
+
+// GET /api/influencer/products - Fetch ALL available products from Shopify with pagination
+app.get('/api/influencer/products', async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+        const search = (req.query.search || '').trim().toLowerCase();
+        
+        // Fetch ALL active products from Shopify (uses cache)
+        const allProducts = await fetchAllShopifyProducts();
+        
+        // Filter to only products with inventory > 0
+        let products = filterProductsWithInventory(allProducts)
+            .map(p => {
+                const availableVariants = p.variants;
+                const firstVariant = availableVariants[0];
+                return {
+                    id: String(p.id),
+                    title: p.title,
+                    image: p.image ? p.image.src : (p.images && p.images.length > 0 ? p.images[0].src : null),
+                    price: firstVariant ? firstVariant.price : '0.00',
+                    available: true,
+                    sizes: availableVariants.map(v => ({
+                        id: String(v.id),
+                        title: v.title || 'Default',
+                        stock: v.inventory_quantity
+                    }))
+                };
+            });
+        
+        // Apply search filter if provided
+        if (search) {
+            products = products.filter(p => p.title.toLowerCase().includes(search));
+        }
+        
+        const totalProducts = products.length;
+        const totalPages = Math.ceil(totalProducts / limit);
+        const startIdx = (page - 1) * limit;
+        const paginatedProducts = products.slice(startIdx, startIdx + limit);
+        
+        return res.json({
+            success: true,
+            products: paginatedProducts,
+            pagination: {
+                page,
+                limit,
+                totalProducts,
+                totalPages,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1
+            }
+        });
+    } catch (error) {
+        console.error('Products fetch error:', error);
+        res.status(500).json({ error: 'Failed to fetch products', products: [], pagination: { page: 1, totalProducts: 0, totalPages: 0 } });
+    }
+});
+
+// GET /api/influencer/tiers - Get tier configuration
+app.get('/api/influencer/tiers', async (req, res) => {
+    const tiers = [
+        { name: 'Rising Star', minFollowers: 0, maxFollowers: 49999, productLimit: 2, tierColor: '#3b82f6' },
+        { name: 'Growing Creator', minFollowers: 50000, maxFollowers: 99999, productLimit: 3, tierColor: '#22c55e' },
+        { name: 'Established Influencer', minFollowers: 100000, maxFollowers: 499999, productLimit: 4, tierColor: '#a855f7' },
+        { name: 'Top Tier Creator', minFollowers: 500000, maxFollowers: null, productLimit: 5, tierColor: '#f59e0b' }
+    ];
+    return res.json({ success: true, tiers });
+});
+
+// GET /api/influencer/payouts/:token - Influencer-facing payout history
+app.get('/api/influencer/payouts/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid or inactive influencer link' });
+        }
+
+        const payouts = await listPayouts(influencer.id);
+
+        // Summary metrics
+        let totalPaid = 0;
+        let pendingAmount = 0;
+        let paidCount = 0;
+        let pendingCount = 0;
+        let lastPeriodEnd = null;
+        for (const p of payouts) {
+            const amt = parseFloat(p.amount || 0);
+            if (p.status === 'paid') { totalPaid += amt; paidCount += 1; }
+            if (p.status === 'pending') { pendingAmount += amt; pendingCount += 1; }
+            if (p.period_end && (!lastPeriodEnd || p.period_end > lastPeriodEnd)) {
+                lastPeriodEnd = p.period_end;
+            }
+        }
+
+        let nextExpected = null;
+        if (lastPeriodEnd) {
+            const d = new Date(lastPeriodEnd);
+            d.setDate(d.getDate() + 7);
+            nextExpected = d.toISOString().slice(0, 10);
+        }
+
+        res.json({
+            success: true,
+            currency: payouts[0]?.currency || 'INR',
+            summary: {
+                totalPaid: totalPaid.toFixed(2),
+                pendingAmount: pendingAmount.toFixed(2),
+                paidCount,
+                pendingCount,
+                nextExpected
+            },
+            payouts: payouts.map(p => ({
+                id: p.id,
+                period_start: p.period_start,
+                period_end: p.period_end,
+                amount: parseFloat(p.amount).toFixed(2),
+                currency: p.currency || 'INR',
+                status: p.status,
+                paid_at: p.paid_at,
+                reference: p.reference,
+                notes: p.notes
+            }))
+        });
+    } catch (error) {
+        console.error('Influencer payouts fetch error:', error);
+        res.status(500).json({ error: 'Failed to fetch payouts' });
+    }
+});
+
+// ==================== INFLUENCER ANALYTICS & SHIPMENTS ====================
+
+// Admin: Create manual shipment with Delhivery booking (MUST be before /:influencerId to avoid route conflict)
+app.post('/api/influencer-admin/shipments/manual', authenticateAdmin, async (req, res) => {
+    try {
+        const {
+            influencerId,
+            productTitle,
+            productImageUrl,
+            reelDueDate,
+            isMonthlyTarget,
+            shippingFullName,
+            shippingAddressLine1,
+            shippingAddressLine2,
+            shippingCity,
+            shippingState,
+            shippingPincode,
+            shippingPhone,
+            notes
+        } = req.body;
+        
+        // Validate required fields
+        if (!influencerId || !productTitle || !reelDueDate || !shippingFullName || 
+            !shippingAddressLine1 || !shippingCity || !shippingState || !shippingPincode || !shippingPhone) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        
+        // Validate pincode format
+        if (!/^[0-9]{6}$/.test(shippingPincode)) {
+            return res.status(400).json({ error: 'Invalid pincode format' });
+        }
+        
+        // Validate phone format
+        if (!/^[0-9]{10}$/.test(shippingPhone)) {
+            return res.status(400).json({ error: 'Invalid phone number format' });
+        }
+        
+        // Get influencer for Delhivery booking
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+        
+        // Create shipment record (pass camelCase keys as expected by createShipment)
+        const shipment = await createShipment({
+            influencerId: influencerId,
+            productTitle: productTitle,
+            productImageUrl: productImageUrl || null,
+            sentAt: new Date().toISOString(),
+            reelDueDate: reelDueDate,
+            notes: notes || null
+        });
+        
+        // Auto-book via Delhivery
+        let delhiveryResult = null;
+        try {
+            const delhiveryShipmentData = {
+                requestId: `INF-${String(shipment.id).substring(0, 8)}`,
+                customerName: shippingFullName,
+                customerAddress: shippingAddressLine1 + (shippingAddressLine2 ? ', ' + shippingAddressLine2 : ''),
+                customerCity: shippingCity,
+                customerState: shippingState,
+                customerPincode: shippingPincode,
+                customerPhone: shippingPhone,
+                items: [{ name: productTitle, quantity: 1, price: 0 }]
+            };
+            
+            delhiveryResult = await createDelhiveryForwardOrder(delhiveryShipmentData, null);
+            
+            // Update shipment with Delhivery details
+            if (delhiveryResult && delhiveryResult.waybill) {
+                await updateShipment(shipment.id, {
+                    delhivery_awb: delhiveryResult.waybill,
+                    delhivery_shipment_id: delhiveryResult.shipment_id
+                });
+            }
+        } catch (delhiveryError) {
+            console.error('Delhivery booking failed for manual shipment:', delhiveryError.message);
+            // Don't fail the request, shipment is created even if Delhivery fails
+        }
+        
+        res.json({ 
+            success: true, 
+            shipment,
+            delhivery: delhiveryResult
+        });
+    } catch (error) {
+        console.error('Create manual shipment error:', error);
+        res.status(500).json({ error: 'Failed to create shipment' });
+    }
+});
+
+// List ALL shipments (admin - all influencers)
+app.get('/api/influencer-admin/shipments/all', authenticateAdmin, async (req, res) => {
+    try {
+        const shipments = await listShipments();
+        
+        // Enrich with influencer data
+        const enriched = await Promise.all(
+            shipments.map(async (s) => {
+                const influencer = await getInfluencerById(s.influencer_id);
+                return {
+                    ...s,
+                    influencers: influencer ? {
+                        name: influencer.name,
+                        referral_code: influencer.referral_code,
+                        phone: influencer.phone
+                    } : null
+                };
+            })
+        );
+        
+        res.json({ success: true, shipments: enriched });
+    } catch (error) {
+        console.error('List all shipments error:', error);
+        res.json({ success: true, shipments: [] });
+    }
+});
+
+// Create shipment from product inventory (admin)
+app.post('/api/influencer-admin/shipments', authenticateAdmin, async (req, res) => {
+    try {
+        const {
+            influencerId,
+            products, // Array of {productTitle, productImageUrl, shopifyProductId, variantId, size, quantity}
+            sentAt,
+            reelDueDate, // Optional for inventory-based shipments
+            isMonthlyTarget,
+            notes,
+            // Shipping address fields
+            shippingFullName,
+            shippingAddressLine1,
+            shippingAddressLine2,
+            shippingCity,
+            shippingState,
+            shippingPincode,
+            shippingPhone
+        } = req.body;
+        
+        // Validate required fields
+        if (!influencerId || !products || !Array.isArray(products) || products.length === 0) {
+            return res.status(400).json({ error: 'influencerId and products array are required' });
+        }
+        
+        if (!sentAt) {
+            return res.status(400).json({ error: 'sentAt is required' });
+        }
+        
+        // Reel due date is optional for inventory-based shipments
+        // If not provided, set to null
+        
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) {
+            return res.status(404).json({ error: 'Influencer not found' });
+        }
+        
+        // Check if we have any address data to work with
+        const hasAnyAddress = shippingAddressLine1 || influencer.shipping_address || influencer.city;
+        
+        // If no address data at all, return error
+        if (!hasAnyAddress && !shippingFullName) {
+            return res.status(400).json({ 
+                error: 'No shipping address found. Please provide shipping address or update influencer profile.',
+                needsAddress: true,
+                influencer: {
+                    id: influencer.id,
+                    name: influencer.name,
+                    phone: influencer.phone,
+                    existingAddress: influencer.shipping_address,
+                    existingCity: influencer.city,
+                    existingState: influencer.shipping_state,
+                    existingPincode: influencer.shipping_pin,
+                    existingPhone: influencer.phone
+                }
+            });
+        }
+        
+        // Resolve shipping address — prioritize request body, fall back to influencer DB fields
+        let shipFullName = shippingFullName || influencer.shipping_name || influencer.name || '';
+        let shipAddress1 = shippingAddressLine1 || influencer.shipping_address || '';
+        let shipAddress2 = shippingAddressLine2 || influencer.shipping_address_line2 || '';
+        let shipCity = shippingCity || influencer.city || '';
+        let shipState = shippingState || influencer.shipping_state || '';
+        let shipPincode = shippingPincode || influencer.shipping_pin || '';
+        let shipPhone = shippingPhone || influencer.phone || '';
+        
+        // Parse city/state/pincode from combined address string if missing
+        // Indian address format: "street, area, CITY, STATE, PINCODE"
+        const fullAddress = [shipAddress1, shipAddress2].filter(Boolean).join(', ');
+        if (fullAddress && (!shipPincode || !shipCity || !shipState)) {
+            const addrParts = fullAddress.split(',').map(s => s.trim()).filter(Boolean);
+            if (addrParts.length >= 3) {
+                const pincodeIdx = addrParts.findIndex(p => /^\d{6}$/.test(p));
+                if (pincodeIdx > 0) {
+                    if (!shipPincode) shipPincode = addrParts[pincodeIdx];
+                    if (!shipState && pincodeIdx >= 2) shipState = addrParts[pincodeIdx - 1];
+                    if (!shipCity && pincodeIdx >= 3) shipCity = addrParts[pincodeIdx - 2];
+                } else {
+                    const lastPart = addrParts[addrParts.length - 1];
+                    const isCountry = /^(india|IN)$/i.test(lastPart);
+                    const endIdx = isCountry ? addrParts.length - 2 : addrParts.length - 1;
+                    if (!shipState && endIdx >= 1) shipState = addrParts[endIdx];
+                    if (!shipCity && endIdx >= 2) shipCity = addrParts[endIdx - 1];
+                }
+            }
+        }
+        
+        // Clean phone number
+        let phoneDigits = String(shipPhone).replace(/\D/g, '');
+        if (phoneDigits.length === 12 && phoneDigits.startsWith('91')) phoneDigits = phoneDigits.substring(2);
+        if (phoneDigits.length > 10) phoneDigits = phoneDigits.slice(-10);
+        shipPhone = phoneDigits.length >= 10 ? phoneDigits : '9999999999';
+        
+        const hasCompleteAddress = shipFullName && shipAddress1 && shipCity && shipState && shipPincode && shipPhone;
+        
+        // Create ONE combined shipment record for all products
+        const productTitles = products.map(p => p.size ? `${p.productTitle} (${p.size})` : p.productTitle);
+        const combinedTitle = productTitles.join(', ');
+        const firstProduct = products[0];
+        
+        const shipment = await createShipment({
+            influencerId: influencerId,
+            productTitle: combinedTitle,
+            productImageUrl: firstProduct.productImageUrl || null,
+            shopifyProductId: firstProduct.shopifyProductId || null,
+            sentAt: sentAt,
+            reelDueDate: reelDueDate || null,
+            notes: products.length > 1
+                ? `Multi-product shipment: ${productTitles.join('; ')}${notes ? '. Notes: ' + notes : ''}`
+                : (notes || null)
+        });
+        
+        // Create ONE Delhivery order with ALL products
+        let delhiveryResult = null;
+        
+        if (hasCompleteAddress) {
+            try {
+                console.log(`[Shipment ${shipment.id}] Creating Delhivery forward order for ${products.length} product(s)...`);
+        
+                const delhiveryShipmentData = {
+                    requestId: `INF-${String(shipment.id).padStart(6, '0')}`,
+                    customerName: shipFullName,
+                    shippingAddress: shipAddress1 + (shipAddress2 ? ', ' + shipAddress2 : ''),
+                    shippingCity: shipCity,
+                    shippingState: shipState,
+                    shippingPincode: shipPincode,
+                    customerPhone: shipPhone,
+                    items: products.map(p => ({
+                        name: p.size ? `${p.productTitle} (${p.size})` : p.productTitle,
+                        quantity: 1,
+                        price: 0
+                    }))
+                };
+        
+                delhiveryResult = await createDelhiveryForwardOrder(delhiveryShipmentData, null);
+        
+                if (delhiveryResult && delhiveryResult.waybill) {
+                    console.log(`[Shipment ${shipment.id}] \u2705 Delhivery AWB: ${delhiveryResult.waybill}`);
+                    if (delhiveryResult.waybills && delhiveryResult.waybills.length > 1) {
+                        console.log(`[Shipment ${shipment.id}] \ud83d\udce6 Multi-product: ${delhiveryResult.waybills.length} packages - AWBs: ${delhiveryResult.waybills.join(', ')}`);
+                    }
+        
+                    const { updateShipment } = require('./config/db-helpers');
+                    await updateShipment(shipment.id, {
+                        tracking_awb: delhiveryResult.waybill,
+                        carrier: 'delhivery',
+                        delhivery_shipment_id: delhiveryResult.shipment_id
+                    });
+        
+                    shipment.tracking_awb = delhiveryResult.waybill;
+                    shipment.carrier = 'delhivery';
+                    shipment.delhivery_shipment_id = delhiveryResult.shipment_id;
+
+                    // Save shipping address back to influencer DB for future auto-fill
+                    if (!influencer.shipping_address || influencer.shipping_address !== shipAddress1) {
+                        const { updateInfluencer } = require('./config/db-helpers');
+                        await updateInfluencer(influencerId, {
+                            shippingAddress: shipAddress1,
+                            shippingCity: shipCity,
+                            shippingState: shipState,
+                            shippingPin: shipPincode,
+                            shippingLandmark: shipAddress2 || null
+                        }).catch(err => console.warn(`[Shipment ${shipment.id}] Could not save address to influencer:`, err.message));
+                        console.log(`[Shipment ${shipment.id}] \ud83d\udcbe Saved shipping address to influencer DB`);
+                    }
+                }
+            } catch (delhiveryError) {
+                console.error(`[Shipment ${shipment.id}] \u274c Delhivery booking failed:`, delhiveryError.message);
+            }
+        } else {
+            console.warn(`[Shipment ${shipment.id}] \u26a0\ufe0f Skipping Delhivery booking - incomplete shipping address`);
+            console.warn(`   Name: ${shipFullName}, Address: ${shipAddress1}, City: ${shipCity}, State: ${shipState}, Pin: ${shipPincode}, Phone: ${shipPhone}`);
+        }
+        
+        const createdShipments = [shipment];
+        
+        res.json({ 
+            success: true, 
+            shipments: createdShipments,
+            message: products.length > 1
+                ? `Combined shipment created for ${products.length} products${delhiveryResult?.waybill ? ' with Delhivery AWB ' + delhiveryResult.waybill : ''}`
+                : 'Shipment created successfully'
+        });
+    } catch (error) {
+        console.error('Create shipment from inventory error:', error);
+        res.status(500).json({ error: 'Failed to create shipment' });
+    }
+});
+
+// Create shipment for specific influencer (admin) - DEPRECATED, use /api/influencer-admin/shipments instead
+app.post('/api/influencer-admin/shipments/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const { productTitle, productImageUrl, shopifyProductId, sentAt, reelDueDate, notes } = req.body;
+        if (!productTitle || !sentAt) {
+            return res.status(400).json({ error: 'productTitle and sentAt are required' });
+        }
+        // reelDueDate is now optional
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) return res.status(404).json({ error: 'Influencer not found' });
+        const shipment = await createShipment({ influencerId, productTitle, productImageUrl, shopifyProductId, sentAt, reelDueDate: reelDueDate || null, notes });
+        res.json({ success: true, shipment });
+    } catch (error) {
+        console.error('Create shipment error:', error);
+        res.status(500).json({ error: 'Failed to create shipment' });
+    }
+});
+
+// List shipments (admin)
+app.get('/api/influencer-admin/shipments/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const shipments = await listShipmentsByInfluencer(influencerId);
+        // Compute overdue at read time
+        const today = new Date().toISOString().split('T')[0];
+        const enriched = shipments.map(s => {
+            if (s.reel_status === 'pending' && s.reel_due_date < today) {
+                return { ...s, reel_status: 'overdue' };
+            }
+            return s;
+        });
+        res.json({ success: true, shipments: enriched });
+    } catch (error) {
+        console.error('List shipments error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipments' });
+    }
+});
+
+// Update shipment (admin)
+app.patch('/api/influencer-admin/shipments/:shipmentId', authenticateAdmin, async (req, res) => {
+    try {
+        const { shipmentId } = req.params;
+        const existing = await getShipmentById(shipmentId);
+        if (!existing) return res.status(404).json({ error: 'Shipment not found' });
+        const shipment = await updateShipment(shipmentId, req.body);
+        res.json({ success: true, shipment });
+    } catch (error) {
+        console.error('Update shipment error:', error);
+        res.status(500).json({ error: 'Failed to update shipment' });
+    }
+});
+
+// Delete shipment (admin)
+app.delete('/api/influencer-admin/shipments/:shipmentId', authenticateAdmin, async (req, res) => {
+    try {
+        const { shipmentId } = req.params;
+        await deleteShipment(shipmentId);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete shipment error:', error);
+        res.status(500).json({ error: 'Failed to delete shipment' });
+    }
+});
+
+// ==================== PAYOUTS (MONTHLY) ====================
+
+async function generatePayoutsForMonth(month) {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    const startDate = `${month}-01T00:00:00Z`;
+    const endD = new Date(startDate);
+    endD.setMonth(endD.getMonth() + 1);
+    const endDate = endD.toISOString();
+
+    const { data: rows, error } = await supabaseAdmin
+        .from('influencer_orders')
+        .select('influencer_id, total_price')
+        .gte('order_created_at', startDate)
+        .lt('order_created_at', endDate);
+
+    if (error) throw error;
+
+    const aggregated = {};
+    for (const row of rows) {
+        if (!aggregated[row.influencer_id]) {
+            aggregated[row.influencer_id] = { ordersCount: 0, revenue: 0 };
+        }
+        aggregated[row.influencer_id].ordersCount++;
+        aggregated[row.influencer_id].revenue += parseFloat(row.total_price || 0);
+    }
+
+    const results = [];
+    for (const [infId, agg] of Object.entries(aggregated)) {
+        const influencer = await getInfluencerById(infId);
+        if (!influencer) continue;
+        const commissionRate = parseFloat(influencer.commission_rate || 10);
+        const amountDue = (agg.revenue * commissionRate) / 100;
+
+        // Skip if already paid
+        const { data: existing } = await supabaseAdmin
+            .from('influencer_payouts')
+            .select('status')
+            .eq('influencer_id', infId)
+            .eq('month', month)
+            .single();
+        if (existing && existing.status === 'paid') continue;
+
+        const payout = await upsertPayout({
+            influencerId: infId,
+            month,
+            ordersCount: agg.ordersCount,
+            revenueAmount: agg.revenue,
+            commissionRate,
+            amountDue,
+            status: 'pending'
+        });
+        results.push(payout);
+    }
+    return results;
+}
+
+// Generate payouts for a month (admin)
+app.post('/api/influencer-admin/payouts/generate', authenticateAdmin, async (req, res) => {
+    try {
+        const { month } = req.body;
+        if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+            return res.status(400).json({ error: 'month in YYYY-MM format is required' });
+        }
+        const results = await generatePayoutsForMonth(month);
+        res.json({ success: true, generated: results.length, payouts: results });
+    } catch (error) {
+        console.error('Generate payouts error:', error);
+        res.status(500).json({ error: 'Failed to generate payouts' });
+    }
+});
+
+// ==================== ANALYTICS AGGREGATE ====================
+
+async function getAnalyticsForInfluencer(influencer, range = 'all') {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    let createdAtMin = null;
+    if (range === '30d') {
+        const d = new Date(); d.setDate(d.getDate() - 30); createdAtMin = d.toISOString();
+    } else if (range === '90d') {
+        const d = new Date(); d.setDate(d.getDate() - 90); createdAtMin = d.toISOString();
+    } else if (range === '6m') {
+        const d = new Date(); d.setMonth(d.getMonth() - 6); createdAtMin = d.toISOString();
+    }
+
+    // Summary from influencer_orders
+    let orderQuery = supabaseAdmin.from('influencer_orders').select('total_price').eq('influencer_id', influencer.id);
+    let countQuery = supabaseAdmin.from('influencer_orders').select('*', { count: 'exact', head: true }).eq('influencer_id', influencer.id);
+    let monthlyQuery = supabaseAdmin.from('influencer_orders').select('order_created_at, total_price').eq('influencer_id', influencer.id);
+
+    if (createdAtMin) {
+        orderQuery = orderQuery.gte('order_created_at', createdAtMin);
+        countQuery = countQuery.gte('order_created_at', createdAtMin);
+        monthlyQuery = monthlyQuery.gte('order_created_at', createdAtMin);
+    }
+
+    const [{ data: orders }, { count: orderCount }, { data: monthlyRows }] = await Promise.all([orderQuery, countQuery, monthlyQuery]);
+
+    const totalRevenue = orders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
+    const commissionRate = parseFloat(influencer.commission_rate || 10);
+    const displayedCommissionRate = parseFloat(influencer.displayed_commission_rate || commissionRate);
+    const aov = orderCount > 0 ? totalRevenue / orderCount : 0;
+    const estimatedEarnings = (totalRevenue * displayedCommissionRate) / 100;
+
+    // Monthly aggregation
+    const monthlyMap = {};
+    for (const row of (monthlyRows || [])) {
+        const m = row.order_created_at ? row.order_created_at.substring(0, 7) : 'unknown';
+        if (!monthlyMap[m]) monthlyMap[m] = { month: m, orders: 0, revenue: 0 };
+        monthlyMap[m].orders++;
+        monthlyMap[m].revenue += parseFloat(row.total_price || 0);
+    }
+    const monthly = Object.values(monthlyMap).sort((a, b) => b.month.localeCompare(a.month)).map(m => ({
+        ...m,
+        commission: parseFloat(((m.revenue * commissionRate) / 100).toFixed(2)),
+        revenue: parseFloat(m.revenue.toFixed(2))
+    }));
+
+    // Shipments
+    const shipments = await listShipmentsByInfluencer(influencer.id);
+    const today = new Date().toISOString().split('T')[0];
+    let pending = 0, received = 0, overdue = 0;
+    const enrichedShipments = shipments.map(s => {
+        let status = s.reel_status;
+        if (status === 'pending' && s.reel_due_date < today) status = 'overdue';
+        if (status === 'pending') pending++;
+        else if (status === 'received') received++;
+        else if (status === 'overdue') overdue++;
+        return { ...s, reel_status: status };
+    });
+
+    // Payouts
+    const payouts = await listPayoutsByInfluencer(influencer.id);
+    let totalPaid = 0, totalPendingAmount = 0;
+    payouts.forEach(p => {
+        if (p.status === 'paid') totalPaid += parseFloat(p.amount_due || 0);
+        else totalPendingAmount += parseFloat(p.amount_due || 0);
+    });
+
+    // Recent orders (last 10)
+    let recentOrdersQuery = supabaseAdmin
+        .from('influencer_orders')
+        .select('shopify_order_id, order_name, total_price, currency, financial_status, customer_name, order_created_at, referral_code')
+        .eq('influencer_id', influencer.id)
+        .is('cancelled_at', null)
+        .in('financial_status', ['paid', 'partially_paid', 'pending', 'authorized'])
+        .order('order_created_at', { ascending: false })
+        .limit(10);
+    
+    if (createdAtMin) {
+        recentOrdersQuery = recentOrdersQuery.gte('order_created_at', createdAtMin);
+    }
+    
+    const { data: recentOrderRows } = await recentOrdersQuery;
+    const recentOrders = (recentOrderRows || []).map(r => ({
+        id: r.shopify_order_id,
+        orderName: r.order_name,
+        total: parseFloat(r.total_price).toFixed(2),
+        currency: r.currency || 'INR',
+        date: r.order_created_at,
+        customerName: r.customer_name || 'Guest',
+        discountCode: r.referral_code
+    }));
+
+    return {
+        influencer: {
+            id: influencer.id,
+            name: influencer.name,
+            referral_code: influencer.referral_code,
+            commission_rate: commissionRate,
+            displayed_commission_rate: displayedCommissionRate
+        },
+        summary: {
+            totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+            totalOrders: orderCount || 0,
+            aov: parseFloat(aov.toFixed(2)),
+            estimatedEarnings: parseFloat(estimatedEarnings.toFixed(2)),
+            commissionRate: displayedCommissionRate
+        },
+        monthly,
+        recentOrders,
+        shipments: {
+            total: enrichedShipments.length,
+            pending,
+            received,
+            overdue,
+            items: enrichedShipments
+        },
+        payouts: {
+            totalPaid: parseFloat(totalPaid.toFixed(2)),
+            totalPending: parseFloat(totalPendingAmount.toFixed(2)),
+            items: payouts
+        }
+    };
+}
+
+// Admin analytics
+app.get('/api/influencer-admin/analytics/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const { range } = req.query;
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) return res.status(404).json({ error: 'Influencer not found' });
+        const analytics = await getAnalyticsForInfluencer(influencer, range);
+        res.json({ success: true, ...analytics });
+    } catch (error) {
+        console.error('Analytics error:', error);
+        res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+});
+
+// Influencer analytics
+app.get('/api/influencer/analytics/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { range } = req.query;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        const analytics = await getAnalyticsForInfluencer(influencer, range);
+        res.json({ success: true, ...analytics });
+    } catch (error) {
+        console.error('Influencer analytics error:', error);
+        res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+});
+
+// ==================== LEADERBOARD ====================
+
+async function getLeaderboard(range = 'all', limit = 10, currentToken = null) {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    let createdAtMin = null;
+    if (range === '30d') { const d = new Date(); d.setDate(d.getDate() - 30); createdAtMin = d.toISOString(); }
+    else if (range === '90d') { const d = new Date(); d.setDate(d.getDate() - 90); createdAtMin = d.toISOString(); }
+    else if (range === '6m') { const d = new Date(); d.setMonth(d.getMonth() - 6); createdAtMin = d.toISOString(); }
+
+    let query = supabaseAdmin
+        .from('influencer_orders')
+        .select('influencer_id, total_price')
+        .order('order_created_at', { ascending: false });
+    if (createdAtMin) query = query.gte('order_created_at', createdAtMin);
+
+    const { data: orders, error } = await query;
+    if (error) throw error;
+
+    const aggregated = {};
+    for (const row of (orders || [])) {
+        if (!aggregated[row.influencer_id]) aggregated[row.influencer_id] = { revenue: 0, orders: 0 };
+        aggregated[row.influencer_id].revenue += parseFloat(row.total_price || 0);
+        aggregated[row.influencer_id].orders++;
+    }
+
+    let currentInfluencerId = null;
+    if (currentToken) {
+        const currentInf = await getInfluencerByToken(currentToken);
+        if (currentInf) currentInfluencerId = currentInf.id;
+    }
+
+    const rows = Object.entries(aggregated).map(([id, agg]) => ({
+        influencerId: parseInt(id),
+        revenue: parseFloat(agg.revenue.toFixed(2)),
+        orders: agg.orders
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    const leaderboard = [];
+    for (let i = 0; i < Math.min(rows.length, limit); i++) {
+        const row = rows[i];
+        const influencer = await getInfluencerById(row.influencerId);
+        if (!influencer) continue;
+        leaderboard.push({
+            rank: i + 1,
+            id: influencer.id,
+            name: influencer.name,
+            referral_code: influencer.referral_code,
+            revenue: row.revenue,
+            orders: row.orders,
+            current_user: influencer.id === currentInfluencerId
+        });
+    }
+
+    // If current influencer not in top N, find their rank
+    if (currentInfluencerId && !leaderboard.find(r => r.id === currentInfluencerId)) {
+        const idx = rows.findIndex(r => r.influencerId === currentInfluencerId);
+        if (idx >= 0) {
+            const influencer = await getInfluencerById(currentInfluencerId);
+            leaderboard.push({
+                rank: idx + 1,
+                id: influencer.id,
+                name: influencer.name,
+                referral_code: influencer.referral_code,
+                revenue: rows[idx].revenue,
+                orders: rows[idx].orders,
+                current_user: true
+            });
+        }
+    }
+
+    return leaderboard;
+}
+
+// Admin leaderboard
+app.get('/api/influencer-admin/leaderboard', authenticateAdmin, async (req, res) => {
+    try {
+        const { range = 'all', limit = 10 } = req.query;
+        const leaderboard = await getLeaderboard(range, parseInt(limit));
+        res.json({ success: true, leaderboard });
+    } catch (error) {
+        console.error('Leaderboard error:', error);
+        res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
+});
+
+// Influencer leaderboard
+app.get('/api/influencer/leaderboard/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { range = 'all', limit = 10 } = req.query;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        const leaderboard = await getLeaderboard(range, parseInt(limit), token);
+        res.json({ success: true, leaderboard });
+    } catch (error) {
+        console.error('Influencer leaderboard error:', error);
+        res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
+});
+
+// ==================== INFLUENCER SELF-SUBMIT ====================
+
+// Influencer submit reel URL
+app.patch('/api/influencer/shipments/:token/:shipmentId', async (req, res) => {
+    try {
+        const { token, shipmentId } = req.params;
+        const { reelUrl } = req.body;
+        if (!reelUrl) return res.status(400).json({ error: 'reelUrl is required' });
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+
+        const shipment = await getShipmentById(shipmentId);
+        if (!shipment || shipment.influencer_id !== influencer.id) {
+            return res.status(404).json({ error: 'Shipment not found' });
+        }
+
+        const updated = await updateShipment(shipmentId, {
+            reelUrl,
+            reelStatus: 'received',
+            reelReceivedAt: new Date().toISOString()
+        });
+        res.json({ success: true, shipment: updated });
+    } catch (error) {
+        console.error('Influencer submit reel error:', error);
+        res.status(500).json({ error: 'Failed to submit reel' });
+    }
+});
+
+// Influencer list shipments
+app.get('/api/influencer/shipments/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        const shipments = await listShipmentsByInfluencer(influencer.id);
+        const today = new Date().toISOString().split('T')[0];
+        const enriched = shipments.map(s => {
+            if (s.reel_status === 'pending' && s.reel_due_date < today) {
+                return { ...s, reel_status: 'overdue' };
+            }
+            return s;
+        });
+        res.json({ success: true, shipments: enriched });
+    } catch (error) {
+        console.error('Influencer shipments error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipments' });
+    }
+});
+
+// Influencer get/update own shipping address
+app.get('/api/influencer/shipping-address/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+
+        res.json({
+            success: true,
+            shippingAddress: {
+                shipping_address: influencer.shipping_address || '',
+                shipping_landmark: influencer.shipping_landmark || '',
+                shipping_city: influencer.shipping_city || '',
+                shipping_state: influencer.shipping_state || '',
+                shipping_pin: influencer.shipping_pin || '',
+                address_type: influencer.address_type || 'home'
+            }
+        });
+    } catch (error) {
+        console.error('Get shipping address error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipping address' });
+    }
+});
+
+app.patch('/api/influencer/shipping-address/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+
+        const { shippingAddress, shippingLandmark, shippingCity, shippingState, shippingPin, addressType } = req.body;
+
+        // Validate required fields
+        if (!shippingAddress || !shippingCity || !shippingState || !shippingPin) {
+            return res.status(400).json({ error: 'Complete shipping address is required' });
+        }
+        if (shippingPin && shippingPin.length !== 6) {
+            return res.status(400).json({ error: 'PIN code must be 6 digits' });
+        }
+
+        const updated = await updateInfluencer(influencer.id, {
+            shippingAddress: String(shippingAddress).trim(),
+            shippingLandmark: shippingLandmark ? String(shippingLandmark).trim() : null,
+            shippingCity: String(shippingCity).trim(),
+            shippingState: String(shippingState).trim(),
+            shippingPin: String(shippingPin).trim(),
+            addressType: addressType || 'home'
+        });
+
+        res.json({ success: true, message: 'Shipping address updated', shippingAddress: updated });
+    } catch (error) {
+        console.error('Update shipping address error:', error);
+        res.status(500).json({ error: 'Failed to update shipping address' });
+    }
+});
+
+// Influencer get monthly reel target
+app.get('/api/influencer/reel-targets/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { month, year } = req.query;
+        
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        
+        const now = new Date();
+        const targetMonth = month ? parseInt(month) : now.getMonth() + 1;
+        const targetYear = year ? parseInt(year) : now.getFullYear();
+        
+        // Get target from database
+        const targets = await getReelTargetsByInfluencer(influencer.id, {
+            month: targetMonth,
+            year: targetYear
+        });
+        
+        // Get progress for this target
+        const progress = await getReelTargetProgress(influencer.id, targetMonth, targetYear);
+        
+        res.json({
+            success: true,
+            target: targets.length > 0 ? targets[0] : null,
+            progress
+        });
+    } catch (error) {
+        console.error('Influencer reel targets error:', error);
+        res.status(500).json({ error: 'Failed to fetch reel targets' });
+    }
+});
+
+// Influencer list payouts
+app.get('/api/influencer/payouts/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        const payouts = await listPayoutsByInfluencer(influencer.id);
+        res.json({ success: true, payouts });
+    } catch (error) {
+        console.error('Influencer payouts error:', error);
+        res.status(500).json({ error: 'Failed to fetch payouts' });
+    }
+});
+
+// ==================== REEL TARGETS & PRODUCT REQUESTS ====================
+
+// Admin: Set monthly reel target
+app.post('/api/influencer-admin/reel-targets/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const { month, year, targetCount, notes } = req.body;
+        
+        if (!month || !year || !targetCount) {
+            return res.status(400).json({ error: 'month, year, and targetCount are required' });
+        }
+        
+        const influencer = await getInfluencerById(influencerId);
+        if (!influencer) return res.status(404).json({ error: 'Influencer not found' });
+        
+        const target = await createReelTarget({ influencerId, month, year, targetCount, notes });
+        const progress = await getReelTargetProgress(influencerId, month, year);
+        
+        res.json({ success: true, target: { ...target, ...progress } });
+    } catch (error) {
+        console.error('Create reel target error:', error);
+        res.status(500).json({ error: 'Failed to create reel target' });
+    }
+});
+
+// Admin: Get reel targets for influencer
+app.get('/api/influencer-admin/reel-targets/:influencerId', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId } = req.params;
+        const { month, year, limit } = req.query;
+        
+        const filters = {};
+        if (month) filters.month = parseInt(month);
+        if (year) filters.year = parseInt(year);
+        if (limit) filters.limit = parseInt(limit);
+        
+        const targets = await getReelTargetsByInfluencer(influencerId, filters);
+        res.json({ success: true, targets });
+    } catch (error) {
+        console.error('Get reel targets error:', error);
+        res.status(500).json({ error: 'Failed to fetch reel targets' });
+    }
+});
+
+// Admin: Get all reel targets for dashboard
+app.get('/api/influencer-admin/reel-targets', authenticateAdmin, async (req, res) => {
+    try {
+        const { month, year } = req.query;
+        
+        if (!month || !year) {
+            return res.status(400).json({ error: 'month and year are required' });
+        }
+        
+        const influencers = await getAllInfluencers();
+        const activeInfluencers = influencers.filter(i => i.is_active !== false);
+        
+        const targets = await Promise.all(
+            activeInfluencers.map(async (influencer) => {
+                const progress = await getReelTargetProgress(influencer.id, parseInt(month), parseInt(year));
+                return {
+                    influencerId: influencer.id,
+                    influencerName: influencer.name,
+                    referralCode: influencer.referral_code,
+                    ...progress
+                };
+            })
+        );
+        
+        const summary = {
+            totalInfluencers: targets.length,
+            onTrack: targets.filter(t => t.completionPercentage >= 50 && t.completionPercentage < 100).length,
+            behind: targets.filter(t => t.completionPercentage < 50).length,
+            completed: targets.filter(t => t.completionPercentage >= 100).length,
+            averageCompletion: targets.length > 0 
+                ? (targets.reduce((sum, t) => sum + t.completionPercentage, 0) / targets.length).toFixed(2)
+                : 0
+        };
+        
+        res.json({ success: true, summary, targets });
+    } catch (error) {
+        console.error('Get all reel targets error:', error);
+        res.status(500).json({ error: 'Failed to fetch reel targets' });
+    }
+});
+
+// Admin: Create/update monthly reel target (without influencerId in path)
+app.post('/api/influencer-admin/reel-targets', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId, month, year, targetCount, notes } = req.body;
+        
+        if (!influencerId || !month || !year || !targetCount) {
+            return res.status(400).json({ error: 'influencerId, month, year, and targetCount are required' });
+        }
+        
+        const target = await createReelTarget({
+            influencerId,
+            month: parseInt(month),
+            year: parseInt(year),
+            targetCount: parseInt(targetCount),
+            notes
+        });
+        
+        res.json({ success: true, target });
+    } catch (error) {
+        console.error('Create reel target error:', error);
+        res.status(500).json({ error: 'Failed to create reel target' });
+    }
+});
+
+// Admin: Browse Shopify products
+app.get('/api/influencer-admin/shopify-products', authenticateAdmin, async (req, res) => {
+    try {
+        const { search, limit = 20, page = 1 } = req.query;
+        const parsedLimit = Math.min(50, Math.max(1, parseInt(limit) || 20));
+        const parsedPage = Math.max(1, parseInt(page) || 1);
+        
+        // Validate Shopify config before making call
+        if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
+            return res.status(500).json({ error: 'Shopify not configured', success: false, products: [] });
+        }
+        
+        // Fetch ALL active products from Shopify (uses cache)
+        const allProducts = await fetchAllShopifyProducts();
+        
+        // Filter to only products with inventory
+        let products = filterProductsWithInventory(allProducts)
+            .map(p => {
+                const availableVariants = p.variants;
+                return {
+                    id: p.id,
+                    shopifyId: p.id,
+                    title: p.title,
+                    handle: p.handle,
+                    description: p.body_html ? p.body_html.replace(/<[^>]*>/g, '').substring(0, 200) : '',
+                    images: (p.images || []).slice(0, 3).map(img => ({
+                        src: img.src,
+                        alt: img.alt || p.title
+                    })),
+                    variants: availableVariants.map(v => ({
+                        id: v.id,
+                        title: v.title,
+                        price: v.price,
+                        sku: v.sku,
+                        inventoryQuantity: v.inventory_quantity,
+                        available: true
+                    })),
+                    totalStock: availableVariants.reduce((sum, v) => sum + v.inventory_quantity, 0),
+                    productType: p.product_type,
+                    vendor: p.vendor,
+                    tags: p.tags || []
+                };
+            });
+        
+        // Client-side search filter
+        if (search) {
+            const q = search.toLowerCase();
+            products = products.filter(p => 
+                p.title.toLowerCase().includes(q) || 
+                (p.handle && p.handle.toLowerCase().includes(q)) ||
+                (p.productType && p.productType.toLowerCase().includes(q))
+            );
+        }
+        
+        const totalProducts = products.length;
+        const totalPages = Math.ceil(totalProducts / parsedLimit);
+        const startIdx = (parsedPage - 1) * parsedLimit;
+        const paginatedProducts = products.slice(startIdx, startIdx + parsedLimit);
+        
+        res.json({
+            success: true,
+            products: paginatedProducts,
+            pagination: {
+                page: parsedPage,
+                limit: parsedLimit,
+                totalProducts,
+                totalPages,
+                hasNextPage: parsedPage < totalPages,
+                hasPrevPage: parsedPage > 1
+            }
+        });
+    } catch (error) {
+        console.error('Shopify products fetch error:', error.message, error.stack);
+        res.status(502).json({ error: 'Failed to fetch Shopify products', details: error.message, success: false, products: [] });
+    }
+});
+
+// Admin: List product requests
+app.get('/api/influencer-admin/product-requests', authenticateAdmin, async (req, res) => {
+    try {
+        const { status, influencerId, search, limit, page } = req.query;
+        
+        const filters = {};
+        if (status) filters.status = status;
+        if (influencerId) filters.influencerId = influencerId;
+        if (search) filters.search = search;
+        if (limit) filters.limit = limit;
+        if (page) filters.page = page;
+        
+        const result = await getProductRequests(filters);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Get product requests error:', error);
+        res.status(500).json({ error: 'Failed to fetch product requests' });
+    }
+});
+
+// Admin: Approve product request with auto-ship
+app.post('/api/influencer-admin/product-requests/:requestId/approve', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { adminNotes, autoShip = true } = req.body;
+        
+        const request = await getProductRequestById(requestId);
+        if (!request) return res.status(404).json({ error: 'Product request not found' });
+        if (request.status !== 'pending') {
+            return res.status(400).json({ error: 'Request is not in pending status' });
+        }
+        
+        let delhiveryResult = null;
+        
+        if (autoShip) {
+            // Create Delhivery shipment
+            const shipmentData = {
+                requestId: `INF-${requestId.substring(0, 8)}`,
+                customerName: request.shipping_full_name,
+                customerAddress: request.shipping_address_line1 + (request.shipping_address_line2 ? ' ' + request.shipping_address_line2 : ''),
+                customerCity: request.shipping_city,
+                customerState: request.shipping_state,
+                customerPincode: request.shipping_pincode,
+                customerPhone: request.shipping_phone,
+                items: [{
+                    name: request.product_title,
+                    quantity: 1,
+                    price: 0 // Influencer product is free
+                }]
+            };
+            
+            try {
+                delhiveryResult = await createDelhiveryForwardOrder(shipmentData, null);
+            } catch (delhiveryError) {
+                console.error('Delhivery booking failed, but request approved:', delhiveryError);
+                // Continue with approval even if Delhivery fails
+            }
+        }
+        
+        const updates = {
+            status: 'approved',
+            approvedAt: new Date().toISOString(),
+            adminNotes: adminNotes || null
+        };
+        
+        if (delhiveryResult) {
+            updates.delhiveryAwb = delhiveryResult.waybill;
+            updates.delhiveryShipmentId = delhiveryResult.shipment_id;
+        }
+        
+        const updated = await updateProductRequest(requestId, updates);
+        
+        res.json({
+            success: true,
+            request: updated,
+            shipment: delhiveryResult ? {
+                awb: delhiveryResult.waybill,
+                shipmentId: delhiveryResult.shipment_id,
+                trackingUrl: `https://www.delhivery.com/track?wb=${delhiveryResult.waybill}`
+            } : null
+        });
+    } catch (error) {
+        console.error('Approve product request error:', error);
+        res.status(500).json({ error: 'Failed to approve product request' });
+    }
+});
+
+// Admin: Bulk approve product requests as combined shipments (same influencer + same address = single shipment)
+app.post('/api/influencer-admin/product-requests/bulk-approve', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestIds, adminNotes } = req.body;
+
+        if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
+            return res.status(400).json({ error: 'requestIds array is required' });
+        }
+
+        // Fetch all requests
+        const requests = [];
+        for (const id of requestIds) {
+            const req_ = await getProductRequestById(id);
+            if (!req_) {
+                return res.status(404).json({ error: `Product request ${id} not found` });
+            }
+            if (req_.status !== 'pending') {
+                return res.status(400).json({ error: `Request ${id} is not pending (status: ${req_.status})` });
+            }
+            requests.push(req_);
+        }
+
+        // Group by influencer_id + shipping address
+        const groups = {};
+        for (const r of requests) {
+            const addrKey = [
+                r.shipping_full_name,
+                r.shipping_address_line1,
+                r.shipping_address_line2 || '',
+                r.shipping_city,
+                r.shipping_state,
+                r.shipping_pincode,
+                r.shipping_phone
+            ].join('|');
+            const groupKey = `${r.influencer_id}::${addrKey}`;
+            if (!groups[groupKey]) groups[groupKey] = [];
+            groups[groupKey].push(r);
+        }
+
+        const results = { success: [], failed: [], shipments: [] };
+
+        for (const [groupKey, groupRequests] of Object.entries(groups)) {
+            const [influencerId] = groupKey.split('::');
+            const first = groupRequests[0];
+
+            try {
+                // Build combined items list from all requests in group
+                const items = groupRequests.map(r => ({
+                    name: r.product_title,
+                    quantity: 1,
+                    price: 0
+                }));
+
+                // Create single Delhivery shipment for all items
+                const combinedRequestId = groupRequests.map(r => r.id.substring(0, 6)).join('-');
+                const shipmentData = {
+                    requestId: `INF-${combinedRequestId}`,
+                    customerName: first.shipping_full_name,
+                    customerAddress: first.shipping_address_line1 + (first.shipping_address_line2 ? ' ' + first.shipping_address_line2 : ''),
+                    customerCity: first.shipping_city,
+                    customerState: first.shipping_state,
+                    customerPincode: first.shipping_pincode,
+                    customerPhone: first.shipping_phone,
+                    items: items
+                };
+
+                let delhiveryResult = null;
+                try {
+                    delhiveryResult = await createDelhiveryForwardOrder(shipmentData, null);
+                } catch (delhiveryError) {
+                    console.error('Delhivery booking failed for group:', delhiveryError);
+                }
+
+                // Update all requests in group with shared shipment info
+                const updates = {
+                    status: 'approved',
+                    approvedAt: new Date().toISOString(),
+                    adminNotes: adminNotes || `Bulk approved with ${groupRequests.length} product(s) in single shipment`
+                };
+
+                if (delhiveryResult) {
+                    updates.delhiveryAwb = delhiveryResult.waybill;
+                    updates.delhiveryShipmentId = delhiveryResult.shipment_id;
+                }
+
+                for (const r of groupRequests) {
+                    try {
+                        await updateProductRequest(r.id, updates);
+                        results.success.push(r.id);
+                    } catch (updateErr) {
+                        results.failed.push({ id: r.id, error: updateErr.message });
+                    }
+                }
+
+                results.shipments.push({
+                    groupKey,
+                    influencerId,
+                    requestCount: groupRequests.length,
+                    products: groupRequests.map(r => r.product_title),
+                    awb: delhiveryResult?.waybill || null,
+                    shipmentId: delhiveryResult?.shipment_id || null
+                });
+
+            } catch (groupErr) {
+                for (const r of groupRequests) {
+                    results.failed.push({ id: r.id, error: groupErr.message });
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            results,
+            summary: {
+                total: requestIds.length,
+                succeeded: results.success.length,
+                failed: results.failed.length,
+                shipmentsCreated: results.shipments.length
+            }
+        });
+    } catch (error) {
+        console.error('Bulk approve product requests error:', error);
+        res.status(500).json({ error: 'Failed to bulk approve product requests' });
+    }
+});
+
+// Admin: Reject product request
+app.post('/api/influencer-admin/product-requests/:requestId/reject', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { rejectionReason, adminNotes } = req.body;
+        
+        if (!rejectionReason || rejectionReason.length < 10) {
+            return res.status(400).json({ error: 'rejectionReason must be at least 10 characters' });
+        }
+        
+        const request = await getProductRequestById(requestId);
+        if (!request) return res.status(404).json({ error: 'Product request not found' });
+        if (request.status !== 'pending') {
+            return res.status(400).json({ error: 'Request is not in pending status' });
+        }
+        
+        const updated = await updateProductRequest(requestId, {
+            status: 'rejected',
+            rejectedAt: new Date().toISOString(),
+            rejectionReason,
+            adminNotes: adminNotes || null
+        });
+        
+        res.json({ success: true, request: updated });
+    } catch (error) {
+        console.error('Reject product request error:', error);
+        res.status(500).json({ error: 'Failed to reject product request' });
+    }
+});
+
+// Influencer: Submit product request
+app.post('/api/influencer/product-requests/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { 
+            productTitle, productImageUrl, shopifyProductId, shopifyVariantId,
+            reason, shippingFullName, shippingAddressLine1, shippingAddressLine2,
+            shippingCity, shippingState, shippingPincode, shippingPhone 
+        } = req.body;
+        
+        if (!productTitle || productTitle.length < 3) {
+            return res.status(400).json({ error: 'productTitle must be at least 3 characters' });
+        }
+        if (!reason || reason.length < 10) {
+            return res.status(400).json({ error: 'reason must be at least 10 characters' });
+        }
+        if (!shippingPincode || shippingPincode.length !== 6) {
+            return res.status(400).json({ error: 'Invalid pincode (must be 6 digits)' });
+        }
+        if (!shippingPhone || shippingPhone.length !== 10) {
+            return res.status(400).json({ error: 'Invalid phone number (must be 10 digits)' });
+        }
+        
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        
+        const request = await createProductRequest({
+            influencerId: influencer.id,
+            productTitle,
+            productImageUrl: productImageUrl || null,
+            shopifyProductId: shopifyProductId || null,
+            shopifyVariantId: shopifyVariantId || null,
+            reason,
+            shippingFullName,
+            shippingAddressLine1,
+            shippingAddressLine2: shippingAddressLine2 || null,
+            shippingCity,
+            shippingState,
+            shippingPincode,
+            shippingPhone
+        });
+        
+        res.status(201).json({ success: true, request });
+    } catch (error) {
+        console.error('Submit product request error:', error);
+        res.status(500).json({ error: 'Failed to submit product request' });
+    }
+});
+
+// Influencer: List my product requests
+app.get('/api/influencer/product-requests/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { status, limit = 20 } = req.query;
+        
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) return res.status(401).json({ error: 'Invalid token' });
+        
+        const filters = { influencerId: influencer.id, limit };
+        if (status) filters.status = status;
+        
+        const result = await getProductRequests(filters);
+        
+        // Remove sensitive admin fields from response
+        const sanitizedRequests = result.requests.map(r => ({
+            id: r.id,
+            productTitle: r.product_title,
+            productImageUrl: r.product_image_url,
+            reason: r.reason,
+            status: r.status,
+            delhiveryAwb: r.delhivery_awb,
+            trackingUrl: r.delhivery_tracking_url,
+            shippedAt: r.shipped_at,
+            createdAt: r.created_at,
+            rejectionReason: r.rejection_reason
+        }));
+        
+        res.json({ success: true, requests: sanitizedRequests });
+    } catch (error) {
+        console.error('Get influencer product requests error:', error);
+        res.status(500).json({ error: 'Failed to fetch product requests' });
+    }
+});
+
+// Influencer: Browse Shopify products (inventory)
+app.get('/api/influencer/:token/shopify-products', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { search, limit = 20, page = 1 } = req.query;
+        const parsedLimit = Math.min(50, Math.max(1, parseInt(limit) || 20));
+        const parsedPage = Math.max(1, parseInt(page) || 1);
+        
+        // Validate Shopify config before making call
+        if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
+            return res.status(500).json({ error: 'Shopify not configured', success: false, products: [] });
+        }
+        
+        // Verify influencer exists
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid token', success: false, products: [] });
+        }
+        
+        // Fetch ALL active products from Shopify (uses cache)
+        const allProducts = await fetchAllShopifyProducts();
+        
+        // Filter to only products with inventory
+        let products = filterProductsWithInventory(allProducts)
+            .map(p => {
+                const availableVariants = p.variants;
+                return {
+                    id: p.id,
+                    shopifyId: p.id,
+                    title: p.title,
+                    handle: p.handle,
+                    description: p.body_html ? p.body_html.replace(/<[^>]*>/g, '').substring(0, 200) : '',
+                    images: (p.images || []).slice(0, 3).map(img => ({
+                        src: img.src,
+                        alt: img.alt || p.title
+                    })),
+                    variants: availableVariants.map(v => ({
+                        id: v.id,
+                        title: v.title,
+                        price: v.price,
+                        sku: v.sku,
+                        inventoryQuantity: v.inventory_quantity,
+                        available: true
+                    })),
+                    totalStock: availableVariants.reduce((sum, v) => sum + v.inventory_quantity, 0),
+                    productType: p.product_type,
+                    vendor: p.vendor,
+                    tags: p.tags || []
+                };
+            });
+        
+        // Client-side search filter
+        if (search) {
+            const q = search.toLowerCase();
+            products = products.filter(p => 
+                p.title.toLowerCase().includes(q) || 
+                (p.handle && p.handle.toLowerCase().includes(q)) ||
+                (p.productType && p.productType.toLowerCase().includes(q))
+            );
+        }
+        
+        const totalProducts = products.length;
+        const totalPages = Math.ceil(totalProducts / parsedLimit);
+        const startIdx = (parsedPage - 1) * parsedLimit;
+        const paginatedProducts = products.slice(startIdx, startIdx + parsedLimit);
+        
+        res.json({
+            success: true,
+            products: paginatedProducts,
+            pagination: {
+                page: parsedPage,
+                limit: parsedLimit,
+                totalProducts,
+                totalPages,
+                hasNextPage: parsedPage < totalPages,
+                hasPrevPage: parsedPage > 1
+            }
+        });
+    } catch (error) {
+        console.error('Shopify products fetch error:', error.message, error.stack);
+        res.status(502).json({ 
+            error: 'Failed to fetch Shopify products',
+            details: error.message,
+            success: false,
+            products: []
+        });
+    }
+});
+
+// Admin: List all shipments (for Shipments & Reels page)
+app.get('/api/influencer-admin/shipments', authenticateAdmin, async (req, res) => {
+    try {
+        const shipments = await listShipments();
+        
+        // Enrich with influencer data
+        const enriched = await Promise.all(
+            shipments.map(async (s) => {
+                const influencer = await getInfluencerById(s.influencer_id);
+                return {
+                    ...s,
+                    influencers: influencer ? {
+                        name: influencer.name,
+                        referral_code: influencer.referral_code,
+                        phone: influencer.phone
+                    } : null
+                };
+            })
+        );
+        
+        res.json({ success: true, shipments: enriched });
+    } catch (error) {
+        console.error('List shipments error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipments' });
+    }
+});
+
+// Admin: Get single shipment details
+app.get('/api/influencer-admin/shipment-detail/:shipmentId', authenticateAdmin, async (req, res) => {
+    try {
+        const { shipmentId } = req.params;
+        const shipment = await getShipmentById(shipmentId);
+        
+        if (!shipment) {
+            return res.status(404).json({ error: 'Shipment not found' });
+        }
+        
+        // Enrich with influencer data
+        const influencer = await getInfluencerById(shipment.influencer_id);
+        const enriched = {
+            ...shipment,
+            influencers: influencer ? {
+                name: influencer.name,
+                referral_code: influencer.referral_code,
+                phone: influencer.phone
+            } : null
+        };
+        
+        res.json({ success: true, shipment: enriched });
+    } catch (error) {
+        console.error('Get shipment error:', error);
+        res.status(500).json({ error: 'Failed to fetch shipment' });
+    }
+});
+
+// Admin: Update reel status
+app.post('/api/influencer-admin/shipments/:shipmentId/reel-status', authenticateAdmin, async (req, res) => {
+    try {
+        const { shipmentId } = req.params;
+        const { reelStatus } = req.body;
+        
+        if (!['pending', 'received', 'overdue', 'submitted'].includes(reelStatus)) {
+            return res.status(400).json({ error: 'Invalid reel status' });
+        }
+        
+        const updated = await updateShipment(shipmentId, {
+            reel_status: reelStatus,
+            reel_received_at: reelStatus === 'received' ? new Date().toISOString() : null
+        });
+        
+        res.json({ success: true, shipment: updated });
+    } catch (error) {
+        console.error('Update reel status error:', error);
+        res.status(500).json({ error: 'Failed to update reel status' });
+    }
+});
+
+// (Manual shipment route moved above /:influencerId to prevent route conflict)
+
+// ==================== MESSAGING SYSTEM ====================
+
+// ── Admin Messaging Endpoints ──
+
+// Send message (admin to influencer or broadcast)
+app.post('/api/admin/messages', authenticateAdmin, async (req, res) => {
+    try {
+        const { recipientType, recipientId, subject, content, isBroadcast } = req.body;
+        
+        if (!content) {
+            return res.status(400).json({ error: 'Message content is required' });
+        }
+
+        if (!isBroadcast && !recipientId) {
+            return res.status(400).json({ error: 'Recipient is required for direct messages' });
+        }
+
+        const message = await createMessage({
+            senderType: 'admin',
+            senderId: null,
+            recipientType: isBroadcast ? 'all' : recipientType,
+            recipientId: isBroadcast ? null : recipientId,
+            subject,
+            content,
+            isBroadcast: isBroadcast || false
+        });
+
+        res.json({ success: true, message });
+    } catch (error) {
+        console.error('Admin send message error:', error);
+        res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
+// Get all messages (with optional influencer filter)
+app.get('/api/admin/messages', authenticateAdmin, async (req, res) => {
+    try {
+        const { influencerId, type } = req.query;
+        const messages = await getAdminMessages({ influencerId, type });
+        res.json({ success: true, messages });
+    } catch (error) {
+        console.error('Admin get messages error:', error);
+        res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+});
+
+// Mark message as read (admin side)
+app.post('/api/admin/messages/:messageId/read', authenticateAdmin, async (req, res) => {
+    try {
+        const message = await markMessageAsRead(req.params.messageId);
+        res.json({ success: true, message });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to mark as read' });
+    }
+});
+
+// ── Influencer Messaging Endpoints ──
+
+// Send message (influencer to admin)
+app.post('/api/influencer/messages', async (req, res) => {
+    try {
+        const { token, content, subject } = req.body;
+        
+        if (!token || !content) {
+            return res.status(400).json({ error: 'Token and content are required' });
+        }
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid authentication' });
+        }
+
+        const message = await createMessage({
+            senderType: 'influencer',
+            senderId: influencer.id,
+            recipientType: 'admin',
+            recipientId: null,
+            subject,
+            content,
+            isBroadcast: false
+        });
+
+        res.json({ success: true, message });
+    } catch (error) {
+        console.error('Influencer send message error:', error);
+        res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
+// Get influencer's messages
+app.get('/api/influencer/messages', async (req, res) => {
+    try {
+        const { token, unreadOnly } = req.query;
+        
+        if (!token) {
+            return res.status(400).json({ error: 'Token is required' });
+        }
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid authentication' });
+        }
+
+        const messages = await getInfluencerMessages(influencer.id, { unreadOnly: unreadOnly === 'true' });
+        res.json({ success: true, messages });
+    } catch (error) {
+        console.error('Influencer get messages error:', error);
+        res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+});
+
+// Mark message as read (influencer side)
+app.post('/api/influencer/messages/:messageId/read', async (req, res) => {
+    try {
+        const { token } = req.body;
+        
+        if (!token) {
+            return res.status(400).json({ error: 'Token is required' });
+        }
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid authentication' });
+        }
+
+        const message = await markMessageAsRead(req.params.messageId);
+        res.json({ success: true, message });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to mark as read' });
+    }
+});
+
+// Get unread message count
+app.get('/api/influencer/messages/unread-count', async (req, res) => {
+    try {
+        const { token } = req.query;
+        
+        if (!token) {
+            return res.status(400).json({ error: 'Token is required' });
+        }
+
+        const influencer = await getInfluencerByToken(token);
+        if (!influencer) {
+            return res.status(401).json({ error: 'Invalid authentication' });
+        }
+
+        const count = await getUnreadMessageCount(influencer.id);
+        res.json({ success: true, count });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get unread count' });
+    }
+});
+
+// ==================== MARKETING DASHBOARD ====================
+// All marketing routes are isolated from return/exchange logic.
+// They use the same authenticateAdmin middleware and Supabase client.
+
+// ── Customer Intelligence ──
+
+// GET /api/admin/marketing/customers - List customers with filters
+app.get('/api/admin/marketing/customers', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getMarketingCustomers(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Customers list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch customers' });
+    }
+});
+
+// GET /api/admin/marketing/customers/stats - Customer statistics (SMART)
+app.get('/api/admin/marketing/customers/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getSmartCustomerStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Customer stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch customer stats' });
+    }
+});
+
+// POST /api/admin/marketing/customers/recompute-segments - Smart recompute all segments
+app.post('/api/admin/marketing/customers/recompute-segments', authenticateAdmin, async (req, res) => {
+    try {
+        console.log('[Marketing] Starting smart segment recomputation...');
+        const result = await marketingDB.recomputeAllCustomerSegments();
+        await marketingDB.createAuditLog({
+            action: 'recomputed',
+            entityType: 'customer',
+            actor: req.user?.sub || 'admin',
+            details: { total: result.total, updated: result.updated },
+            ipAddress: req.ip
+        });
+        res.json({ success: true, ...result, message: `Recomputed ${result.total} customers, ${result.updated} updated` });
+    } catch (error) {
+        console.error('[Marketing] Recompute error:', error.message);
+        res.status(500).json({ error: 'Recompute failed: ' + error.message });
+    }
+});
+
+// GET /api/admin/marketing/customers/segments - List all segments
+app.get('/api/admin/marketing/customers/segments', authenticateAdmin, async (req, res) => {
+    try {
+        const segments = await marketingDB.getCustomerSegments();
+        res.json({ success: true, segments });
+    } catch (error) {
+        console.error('[Marketing] Segments error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch segments' });
+    }
+});
+
+// GET /api/admin/marketing/customers/segments/:name - Get customers by segment
+app.get('/api/admin/marketing/customers/segments/:name', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getCustomersBySegment(req.params.name, req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Segment customers error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch segment customers' });
+    }
+});
+
+// GET /api/admin/marketing/customers/:id - Get single customer
+app.get('/api/admin/marketing/customers/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const customer = await marketingDB.getMarketingCustomerById(req.params.id);
+        if (!customer) return res.status(404).json({ error: 'Customer not found' });
+        const orders = await marketingDB.getCustomerOrders(req.params.id);
+        res.json({ success: true, customer, orders });
+    } catch (error) {
+        console.error('[Marketing] Customer detail error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch customer' });
+    }
+});
+
+// PUT /api/admin/marketing/customers/:id - Update customer
+app.put('/api/admin/marketing/customers/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const updated = await marketingDB.updateMarketingCustomer(req.params.id, req.body);
+        await marketingDB.createAuditLog({
+            action: 'updated',
+            entityType: 'customer',
+            entityId: parseInt(req.params.id),
+            actor: req.user?.sub || 'admin',
+            newValues: req.body,
+            ipAddress: req.ip
+        });
+        res.json({ success: true, customer: updated });
+    } catch (error) {
+        console.error('[Marketing] Customer update error:', error.message);
+        res.status(500).json({ error: 'Failed to update customer' });
+    }
+});
+
+// POST /api/admin/marketing/customers/sync - Trigger customer sync from Shopify (INCREMENTAL)
+app.post('/api/admin/marketing/customers/sync', authenticateAdmin, async (req, res) => {
+    try {
+        const forceFull = req.body?.forceFull === true;
+        console.log('[Marketing] Starting customer sync from Shopify...');
+        const shopifyStore = process.env.SHOPIFY_STORE;
+        const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
+
+        if (!shopifyStore || !accessToken) {
+            return res.status(400).json({ error: 'Shopify not configured' });
+        }
+
+        // Determine if this is an incremental sync
+        let lastSyncTime = null;
+        if (!forceFull) {
+            lastSyncTime = await marketingDB.getLastCustomerSyncTime();
+        }
+        const isIncremental = !!lastSyncTime;
+        console.log(`[Marketing] Sync mode: ${isIncremental ? 'INCREMENTAL' : 'FULL'}${isIncremental ? ` (since ${lastSyncTime})` : ''}`);
+
+        let totalSynced = 0;
+        let totalSkipped = 0;
+        let phonesRecovered = 0;
+        let cursor = null;
+        let pagesFetched = 0;
+        const BATCH_SIZE = 50; // Upsert in batches of 50
+
+        do {
+            // Build URL - use updated_at_min for incremental sync
+            let url = `https://${shopifyStore}/admin/api/2024-01/customers.json?limit=250`;
+            if (isIncremental && lastSyncTime) {
+                url += `&updated_at_min=${lastSyncTime}`;
+            }
+            if (cursor) url += `&page_info=${cursor}`;
+
+            const response = await fetch(url, {
+                headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text().catch(() => 'No body');
+                console.error('[Marketing] Shopify API error:', response.status, response.statusText, errorBody);
+                throw new Error(`Shopify API ${response.status} ${response.statusText}: ${errorBody}`);
+            }
+
+            const data = await response.json();
+            const customers = data.customers || [];
+
+            if (customers.length === 0) {
+                console.log('[Marketing] No more customers to fetch');
+                break;
+            }
+
+            // Process customers into batch, skipping null/invalid emails
+            const batch = [];
+            for (const c of customers) {
+                // Skip customers without valid email (guest/phone-only accounts)
+                if (!c.email || typeof c.email !== 'string' || !c.email.includes('@')) {
+                    totalSkipped++;
+                    continue;
+                }
+
+                const totalOrders = c.orders_count || 0;
+                const totalSpent = parseFloat(c.total_spent || 0);
+                const avgOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
+
+                // Smart server-side segmentation using RFM analysis
+                const customerData = {
+                    total_spent: totalSpent,
+                    total_orders: totalOrders,
+                    last_order_date: c.last_order_id ? new Date().toISOString() : null,
+                    first_order_date: c.created_at || null
+                };
+                const segment = marketingDB.smartSegment(customerData);
+                const tier = marketingDB.smartTier(totalSpent);
+                const healthScore = marketingDB.computeHealthScore(customerData);
+                const churnRisk = marketingDB.computeChurnRisk(customerData);
+
+                // Extract phone: prefer top-level, fallback to default_address.phone
+                const customerPhone = c.phone || c.default_address?.phone || null;
+                if (!c.phone && c.default_address?.phone) phonesRecovered++;
+
+                batch.push({
+                    shopifyCustomerId: c.id,
+                    firstName: c.first_name,
+                    lastName: c.last_name,
+                    email: c.email,
+                    phone: customerPhone,
+                    totalOrders,
+                    totalSpent,
+                    averageOrderValue: avgOrderValue,
+                    lastOrderDate: c.last_order_name ? new Date().toISOString() : null,
+                    firstOrderDate: c.created_at || null,
+                    tags: c.tags ? c.tags.split(',').map(t => t.trim()) : [],
+                    location: c.default_address ? `${c.default_address.city || ''}, ${c.default_address.province || ''}`.trim() : null,
+                    acceptsMarketing: c.accepts_marketing || false,
+                    verifiedEmail: c.verified_email || false,
+                    segment,
+                    lifetimeValueTier: tier,
+                    healthScore,
+                    churnRisk
+                });
+
+                // Upsert in batches
+                if (batch.length >= BATCH_SIZE) {
+                    try {
+                        await marketingDB.batchUpsertMarketingCustomers(batch);
+                        totalSynced += batch.length;
+                    } catch (batchErr) {
+                        console.error('[Marketing] Batch upsert error:', batchErr.message);
+                        // Fallback: try one-by-one for this batch
+                        for (const item of batch) {
+                            try {
+                                await marketingDB.upsertMarketingCustomer(item);
+                                totalSynced++;
+                            } catch (e) {
+                                console.error(`[Marketing] Skip customer ${item.email}: ${e.message}`);
+                                totalSkipped++;
+                            }
+                        }
+                    }
+                    batch.length = 0; // Clear batch
+                }
+            }
+
+            // Upsert remaining items in final batch
+            if (batch.length > 0) {
+                try {
+                    await marketingDB.batchUpsertMarketingCustomers(batch);
+                    totalSynced += batch.length;
+                } catch (batchErr) {
+                    console.error('[Marketing] Final batch upsert error:', batchErr.message);
+                    for (const item of batch) {
+                        try {
+                            await marketingDB.upsertMarketingCustomer(item);
+                            totalSynced++;
+                        } catch (e) {
+                            console.error(`[Marketing] Skip customer ${item.email}: ${e.message}`);
+                            totalSkipped++;
+                        }
+                    }
+                }
+            }
+
+            console.log(`[Marketing] Page ${pagesFetched + 1}: processed ${customers.length} customers (${totalSynced} synced, ${totalSkipped} skipped)`);
+
+            // Extract cursor from Link header for next page
+            const linkHeader = response.headers.get('link');
+            cursor = null;
+            if (linkHeader) {
+                const nextMatch = linkHeader.match(/page_info=([^&>]+)>; rel="next"/);
+                if (nextMatch) cursor = nextMatch[1];
+            }
+            pagesFetched++;
+        } while (cursor && pagesFetched < 100); // Safety limit: max 100 pages
+
+        await marketingDB.createAuditLog({
+            action: 'synced',
+            entityType: 'customer',
+            actor: req.user?.sub || 'admin',
+            details: { totalSynced, totalSkipped, phonesRecovered, mode: isIncremental ? 'incremental' : 'full' },
+            ipAddress: req.ip
+        });
+
+        const mode = isIncremental ? 'incremental' : 'full';
+        res.json({ success: true, totalSynced, totalSkipped, phonesRecovered, mode, message: `Synced ${totalSynced} customers (${mode})${totalSkipped > 0 ? `, ${totalSkipped} skipped (no email)` : ''}${phonesRecovered > 0 ? `, ${phonesRecovered} phones recovered from address` : ''}` });
+    } catch (error) {
+        console.error('[Marketing] Customer sync error:', error.message);
+        res.status(500).json({ error: 'Customer sync failed: ' + error.message });
+    }
+});
+
+// ── Templates ──
+
+// GET /api/admin/marketing/templates - List all templates
+app.get('/api/admin/marketing/templates', authenticateAdmin, async (req, res) => {
+    try {
+        // Parse isActive filter - convert string to boolean
+        const filters = { ...req.query };
+        if (filters.isActive !== undefined) {
+            filters.isActive = filters.isActive === 'true';
+        }
+        
+        const templates = await marketingDB.getMarketingTemplates(filters);
+        
+        // Enrich with usage stats
+        for (const t of templates) {
+            // Count campaigns using this template
+            const { count: campaignCount } = await supabase
+                .from('marketing_campaigns').select('*', { count: 'exact', head: true })
+                .eq('template_id', t.id);
+            
+            // Count abandoned carts using this template
+            const { count: cartCount } = await supabase
+                .from('marketing_abandoned_carts').select('*', { count: 'exact', head: true })
+                .eq('message_template_id', t.id);
+            
+            t.campaign_usage = campaignCount || 0;
+            t.cart_usage = cartCount || 0;
+        }
+        
+        res.json({ success: true, templates });
+    } catch (error) {
+        console.error('[Marketing] Templates list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch templates' });
+    }
+});
+
+// GET /api/admin/marketing/templates/:id - Get template by ID
+app.get('/api/admin/marketing/templates/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const template = await marketingDB.getMarketingTemplateById(req.params.id);
+        if (!template) return res.status(404).json({ error: 'Template not found' });
+        res.json({ success: true, template });
+    } catch (error) {
+        console.error('[Marketing] Template detail error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch template' });
+    }
+});
+
+// POST /api/admin/marketing/templates - Create template
+app.post('/api/admin/marketing/templates', authenticateAdmin, async (req, res) => {
+    try {
+        const { name, category, language, header, headerType, body, footer, buttons, variables } = req.body;
+        if (!name || !body) {
+            return res.status(400).json({ error: 'Template name and body are required' });
+        }
+        const template = await marketingDB.createMarketingTemplate({
+            name, category, language, header, headerType, body, footer, buttons, variables,
+            createdBy: req.user?.sub || 'admin'
+        });
+        await marketingDB.createAuditLog({
+            action: 'created', entityType: 'template', entityId: template.id, entityName: name,
+            actor: req.user?.sub || 'admin', newValues: req.body, ipAddress: req.ip
+        });
+        res.json({ success: true, template });
+    } catch (error) {
+        console.error('[Marketing] Template create error:', error.message);
+        res.status(500).json({ error: 'Failed to create template' });
+    }
+});
+
+// PUT /api/admin/marketing/templates/:id - Update template
+app.put('/api/admin/marketing/templates/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const existing = await marketingDB.getMarketingTemplateById(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Template not found' });
+
+        const updated = await marketingDB.updateMarketingTemplate(req.params.id, req.body);
+        await marketingDB.createAuditLog({
+            action: 'updated', entityType: 'template', entityId: parseInt(req.params.id),
+            actor: req.user?.sub || 'admin', previousValues: existing, newValues: req.body, ipAddress: req.ip
+        });
+        res.json({ success: true, template: updated });
+    } catch (error) {
+        console.error('[Marketing] Template update error:', error.message);
+        res.status(500).json({ error: 'Failed to update template' });
+    }
+});
+
+// DELETE /api/admin/marketing/templates/:id - Soft delete template
+app.delete('/api/admin/marketing/templates/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.deleteMarketingTemplate(req.params.id);
+        await marketingDB.createAuditLog({
+            action: 'deleted', entityType: 'template', entityId: parseInt(req.params.id),
+            actor: req.user?.sub || 'admin', ipAddress: req.ip
+        });
+        res.json(result);
+    } catch (error) {
+        console.error('[Marketing] Template delete error:', error.message);
+        res.status(500).json({ error: 'Failed to delete template' });
+    }
+});
+
+// POST /api/admin/marketing/templates/:id/submit-meta - Submit template to Meta for approval
+app.post('/api/admin/marketing/templates/:id/submit-meta', authenticateAdmin, async (req, res) => {
+    try {
+        const template = await marketingDB.getMarketingTemplateById(req.params.id);
+        if (!template) return res.status(404).json({ error: 'Template not found' });
+
+        if (!metaWhatsApp.isMetaConfigured()) {
+            return res.status(400).json({ error: 'Meta Cloud API not configured. Set META_ACCESS_TOKEN and META_PHONE_NUMBER_ID.' });
+        }
+
+        const result = await metaWhatsApp.submitTemplateToMeta(template);
+        if (result.success) {
+            await marketingDB.updateMarketingTemplate(req.params.id, {
+                metaTemplateId: result.templateId,
+                metaStatus: 'PENDING'
+            });
+            await marketingDB.createAuditLog({
+                action: 'template_submitted', entityType: 'template', entityId: parseInt(req.params.id),
+                actor: req.user?.sub || 'admin', details: { metaTemplateId: result.templateId }, ipAddress: req.ip
+            });
+        }
+        res.json({ success: result.success, error: result.error });
+    } catch (error) {
+        console.error('[Marketing] Template submit error:', error.message);
+        res.status(500).json({ error: 'Failed to submit template to Meta' });
+    }
+});
+
+// GET /api/admin/marketing/templates/:id/meta-status - Check template status on Meta
+app.get('/api/admin/marketing/templates/:id/meta-status', authenticateAdmin, async (req, res) => {
+    try {
+        const template = await marketingDB.getMarketingTemplateById(req.params.id);
+        if (!template) return res.status(404).json({ error: 'Template not found' });
+
+        const result = await metaWhatsApp.getTemplateStatusFromMeta(template.name);
+        if (result.success && result.status) {
+            await marketingDB.updateMarketingTemplate(req.params.id, {
+                metaStatus: result.status,
+                metaRejectionReason: result.rejectionReason
+            });
+        }
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Template status check error:', error.message);
+        res.status(500).json({ error: 'Failed to check template status' });
+    }
+});
+
+// GET /api/admin/marketing/meta/templates - List all templates from Meta
+app.get('/api/admin/marketing/meta/templates', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await metaWhatsApp.listMetaTemplates(req.query.limit || 50);
+        res.json(result);
+    } catch (error) {
+        console.error('[Marketing] Meta templates list error:', error.message);
+        res.status(500).json({ error: 'Failed to list Meta templates' });
+    }
+});
+
+// POST /api/admin/marketing/templates/sync-from-meta - Sync templates from Meta to local DB
+app.post('/api/admin/marketing/templates/sync-from-meta', authenticateAdmin, async (req, res) => {
+    try {
+        // Check which specific credentials are missing
+        const missing = [];
+        if (!process.env.META_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN === 'your_meta_access_token_here') {
+            missing.push('META_ACCESS_TOKEN');
+        }
+        if (!process.env.META_PHONE_NUMBER_ID || process.env.META_PHONE_NUMBER_ID === 'your_phone_number_id_here') {
+            missing.push('META_PHONE_NUMBER_ID');
+        }
+        if (!process.env.META_WABA_ID || process.env.META_WABA_ID === 'your_waba_id_here') {
+            missing.push('META_WABA_ID');
+        }
+        
+        if (missing.length > 0) {
+            return res.status(400).json({ 
+                error: `Meta Cloud API credentials not configured. Missing: ${missing.join(', ')}. Add them in your .env file. Get credentials from https://developers.facebook.com > Your App > WhatsApp > API Setup`,
+                missingCredentials: missing
+            });
+        }
+
+        if (!metaWhatsApp.isMetaConfigured()) {
+            return res.status(400).json({ error: 'Meta Cloud API not properly configured. Check META_ACCESS_TOKEN and META_PHONE_NUMBER_ID in .env' });
+        }
+
+        // Fetch all templates from Meta
+        const result = await metaWhatsApp.listMetaTemplates(100);
+        
+        if (!result.success || !result.templates) {
+            return res.status(500).json({ error: result.error || 'Failed to fetch templates from Meta' });
+        }
+
+        const metaTemplates = result.templates;
+        let created = 0;
+        let updated = 0;
+        let skipped = 0;
+
+        for (const metaTemplate of metaTemplates) {
+            try {
+                // Extract template components
+                const components = metaTemplate.components || [];
+                
+                let header = null;
+                let headerType = 'text';
+                let body = '';
+                let footer = null;
+                let buttons = [];
+                let variables = [];
+
+                // Parse components
+                for (const component of components) {
+                    if (component.type === 'HEADER') {
+                        headerType = (component.format || 'TEXT').toLowerCase();
+                        if (headerType === 'text' && component.text) {
+                            header = component.text;
+                        }
+                    } else if (component.type === 'BODY') {
+                        body = component.text || '';
+                        // Extract variables from example
+                        if (component.example?.body_text?.[0]) {
+                            const examples = component.example.body_text[0];
+                            const varRegex = /\{\{(\d+)\}\}/g;
+                            let match;
+                            let varIndex = 0;
+                            while ((match = varRegex.exec(body)) !== null) {
+                                varIndex++;
+                                variables.push({
+                                    name: match[1],
+                                    type: 'text',
+                                    example: examples[varIndex - 1] || 'example'
+                                });
+                            }
+                        }
+                    } else if (component.type === 'FOOTER') {
+                        footer = component.text || null;
+                    } else if (component.type === 'BUTTONS') {
+                        buttons = (component.buttons || []).map(btn => ({
+                            type: btn.type || 'QUICK_REPLY',
+                            text: btn.text,
+                            url: btn.url || null,
+                            phone_number: btn.phone_number || null
+                        }));
+                    }
+                }
+
+                // Determine category from Meta template category
+                const category = (metaTemplate.category || 'MARKETING').toLowerCase();
+                
+                // Check if template already exists
+                const existing = await marketingDB.getMarketingTemplateByName(metaTemplate.name);
+                
+                if (existing) {
+                    // Update existing template
+                    await marketingDB.updateMarketingTemplate(existing.id, {
+                        name: metaTemplate.name,
+                        category: category,
+                        language: metaTemplate.language || 'en',
+                        status: metaTemplate.status === 'APPROVED' ? 'approved' : 'pending_approval',
+                        header: header,
+                        headerType: headerType,
+                        body: body,
+                        footer: footer,
+                        buttons: buttons,
+                        variables: variables,
+                        metaTemplateId: metaTemplate.id,
+                        metaStatus: metaTemplate.status || 'PENDING',
+                        metaRejectionReason: metaTemplate.rejection_reason || null,
+                        metaLastSyncedAt: new Date().toISOString(),
+                        isActive: true
+                    });
+                    updated++;
+                } else {
+                    // Create new template
+                    await marketingDB.createMarketingTemplate({
+                        name: metaTemplate.name,
+                        category: category,
+                        language: metaTemplate.language || 'en',
+                        status: metaTemplate.status === 'APPROVED' ? 'approved' : 'pending_approval',
+                        header: header,
+                        headerType: headerType,
+                        body: body,
+                        footer: footer,
+                        buttons: buttons,
+                        variables: variables,
+                        metaTemplateId: metaTemplate.id,
+                        metaStatus: metaTemplate.status || 'PENDING',
+                        metaRejectionReason: metaTemplate.rejection_reason || null,
+                        metaLastSyncedAt: new Date().toISOString(),
+                        isActive: true
+                    });
+                    created++;
+                }
+            } catch (error) {
+                console.error(`[Sync] Error processing template ${metaTemplate.name}:`, error.message);
+                skipped++;
+            }
+        }
+
+        // Log the sync action
+        await marketingDB.createAuditLog({
+            action: 'templates_synced_from_meta',
+            actor: req.user?.sub || 'admin',
+            details: { created, updated, skipped, total: metaTemplates.length },
+            ipAddress: req.ip
+        });
+
+        res.json({
+            success: true,
+            message: `Synced ${metaTemplates.length} templates from Meta`,
+            created,
+            updated,
+            skipped
+        });
+    } catch (error) {
+        console.error('[Marketing] Sync from Meta error:', error.message);
+        res.status(500).json({ error: 'Failed to sync templates from Meta' });
+    }
+});
+
+// ── Campaigns ──
+
+// GET /api/admin/marketing/campaigns - List campaigns
+app.get('/api/admin/marketing/campaigns', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getMarketingCampaigns(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Campaigns list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch campaigns' });
+    }
+});
+
+// GET /api/admin/marketing/campaigns/:id - Get campaign by ID
+app.get('/api/admin/marketing/campaigns/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        const recipientStats = await marketingDB.getCampaignRecipientStats(req.params.id);
+        res.json({ success: true, campaign, recipientStats });
+    } catch (error) {
+        console.error('[Marketing] Campaign detail error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch campaign' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns - Create campaign
+app.post('/api/admin/marketing/campaigns', authenticateAdmin, async (req, res) => {
+    try {
+        const { name, description, type, templateId, segmentFilter, recipientCount,
+                excludedCustomers, scheduledAt, sendWindowStart, sendWindowEnd,
+                timezone, budget, costPerMessage, notes, tags } = req.body;
+
+        if (!name) return res.status(400).json({ error: 'Campaign name is required' });
+
+        const campaign = await marketingDB.createMarketingCampaign({
+            name, description, type, templateId, segmentFilter, recipientCount,
+            excludedCustomers, scheduledAt, sendWindowStart, sendWindowEnd,
+            timezone, budget, costPerMessage, notes, tags,
+            createdBy: req.user?.sub || 'admin'
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'created', entityType: 'campaign', entityId: campaign.id, entityName: name,
+            actor: req.user?.sub || 'admin', newValues: req.body, ipAddress: req.ip
+        });
+        res.json({ success: true, campaign });
+    } catch (error) {
+        console.error('[Marketing] Campaign create error:', error.message);
+        res.status(500).json({ error: 'Failed to create campaign' });
+    }
+});
+
+// PUT /api/admin/marketing/campaigns/:id - Update campaign (only draft/scheduled)
+app.put('/api/admin/marketing/campaigns/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const existing = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Campaign not found' });
+        if (!['draft', 'scheduled'].includes(existing.status)) {
+            return res.status(400).json({ error: 'Can only edit draft or scheduled campaigns' });
+        }
+
+        const updated = await marketingDB.updateMarketingCampaign(req.params.id, req.body);
+        await marketingDB.createAuditLog({
+            action: 'updated', entityType: 'campaign', entityId: parseInt(req.params.id),
+            actor: req.user?.sub || 'admin', previousValues: existing, newValues: req.body, ipAddress: req.ip
+        });
+        res.json({ success: true, campaign: updated });
+    } catch (error) {
+        console.error('[Marketing] Campaign update error:', error.message);
+        res.status(500).json({ error: 'Failed to update campaign' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns/:id/recipients - Add recipients to campaign
+app.post('/api/admin/marketing/campaigns/:id/recipients', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        if (campaign.status !== 'draft') {
+            return res.status(400).json({ error: 'Can only add recipients to draft campaigns' });
+        }
+
+        const { recipients } = req.body;
+        if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+            return res.status(400).json({ error: 'Recipients array is required' });
+        }
+
+        const added = await marketingDB.addCampaignRecipients(req.params.id, recipients);
+        res.json({ success: true, count: added.length });
+    } catch (error) {
+        console.error('[Marketing] Add recipients error:', error.message);
+        res.status(500).json({ error: 'Failed to add recipients' });
+    }
+});
+
+// GET /api/admin/marketing/campaigns/:id/recipients - Get campaign recipients
+app.get('/api/admin/marketing/campaigns/:id/recipients', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getCampaignRecipients(req.params.id, req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Recipients list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch recipients' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns/:id/launch - Launch campaign (send messages)
+app.post('/api/admin/marketing/campaigns/:id/launch', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        if (campaign.status !== 'draft' && campaign.status !== 'scheduled') {
+            return res.status(400).json({ error: 'Can only launch draft or scheduled campaigns' });
+        }
+        if (!campaign.template_id) {
+            return res.status(400).json({ error: 'Campaign must have a template assigned before launching' });
+        }
+
+        // Get template
+        const template = await marketingDB.getMarketingTemplateById(campaign.template_id);
+        if (!template) return res.status(400).json({ error: 'Campaign template not found' });
+
+        // Update status to sending
+        await marketingDB.updateMarketingCampaign(req.params.id, { status: 'sending' });
+
+        await marketingDB.createAuditLog({
+            action: 'launched', entityType: 'campaign', entityId: parseInt(req.params.id),
+            entityName: campaign.name, actor: req.user?.sub || 'admin', ipAddress: req.ip
+        });
+
+        // Launch async send (non-blocking)
+        sendCampaignAsync(req.params.id, campaign, template, req.user?.sub || 'admin');
+
+        res.json({ success: true, message: 'Campaign launch initiated. Messages will be sent in background.' });
+    } catch (error) {
+        console.error('[Marketing] Campaign launch error:', error.message);
+        res.status(500).json({ error: 'Failed to launch campaign' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns/:id/pause - Pause campaign
+app.post('/api/admin/marketing/campaigns/:id/pause', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+        if (campaign.status !== 'sending') {
+            return res.status(400).json({ error: 'Can only pause sending campaigns' });
+        }
+
+        const updated = await marketingDB.updateMarketingCampaign(req.params.id, { status: 'paused' });
+        await marketingDB.createAuditLog({
+            action: 'paused', entityType: 'campaign', entityId: parseInt(req.params.id),
+            entityName: campaign.name, actor: req.user?.sub || 'admin', ipAddress: req.ip
+        });
+        res.json({ success: true, campaign: updated });
+    } catch (error) {
+        console.error('[Marketing] Campaign pause error:', error.message);
+        res.status(500).json({ error: 'Failed to pause campaign' });
+    }
+});
+
+// POST /api/admin/marketing/campaigns/:id/cancel - Cancel campaign
+app.post('/api/admin/marketing/campaigns/:id/cancel', authenticateAdmin, async (req, res) => {
+    try {
+        const campaign = await marketingDB.getMarketingCampaignById(req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+        const updated = await marketingDB.updateMarketingCampaign(req.params.id, { status: 'cancelled' });
+        await marketingDB.createAuditLog({
+            action: 'cancelled', entityType: 'campaign', entityId: parseInt(req.params.id),
+            entityName: campaign.name, actor: req.user?.sub || 'admin', ipAddress: req.ip
+        });
+        res.json({ success: true, campaign: updated });
+    } catch (error) {
+        console.error('[Marketing] Campaign cancel error:', error.message);
+        res.status(500).json({ error: 'Failed to cancel campaign' });
+    }
+});
+
+// GET /api/admin/marketing/campaigns/:id/stats - Campaign stats
+app.get('/api/admin/marketing/campaigns/:id/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getCampaignRecipientStats(req.params.id);
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Campaign stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch campaign stats' });
+    }
+});
+
+// ── Campaign Async Sender (background) ──
+
+async function sendCampaignAsync(campaignId, campaign, template, actor) {
+    try {
+        const { data: recipients } = await supabase
+            .from('marketing_campaign_recipients')
+            .select('*')
+            .eq('campaign_id', campaignId)
+            .in('status', ['pending']);
+
+        if (!recipients || recipients.length === 0) {
+            await marketingDB.updateMarketingCampaign(campaignId, { status: 'sent' });
+            await marketingDB.createCampaignSnapshot(campaignId);
+            return;
+        }
+
+        console.log(`[Marketing Campaign] Sending ${recipients.length} messages for campaign ${campaignId}`);
+
+        const batchSize = 50;
+        const batchDelay = 2000;
+        let sentCount = 0;
+        let failedCount = 0;
+
+        for (let i = 0; i < recipients.length; i += batchSize) {
+            // Check if campaign was paused/cancelled
+            const current = await marketingDB.getMarketingCampaignById(campaignId);
+            if (current && (current.status === 'paused' || current.status === 'cancelled')) {
+                console.log(`[Marketing Campaign] Campaign ${campaignId} ${current.status}. Stopping send.`);
+                break;
+            }
+
+            const batch = recipients.slice(i, i + batchSize);
+            const sendPromises = batch.map(async (recipient) => {
+                try {
+                    // Mark as queued
+                    await marketingDB.updateCampaignRecipient(recipient.id, {
+                        status: 'queued',
+                        queuedAt: new Date().toISOString()
+                    });
+
+                    // Send via Meta WhatsApp (falls back to existing bot)
+                    const result = await metaWhatsApp.sendTemplateMessage(
+                        recipient.phone,
+                        template.name,
+                        recipient.template_variables ? Object.values(recipient.template_variables) : [],
+                        template.language || 'en'
+                    );
+
+                    if (result.success) {
+                        await marketingDB.updateCampaignRecipient(recipient.id, {
+                            status: 'sent',
+                            metaMessageId: result.messageId,
+                            metaConversationId: result.conversationId || null,
+                            metaPricingCategory: result.pricingCategory || null,
+                            sentAt: new Date().toISOString()
+                        });
+                        sentCount++;
+                    } else {
+                        await marketingDB.updateCampaignRecipient(recipient.id, {
+                            status: 'failed',
+                            errorMessage: result.error,
+                            failedAt: new Date().toISOString()
+                        });
+                        failedCount++;
+                    }
+                } catch (err) {
+                    await marketingDB.updateCampaignRecipient(recipient.id, {
+                        status: 'failed',
+                        errorMessage: err.message,
+                        failedAt: new Date().toISOString()
+                    });
+                    failedCount++;
+                }
+            });
+
+            await Promise.all(sendPromises);
+            console.log(`[Marketing Campaign] Batch ${Math.floor(i / batchSize) + 1}: sent=${sentCount}, failed=${failedCount}`);
+
+            // Delay between batches
+            if (i + batchSize < recipients.length) {
+                await new Promise(resolve => setTimeout(resolve, batchDelay));
+            }
+        }
+
+        // Mark campaign as sent
+        await marketingDB.updateMarketingCampaign(campaignId, { status: 'sent' });
+        await marketingDB.createCampaignSnapshot(campaignId);
+
+        await marketingDB.createAuditLog({
+            action: 'sent',
+            entityType: 'campaign',
+            entityId: parseInt(campaignId),
+            entityName: campaign.name,
+            actorType: 'system',
+            actor: 'campaign-sender',
+            details: { sentCount, failedCount, totalRecipients: recipients.length }
+        });
+
+        console.log(`[Marketing Campaign] Campaign ${campaignId} complete. Sent: ${sentCount}, Failed: ${failedCount}`);
+    } catch (error) {
+        console.error(`[Marketing Campaign] Fatal error for campaign ${campaignId}:`, error.message);
+        await marketingDB.updateMarketingCampaign(campaignId, { status: 'failed' }).catch(() => {});
+    }
+}
+
+// ── Coupon Management ──
+
+// GET /api/admin/marketing/coupons - List coupons
+app.get('/api/admin/marketing/coupons', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getMarketingCoupons(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Coupons list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch coupons' });
+    }
+});
+
+// GET /api/admin/marketing/coupons/stats - Coupon statistics
+app.get('/api/admin/marketing/coupons/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getCouponStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Coupon stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch coupon stats' });
+    }
+});
+
+// GET /api/admin/marketing/coupons/:id - Get coupon by ID
+app.get('/api/admin/marketing/coupons/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const coupon = await marketingDB.getMarketingCouponById(req.params.id);
+        if (!coupon) return res.status(404).json({ error: 'Coupon not found' });
+        res.json({ success: true, coupon });
+    } catch (error) {
+        console.error('[Marketing] Coupon fetch error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch coupon' });
+    }
+});
+
+// POST /api/admin/marketing/coupons - Create coupon
+app.post('/api/admin/marketing/coupons', authenticateAdmin, async (req, res) => {
+    try {
+        const { code, name, description, discountType, discountValue, minPurchaseAmount, 
+                maxDiscountAmount, appliesTo, usageLimit, usageLimitPerCustomer, 
+                applicableProducts, applicableCollections, segmentTarget, campaignId,
+                startsAt, expiresAt } = req.body;
+
+        if (!code || !discountValue) {
+            return res.status(400).json({ error: 'Code and discount value are required' });
+        }
+
+        const coupon = await marketingDB.createMarketingCoupon({
+            code, name, description, discountType, discountValue, minPurchaseAmount,
+            maxDiscountAmount, appliesTo, usageLimit, usageLimitPerCustomer,
+            applicableProducts, applicableCollections, segmentTarget, campaignId,
+            startsAt, expiresAt, createdBy: req.adminUser || 'admin'
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'created', entityType: 'coupon', entityId: coupon.id,
+            entityName: coupon.code, actor: req.adminUser || 'admin',
+            newValues: coupon, ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, coupon });
+    } catch (error) {
+        console.error('[Marketing] Coupon create error:', error.message);
+        res.status(500).json({ error: 'Failed to create coupon' });
+    }
+});
+
+// PUT /api/admin/marketing/coupons/:id - Update coupon
+app.put('/api/admin/marketing/coupons/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const existing = await marketingDB.getMarketingCouponById(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Coupon not found' });
+
+        const coupon = await marketingDB.updateMarketingCoupon(req.params.id, req.body);
+
+        await marketingDB.createAuditLog({
+            action: 'updated', entityType: 'coupon', entityId: parseInt(req.params.id),
+            entityName: coupon.code, actor: req.adminUser || 'admin',
+            previousValues: existing, newValues: coupon,
+            changedFields: Object.keys(req.body),
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, coupon });
+    } catch (error) {
+        console.error('[Marketing] Coupon update error:', error.message);
+        res.status(500).json({ error: 'Failed to update coupon' });
+    }
+});
+
+// DELETE /api/admin/marketing/coupons/:id - Soft delete coupon
+app.delete('/api/admin/marketing/coupons/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const existing = await marketingDB.getMarketingCouponById(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Coupon not found' });
+
+        await marketingDB.deleteMarketingCoupon(req.params.id);
+
+        await marketingDB.createAuditLog({
+            action: 'deleted', entityType: 'coupon', entityId: parseInt(req.params.id),
+            entityName: existing.code, actor: req.adminUser || 'admin',
+            previousValues: existing,
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, message: 'Coupon deleted' });
+    } catch (error) {
+        console.error('[Marketing] Coupon delete error:', error.message);
+        res.status(500).json({ error: 'Failed to delete coupon' });
+    }
+});
+
+// POST /api/admin/marketing/coupons/:id/sync-shopify - Sync coupon to Shopify as discount code
+app.post('/api/admin/marketing/coupons/:id/sync-shopify', authenticateAdmin, async (req, res) => {
+    try {
+        const coupon = await marketingDB.getMarketingCouponById(req.params.id);
+        if (!coupon) return res.status(404).json({ error: 'Coupon not found' });
+
+        // Build Shopify price rule payload
+        const priceRule = {
+            price_rule: {
+                title: coupon.name || coupon.code,
+                target_type: 'line_item',
+                target_selection: coupon.applies_to === 'all' ? 'all' : 'entitled',
+                allocation_method: 'across',
+                value_type: coupon.discount_type === 'percentage' ? 'percentage' : 'fixed_amount',
+                value: coupon.discount_type === 'fixed_amount' ? -Math.abs(parseFloat(coupon.discount_value)) : parseFloat(coupon.discount_value),
+                allocation_limit: coupon.max_discount_amount ? parseFloat(coupon.max_discount_amount) : undefined,
+                customer_selection: coupon.segment_target ? 'segment' : 'all',
+                starts_at: coupon.starts_at || new Date().toISOString(),
+                ends_at: coupon.expires_at || null,
+                usage_limit: coupon.usage_limit || null,
+                once_per_customer: coupon.usage_limit_per_customer === 1
+            }
+        };
+
+        // Set minimum purchase requirement
+        if (parseFloat(coupon.min_purchase_amount) > 0) {
+            priceRule.price_rule.customer_selection = 'all';
+            priceRule.price_rule.prerequisite_subtotal_range = {
+                greater_than_or_equal_to: parseFloat(coupon.min_purchase_amount).toString()
+            };
+        }
+
+        // Create price rule
+        const ruleResult = await shopifyAPI('price_rules.json', {
+            method: 'POST',
+            body: JSON.stringify(priceRule)
+        });
+
+        const priceRuleId = ruleResult.price_rule.id;
+
+        // Create discount code
+        const codeResult = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
+            method: 'POST',
+            body: JSON.stringify({ discount_code: { code: coupon.code, price_rule_id: priceRuleId } })
+        });
+
+        // Update coupon with Shopify IDs
+        const updated = await marketingDB.updateMarketingCoupon(req.params.id, {
+            shopifyPriceRuleId: priceRuleId,
+            shopifyDiscountCodeId: codeResult.discount_code.id,
+            shopifySyncStatus: 'synced',
+            shopifySyncedAt: new Date().toISOString()
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'synced', entityType: 'coupon', entityId: parseInt(req.params.id),
+            entityName: coupon.code, actor: req.adminUser || 'admin',
+            details: { shopifyPriceRuleId: priceRuleId, shopifyDiscountCodeId: codeResult.discount_code.id },
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, coupon: updated, message: 'Coupon synced to Shopify' });
+    } catch (error) {
+        console.error('[Marketing] Coupon Shopify sync error:', error.message);
+        await marketingDB.updateMarketingCoupon(req.params.id, {
+            shopifySyncStatus: 'failed', shopifySyncError: error.message
+        }).catch(() => {});
+        res.status(500).json({ error: 'Failed to sync coupon to Shopify', details: error.message });
+    }
+});
+
+// GET /api/admin/marketing/coupons/:id/usage - Get coupon usage history
+app.get('/api/admin/marketing/coupons/:id/usage', authenticateAdmin, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('marketing_coupon_usage')
+            .select('*').eq('coupon_id', req.params.id).order('created_at', { ascending: false });
+        if (error) throw error;
+        res.json({ success: true, usage: data || [] });
+    } catch (error) {
+        console.error('[Marketing] Coupon usage error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch coupon usage' });
+    }
+});
+
+
+// ── Abandoned Cart Recovery ──
+
+// GET /api/admin/marketing/abandoned-carts - List abandoned carts
+app.get('/api/admin/marketing/abandoned-carts', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getAbandonedCarts(req.query);
+        // Enrich customer_name: resolve real names from Shopify for email-derived names
+        if (result.data && result.data.length > 0) {
+            // Deduplicate by email — only lookup each unique email once
+            const cartsNeedingLookup = result.data.filter(c => c.customer_name && !c.customer_name.includes(' ') && c.customer_email);
+            const uniqueEmails = [...new Set(cartsNeedingLookup.map(c => c.customer_email))];
+            // Resolve names for unique emails only (sequential to respect Shopify rate limits)
+            const emailToName = new Map();
+            for (const email of uniqueEmails) {
+                // Check cache first to skip API calls entirely
+                const cached = _customerNameCache.get(email);
+                if (cached && (Date.now() - cached.ts < CUSTOMER_NAME_CACHE_TTL)) {
+                    if (cached.name) emailToName.set(email, cached.name);
+                    continue;
+                }
+                try {
+                    const resolved = await resolveCustomerDisplayName({ customer_email: email, customer_name: null });
+                    if (resolved && resolved !== 'there') emailToName.set(email, resolved);
+                } catch (e) { /* ignore */ }
+            }
+            // Apply resolved names to all matching carts
+            for (const cart of cartsNeedingLookup) {
+                const resolved = emailToName.get(cart.customer_email);
+                if (resolved && resolved !== cart.customer_name) {
+                    cart.customer_name = resolved;
+                    // Persist resolved name to DB so future lookups skip Shopify
+                    supabase.from('marketing_abandoned_carts').update({ customer_name: resolved }).eq('id', cart.id).then(() => {}).catch(() => {});
+                }
+            }
+        }
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Abandoned carts list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch abandoned carts' });
+    }
+});
+
+// GET /api/admin/marketing/abandoned-carts/stats - Abandoned cart statistics
+app.get('/api/admin/marketing/abandoned-carts/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getAbandonedCartStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Abandoned cart stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch abandoned cart stats' });
+    }
+});
+
+// GET /api/admin/marketing/abandoned-carts/recovered - List recovered carts
+app.get('/api/admin/marketing/abandoned-carts/recovered', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getRecoveredCarts(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Recovered carts list error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch recovered carts' });
+    }
+});
+
+// GET /api/admin/marketing/abandoned-carts/recovered/stats - Recovered cart statistics
+app.get('/api/admin/marketing/abandoned-carts/recovered/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await marketingDB.getRecoveredCartStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[Marketing] Recovered cart stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch recovered cart stats' });
+    }
+});
+
+// POST /api/admin/marketing/abandoned-carts/scan-recoveries - Manual trigger to scan Shopify orders for recovery matching
+app.post('/api/admin/marketing/abandoned-carts/scan-recoveries', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await scanShopifyOrdersForRecoveries();
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Scan recoveries error:', error.message);
+        res.status(500).json({ error: 'Failed to scan for recoveries' });
+    }
+});
+
+// GET /api/admin/marketing/abandoned-carts/:id - Get cart by ID
+app.get('/api/admin/marketing/abandoned-carts/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const cart = await marketingDB.getAbandonedCartById(req.params.id);
+        if (!cart) return res.status(404).json({ error: 'Cart not found' });
+        res.json({ success: true, cart });
+    } catch (error) {
+        console.error('[Marketing] Abandoned cart fetch error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch abandoned cart' });
+    }
+});
+
+// POST /api/admin/marketing/abandoned-carts - Create abandoned cart (from checkout webhook or API)
+app.post('/api/admin/marketing/abandoned-carts', authenticateAdmin, async (req, res) => {
+    try {
+        const { cartToken, customerEmail, customerPhone, customerName, shopifyCustomerId,
+                checkoutId, checkoutUrl, cartValue, currency, items } = req.body;
+
+        if (!cartToken) return res.status(400).json({ error: 'Cart token is required' });
+
+        // Check if cart with this token already exists
+        const { data: existing } = await supabase
+            .from('marketing_abandoned_carts')
+            .select('id').eq('cart_token', cartToken).limit(1);
+
+        if (existing && existing.length > 0) {
+            return res.json({ success: true, message: 'Cart already tracked', cartId: existing[0].id });
+        }
+
+        const cart = await marketingDB.createAbandonedCart({
+            cartToken, customerEmail, customerPhone, customerName, shopifyCustomerId,
+            checkoutId, checkoutUrl, cartValue, currency, items, source: 'api'
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'created', entityType: 'abandoned_cart', entityId: cart.id,
+            entityName: `Cart ${cartToken.substring(0, 8)}`, actor: 'system', actorType: 'system',
+            newValues: { cartToken, cartValue, customerEmail },
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, cart });
+    } catch (error) {
+        console.error('[Marketing] Abandoned cart create error:', error.message);
+        res.status(500).json({ error: 'Failed to create abandoned cart' });
+    }
+});
+
+// POST /api/admin/marketing/abandoned-carts/:id/send-reminder - Send WhatsApp reminder
+app.post('/api/admin/marketing/abandoned-carts/:id/send-reminder', authenticateAdmin, async (req, res) => {
+    try {
+        const cart = await marketingDB.getAbandonedCartById(req.params.id);
+        if (!cart) return res.status(404).json({ error: 'Cart not found' });
+        if (!cart.customer_phone) return res.status(400).json({ error: 'No phone number for this cart' });
+
+        const { reminderType, templateId } = req.body; // 'first', 'second', 'final' + optional templateId
+
+        // Use directly-selected templateId if provided, otherwise fall back to settings
+        let template;
+        if (templateId) {
+            template = await marketingDB.getMarketingTemplateById(templateId);
+            if (template && template.status !== 'approved') {
+                return res.status(400).json({ error: 'Selected template is not approved' });
+            }
+        }
+
+        // Get linked template from settings
+        if (!template) {
+            const settingKey = `abandoned_cart_${reminderType}_template_id`;
+            const templateSetting = await marketingDB.getMarketingSetting(settingKey);
+            if (templateSetting) {
+                template = await marketingDB.getMarketingTemplateById(templateSetting);
+            }
+        }
+        
+        // Fallback to search if no linked template
+        if (!template) {
+            const templates = await marketingDB.getMarketingTemplates({ category: 'utility', status: 'approved' });
+            template = templates.find(t => t.name && t.name.toLowerCase().includes('abandoned')) || templates[0];
+        }
+        
+        if (!template) {
+            return res.status(400).json({ error: 'No approved template found for abandoned cart reminders' });
+        }
+
+        // Build variables pool from cart data
+        // Resolve display name: try customer_name -> Shopify lookup -> email prefix -> 'there'
+        const displayName = await resolveCustomerDisplayName(cart);
+        // Add UTM tracking to checkout URL for smart recovery attribution
+        const rawCheckoutUrl = cart.checkout_url || 'https://offcomfrt.com';
+        const utmParams = `utm_source=whatsapp&utm_medium=abandoned_cart&utm_campaign=reminder_${reminderType || 'manual'}&utm_content=cart_${cart.id}`;
+        const trackedCheckoutUrl = rawCheckoutUrl.includes('?')
+            ? `${rawCheckoutUrl}&${utmParams}`
+            : `${rawCheckoutUrl}?${utmParams}`;
+        const varPool = [
+            displayName,
+            `${cart.items?.length || 0} item(s)`,
+            `₹${cart.cart_value}`,
+            trackedCheckoutUrl,
+            cart.customer_phone || '',
+            cart.customer_email || ''
+        ];
+
+        // Try to fetch template from Meta to build proper per-component parameters
+        let prebuiltComponents = null;
+        let totalParamCount = 0;
+        try {
+            const metaResult = await metaWhatsApp.getMetaTemplateByName(template.name);
+            if (metaResult.success && metaResult.template) {
+                // Count total placeholders across ALL components (header + body + button)
+                const allComponents = metaResult.template.components || [];
+                for (const comp of allComponents) {
+                    if (comp.type === 'HEADER' && comp.text) {
+                        totalParamCount += (comp.text.match(/\{\{\d+\}\}/g) || []).length;
+                    } else if (comp.type === 'BODY' && comp.text) {
+                        totalParamCount += (comp.text.match(/\{\{\d+\}\}/g) || []).length;
+                    } else if (comp.type === 'BUTTONS') {
+                        for (const btn of (comp.buttons || [])) {
+                            if (btn.type === 'URL' && btn.url) {
+                                totalParamCount += (btn.url.match(/\{\{\d+\}\}/g) || []).length;
+                            }
+                        }
+                    }
+                }
+                // Build properly structured components (header, body, button each get their own params)
+                prebuiltComponents = metaWhatsApp.buildTemplateComponents(metaResult.template, varPool);
+                console.log(`[Send Reminder] Meta template "${template.name}" has ${totalParamCount} total params across ${prebuiltComponents.length} component(s)`);
+            }
+        } catch (e) {
+            console.warn('[Send Reminder] Could not fetch Meta template details:', e.message);
+        }
+
+        // Build variables array matching expected parameter count
+        let variables;
+        if (totalParamCount > 0) {
+            variables = varPool.slice(0, totalParamCount);
+        } else {
+            const templateVariables = template.variables || [];
+            variables = templateVariables.map(v => {
+                const name = String(v.name);
+                switch (name) {
+                    case '1': return varPool[0];
+                    case '2': return varPool[1];
+                    case '3': return varPool[2];
+                    case '4': return varPool[3];
+                    case '5': return varPool[4];
+                    case '6': return varPool[5];
+                    default: return v.example || '';
+                }
+            });
+            if (variables.length === 0) {
+                variables = varPool.slice(0, 4);
+            }
+        }
+
+        console.log(`[Send Reminder] Sending ${variables.length} params for template "${template.name}":`, variables);
+        
+        // Send via Meta WhatsApp with template
+        const sendResult = await metaWhatsApp.sendTemplateMessage(
+            cart.customer_phone,
+            template.name,
+            variables,
+            template.language || 'en',
+            prebuiltComponents
+        );
+
+        // Update cart with template reference and reminder tracking
+        const now = new Date().toISOString();
+        const updates = { 
+            lastReminderAt: now,
+            messageTemplateId: template.id
+        };
+        
+        // Update specific reminder timestamp
+        if (reminderType === 'first') updates.firstReminderAt = now;
+        else if (reminderType === 'second') updates.secondReminderAt = now;
+        else if (reminderType === 'final') updates.finalReminderAt = now;
+        
+        await marketingDB.updateAbandonedCart(cart.id, updates);
+        
+        // Increment template usage count
+        await marketingDB.updateMarketingTemplate(template.id, {
+            usageCount: (template.usage_count || 0) + 1,
+            lastUsedAt: now
+        });
+
+        res.json({ success: true, messageId: sendResult.messageId, templateName: template.name });
+    } catch (error) {
+        console.error('[Send Reminder] Error:', error);
+        res.status(500).json({ error: 'Failed to send reminder' });
+    }
+});
+
+// POST /api/admin/marketing/abandoned-carts/:id/mark-recovered - Mark cart as recovered
+app.post('/api/admin/marketing/abandoned-carts/:id/mark-recovered', authenticateAdmin, async (req, res) => {
+    try {
+        const { recoveredOrderId, recoveredOrderName, recoveredAmount } = req.body;
+        const now = new Date().toISOString();
+
+        // Get current cart to compute recovery time
+        const cart = await marketingDB.getAbandonedCartById(req.params.id);
+        if (!cart) return res.status(404).json({ error: 'Cart not found' });
+
+        const timeToRecovery = cart.created_at
+            ? ((Date.now() - new Date(cart.created_at).getTime()) / (1000 * 60 * 60)).toFixed(2)
+            : null;
+
+        await marketingDB.updateAbandonedCart(req.params.id, {
+            recoveryStatus: 'recovered',
+            recoveredAt: now,
+            recoveredOrderId: recoveredOrderId || null,
+            recoveredOrderName: recoveredOrderName || null,
+            recoveredAmount: recoveredAmount || cart.cart_value || 0,
+            recoveryChannel: 'direct',
+            recoveryDetectedAt: now,
+            recoveryDetectionMethod: 'manual',
+            timeToRecoveryHours: timeToRecovery ? parseFloat(timeToRecovery) : null
+        });
+
+        await marketingDB.createAuditLog({
+            action: 'recovered',
+            entityType: 'abandoned_cart',
+            entityId: parseInt(req.params.id),
+            entityName: `Cart ${cart.cart_token?.substring(0, 8) || req.params.id}`,
+            actor: req.adminUser || 'admin',
+            actorType: 'admin',
+            newValues: { recoveredOrderId, recoveredOrderName, recoveredAmount: recoveredAmount || cart.cart_value, method: 'manual' },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, message: 'Cart marked as recovered' });
+    } catch (error) {
+        console.error('[Marketing] Mark recovered error:', error.message);
+        res.status(500).json({ error: 'Failed to mark as recovered' });
+    }
+});
+
+// ── Shopify Order Webhook (Auto Recovery Detection) ──
+
+async function markCartAsRecovered(cart, orderData, detectionMethod) {
+    const now = new Date().toISOString();
+    const timeToRecovery = cart.created_at
+        ? ((Date.now() - new Date(cart.created_at).getTime()) / (1000 * 60 * 60)).toFixed(2)
+        : null;
+
+    // Smart recovery channel attribution
+    let channel = 'direct'; // came back on their own
+
+    // 1. Check if order has UTM/referral attributes indicating WhatsApp click
+    const orderAttrs = orderData.note_attributes || [];
+    const utmSource = orderAttrs.find(a => a.name === 'utm_source' || a.name === 'referral_source');
+    const utmMedium = orderAttrs.find(a => a.name === 'utm_medium');
+    if (utmSource && String(utmSource.value).toLowerCase() === 'whatsapp') {
+        channel = 'whatsapp';
+    } else if (utmMedium && String(utmMedium.value).toLowerCase() === 'abandoned_cart') {
+        channel = 'whatsapp';
+    }
+    // 2. Check Shopify referrals
+    else if (orderData.referring_site && orderData.referring_site.includes('whatsapp')) {
+        channel = 'whatsapp';
+    }
+    // 3. Heuristic: if a reminder was sent within 24h of the order, likely WhatsApp-driven
+    else if (cart.reminder_count > 0 && cart.last_reminder_at) {
+        const lastReminderTime = new Date(cart.last_reminder_at).getTime();
+        const orderTime = new Date(orderData.created_at || now).getTime();
+        if (orderTime - lastReminderTime < 24 * 60 * 60 * 1000) {
+            channel = 'whatsapp';
+        }
+    }
+
+    // 4. Check if a coupon code was used (likely from a coupon reminder)
+    const discountCodes = orderData.discount_codes || [];
+    if (discountCodes.length > 0 && channel === 'direct') {
+        channel = 'coupon';
+    }
+
+    await marketingDB.updateAbandonedCart(cart.id, {
+        recoveryStatus: 'recovered',
+        recoveredAt: now,
+        recoveredOrderId: String(orderData.id || ''),
+        recoveredOrderName: orderData.name || orderData.order_number || '',
+        recoveredAmount: parseFloat(orderData.total_price) || cart.cart_value || 0,
+        recoveryChannel: channel,
+        recoveryDetectedAt: now,
+        recoveryDetectionMethod: detectionMethod,
+        timeToRecoveryHours: timeToRecovery ? parseFloat(timeToRecovery) : null
+    });
+
+    await marketingDB.createAuditLog({
+        action: 'auto_recovered',
+        entityType: 'abandoned_cart',
+        entityId: cart.id,
+        entityName: `Cart ${cart.cart_token?.substring(0, 8) || cart.id}`,
+        actor: detectionMethod,
+        actorType: 'system',
+        newValues: {
+            orderId: orderData.id,
+            orderName: orderData.name,
+            orderTotal: orderData.total_price,
+            channel,
+            method: detectionMethod,
+            timeToRecoveryHours: timeToRecovery
+        },
+        ipAddress: null,
+        userAgent: null
+    });
+
+    return { cartId: cart.id, channel, timeToRecoveryHours: timeToRecovery };
+}
+
+/**
+ * Scan Shopify orders for the last 7 days and match to non-recovered abandoned carts.
+ * Used both by the cron job and the manual trigger endpoint.
+ */
+async function scanShopifyOrdersForRecoveries() {
+    if (!process.env.SHOPIFY_ACCESS_TOKEN || !process.env.SHOPIFY_STORE) {
+        throw new Error('Shopify API not configured');
+    }
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    let recoveredCount = 0;
+    let scannedOrders = 0;
+    const recoveredCarts = [];
+
+    try {
+        // Fetch orders from the last 7 days using Shopify API
+        let endpoint = `orders.json?status=any&created_at_min=${sevenDaysAgo}&fields=id,name,email,phone,created_at,total_price,customer,line_items,discount_codes,note_attributes,referring_site&limit=250`;
+
+        while (endpoint) {
+            const data = await shopifyAPI(endpoint);
+            const orders = data.orders || [];
+            scannedOrders += orders.length;
+
+            for (const order of orders) {
+                const orderEmail = order.email || (order.customer && order.customer.email) || null;
+                const orderPhone = order.phone || (order.customer && order.customer.phone) || null;
+
+                if (!orderEmail && !orderPhone) continue;
+
+                // Find matching abandoned cart with smart product overlap scoring
+                const orderItems = order.line_items || [];
+                const matchingCart = await marketingDB.findMatchingAbandonedCart(orderEmail, orderPhone, orderItems);
+
+                if (matchingCart) {
+                    const result = await markCartAsRecovered(matchingCart, order, 'cron_scan');
+                    recoveredCount++;
+                    recoveredCarts.push(result);
+                    console.log(`[Recovery Scan] Auto-detected recovery: Cart ${matchingCart.id} → Order ${order.name} (${orderEmail || orderPhone})`);
+                }
+            }
+
+            // Check for next page
+            endpoint = data.nextUrl ? data.nextUrl.replace(/^https?:\/\/[^/]+\//, '') : null;
+        }
+
+        console.log(`[Recovery Scan] Scanned ${scannedOrders} orders, found ${recoveredCount} recoveries`);
+        return { scannedOrders, recoveredCount, recoveredCarts };
+    } catch (error) {
+        console.error('[Recovery Scan] Error:', error.message);
+        throw error;
+    }
+}
+
+// POST /api/webhooks/shopify/orders-create - Shopify order webhook for auto recovery detection
+app.post('/api/webhooks/shopify/orders-create', express.json(), async (req, res) => {
+    try {
+        // Verify webhook signature if SHOPIFY_WEBHOOK_SECRET is set
+        const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+        if (webhookSecret) {
+            const crypto = require('crypto');
+            const hmac = crypto.createHmac('sha256', webhookSecret);
+            const digest = hmac.update(req.rawBody || JSON.stringify(req.body)).digest('base64');
+            const signature = req.headers['x-shopify-hmac-sha256'];
+            if (signature && digest !== signature) {
+                console.warn('[Shopify Webhook] Invalid signature from IP:', req.ip);
+                return res.status(401).json({ error: 'Invalid webhook signature' });
+            }
+        }
+
+        const order = req.body;
+        const orderEmail = order.email || (order.customer && order.customer.email) || null;
+        const orderPhone = order.phone || (order.customer && order.customer.phone) || null;
+
+        console.log(`[Shopify Order Webhook] Order ${order.name || order.id} for ${orderEmail || orderPhone || 'unknown'}`);
+
+        if (!orderEmail && !orderPhone) {
+            // No customer info to match, just acknowledge
+            return res.json({ received: true });
+        }
+
+        // Find matching abandoned cart with smart product overlap scoring
+        const matchingCart = await marketingDB.findMatchingAbandonedCart(orderEmail, orderPhone, order.line_items || []);
+
+        if (matchingCart) {
+            await markCartAsRecovered(matchingCart, order, 'shopify_webhook');
+            console.log(`[Shopify Order Webhook] Auto-recovered cart ${matchingCart.id} → Order ${order.name}`);
+        }
+
+        res.json({ received: true, recovered: !!matchingCart });
+    } catch (error) {
+        console.error('[Shopify Order Webhook] Error:', error.message);
+        // Always return 200 to Shopify so it doesn't retry
+        res.status(200).json({ received: true, error: 'Processing failed' });
+    }
+});
+
+// ── Gokwik Webhook ──
+
+// POST /api/webhooks/gokwik/abandoned-cart - Receive abandoned cart events from Gokwik
+app.post('/api/webhooks/gokwik/abandoned-cart', express.json(), async (req, res) => {
+    try {
+        const signature = req.headers['x-gokwik-signature'] || req.headers['x-gokwik-webhook-signature'];
+        const webhookSecret = process.env.GOKWIK_WEBHOOK_SECRET;
+        
+        // Optional signature verification (only if secret is configured)
+        if (webhookSecret && signature) {
+            const rawBody = JSON.stringify(req.body);
+            if (!verifyGokwikWebhook(rawBody, signature, webhookSecret)) {
+                console.warn('[Gokwik Webhook] Invalid signature from IP:', req.ip);
+                return res.status(401).json({ error: 'Invalid webhook signature' });
+            }
+        } else if (!webhookSecret) {
+            console.log('[Gokwik Webhook] No webhook secret configured - accepting without verification');
+        }
+        
+        const payload = req.body;
+        // Gokwik payload uses 'token' as checkout ID; fallback chain: checkout_id > id > order_id > token > session_id
+        const checkoutIdLog = payload.checkout_id || payload.id || payload.order_id || payload.token || payload.session_id;
+        console.log('[Gokwik Webhook] Received abandoned cart event:', checkoutIdLog);
+        console.log('[Gokwik Webhook] Payload keys:', Object.keys(payload));
+        
+        // Extract checkout ID — Gokwik uses 'token' as the primary checkout identifier
+        const checkout_id = payload.checkout_id || payload.id || payload.order_id || payload.token || payload.session_id;
+        const customer = payload.customer || {};
+        const checkout_url = payload.checkout_url || payload.abc_url || null;
+        const created_at = payload.created_at || new Date().toISOString();
+        const checkout_version = process.env.GOKWIK_CHECKOUT_VERSION || 'v1';
+        
+        if (!checkout_id) {
+            console.error('[Gokwik Webhook] No checkout identifier in payload. Full payload:', JSON.stringify(payload).substring(0, 500));
+            return res.status(400).json({ error: 'checkout_id is required' });
+        }
+        
+        // Check for duplicate checkout_id
+        const { data: existing } = await supabase
+            .from('marketing_abandoned_carts')
+            .select('id')
+            .eq('gokwik_checkout_id', checkout_id)
+            .limit(1);
+        
+        if (existing && existing.length > 0) {
+            console.log('[Gokwik Webhook] Cart already tracked for checkout:', checkout_id);
+            return res.json({ success: true, message: 'Cart already tracked', cartId: existing[0].id });
+        }
+        
+        // Map Gokwik payload to our schema
+        // Gokwik puts items/pricing at top level (no 'cart' wrapper)
+        const cartToken = `gokwik_${checkout_id}`;
+        const customerEmail = customer.email || payload.mapped_email || null;
+        const customerPhone = customer.phone || customer.mobile || null;
+        
+        // Robust customer name extraction — try multiple Gokwik payload locations
+        let customerName = null;
+        
+        // 1. customer object: first_name + last_name or name
+        if (customer.first_name || customer.last_name) {
+            customerName = `${customer.first_name || ''} ${customer.last_name || ''}`.trim();
+        } else if (customer.name) {
+            customerName = customer.name;
+        }
+        // 2. address object (Gokwik often puts name here)
+        if (!customerName && payload.address) {
+            const addr = typeof payload.address === 'string' ? {} : payload.address;
+            if (addr.first_name || addr.last_name) {
+                customerName = `${addr.first_name || ''} ${addr.last_name || ''}`.trim();
+            } else if (addr.name) {
+                customerName = addr.name;
+            }
+        }
+        // 3. billing_address_details_pii (may be a JSON string or object)
+        if (!customerName && payload.billing_address_details_pii) {
+            try {
+                const billing = typeof payload.billing_address_details_pii === 'string'
+                    ? JSON.parse(payload.billing_address_details_pii)
+                    : payload.billing_address_details_pii;
+                if (billing.first_name || billing.last_name) {
+                    customerName = `${billing.first_name || ''} ${billing.last_name || ''}`.trim();
+                } else if (billing.name) {
+                    customerName = billing.name;
+                }
+            } catch (e) { /* ignore parse errors */ }
+        }
+        // 4. shipping_address_details_pii (may be a JSON string or object)
+        if (!customerName && payload.shipping_address_details_pii) {
+            try {
+                const shipping = typeof payload.shipping_address_details_pii === 'string'
+                    ? JSON.parse(payload.shipping_address_details_pii)
+                    : payload.shipping_address_details_pii;
+                if (shipping.first_name || shipping.last_name) {
+                    customerName = `${shipping.first_name || ''} ${shipping.last_name || ''}`.trim();
+                } else if (shipping.name) {
+                    customerName = shipping.name;
+                }
+            } catch (e) { /* ignore parse errors */ }
+        }
+        // 5. shipping_address object (flat fields)
+        if (!customerName && payload.shipping_address && typeof payload.shipping_address === 'object') {
+            const sa = payload.shipping_address;
+            if (sa.first_name || sa.last_name) {
+                customerName = `${sa.first_name || ''} ${sa.last_name || ''}`.trim();
+            } else if (sa.name) {
+                customerName = sa.name;
+            }
+        }
+        // 6. Try Shopify customer lookup by email for a real name (uses cache)
+        if (!customerName && customerEmail) {
+            try {
+                const resolved = await resolveCustomerDisplayName({ customer_email: customerEmail, customer_name: null });
+                // resolveCustomerDisplayName returns email-derived name as last resort;
+                // only use if it's a real name (has space) or not email-derived
+                if (resolved && resolved !== 'there' && resolved.includes(' ')) {
+                    customerName = resolved;
+                }
+            } catch (e) { /* ignore Shopify lookup errors */ }
+        }
+        // 7. Fallback: derive name from email prefix (e.g. "brunosbro404" from email)
+        if (!customerName && customerEmail) {
+            customerName = customerEmail.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').trim();
+            // Capitalize first letter of each word
+            customerName = customerName.replace(/\b\w/g, c => c.toUpperCase());
+        }
+        const cartValue = payload.original_total_price || payload.total_price || payload.items_subtotal_price || 0;
+        const currency = payload.currency || 'INR';
+        const items = payload.items || [];
+        const payment_method = payload.payment_methods || null;
+        
+        // Create abandoned cart record
+        const cartData = {
+            cartToken,
+            customerEmail,
+            customerPhone,
+            customerName,
+            checkoutId: checkout_id,
+            checkoutUrl: checkout_url,
+            cartValue,
+            currency,
+            items,
+            source: 'gokwik',
+            // Gokwik-specific fields
+            gokwikCheckoutId: checkout_id,
+            checkoutVersion: checkout_version,
+            gokwikCustomerPhoneVerified: customer.phone_verified || false,
+            paymentMethod: payment_method
+        };
+        
+        const newCart = await marketingDB.createAbandonedCart(cartData);
+        
+        console.log(`[Gokwik Webhook] Created abandoned cart ${newCart.id} for checkout ${checkout_id}`);
+        
+        // Create audit log
+        await marketingDB.createAuditLog({
+            action: 'created',
+            entityType: 'abandoned_cart',
+            entityId: newCart.id,
+            entityName: `Gokwik Cart ${checkout_id.substring(0, 8)}`,
+            actor: 'gokwik_webhook',
+            actorType: 'system',
+            newValues: { checkout_id, cartValue, customerEmail, customerPhone, checkout_version },
+            ipAddress: req.ip,
+            userAgent: req.get('user-agent')
+        });
+        
+        res.json({ success: true, cartId: newCart.id, message: 'Abandoned cart tracked successfully' });
+    } catch (error) {
+        console.error('[Gokwik Webhook] Error processing webhook:', error.message);
+        res.status(500).json({ error: 'Failed to process webhook' });
+    }
+});
+
+
+// ── Analytics ──
+
+// GET /api/admin/marketing/analytics/overview - Analytics overview dashboard
+app.get('/api/admin/marketing/analytics/overview', authenticateAdmin, async (req, res) => {
+    try {
+        const overview = await marketingDB.getMarketingAnalyticsOverview(req.query);
+        res.json({ success: true, overview });
+    } catch (error) {
+        console.error('[Marketing] Analytics overview error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch analytics overview' });
+    }
+});
+
+// GET /api/admin/marketing/analytics/campaigns - Campaign analytics
+app.get('/api/admin/marketing/analytics/campaigns', authenticateAdmin, async (req, res) => {
+    try {
+        const data = await marketingDB.getCampaignAnalytics();
+        res.json({ success: true, campaigns: data });
+    } catch (error) {
+        console.error('[Marketing] Campaign analytics error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch campaign analytics' });
+    }
+});
+
+// GET /api/admin/marketing/analytics/channels - Channel analytics
+app.get('/api/admin/marketing/analytics/channels', authenticateAdmin, async (req, res) => {
+    try {
+        const data = await marketingDB.getChannelAnalytics(req.query);
+        res.json({ success: true, channels: data });
+    } catch (error) {
+        console.error('[Marketing] Channel analytics error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch channel analytics' });
+    }
+});
+
+// GET /api/admin/marketing/analytics/segments - Segment analytics
+app.get('/api/admin/marketing/analytics/segments', authenticateAdmin, async (req, res) => {
+    try {
+        const data = await marketingDB.getSegmentAnalytics(req.query);
+        res.json({ success: true, segments: data });
+    } catch (error) {
+        console.error('[Marketing] Segment analytics error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch segment analytics' });
+    }
+});
+
+
+// ── Settings ──
+
+// GET /api/admin/marketing/settings - Get all settings
+app.get('/api/admin/marketing/settings', authenticateAdmin, async (req, res) => {
+    try {
+        const settings = await marketingDB.getAllMarketingSettings();
+        // Filter out secret values for security
+        const sanitized = settings.map(s => ({
+            ...s,
+            value: s.is_secret ? '••••••••' : s.value
+        }));
+        res.json({ success: true, settings: sanitized });
+    } catch (error) {
+        console.error('[Marketing] Settings fetch error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch settings' });
+    }
+});
+
+// PUT /api/admin/marketing/settings/:key - Update a setting
+app.put('/api/admin/marketing/settings/:key', authenticateAdmin, async (req, res) => {
+    try {
+        const { value } = req.body;
+        if (value === undefined) return res.status(400).json({ error: 'Value is required' });
+
+        const setting = await marketingDB.updateMarketingSetting(req.params.key, value, req.adminUser || 'admin');
+
+        await marketingDB.createAuditLog({
+            action: 'settings_changed', entityType: 'setting',
+            entityName: req.params.key, actor: req.adminUser || 'admin',
+            newValues: { key: req.params.key, value: req.body.value },
+            ipAddress: req.ip, userAgent: req.get('user-agent')
+        });
+
+        res.json({ success: true, setting });
+    } catch (error) {
+        console.error('[Marketing] Settings update error:', error.message);
+        res.status(500).json({ error: 'Failed to update setting' });
+    }
+});
+
+
+// ── Audit Log ──
+
+// GET /api/admin/marketing/audit-logs - Get audit logs with filters
+app.get('/api/admin/marketing/audit-logs', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await marketingDB.getAuditLogs(req.query);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[Marketing] Audit logs error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch audit logs' });
+    }
+});
+
+
+// ── Abandoned Cart Recovery Cron Job ──
+
+async function processAbandonedCartReminders() {
+    try {
+        console.log('[Marketing Cron] Processing abandoned cart reminders...');
+
+        // Check master auto-recovery switch
+        const masterEnabled = await marketingDB.getMarketingSetting('abandoned_cart_auto_recovery');
+        if (masterEnabled && String(masterEnabled).toLowerCase() !== 'true') {
+            console.log('[Marketing Cron] Auto-recovery is disabled in settings, skipping');
+            return;
+        }
+
+        // Load per-reminder-type enable flags
+        const firstReminderEnabled  = (await marketingDB.getMarketingSetting('abandoned_cart_first_reminder_enabled')  ?? 'true').toString().toLowerCase() !== 'false';
+        const secondReminderEnabled = (await marketingDB.getMarketingSetting('abandoned_cart_second_reminder_enabled') ?? 'true').toString().toLowerCase() !== 'false';
+        const finalReminderEnabled  = (await marketingDB.getMarketingSetting('abandoned_cart_final_reminder_enabled')  ?? 'true').toString().toLowerCase() !== 'false';
+        console.log(`[Marketing Cron] Reminder toggles — first: ${firstReminderEnabled}, second: ${secondReminderEnabled}, final: ${finalReminderEnabled}`);
+
+        const carts = await marketingDB.getPendingReminderCarts();
+        
+        if (carts.length === 0) {
+            console.log('[Marketing Cron] No carts need reminders');
+            return;
+        }
+
+        console.log(`[Marketing Cron] Found ${carts.length} carts needing reminders`);
+        
+        // Log source breakdown
+        const gokwikCount = carts.filter(c => c.checkout_source === 'gokwik').length;
+        const shopifyCount = carts.filter(c => c.checkout_source === 'shopify' || !c.checkout_source).length;
+        console.log(`[Marketing Cron] Source breakdown: Gokwik=${gokwikCount}, Shopify=${shopifyCount}`);
+
+        for (const cart of carts) {
+            try {
+                if (!cart.customer_phone) continue;
+
+                const hoursSinceCreated = (Date.now() - new Date(cart.created_at).getTime()) / (1000 * 60 * 60);
+                let reminderType = null;
+
+                // Schedule: 1hr -> first, 24hr -> second, 72hr -> final
+                if (cart.recovery_status === 'pending' && hoursSinceCreated >= 1) {
+                    reminderType = 'first';
+                } else if (cart.recovery_status === 'first_reminder_sent' && hoursSinceCreated >= 24) {
+                    reminderType = 'second';
+                } else if (cart.recovery_status === 'second_reminder_sent' && hoursSinceCreated >= 72) {
+                    reminderType = 'final';
+                }
+
+                if (!reminderType) continue;
+
+                // Skip if this specific reminder type is disabled in settings
+                if (reminderType === 'first'  && !firstReminderEnabled)  { console.log(`[Marketing Cron] First reminder disabled, skipping cart ${cart.id}`);  continue; }
+                if (reminderType === 'second' && !secondReminderEnabled) { console.log(`[Marketing Cron] Second reminder disabled, skipping cart ${cart.id}`); continue; }
+                if (reminderType === 'final'  && !finalReminderEnabled)  { console.log(`[Marketing Cron] Final reminder disabled, skipping cart ${cart.id}`);  continue; }
+
+                // Get template from settings (same logic as manual send-reminder)
+                const settingKey = `abandoned_cart_${reminderType}_template_id`;
+                const templateSetting = await marketingDB.getMarketingSetting(settingKey);
+                
+                let template;
+                if (templateSetting) {
+                    template = await marketingDB.getMarketingTemplateById(templateSetting);
+                }
+                
+                // Fallback: search for approved templates with "abandoned" in name
+                if (!template) {
+                    const templates = await marketingDB.getMarketingTemplates({ category: 'utility', status: 'approved' });
+                    template = templates.find(t => t.name && t.name.toLowerCase().includes('abandoned')) || templates[0];
+                }
+                
+                if (!template) {
+                    console.error(`[Marketing Cron] No approved template found for ${reminderType} reminder`);
+                    continue;
+                }
+
+                // Build variables pool from cart data
+                // Resolve display name: try customer_name -> Shopify lookup -> email prefix -> 'there'
+                const displayName = await resolveCustomerDisplayName(cart);
+                // Add UTM tracking to checkout URL for smart recovery attribution
+                const cronRawUrl = cart.checkout_url || 'https://offcomfrt.com';
+                const cronUtm = `utm_source=whatsapp&utm_medium=abandoned_cart&utm_campaign=reminder_${reminderType}&utm_content=cart_${cart.id}`;
+                const cronTrackedUrl = cronRawUrl.includes('?') ? `${cronRawUrl}&${cronUtm}` : `${cronRawUrl}?${cronUtm}`;
+                const varPool = [
+                    displayName,
+                    `${cart.items?.length || 0} item(s)`,
+                    `₹${cart.cart_value}`,
+                    cronTrackedUrl,
+                    cart.customer_phone || '',
+                    cart.customer_email || ''
+                ];
+
+                // Try to fetch template from Meta to build proper per-component parameters
+                let prebuiltComponents = null;
+                let totalParamCount = 0;
+                try {
+                    const metaResult = await metaWhatsApp.getMetaTemplateByName(template.name);
+                    if (metaResult.success && metaResult.template) {
+                        // Count total placeholders across ALL components (header + body + button)
+                        const allComponents = metaResult.template.components || [];
+                        for (const comp of allComponents) {
+                            if (comp.type === 'HEADER' && comp.text) {
+                                totalParamCount += (comp.text.match(/\{\{\d+\}\}/g) || []).length;
+                            } else if (comp.type === 'BODY' && comp.text) {
+                                totalParamCount += (comp.text.match(/\{\{\d+\}\}/g) || []).length;
+                            } else if (comp.type === 'BUTTONS') {
+                                for (const btn of (comp.buttons || [])) {
+                                    if (btn.type === 'URL' && btn.url) {
+                                        totalParamCount += (btn.url.match(/\{\{\d+\}\}/g) || []).length;
+                                    }
+                                }
+                            }
+                        }
+                        // Build properly structured components (header, body, button each get their own params)
+                        prebuiltComponents = metaWhatsApp.buildTemplateComponents(metaResult.template, varPool);
+                        console.log(`[Marketing Cron] Meta template "${template.name}" has ${totalParamCount} total params across ${prebuiltComponents.length} component(s)`);
+                    }
+                } catch (e) {
+                    console.warn('[Marketing Cron] Could not fetch Meta template details:', e.message);
+                }
+
+                // Build variables array matching expected parameter count
+                let variables;
+                if (totalParamCount > 0) {
+                    variables = varPool.slice(0, totalParamCount);
+                } else {
+                    const templateVariables = template.variables || [];
+                    variables = templateVariables.map(v => {
+                        const name = String(v.name);
+                        switch (name) {
+                            case '1': return varPool[0];
+                            case '2': return varPool[1];
+                            case '3': return varPool[2];
+                            case '4': return varPool[3];
+                            case '5': return varPool[4];
+                            case '6': return varPool[5];
+                            default: return v.example || '';
+                        }
+                    });
+                    if (variables.length === 0) {
+                        variables = varPool.slice(0, 4);
+                    }
+                }
+
+                console.log(`[Marketing Cron] Sending ${variables.length} params for template "${template.name}":`, variables);
+
+                // Send WhatsApp message via Meta API
+                const sendResult = await metaWhatsApp.sendTemplateMessage(
+                    cart.customer_phone,
+                    template.name,
+                    variables,
+                    template.language || 'en',
+                    prebuiltComponents
+                ).catch(async () => {
+                    // Fallback to bot
+                    const fallbackName = await resolveCustomerDisplayName(cart);
+                    const messageText = `Hi ${fallbackName}! You left items worth ₹${cart.cart_value} in your cart. ` +
+                        `Complete your purchase now! ${cart.checkout_url || ''}`;
+                    return metaWhatsApp.sendViaBot({
+                        phone: cart.customer_phone,
+                        message: messageText
+                    });
+                });
+
+                // Update cart
+                const now = new Date().toISOString();
+                const updates = {
+                    recoveryStatus: `${reminderType}_reminder_sent`,
+                    lastReminderAt: now,
+                    reminderCount: (cart.reminder_count || 0) + 1
+                };
+                if (reminderType === 'first') updates.firstReminderAt = now;
+                if (reminderType === 'second') updates.secondReminderAt = now;
+                if (reminderType === 'final') updates.finalReminderAt = now;
+
+                await marketingDB.updateAbandonedCart(cart.id, updates);
+
+                const sourceLabel = cart.checkout_source === 'gokwik' ? 'Gokwik' : 'Shopify';
+                console.log(`[Marketing Cron] Sent ${reminderType} reminder to ${sourceLabel} cart ${cart.id} (${cart.customer_phone})`);
+
+                // Rate limit: wait 2 seconds between messages
+                await new Promise(r => setTimeout(r, 2000));
+            } catch (cartErr) {
+                console.error(`[Marketing Cron] Error processing cart ${cart.id}:`, cartErr.message);
+            }
+        }
+
+        console.log('[Marketing Cron] Abandoned cart reminder processing complete');
+
+        // Smart auto-expire: mark carts as expired if they are 7+ days old and still not recovered
+        const { data: expiredCarts, error: expireErr } = await supabase
+            .from('marketing_abandoned_carts')
+            .select('id')
+            .in('recovery_status', ['pending', 'first_reminder_sent', 'second_reminder_sent', 'final_reminder_sent'])
+            .lt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+
+        if (!expireErr && expiredCarts && expiredCarts.length > 0) {
+            const { error: updateErr } = await supabase
+                .from('marketing_abandoned_carts')
+                .update({ recovery_status: 'expired', updated_at: new Date().toISOString() })
+                .in('id', expiredCarts.map(c => c.id));
+            if (!updateErr) {
+                console.log(`[Marketing Cron] Auto-expired ${expiredCarts.length} abandoned carts (7+ days old)`);
+            }
+        }
+    } catch (error) {
+        console.error('[Marketing Cron] Abandoned cart reminder error:', error.message);
+    }
+}
+
+// ── Daily Analytics Aggregation Cron Job ──
+
+async function aggregateDailyMarketingAnalytics() {
+    try {
+        console.log('[Marketing Cron] Aggregating daily analytics...');
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+        // Check if already aggregated
+        const { data: existing } = await supabase
+            .from('marketing_analytics_daily')
+            .select('id').eq('date', yesterday).limit(1);
+
+        if (existing && existing.length > 0) {
+            console.log(`[Marketing Cron] Analytics for ${yesterday} already exist`);
+            return;
+        }
+
+        // Aggregate data
+        const [
+            { count: newCustomers },
+            { count: campaignsSent },
+            { count: campaignsDelivered },
+            { count: campaignsRead },
+            { count: campaignsFailed },
+            { count: cartsAbandoned },
+            { count: cartsRecovered },
+            { data: revenueData }
+        ] = await Promise.all([
+            supabase.from('marketing_customers').select('*', { count: 'exact', head: true })
+                .gte('created_at', yesterday).lt('created_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_campaign_recipients').select('*', { count: 'exact', head: true })
+                .gte('sent_at', yesterday).lt('sent_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_campaign_recipients').select('*', { count: 'exact', head: true })
+                .gte('delivered_at', yesterday).lt('delivered_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_campaign_recipients').select('*', { count: 'exact', head: true })
+                .gte('read_at', yesterday).lt('read_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_campaign_recipients').select('*', { count: 'exact', head: true })
+                .gte('failed_at', yesterday).lt('failed_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_abandoned_carts').select('*', { count: 'exact', head: true })
+                .gte('created_at', yesterday).lt('created_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_abandoned_carts').select('*', { count: 'exact', head: true })
+                .eq('recovery_status', 'recovered')
+                .gte('recovered_at', yesterday).lt('recovered_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0]),
+            supabase.from('marketing_coupon_usage').select('discount_amount, order_total')
+                .gte('created_at', yesterday).lt('created_at', new Date(Date.now() - 86400000 + 86400000).toISOString().split('T')[0])
+        ]);
+
+        const couponRevenue = (revenueData || []).reduce((sum, u) => sum + (parseFloat(u.order_total) || 0), 0);
+        const couponDiscount = (revenueData || []).reduce((sum, u) => sum + (parseFloat(u.discount_amount) || 0), 0);
+
+        await supabase.from('marketing_analytics_daily').insert([{
+            date: yesterday,
+            new_customers: newCustomers || 0,
+            campaigns_sent: campaignsSent || 0,
+            campaigns_delivered: campaignsDelivered || 0,
+            campaigns_read: campaignsRead || 0,
+            campaigns_failed: campaignsFailed || 0,
+            coupon_revenue: couponRevenue,
+            coupon_discount_given: couponDiscount,
+            carts_abandoned: cartsAbandoned || 0,
+            carts_recovered: cartsRecovered || 0
+        }]);
+
+        console.log(`[Marketing Cron] Daily analytics for ${yesterday} aggregated successfully`);
+    } catch (error) {
+        console.error('[Marketing Cron] Daily analytics aggregation error:', error.message);
+    }
+}
+
+
+// ==================== ERROR HANDLING ====================
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Global error handler - Sanitized for production
+app.use((err, req, res, next) => {
+    logger.error('Unhandled error:', { 
+        message: err.message, 
+        stack: err.stack,
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip
+    });
+    
+    // Don't expose error details in production
+    const response = { error: 'Internal server error' };
+    if (!isProduction) {
+        response.details = err.message;
+    }
+    
+    res.status(500).json(response);
+});
+
+// ==================== START SERVER ====================
+
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📦 Store: ${process.env.SHOPIFY_STORE}`);
+    console.log(`🔐 Shopify Authorized: ${!!(process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken)}`);
+    console.log(`📮 Shiprocket Configured: ${!!(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD)}`);
+    console.log(`🚚 Delhivery Configured: ${!!process.env.DELHIVERY_API_KEY}`);
+    console.log(`🔄 Delhivery Fallback: ${process.env.DELHIVERY_API_KEY ? 'Enabled' : 'Disabled'}`);
+
+    if (!process.env.SHOPIFY_ACCESS_TOKEN && !storage.accessToken) {
+        console.log(`⚠️  Not authorized yet. Visit /auth/install to complete OAuth`);
+    }
+});

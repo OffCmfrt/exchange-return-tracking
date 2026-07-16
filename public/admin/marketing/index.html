@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marketing Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/admin/marketing/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- Login Section -->
+<div id="loginSection" class="login-container">
+    <div class="login-card">
+        <div class="login-header">
+            <i class="fas fa-bullhorn login-icon"></i>
+            <h1>Marketing Dashboard</h1>
+            <p>Login to manage campaigns, coupons & customer engagement</p>
+        </div>
+        <div id="loginAlert"></div>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label for="adminPassword">Admin Password</label>
+                <input type="password" id="adminPassword" name="adminPassword" required placeholder="Enter admin password" autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+                <span id="loginBtnText">Login</span>
+                <span id="loginSpinner" class="spinner hidden"></span>
+            </button>
+        </form>
+        <div class="login-footer">
+            <a href="/admin/">← Back to Returns Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<!-- Dashboard Section -->
+<div id="dashboardSection" class="dashboard-container hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <i class="fas fa-bullhorn"></i>
+            <span>Marketing</span>
+            <button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar">
+                <i class="fas fa-angles-left"></i>
+            </button>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item" data-section="overview" data-tooltip="Overview" onclick="switchSection('overview')">
+                <i class="fas fa-chart-pie"></i><span>Overview</span>
+            </a>
+            <a href="#" class="nav-item" data-section="customers" data-tooltip="Customers" onclick="switchSection('customers')">
+                <i class="fas fa-users"></i><span>Customers</span>
+            </a>
+            <a href="#" class="nav-item" data-section="campaigns" data-tooltip="Campaigns" onclick="switchSection('campaigns')">
+                <i class="fas fa-paper-plane"></i><span>Campaigns</span>
+            </a>
+            <a href="#" class="nav-item" data-section="templates" data-tooltip="Templates" onclick="switchSection('templates')">
+                <i class="fas fa-file-alt"></i><span>Templates</span>
+            </a>
+            <a href="#" class="nav-item" data-section="coupons" data-tooltip="Coupons" onclick="switchSection('coupons')">
+                <i class="fas fa-ticket-alt"></i><span>Coupons</span>
+            </a>
+            <a href="#" class="nav-item" data-section="abandoned-carts" data-tooltip="Abandoned Carts" onclick="switchSection('abandoned-carts')">
+                <i class="fas fa-shopping-cart"></i><span>Abandoned Carts</span>
+            </a>
+            <a href="#" class="nav-item" data-section="recovered-carts" data-tooltip="Recovered Carts" onclick="switchSection('recovered-carts')">
+                <i class="fas fa-check-circle"></i><span>Recovered Carts</span>
+            </a>
+            <a href="#" class="nav-item" data-section="analytics" data-tooltip="Analytics" onclick="switchSection('analytics')">
+                <i class="fas fa-chart-bar"></i><span>Analytics</span>
+            </a>
+            <a href="#" class="nav-item" data-section="settings" data-tooltip="Settings" onclick="switchSection('settings')">
+                <i class="fas fa-cog"></i><span>Settings</span>
+            </a>
+            <a href="#" class="nav-item" data-section="audit-log" data-tooltip="Audit Log" onclick="switchSection('audit-log')">
+                <i class="fas fa-history"></i><span>Audit Log</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <a href="/admin/" class="nav-item" data-tooltip="Returns Dashboard"><i class="fas fa-arrow-left"></i><span>Returns Dashboard</span></a>
+            <a href="#" class="nav-item" data-tooltip="Logout" onclick="logout()"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <button class="sidebar-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+            <h2 id="sectionTitle">Overview</h2>
+            <div class="top-bar-actions">
+                <span id="lastSyncTime" class="text-muted"></span>
+            </div>
+        </header>
+
+        <!-- Overview Section -->
+        <section id="section-overview" class="content-section active">
+            <div class="stats-grid" id="overviewStats">
+                <div class="stat-card"><div class="stat-icon blue"><i class="fas fa-users"></i></div><div class="stat-info"><span class="stat-value" id="stat-totalCustomers">0</span><span class="stat-label">Total Customers</span></div></div>
+                <div class="stat-card"><div class="stat-icon green"><i class="fas fa-paper-plane"></i></div><div class="stat-info"><span class="stat-value" id="stat-campaignsSent">0</span><span class="stat-label">Campaigns Sent</span></div></div>
+                <div class="stat-card"><div class="stat-icon purple"><i class="fas fa-ticket-alt"></i></div><div class="stat-info"><span class="stat-value" id="stat-activeCoupons">0</span><span class="stat-label">Active Coupons</span></div></div>
+                <div class="stat-card"><div class="stat-icon orange"><i class="fas fa-shopping-cart"></i></div><div class="stat-info"><span class="stat-value" id="stat-abandonedCarts">0</span><span class="stat-label">Abandoned Carts</span></div></div>
+            </div>
+            <div class="charts-grid">
+                <div class="card"><div class="card-header"><h3>Revenue Trend</h3></div><div class="card-body"><canvas id="revenueChart"></canvas></div></div>
+                <div class="card"><div class="card-header"><h3>Campaign Performance</h3></div><div class="card-body"><canvas id="campaignChart"></canvas></div></div>
+            </div>
+            <div class="charts-grid">
+                <div class="card"><div class="card-header"><h3>Customer Segments</h3></div><div class="card-body"><canvas id="segmentChart"></canvas></div></div>
+                <div class="card"><div class="card-header"><h3>Cart Recovery</h3></div><div class="card-body"><canvas id="recoveryChart"></canvas></div></div>
+            </div>
+        </section>
+
+        <!-- Customers Section -->
+        <section id="section-customers" class="content-section">
+            <!-- Customer Stats Row -->
+            <div class="stats-grid" id="customerStatsRow">
+                <div class="stat-card"><div class="stat-icon blue"><i class="fas fa-users"></i></div><div class="stat-info"><span class="stat-value" id="cstat-total">0</span><span class="stat-label">Total Customers</span></div></div>
+                <div class="stat-card"><div class="stat-icon green"><i class="fas fa-crown"></i></div><div class="stat-info"><span class="stat-value" id="cstat-vip">0</span><span class="stat-label">VIP / Gold+</span></div></div>
+                <div class="stat-card"><div class="stat-icon purple"><i class="fas fa-heartbeat"></i></div><div class="stat-info"><span class="stat-value" id="cstat-health">0</span><span class="stat-label">Avg Health Score</span></div></div>
+                <div class="stat-card"><div class="stat-icon orange"><i class="fas fa-exclamation-triangle"></i></div><div class="stat-info"><span class="stat-value" id="cstat-atrisk">0</span><span class="stat-label">At Risk / Churning</span></div></div>
+            </div>
+
+            <!-- Health & Churn Breakdown Row -->
+            <div class="smart-breakdown-row" id="smartBreakdownRow">
+                <div class="breakdown-card">
+                    <span class="breakdown-label">Health</span>
+                    <div class="breakdown-bars">
+                        <div class="breakdown-bar"><span class="bar-fill bar-excellent" id="healthExcellent" style="width:0%"></span><span class="bar-label">Excellent</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-good" id="healthGood" style="width:0%"></span><span class="bar-label">Good</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-average" id="healthAverage" style="width:0%"></span><span class="bar-label">Average</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-poor" id="healthPoor" style="width:0%"></span><span class="bar-label">Poor</span></div>
+                    </div>
+                </div>
+                <div class="breakdown-card">
+                    <span class="breakdown-label">Churn Risk</span>
+                    <div class="breakdown-bars">
+                        <div class="breakdown-bar"><span class="bar-fill bar-low" id="churnLow" style="width:0%"></span><span class="bar-label">Low</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-medium" id="churnMedium" style="width:0%"></span><span class="bar-label">Medium</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-high" id="churnHigh" style="width:0%"></span><span class="bar-label">High</span></div>
+                        <div class="breakdown-bar"><span class="bar-fill bar-critical" id="churnCritical" style="width:0%"></span><span class="bar-label">Critical</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters & Actions Bar -->
+            <div class="section-header">
+                <div class="filters-bar">
+                    <div class="search-wrapper">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" id="customerSearch" placeholder="Search by name, email, phone..." class="form-input search-input" oninput="debounce(loadCustomers, 300)()">
+                    </div>
+                    <select id="customerSegment" class="form-select" onchange="loadCustomers()"><option value="">All Segments</option></select>
+                    <select id="customerTier" class="form-select" onchange="loadCustomers()">
+                        <option value="">All Tiers</option>
+                        <option value="bronze">Bronze</option>
+                        <option value="silver">Silver</option>
+                        <option value="gold">Gold</option>
+                        <option value="platinum">Platinum</option>
+                    </select>
+                    <select id="customerMarketing" class="form-select" onchange="loadCustomers()">
+                        <option value="">Marketing: All</option>
+                        <option value="true">Subscribed</option>
+                        <option value="false">Unsubscribed</option>
+                    </select>
+                    <select id="customerSortBy" class="form-select" onchange="loadCustomers()">
+                        <option value="created_at">Sort: Newest</option>
+                        <option value="total_spent">Sort: Highest Spent</option>
+                        <option value="total_orders">Sort: Most Orders</option>
+                        <option value="last_order_date">Sort: Last Order</option>
+                        <option value="first_name">Sort: Name A-Z</option>
+                        <option value="health_score">Sort: Health Score</option>
+                    </select>
+                    <select id="customerChurnRisk" class="form-select" onchange="loadCustomers()">
+                        <option value="">Churn: All</option>
+                        <option value="low">Low Risk</option>
+                        <option value="medium">Medium Risk</option>
+                        <option value="high">High Risk</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-secondary" id="bulkActionsBtn" style="display:none" onclick="toggleBulkActions()"><i class="fas fa-check-square"></i> Bulk Actions</button>
+                    <button class="btn btn-secondary" onclick="exportCustomers()"><i class="fas fa-download"></i> Export</button>
+                    <button class="btn btn-warning" onclick="recomputeSegments()" title="Re-analyze all customers with RFM"><i class="fas fa-brain"></i> Smart Recompute</button>
+                    <button class="btn btn-primary" onclick="syncCustomers()"><i class="fas fa-sync"></i> Sync from Shopify</button>
+                    <button class="btn btn-secondary" onclick="if(confirm('Full sync fetches ALL customers. This may take a while. Continue?')) syncCustomers(true)"><i class="fas fa-sync-alt"></i> Force Full Sync</button>
+                </div>
+            </div>
+
+            <!-- Bulk Actions Panel -->
+            <div id="bulkActionsPanel" class="bulk-actions-panel hidden">
+                <div class="bulk-actions-content">
+                    <span class="bulk-selected-count"><span id="selectedCount">0</span> selected</span>
+                    <div class="bulk-actions-buttons">
+                        <button class="btn btn-sm btn-primary" onclick="bulkChangeSegment()"><i class="fas fa-tag"></i> Change Segment</button>
+                        <button class="btn btn-sm btn-primary" onclick="bulkChangeTier()"><i class="fas fa-crown"></i> Change Tier</button>
+                        <button class="btn btn-sm btn-success" onclick="bulkSendCoupon()"><i class="fas fa-ticket-alt"></i> Send Coupon</button>
+                        <button class="btn btn-sm btn-danger" onclick="bulkDeselect()"><i class="fas fa-times"></i> Clear Selection</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Customer Table -->
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table premium-table" id="customersTable">
+                <thead>
+                    <tr>
+                        <th class="col-checkbox"><input type="checkbox" id="selectAllCustomers" onchange="toggleSelectAll(this)"></th>
+                        <th>Customer</th>
+                        <th>Contact</th>
+                        <th>Orders</th>
+                        <th>Total Spent</th>
+                        <th>Health</th>
+                        <th>Segment</th>
+                        <th>Tier</th>
+                        <th>Churn</th>
+                        <th>Last Order</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="customersBody"></tbody>
+            </table></div>
+            <div id="customersEmpty" class="empty-state hidden"><i class="fas fa-users-slash"></i><p>No customers found</p><small>Try adjusting your filters or sync from Shopify</small></div>
+            <div id="customersPagination" class="pagination"></div></div></div>
+        </section>
+
+        <!-- Campaigns Section -->
+        <section id="section-campaigns" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="campaignStatus" class="form-select" onchange="loadCampaigns()"><option value="">All Status</option><option value="draft">Draft</option><option value="scheduled">Scheduled</option><option value="sending">Sending</option><option value="sent">Sent</option><option value="paused">Paused</option><option value="cancelled">Cancelled</option></select>
+                </div>
+                <button class="btn btn-primary" onclick="showCreateCampaignModal()"><i class="fas fa-plus"></i> New Campaign</button>
+            </div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="campaignsTable"><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Recipients</th><th>Template</th><th>Scheduled</th><th>Created</th><th>Actions</th></tr></thead><tbody id="campaignsBody"></tbody></table></div><div id="campaignsPagination" class="pagination"></div></div></div>
+        </section>
+
+        <!-- Templates Section -->
+        <section id="section-templates" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="templateCategory" class="form-select" onchange="loadTemplates()">
+                        <option value="">All Categories</option>
+                        <option value="marketing">Marketing</option>
+                        <option value="utility">Utility</option>
+                        <option value="authentication">Authentication</option>
+                        <option value="service">Service</option>
+                    </select>
+                    <select id="templateStatus" class="form-select" onchange="loadTemplates()">
+                        <option value="">All Status</option>
+                        <option value="draft">Draft</option>
+                        <option value="pending_approval">Pending Approval</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="templateActiveOnly" checked onchange="loadTemplates()">
+                        Active Only
+                    </label>
+                </div>
+                <button class="btn btn-secondary" onclick="syncTemplatesFromMeta()" title="Sync templates from Meta WhatsApp"><i class="fas fa-sync-alt"></i> Sync from Meta</button>
+                <button class="btn btn-primary" onclick="showCreateTemplateModal()"><i class="fas fa-plus"></i> New Template</button>
+            </div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="templatesTable"><thead><tr><th>Name</th><th>Category</th><th>Language</th><th>Status</th><th>Meta Status</th><th>Usage</th><th>Created</th><th>Actions</th></tr></thead><tbody id="templatesBody"></tbody></table></div></div></div>
+        </section>
+
+        <!-- Coupons Section -->
+        <section id="section-coupons" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <input type="text" id="couponSearch" placeholder="Search coupons..." class="form-input" oninput="debounce(loadCoupons, 300)()">
+                </div>
+                <button class="btn btn-primary" onclick="showCreateCouponModal()"><i class="fas fa-plus"></i> New Coupon</button>
+            </div>
+            <div class="stats-grid stats-grid-sm" id="couponStats"></div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="couponsTable"><thead><tr><th>Code</th><th>Discount</th><th>Type</th><th>Used</th><th>Status</th><th>Expires</th><th>Shopify</th><th>Actions</th></tr></thead><tbody id="couponsBody"></tbody></table></div><div id="couponsPagination" class="pagination"></div></div></div>
+        </section>
+
+        <!-- Abandoned Carts Section -->
+        <section id="section-abandoned-carts" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="cartStatus" class="form-select" onchange="loadAbandonedCarts()"><option value="">All Status</option><option value="pending">Pending</option><option value="first_reminder_sent">First Reminder</option><option value="second_reminder_sent">Second Reminder</option><option value="final_reminder_sent">Final Reminder</option><option value="recovered">Recovered</option><option value="expired">Expired</option></select>
+                    <select id="cartSource" class="form-select" onchange="loadAbandonedCarts()"><option value="">All Sources</option><option value="gokwik">Gokwik</option><option value="shopify">Shopify</option></select>
+                </div>
+            </div>
+            <div class="stats-grid stats-grid-sm" id="cartStats"></div>
+            <div class="card"><div class="card-header"><h3>Abandoned Carts</h3><div class="card-actions"><span id="sourceBreakdown" class="text-muted small"></span></div></div><div class="card-body"><div class="table-container"><table class="data-table" id="cartsTable"><thead><tr><th>Customer</th><th>Phone</th><th>Source</th><th>Cart Value</th><th>Items</th><th>Status</th><th>Reminders</th><th>Created</th><th>Actions</th></tr></thead><tbody id="cartsBody"></tbody></table></div><div id="cartsPagination" class="pagination"></div></div></div>
+        </section>
+
+        <!-- Recovered Carts Section -->
+        <section id="section-recovered-carts" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="recoveredSource" class="form-select" onchange="loadRecoveredCarts()"><option value="">All Sources</option><option value="gokwik">Gokwik</option><option value="shopify">Shopify</option></select>
+                    <select id="recoveredChannel" class="form-select" onchange="loadRecoveredCarts()"><option value="">All Channels</option><option value="whatsapp">WhatsApp</option><option value="direct">Direct</option><option value="coupon">Coupon</option></select>
+                    <select id="recoveredMethod" class="form-select" onchange="loadRecoveredCarts()"><option value="">Detection: All</option><option value="shopify_webhook">Auto (Webhook)</option><option value="cron_scan">Auto (Cron Scan)</option><option value="manual">Manual</option></select>
+                    <input type="date" id="recoveredDateFrom" class="form-input" onchange="loadRecoveredCarts()">
+                    <input type="date" id="recoveredDateTo" class="form-input" onchange="loadRecoveredCarts()">
+                </div>
+                <button class="btn btn-secondary" onclick="scanRecoveries()" title="Scan Shopify orders for new recoveries"><i class="fas fa-search"></i> Scan Orders</button>
+            </div>
+            <div class="stats-grid stats-grid-sm" id="recoveredStats"></div>
+            <div class="card">
+                <div class="card-header">
+                    <h3>Recovered Carts</h3>
+                    <div class="card-actions"><span id="recoveryMethodBreakdown" class="text-muted small"></span></div>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="data-table" id="recoveredTable">
+                            <thead><tr><th>Customer</th><th>Source</th><th>Cart Value</th><th>Recovered Amount</th><th>Order</th><th>Channel</th><th>Detected By</th><th>Recovery Time</th><th>Recovered At</th><th>Actions</th></tr></thead>
+                            <tbody id="recoveredBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="recoveredPagination" class="pagination"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Analytics Section -->
+        <section id="section-analytics" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <input type="date" id="analyticsStart" class="form-input" onchange="loadAnalytics()">
+                    <input type="date" id="analyticsEnd" class="form-input" onchange="loadAnalytics()">
+                </div>
+            </div>
+            <div class="stats-grid" id="analyticsStats"></div>
+            <div class="charts-grid"><div class="card"><div class="card-header"><h3>Daily Revenue</h3></div><div class="card-body"><canvas id="dailyRevenueChart"></canvas></div></div></div>
+            <div class="charts-grid"><div class="card"><div class="card-header"><h3>Campaign Analytics</h3></div><div class="card-body"><canvas id="analyticsCampaignChart"></canvas></div></div></div>
+        </section>
+
+        <!-- Settings Section -->
+        <section id="section-settings" class="content-section">
+            <div class="card"><div class="card-header"><h3>Marketing Settings</h3></div><div class="card-body" id="settingsBody"><p class="text-muted">Loading settings...</p></div></div>
+        </section>
+
+        <!-- Audit Log Section -->
+        <section id="section-audit-log" class="content-section">
+            <div class="section-header">
+                <div class="filters-bar">
+                    <select id="auditEntityType" class="form-select" onchange="loadAuditLogs()"><option value="">All Entities</option><option value="campaign">Campaign</option><option value="template">Template</option><option value="coupon">Coupon</option><option value="customer">Customer</option><option value="setting">Setting</option></select>
+                    <select id="auditAction" class="form-select" onchange="loadAuditLogs()"><option value="">All Actions</option><option value="created">Created</option><option value="updated">Updated</option><option value="deleted">Deleted</option><option value="launched">Launched</option><option value="settings_changed">Settings Changed</option></select>
+                </div>
+            </div>
+            <div class="card"><div class="card-body"><div class="table-container"><table class="data-table" id="auditTable"><thead><tr><th>Time</th><th>Action</th><th>Entity</th><th>Actor</th><th>Details</th></tr></thead><tbody id="auditBody"></tbody></table></div><div id="auditPagination" class="pagination"></div></div></div>
+        </section>
+    </main>
+</div>
+
+<!-- Modal Container -->
+<div id="modalOverlay" class="modal-overlay hidden" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header"><h3 id="modalTitle">Modal</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+        <div class="modal-body" id="modalBody"></div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toastContainer" class="toast-container"></div>
+
+<script src="/admin/marketing/utils.js?v=4"></script>
+<script src="/admin/marketing/chart-init.js?v=4"></script>
+<script src="/admin/marketing/dashboard.js?v=4"></script>
+</body>
+</html>

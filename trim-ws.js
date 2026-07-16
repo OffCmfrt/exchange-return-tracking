@@ -1,0 +1,12 @@
+const fs = require('fs');
+const path = 'd:/projects/OFFCOMFRT OFFCIAL/OFFCOMFRT/exchange-return-tracking-main/exchange-return-tracking-main/public/page.influencer-admin.liquid';
+let content = fs.readFileSync(path, 'utf8');
+const lines = content.split('\n');
+const trimmed = lines.map(l => l.replace(/[ \t]+$/, '')).join('\n');
+const before = Buffer.byteLength(content);
+fs.writeFileSync(path, trimmed, 'utf8');
+const after = Buffer.byteLength(trimmed);
+console.log(`Before: ${before} bytes`);
+console.log(`After: ${after} bytes`);
+console.log(`Saved: ${before - after} bytes`);
+console.log(`Under 256KB: ${after <= 262144 ? 'YES' : 'NO, still over by ' + (after - 262144) + ' bytes'}`);
