@@ -602,66 +602,119 @@ function detectCarrier(req) {
     );
 }
 
-// Helper function to map carrier-specific status to internal status enum
-function mapCarrierStatus(carrierStatus, carrier = 'shiprocket') {
-    if (!carrierStatus) return null;
+// Ordered progression of shipment statuses. Used to stop out-of-order or
+// duplicate carrier scans from regressing a request (e.g. a late "in transit"
+// scan arriving after "out for delivery"). Higher rank = further along.
+const STATUS_RANK = {
+    waiting_payment: 0,
+    pending: 0,
+    pickup_pending: 1,
+    scheduled: 2,
+    pickup_booked: 2,
+    picked_up: 3,
+    in_transit: 4,
+    out_for_delivery: 5,
+    delivered: 6
+};
 
-    const statusUpper = carrierStatus.toUpperCase();
+// Returns true only when `next` is strictly further along than `current`,
+// so sync never moves a shipment backwards on a stale/duplicate scan.
+function isForwardProgress(current, next) {
+    const c = STATUS_RANK[current] ?? -1;
+    const n = STATUS_RANK[next] ?? -1;
+    return n > c;
+}
+
+// Map a carrier-specific status string (and Delhivery's optional StatusType code)
+// to an internal status enum. Comprehensive across the full Shiprocket and
+// Delhivery vocabularies. Order matters — more specific / terminal states first.
+function mapCarrierStatus(carrierStatus, carrier = 'shiprocket', statusType = null) {
+    if (!carrierStatus && !statusType) return null;
+
+    const s = (carrierStatus || '').toString().toUpperCase().trim();
+    const st = (statusType || '').toString().toUpperCase().trim();
     const isDelhivery = carrier === 'delhivery';
+    const has = (...tokens) => tokens.some(t => s.includes(t));
 
-    // Terminal: delivered / received at warehouse
-    if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') ||
-        statusUpper.includes('RETURN RECEIVED') || statusUpper.includes('DTO DELIVERED')) {
-        return { status: 'delivered', shouldUpdate: true };
-    }
-
-    // Out for delivery must be checked before the generic in-transit branch.
-    // Delhivery reports the last-mile leg as "Dispatched".
-    if (statusUpper.includes('OUT FOR DELIVERY') ||
-        (isDelhivery && statusUpper.includes('DISPATCHED'))) {
-        return { status: 'out_for_delivery', shouldUpdate: true };
-    }
-
-    // Picked up by courier
-    if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
-        return { status: 'picked_up', shouldUpdate: true };
-    }
-
-    // In transit / dispatched (Shiprocket).
-    if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') ||
-        statusUpper.includes('PENDING DELIVERY') ||
-        (!isDelhivery && statusUpper.includes('DISPATCHED'))) {
-        return { status: 'in_transit', shouldUpdate: true };
-    }
-
-    if (statusUpper.includes('SCHEDULED') || statusUpper.includes('PICKUP SCHEDULED')) {
-        return { status: 'scheduled', shouldUpdate: true };
-    }
-
-    if (statusUpper.includes('PICKUP GENERATED') || statusUpper.includes('AWB ASSIGNED') ||
-        statusUpper.includes('PICKUP CREATED') || statusUpper.includes('REGISTERED')) {
-        return { status: 'pickup_pending', shouldUpdate: true };
-    }
-
-    // Delhivery pickup states: shipment created/assigned but not yet in transit.
-    // Keep these at pickup_booked so we never advance a not-yet-picked shipment.
-    if (statusUpper.includes('PICKUP ASSIGNED') || statusUpper.includes('ASSIGNED') ||
-        (isDelhivery && (statusUpper.includes('MANIFESTED') ||
-                         statusUpper.includes('NOT PICKED') ||
-                         statusUpper === 'OPEN'))) {
-        return { status: 'pickup_booked', shouldUpdate: true };
-    }
-
-    // Exception statuses - add admin note but don't change status automatically.
-    // Delhivery-specific: RTO/DTO (return-to-origin), UNDELIVERED.
-    if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') ||
-        statusUpper.includes('CANCELLED') || statusUpper.includes('MISROUTED') ||
-        statusUpper.includes('DELAYED') || statusUpper.includes('UNDELIVERED') ||
-        (isDelhivery && statusUpper.includes('DTO'))) {
+    // 1. UNDELIVERED / FAILED ATTEMPT — must precede DELIVERED because the
+    //    substring "DELIVERED" also appears inside "UNDELIVERED".
+    if (has('UNDELIVERED', 'NOT DELIVERED', 'DELIVERY FAILED', 'FAILED DELIVERY',
+            'DELIVERY ATTEMPTED', 'ATTEMPTED DELIVERY')) {
         return { status: 'exception', shouldUpdate: false, needsNote: true };
     }
 
-    // Unknown status - don't update
+    // 2. RTO / DTO / RETURN TO ORIGIN — courier is sending the parcel back.
+    if (st === 'RT' || has('RTO', 'RETURN TO ORIGIN', 'RETURN INITIATED',
+                           'RETURN ACCEPTED') ||
+        (isDelhivery && s.includes('DTO') && !s.includes('DELIVERED'))) {
+        return { status: 'exception', shouldUpdate: false, needsNote: true };
+    }
+
+    // 3. LOST / DAMAGED / CANCELLED / PICKUP ERROR — hard exceptions.
+    if (has('LOST', 'DAMAGED', 'DESTROYED', 'CANCELLED', 'CANCELED',
+            'PICKUP ERROR', 'PICKUP FAILED')) {
+        return { status: 'exception', shouldUpdate: false, needsNote: true };
+    }
+
+    // 4. TERMINAL — DELIVERED / RECEIVED AT WAREHOUSE.
+    //    Delhivery StatusType 'DL' is the authoritative delivered signal.
+    if (st === 'DL' || has('DELIVERED', 'DTO DELIVERED', 'RETURN RECEIVED',
+                           'RECEIVED AT WAREHOUSE', 'RECEIVED AT ORIGIN') ||
+        s === 'CLOSED') {
+        return { status: 'delivered', shouldUpdate: true };
+    }
+
+    // 5. OUT FOR DELIVERY — before generic in-transit. Delhivery reports the
+    //    last-mile leg as "Dispatched".
+    if (has('OUT FOR DELIVERY', 'OUT FOR DEL', 'OFD') ||
+        (isDelhivery && has('DISPATCHED'))) {
+        return { status: 'out_for_delivery', shouldUpdate: true };
+    }
+
+    // 6. IN TRANSIT / IN NETWORK / REACHED HUB.
+    if (has('IN TRANSIT', 'IN-TRANSIT', 'INTRANSIT', 'SHIPPED', 'PENDING DELIVERY',
+            'REACHED DESTINATION', 'REACHED AT DESTINATION', 'ARRIVED AT',
+            'IN NETWORK') ||
+        (!isDelhivery && has('DISPATCHED'))) {
+        return { status: 'in_transit', shouldUpdate: true };
+    }
+
+    // 7. PICKED UP BY COURIER. Delhivery StatusType 'PU' == pickup done.
+    if ((st === 'PU' && !has('NOT PICKED')) ||
+        (has('PICKED UP', 'PICKUP DONE', 'PICKUP COMPLETE', 'SHIPMENT PICKED') &&
+         !has('NOT PICKED', 'PICKUP GENERATED', 'PICKUP SCHEDULED',
+              'PICKUP CREATED', 'AWAITING'))) {
+        return { status: 'picked_up', shouldUpdate: true };
+    }
+
+    // 8. PICKUP SCHEDULED / BOOKED / MANIFESTED — booked, awaiting collection.
+    if (has('OUT FOR PICKUP', 'PICKUP SCHEDULED', 'PICKUP RESCHEDULED',
+            'PICKUP QUEUED', 'PICKUP ASSIGNED', 'PICKUP BOOKED', 'SCHEDULED') ||
+        (isDelhivery && (has('MANIFESTED', 'NOT PICKED') || s === 'OPEN'))) {
+        return { status: 'pickup_booked', shouldUpdate: true };
+    }
+
+    // 9. AWB / LABEL GENERATED, REGISTERED — created, awaiting carrier confirmation.
+    if (has('PICKUP GENERATED', 'AWB ASSIGNED', 'LABEL GENERATED', 'PICKUP CREATED',
+            'REGISTERED', 'MANIFEST GENERATED', 'MANIFEST UPLOADED', 'DATA RECEIVED',
+            'DATA UPLOAD', 'INFORMATION RECEIVED', 'ORDER CREATED')) {
+        return { status: 'pickup_pending', shouldUpdate: true };
+    }
+
+    // 10. Delhivery in-network fallback: StatusType 'UD' (undelivered = still en
+    //     route) that did not match a more specific rule above.
+    if (isDelhivery && st === 'UD') {
+        return { status: 'in_transit', shouldUpdate: true };
+    }
+
+    // 11. Soft exceptions — flag for admin, but don't change the status.
+    if (has('DELAYED', 'EXCEPTION', 'ON HOLD', 'HELD', 'ADDRESS ISSUE',
+            'CONSIGNEE', 'NOT AVAILABLE', 'REFUSED', 'MISROUTED', 'REDIRECTED',
+            'REJECTED')) {
+        return { status: 'exception', shouldUpdate: false, needsNote: true };
+    }
+
+    // Unknown / unmapped — don't update.
     return { status: null, shouldUpdate: false };
 }
 
@@ -690,6 +743,7 @@ async function syncSingleRequest(req) {
     if (['pending', 'pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
         let trackingData = null;
         let currentStatus = null;
+        let currentStatusType = null;
         let newAwb = null;
         
         // Fetch tracking based on carrier
@@ -702,6 +756,7 @@ async function syncSingleRequest(req) {
                     if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
                         const shipment = trackingData.shipments[0];
                         currentStatus = shipment.status || shipment.delivered_status;
+                        currentStatusType = shipment.status_type || null;
                         newAwb = shipment.waybill_code || req.awbNumber;
                     }
                 } else {
@@ -734,13 +789,13 @@ async function syncSingleRequest(req) {
         
         // Process tracking data
         if (currentStatus) {
-            const statusMapping = mapCarrierStatus(currentStatus, carrier);
+            const statusMapping = mapCarrierStatus(currentStatus, carrier, currentStatusType);
             
             if (statusMapping && statusMapping.shouldUpdate && statusMapping.status) {
                 let newStatus = statusMapping.status;
 
-                // Only write/count when the status actually changes
-                if (newStatus !== req.status) {
+                // Only advance forward — never regress on a stale/duplicate scan.
+                if (newStatus !== req.status && isForwardProgress(req.status, newStatus)) {
                     // Build update object
                     const updates = { status: newStatus };
                     if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
@@ -789,6 +844,7 @@ async function syncSingleRequest(req) {
             );
             let forwardTrack = null;
             let forwardCurrentStatus = null;
+            let forwardStatusType = null;
             
             if (forwardCarrier === 'delhivery') {
                 console.log(`[${req.requestId}] Fetching Delhivery forward tracking for AWB: ${req.forwardAwbNumber}`);
@@ -797,6 +853,7 @@ async function syncSingleRequest(req) {
                 if (forwardTrack && forwardTrack.shipments && forwardTrack.shipments.length > 0) {
                     const shipment = forwardTrack.shipments[0];
                     forwardCurrentStatus = shipment.status || shipment.delivered_status;
+                    forwardStatusType = shipment.status_type || null;
                 }
             } else {
                 // Shiprocket
@@ -809,12 +866,14 @@ async function syncSingleRequest(req) {
             }
             
             if (forwardCurrentStatus) {
-                const forwardStatusMapping = mapCarrierStatus(forwardCurrentStatus, forwardCarrier);
+                const forwardStatusMapping = mapCarrierStatus(forwardCurrentStatus, forwardCarrier, forwardStatusType);
                 
                 if (forwardStatusMapping && forwardStatusMapping.shouldUpdate && forwardStatusMapping.status) {
                     const newForwardStatus = forwardStatusMapping.status;
                     
-                    if (newForwardStatus !== req.forwardStatus) {
+                    // Only advance forward — never regress on a stale/duplicate scan.
+                    if (newForwardStatus !== req.forwardStatus &&
+                        isForwardProgress(req.forwardStatus, newForwardStatus)) {
                         console.log(`[${req.requestId}] Updating Forward Status: ${req.forwardStatus} → ${newForwardStatus} (${forwardCarrier})`);
                         await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
                         changed = true;
