@@ -325,6 +325,7 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.deliveredAt) updateData.delivered_at = updates.deliveredAt;
     if (updates.pickedUpAt) updateData.picked_up_at = updates.pickedUpAt;
     if (updates.inTransitAt) updateData.in_transit_at = updates.inTransitAt;
+    if (updates.outForDeliveryAt) updateData.out_for_delivery_at = updates.outForDeliveryAt;
     if (updates.inspectedAt) updateData.inspected_at = updates.inspectedAt;
 
     // Forward Tracking

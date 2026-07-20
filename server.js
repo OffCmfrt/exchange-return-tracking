@@ -390,7 +390,7 @@ let lastSyncTimestamp = null;
 async function syncWithRetry(req, maxRetries = 3) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            await syncSingleRequest(req);
+            const syncResult = await syncSingleRequest(req);
             
             // Update sync tracking fields (if they exist in DB)
             try {
@@ -408,7 +408,7 @@ async function syncWithRetry(req, maxRetries = 3) {
                 // Ignore if columns don't exist yet (migration not run)
             }
             
-            return { success: true, attempts: attempt };
+            return { success: true, attempts: attempt, changed: !!(syncResult && syncResult.changed) };
         } catch (error) {
             if (attempt === maxRetries) {
                 // Final failure - log permanently
@@ -454,6 +454,7 @@ async function performBackgroundSync() {
         total: 0,
         success: 0,
         failed: 0,
+        updated: 0,
         skipped: 0,
         carrierBreakdown: {
             shiprocket: { success: 0, failed: 0 },
@@ -486,13 +487,17 @@ async function performBackgroundSync() {
             const batch = activeRequests.slice(i, i + BATCH_SIZE);
             
             // Process batch in parallel
-            const results = await Promise.allSettled(batch.map(async (req) => {
-                const carrier = req.carrier || detectCarrier(req);
+            const results = await Promise.allSettled(batch.map(async (rawReq) => {
+                // Rows come back as raw snake_case; map to camelCase so the sync
+                // logic (req.awbNumber, req.requestId, ...) works correctly.
+                const req = convertFromSnakeCase(rawReq);
+                const carrier = detectCarrier(req);
                 const result = await syncWithRetry(req, 3);
                 
                 // Update metrics
                 if (result.success) {
                     syncMetrics.success++;
+                    if (result.changed) syncMetrics.updated++;
                     if (syncMetrics.carrierBreakdown[carrier]) {
                         syncMetrics.carrierBreakdown[carrier].success++;
                     }
@@ -523,7 +528,7 @@ async function performBackgroundSync() {
         // Log detailed summary
         console.log(`\n[Background Sync] ========== SYNC SUMMARY ==========`);
         console.log(`[Background Sync] Duration: ${syncDuration}s`);
-        console.log(`[Background Sync] Total: ${syncMetrics.total}, Success: ${syncMetrics.success}, Failed: ${syncMetrics.failed}, Skipped: ${syncMetrics.skipped}`);
+        console.log(`[Background Sync] Total: ${syncMetrics.total}, Success: ${syncMetrics.success}, Updated: ${syncMetrics.updated}, Failed: ${syncMetrics.failed}, Skipped: ${syncMetrics.skipped}`);
         console.log(`[Background Sync] Shiprocket: ${syncMetrics.carrierBreakdown.shiprocket.success} success, ${syncMetrics.carrierBreakdown.shiprocket.failed} failed`);
         console.log(`[Background Sync] Delhivery: ${syncMetrics.carrierBreakdown.delhivery.success} success, ${syncMetrics.carrierBreakdown.delhivery.failed} failed`);
         
@@ -547,83 +552,134 @@ async function performBackgroundSync() {
     }
 }
 
-// Helper function to detect carrier based on request data
-function detectCarrier(req) {
-    // Check explicit carrier field first
-    if (req.carrier === 'delhivery' || req.carrier === 'shiprocket') {
-        return req.carrier;
+// Authoritative carrier detection from raw shipment fields (heuristics only).
+// Used by both the return leg and the forward leg so detection logic is never
+// re-implemented inline and cannot diverge between code paths.
+function detectCarrierForAwb(awb, shipmentId, carrierField, fallbackReason) {
+    const carrier = (carrierField || '').toString().trim().toLowerCase();
+    const awbStr = awb ? awb.toString().trim() : '';
+    const shipStr = shipmentId ? shipmentId.toString().trim() : '';
+
+    // 1. Explicit, trusted carrier field
+    if (carrier === 'delhivery' || carrier === 'shiprocket') {
+        return carrier;
     }
-    
-    // Check AWB number patterns
-    if (req.awbNumber) {
-        // Delhivery waybills are typically 12+ digits
-        if (/^\d{12,}$/.test(req.awbNumber)) {
+
+    // 2. Shiprocket shipment IDs are prefixed with 'SR'
+    if (shipStr.toUpperCase().startsWith('SR')) {
+        return 'shiprocket';
+    }
+
+    // 3. A fallback reason means the primary carrier was swapped for Delhivery
+    //    (unless the shipment ID clearly marks it as Shiprocket, handled above)
+    if (fallbackReason) {
+        return 'delhivery';
+    }
+
+    // 4. AWB format: Delhivery waybills are all-digit and >= 12 chars
+    if (awbStr) {
+        if (/^\d{12,}$/.test(awbStr)) {
             return 'delhivery';
         }
-        // Shiprocket shipment IDs start with 'SR'
-        if (req.shipmentId && req.shipmentId.toString().startsWith('SR')) {
+        // Alphanumeric / SR-prefixed AWBs are Shiprocket
+        if (/[a-zA-Z]/.test(awbStr)) {
             return 'shiprocket';
         }
     }
-    
-    // Check forward carrier
-    if (req.forwardCarrier) {
-        return req.forwardCarrier;
-    }
-    
-    // Default to shiprocket for backward compatibility
+
+    // 5. Default to shiprocket for backward compatibility
     return 'shiprocket';
+}
+
+// Helper function to detect carrier based on request data.
+// Backward compatible: existing detectCarrier(req) calls still work.
+function detectCarrier(req) {
+    return detectCarrierForAwb(
+        req.awbNumber,
+        req.shipmentId,
+        req.carrier || req.forwardCarrier,
+        req.carrierFallbackReason
+    );
 }
 
 // Helper function to map carrier-specific status to internal status enum
 function mapCarrierStatus(carrierStatus, carrier = 'shiprocket') {
     if (!carrierStatus) return null;
-    
+
     const statusUpper = carrierStatus.toUpperCase();
-    
-    // Common status mappings for both carriers
-    if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') || statusUpper.includes('RETURN RECEIVED')) {
+    const isDelhivery = carrier === 'delhivery';
+
+    // Terminal: delivered / received at warehouse
+    if (statusUpper.includes('DELIVERED') || statusUpper.includes('CLOSED') ||
+        statusUpper.includes('RETURN RECEIVED') || statusUpper.includes('DTO DELIVERED')) {
         return { status: 'delivered', shouldUpdate: true };
     }
-    
+
+    // Out for delivery must be checked before the generic in-transit branch
+    if (statusUpper.includes('OUT FOR DELIVERY')) {
+        return { status: 'out_for_delivery', shouldUpdate: true };
+    }
+
+    // Picked up by courier
     if (statusUpper.includes('PICKED UP') && !statusUpper.includes('GENERATED')) {
         return { status: 'picked_up', shouldUpdate: true };
     }
-    
-    if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') || 
-        statusUpper.includes('OUT FOR DELIVERY') || statusUpper.includes('DISPATCHED')) {
+
+    // In transit / dispatched. Delhivery also uses 'MANIFESTED'/'IN TRANSIT'.
+    if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') ||
+        statusUpper.includes('DISPATCHED') ||
+        (isDelhivery && statusUpper.includes('MANIFESTED'))) {
         return { status: 'in_transit', shouldUpdate: true };
     }
-    
+
     if (statusUpper.includes('SCHEDULED') || statusUpper.includes('PICKUP SCHEDULED')) {
         return { status: 'scheduled', shouldUpdate: true };
     }
-    
-    if (statusUpper.includes('PICKUP GENERATED') || statusUpper.includes('AWB ASSIGNED') || 
+
+    if (statusUpper.includes('PICKUP GENERATED') || statusUpper.includes('AWB ASSIGNED') ||
         statusUpper.includes('PICKUP CREATED') || statusUpper.includes('REGISTERED')) {
         return { status: 'pickup_pending', shouldUpdate: true };
     }
-    
+
     // Delhivery pickup assigned status - pickup is confirmed/booked but not yet picked up
     if (statusUpper.includes('PICKUP ASSIGNED') || statusUpper.includes('ASSIGNED')) {
         return { status: 'pickup_booked', shouldUpdate: true };
     }
-    
-    // Exception statuses - add admin note but don't change status automatically
-    if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') || 
-        statusUpper.includes('CANCELLED') || statusUpper.includes('MISROUTED') || 
-        statusUpper.includes('DELAYED')) {
+
+    // Exception statuses - add admin note but don't change status automatically.
+    // Delhivery-specific: RTO/DTO (return-to-origin), UNDELIVERED.
+    if (statusUpper.includes('RTO') || statusUpper.includes('REJECTED') ||
+        statusUpper.includes('CANCELLED') || statusUpper.includes('MISROUTED') ||
+        statusUpper.includes('DELAYED') || statusUpper.includes('UNDELIVERED') ||
+        (isDelhivery && statusUpper.includes('DTO'))) {
         return { status: 'exception', shouldUpdate: false, needsNote: true };
     }
-    
+
     // Unknown status - don't update
     return { status: null, shouldUpdate: false };
 }
 
-// Extract sync logic into reusable function
+// Extract sync logic into reusable function.
+// Returns { changed, carrier } so callers can report accurate update counts.
 async function syncSingleRequest(req) {
     const carrier = detectCarrier(req);
-    
+    let changed = false;
+
+    // Self-heal: if the stored carrier disagrees with the smart detection,
+    // correct it so the DB, dashboard filter and next sync are accurate.
+    // Only heal when there is real evidence (AWB / shipment id / fallback reason)
+    // so a signal-less pending request isn't locked to the default carrier.
+    const hasCarrierEvidence = !!(req.awbNumber || req.shipmentId || req.carrierFallbackReason);
+    if (carrier && hasCarrierEvidence && req.carrier !== carrier) {
+        try {
+            await updateRequestStatus(req.requestId, { carrier });
+            console.log(`[${req.requestId}] Carrier self-healed: ${req.carrier || 'none'} → ${carrier}`);
+            req.carrier = carrier;
+        } catch (e) {
+            console.warn(`[${req.requestId}] Carrier self-heal failed: ${e.message}`);
+        }
+    }
+
     // Return shipment sync
     if (['pending', 'pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
         let trackingData = null;
@@ -676,16 +732,31 @@ async function syncSingleRequest(req) {
             
             if (statusMapping && statusMapping.shouldUpdate && statusMapping.status) {
                 let newStatus = statusMapping.status;
-                
-                // Build update object
-                const updates = { status: newStatus };
-                if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
-                if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
-                if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
-                if (newAwb && newAwb !== req.awbNumber) updates.awbNumber = newAwb;
-                
-                await updateRequestStatus(req.requestId, updates);
-                console.log(`[${req.requestId}] Status updated: ${req.status} → ${newStatus} (${carrier})`);
+
+                // Only write/count when the status actually changes
+                if (newStatus !== req.status) {
+                    // Build update object
+                    const updates = { status: newStatus };
+                    if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
+                    if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
+                    if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
+                    if (newAwb && newAwb !== req.awbNumber) updates.awbNumber = newAwb;
+
+                    await updateRequestStatus(req.requestId, updates);
+                    changed = true;
+                    console.log(`[${req.requestId}] Status updated: ${req.status} → ${newStatus} (${carrier})`);
+
+                    // out_for_delivery_at is optional; write it separately so a
+                    // missing column can never fail the core status update.
+                    if (newStatus === 'out_for_delivery') {
+                        try {
+                            await updateRequestStatus(req.requestId, { outForDeliveryAt: new Date().toISOString() });
+                        } catch (e) { /* column may not exist yet */ }
+                    }
+                } else if (newAwb && newAwb !== req.awbNumber) {
+                    // Status unchanged but AWB refreshed
+                    await updateRequestStatus(req.requestId, { awbNumber: newAwb });
+                }
             }
             
             // Add admin note for exception statuses
@@ -704,7 +775,12 @@ async function syncSingleRequest(req) {
     // Forward shipment sync for exchanges
     if (req.type === 'exchange' && req.forwardAwbNumber && req.forwardStatus !== 'delivered') {
         try {
-            const forwardCarrier = req.forwardCarrier || carrier;
+            const forwardCarrier = detectCarrierForAwb(
+                req.forwardAwbNumber,
+                req.forwardShipmentId,
+                req.forwardCarrier,
+                req.carrierFallbackReason
+            );
             let forwardTrack = null;
             let forwardCurrentStatus = null;
             
@@ -735,6 +811,7 @@ async function syncSingleRequest(req) {
                     if (newForwardStatus !== req.forwardStatus) {
                         console.log(`[${req.requestId}] Updating Forward Status: ${req.forwardStatus} → ${newForwardStatus} (${forwardCarrier})`);
                         await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
+                        changed = true;
                     }
                 }
                 
@@ -752,6 +829,8 @@ async function syncSingleRequest(req) {
             console.error(`[${req.requestId}] Forward Sync Failed:`, e.message);
         }
     }
+
+    return { changed, carrier };
 }
 
 // Schedule sync to run 4 times per day (6AM, 12PM, 6PM, 12AM IST)
@@ -4384,9 +4463,10 @@ app.get('/api/track-request/:identifier', async (req, res) => {
         
         // Return shipment tracking
         if (request.awbNumber) {
+            const returnCarrier = detectCarrier(request);
             try {
-                // Check if this is a Delhivery shipment
-                if (request.carrier === 'delhivery' || (request.carrierFallbackReason && !request.shipmentId?.startsWith('SR'))) {
+                // Route to the correct carrier using unified detection
+                if (returnCarrier === 'delhivery') {
                     // Try Delhivery tracking
                     const trackingData = await getDelhiveryTracking(request.awbNumber);
                     if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
@@ -4418,46 +4498,75 @@ app.get('/api/track-request/:identifier', async (req, res) => {
             } catch (err) {
                 if (err.message.toLowerCase().includes('cancelled') || err.message.toLowerCase().includes('canceled')) {
                     console.log(`[Tracking API] Return Shipment (${request.awbNumber}) is cancelled.`);
-                    request.shipment = { status: 'Cancelled', edd: null, activities: [], carrier: request.carrier || 'unknown' };
+                    request.shipment = { status: 'Cancelled', edd: null, activities: [], carrier: returnCarrier || 'unknown' };
                 } else {
                     console.error(`[Tracking API] Return Shipment (${request.awbNumber}) failed:`, err.message);
                 }
             }
         }
         
-        // Forward shipment tracking (for exchanges)
-        if (request.forwardAwbNumber && process.env.SHIPROCKET_EMAIL) {
+        // Forward shipment tracking (for exchanges) - carrier-aware
+        if (request.forwardAwbNumber) {
+            const forwardCarrier = detectCarrierForAwb(
+                request.forwardAwbNumber,
+                request.forwardShipmentId,
+                request.forwardCarrier,
+                request.carrierFallbackReason
+            );
             try {
-                const trackingData = await shiprocketAPI(`/courier/track/awb/${request.forwardAwbNumber}`);
-                if (trackingData && trackingData.tracking_data) {
-                    const tracking = trackingData.tracking_data;
-                    const activities = tracking.shipment_track || [];
-                    
-                    // DEBUG: Log first activity structure to understand Shiprocket response
-                    if (activities.length > 0) {
-                        console.log(`[DEBUG] Forward Shipment (${request.forwardAwbNumber}) - First activity:`, JSON.stringify(activities[0], null, 2));
+                if (forwardCarrier === 'delhivery') {
+                    const trackingData = await getDelhiveryTracking(request.forwardAwbNumber);
+                    if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
+                        const shipment = trackingData.shipments[0];
+                        const activities = shipment.tracking_data || shipment.scans || [];
+                        request.forwardShipment = {
+                            awb: request.forwardAwbNumber,
+                            status: shipment.status || shipment.delivered_status || 'Scheduled',
+                            edd: shipment.eta || null,
+                            activities: activities,
+                            courierName: 'Delhivery',
+                            deliveredDate: shipment.delivered_date || null,
+                            deliveredTo: null,
+                            trackUrl: null,
+                            origin: trackingData.pickup_location?.name || null,
+                            destination: trackingData.return_address?.name || shipment.destination || null,
+                            pickupDate: shipment.pickup_date || null,
+                            packageCount: trackingData.shipments.length || null,
+                            carrier: 'delhivery'
+                        };
                     }
-                    
-                    request.forwardShipment = {
-                        awb: request.forwardAwbNumber,
-                        status: tracking.current_status || 'Scheduled',
-                        edd: tracking.edd || tracking.etd || null,
-                        activities: activities,
-                        courierName: tracking.courier_name || null,
-                        deliveredDate: tracking.delivered_date || null,
-                        deliveredTo: tracking.delivered_to || null,
-                        trackUrl: tracking.track_url || null,
-                        origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
-                        destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
-                        pickupDate: activities.length > 0 ? activities[activities.length - 1].date : null,
-                        packageCount: tracking.packages ? tracking.packages.length : null,
-                        carrier: 'shiprocket'
-                    };
+                } else if (process.env.SHIPROCKET_EMAIL) {
+                    const trackingData = await shiprocketAPI(`/courier/track/awb/${request.forwardAwbNumber}`);
+                    if (trackingData && trackingData.tracking_data) {
+                        const tracking = trackingData.tracking_data;
+                        const activities = tracking.shipment_track || [];
+                        
+                        // DEBUG: Log first activity structure to understand Shiprocket response
+                        if (activities.length > 0) {
+                            console.log(`[DEBUG] Forward Shipment (${request.forwardAwbNumber}) - First activity:`, JSON.stringify(activities[0], null, 2));
+                        }
+                        
+                        request.forwardShipment = {
+                            awb: request.forwardAwbNumber,
+                            status: tracking.current_status || 'Scheduled',
+                            edd: tracking.edd || tracking.etd || null,
+                            activities: activities,
+                            courierName: tracking.courier_name || null,
+                            deliveredDate: tracking.delivered_date || null,
+                            deliveredTo: tracking.delivered_to || null,
+                            trackUrl: tracking.track_url || null,
+                            origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
+                            destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
+                            pickupDate: activities.length > 0 ? activities[activities.length - 1].date : null,
+                            packageCount: tracking.packages ? tracking.packages.length : null,
+                            carrier: 'shiprocket'
+                        };
+                    }
                 }
             } catch (err) {
                 if (err.message.toLowerCase().includes('cancelled') || err.message.toLowerCase().includes('canceled')) {
-                    console.log(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) is cancelled in Shiprocket.`);
-                    request.forwardShipment = { awb: request.forwardAwbNumber, status: 'Cancelled', edd: null, activities: [], carrier: 'shiprocket' };
+                    console.log(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) is cancelled.`);
+                    request.forwardShipment = { awb: request.forwardAwbNumber, status: 'Cancelled', edd: null, activities: [], carrier: forwardCarrier };
                 } else {
                     console.error(`[Tracking API] Forward Shipment (${request.forwardAwbNumber}) failed:`, err.message);
                 }
@@ -6259,8 +6368,11 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
             if (result.success) {
                 return res.json({
                     success: true,
-                    message: `Successfully synced ${requestId}`,
+                    message: result.changed
+                        ? `Successfully synced ${requestId} (status updated)`
+                        : `Synced ${requestId} (no change)`,
                     requestId: requestId,
+                    updated: result.changed ? 1 : 0,
                     attempts: result.attempts
                 });
             } else {
@@ -6290,7 +6402,8 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
         if (syncResult.success) {
             res.json({
                 success: true,
-                message: `Sync complete! ${syncResult.metrics.success} success, ${syncResult.metrics.failed} failed`,
+                message: `Sync complete! ${syncResult.metrics.updated} updated, ${syncResult.metrics.success} checked, ${syncResult.metrics.failed} failed`,
+                updated: syncResult.metrics.updated,
                 metrics: syncResult.metrics
             });
         } else {

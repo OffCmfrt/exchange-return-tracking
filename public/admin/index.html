@@ -1891,8 +1891,18 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
-                console.log(`[Sync] Complete! Updated ${data.updated || 0} requests.`);
-                alert(`✅ Sync Complete!\n\nUpdated ${data.updated || 0} requests with latest tracking status from carriers.`);
+                const updated = data.updated || 0;
+                const m = data.metrics;
+                let breakdown = '';
+                if (m && m.carrierBreakdown) {
+                    const sr = m.carrierBreakdown.shiprocket || {};
+                    const dl = m.carrierBreakdown.delhivery || {};
+                    breakdown = `\n\nChecked: ${m.total || 0}` +
+                        `\nShiprocket: ${sr.success || 0} ok / ${sr.failed || 0} failed` +
+                        `\nDelhivery: ${dl.success || 0} ok / ${dl.failed || 0} failed`;
+                }
+                console.log(`[Sync] Complete! Updated ${updated} requests.`);
+                alert(`✅ Sync Complete!\n\nUpdated ${updated} request(s) with the latest status from their carrier.${breakdown}`);
                 loadRequests(); // Refresh the table
             } else {
                 console.error('[Sync] Failed:', data);
@@ -2083,9 +2093,30 @@
         });
     }
 
+    // Client-side carrier guess (display only) mirroring the server heuristics,
+    // so the column is never blank for a shipped order. Server self-heals the DB.
+    function guessCarrier(req) {
+        const c = (req.carrier || '').toLowerCase();
+        if (c === 'delhivery' || c === 'shiprocket') return c;
+        const ship = (req.shipmentId || '').toString();
+        if (ship.toUpperCase().startsWith('SR')) return 'shiprocket';
+        if (req.carrierFallbackReason) return 'delhivery';
+        const awb = (req.awbNumber || '').toString();
+        if (/^\d{12,}$/.test(awb)) return 'delhivery';
+        if (/[a-zA-Z]/.test(awb)) return 'shiprocket';
+        return '';
+    }
+
+    function carrierBadge(req) {
+        const carrier = guessCarrier(req);
+        if (!carrier) return '<span style="color: #9ca3af; font-size: 0.85rem;">—</span>';
+        const style = carrier === 'delhivery' ? 'background: #fef3c7; color: #92400e;' : 'background: #dbeafe; color: #1e40af;';
+        const label = carrier === 'delhivery' ? '🚚 Delhivery' : '📦 Shiprocket';
+        return `<span style="display: inline-flex; align-items: center; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; ${style}">${label}</span>`;
+    }
+
     function displayRequests(requests) {
         const table = document.getElementById('requestsTable');
-
         if (requests.length === 0) {
             table.innerHTML = `
                 <tr>
@@ -2106,11 +2137,7 @@
                 <td>${req.customerName}</td>
                 <td>${formatDateIST(req.createdAt)}</td>
                 <td>
-                    ${req.carrier ? `
-                        <span style="display: inline-flex; align-items: center; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; ${req.carrier === 'delhivery' ? 'background: #fef3c7; color: #92400e;' : 'background: #dbeafe; color: #1e40af;'}">
-                            ${req.carrier === 'delhivery' ? '🚚 Delhivery' : req.carrier === 'shiprocket' ? '📦 Shiprocket' : req.carrier}
-                        </span>
-                    ` : '<span style="color: #9ca3af; font-size: 0.85rem;">—</span>'}
+                    ${carrierBadge(req)}
                 </td>
                 <td><span class="badge badge-${req.status.replace(/_/g, '-')}">${getStatusLabel(req.status)}</span></td>
                 <td>
