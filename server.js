@@ -740,7 +740,7 @@ async function syncSingleRequest(req) {
     }
 
     // Return shipment sync
-    if (['pending', 'pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit'].includes(req.status)) {
+    if (['pending', 'pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit', 'out_for_delivery'].includes(req.status)) {
         let trackingData = null;
         let currentStatus = null;
         let currentStatusType = null;
@@ -5925,7 +5925,7 @@ app.post('/api/admin/reset-pickup', authenticateAdmin, async (req, res) => {
         
         // Allow reverting a pickup from any status where a pickup was attempted/booked.
         // Useful when a carrier pickup gets cancelled and admin needs to start over.
-        const revertableStatuses = ['pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit', 'cancelled', 'failed'];
+        const revertableStatuses = ['pickup_pending', 'pickup_booked', 'scheduled', 'picked_up', 'in_transit', 'out_for_delivery', 'cancelled', 'failed'];
         if (!revertableStatuses.includes(requestDetails.status)) {
             return res.status(400).json({ error: `Cannot revert pickup from status: ${requestDetails.status}` });
         }
