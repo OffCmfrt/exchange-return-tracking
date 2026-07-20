@@ -615,8 +615,10 @@ function mapCarrierStatus(carrierStatus, carrier = 'shiprocket') {
         return { status: 'delivered', shouldUpdate: true };
     }
 
-    // Out for delivery must be checked before the generic in-transit branch
-    if (statusUpper.includes('OUT FOR DELIVERY')) {
+    // Out for delivery must be checked before the generic in-transit branch.
+    // Delhivery reports the last-mile leg as "Dispatched".
+    if (statusUpper.includes('OUT FOR DELIVERY') ||
+        (isDelhivery && statusUpper.includes('DISPATCHED'))) {
         return { status: 'out_for_delivery', shouldUpdate: true };
     }
 
@@ -625,10 +627,10 @@ function mapCarrierStatus(carrierStatus, carrier = 'shiprocket') {
         return { status: 'picked_up', shouldUpdate: true };
     }
 
-    // In transit / dispatched. Delhivery also uses 'MANIFESTED'/'IN TRANSIT'.
+    // In transit / dispatched (Shiprocket).
     if (statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED') ||
-        statusUpper.includes('DISPATCHED') ||
-        (isDelhivery && statusUpper.includes('MANIFESTED'))) {
+        statusUpper.includes('PENDING DELIVERY') ||
+        (!isDelhivery && statusUpper.includes('DISPATCHED'))) {
         return { status: 'in_transit', shouldUpdate: true };
     }
 
@@ -641,8 +643,12 @@ function mapCarrierStatus(carrierStatus, carrier = 'shiprocket') {
         return { status: 'pickup_pending', shouldUpdate: true };
     }
 
-    // Delhivery pickup assigned status - pickup is confirmed/booked but not yet picked up
-    if (statusUpper.includes('PICKUP ASSIGNED') || statusUpper.includes('ASSIGNED')) {
+    // Delhivery pickup states: shipment created/assigned but not yet in transit.
+    // Keep these at pickup_booked so we never advance a not-yet-picked shipment.
+    if (statusUpper.includes('PICKUP ASSIGNED') || statusUpper.includes('ASSIGNED') ||
+        (isDelhivery && (statusUpper.includes('MANIFESTED') ||
+                         statusUpper.includes('NOT PICKED') ||
+                         statusUpper === 'OPEN'))) {
         return { status: 'pickup_booked', shouldUpdate: true };
     }
 
@@ -2871,9 +2877,45 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
 async function getDelhiveryTracking(waybill) {
     if (!waybill || !process.env.DELHIVERY_API_KEY) return null;
     try {
-        const trackingData = await delhiveryAPI(`/v1/packages/json/?waybill=${waybill}`);
-        if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
-            return trackingData;
+        const raw = await delhiveryAPI(`/v1/packages/json/?waybill=${waybill}`);
+
+        // Delhivery's live tracking endpoint returns:
+        //   { ShipmentData: [ { Shipment: { Status: { Status, StatusType, StatusDateTime },
+        //                                   Scans: [ { ScanDetail } ], Waybill, ExpectedDeliveryDate, ... } } ] }
+        // There is NO lowercase `shipments` key and `Status` is a nested object, so we normalize
+        // it once here into the { shipments: [ { status, status_type, eta, tracking_data, ... } ] }
+        // shape that every downstream consumer (sync + enrichWithTracking) already expects.
+        if (raw && Array.isArray(raw.ShipmentData) && raw.ShipmentData.length > 0) {
+            const shipments = raw.ShipmentData.map(entry => {
+                const s = (entry && entry.Shipment) || {};
+                const st = s.Status || {};
+                const statusType = (st.StatusType || '').toString().toUpperCase();
+                const scans = Array.isArray(s.Scans)
+                    ? s.Scans.map(sc => (sc && sc.ScanDetail) ? sc.ScanDetail : sc)
+                    : [];
+                const isDelivered = statusType === 'DL';
+                return {
+                    status: st.Status || null,
+                    status_type: statusType || null,
+                    status_datetime: st.StatusDateTime || null,
+                    status_location: st.StatusLocation || null,
+                    delivered_status: isDelivered ? (st.Status || 'Delivered') : null,
+                    delivered_date: isDelivered ? (st.StatusDateTime || null) : null,
+                    waybill_code: s.Waybill || s.AWB || waybill,
+                    eta: s.ExpectedDeliveryDate || s.PromisedDeliveryDate || null,
+                    pickup_date: s.PickUpDate || null,
+                    origin: s.Origin || null,
+                    destination: s.Destination || null,
+                    tracking_data: scans,
+                    scans: scans
+                };
+            });
+            return { shipments, ShipmentData: raw.ShipmentData };
+        }
+
+        // Some responses may already be normalized – pass them through unchanged.
+        if (raw && Array.isArray(raw.shipments) && raw.shipments.length > 0) {
+            return raw;
         }
     } catch (error) {
         console.error('Delhivery tracking fetch error:', error.message);
