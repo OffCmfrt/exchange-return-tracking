@@ -142,11 +142,13 @@
                                 <option value="waiting_payment">Waiting Payment</option>
                                 <option value="pending">Pending Admin</option>
                                 <option value="pickup_pending">Pickup Pending</option>
+                                <option value="scheduled">Scheduled</option>
                                 <option value="pickup_booked">Pickup Booked</option>
                                 <option value="picked_up">Picked Up</option>
                                 <option value="in_transit">In Transit</option>
                                 <option value="out_for_delivery">Out for Delivery</option>
                                 <option value="delivered">Delivered (Pending Insp.)</option>
+                                <option value="inspected">Inspected</option>
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
                                 <option value="cancelled">Cancelled</option>
@@ -219,6 +221,11 @@
                             border: 1px solid #93c5fd !important;
                         }
                         .badge-delivered {
+                            background-color: #d1fae5 !important;
+                            color: #065f46 !important;
+                            border: 1px solid #6ee7b7 !important;
+                        }
+                        .badge-inspected {
                             background-color: #d1fae5 !important;
                             color: #065f46 !important;
                             border: 1px solid #6ee7b7 !important;
@@ -1774,6 +1781,7 @@
             'in_transit':      'In Transit',
             'out_for_delivery':'Out for Delivery',
             'delivered':       'Received at Warehouse',
+            'inspected':       'Inspected',
             'approved':        'Approved',
             'rejected':        'Rejected',
             'cancelled':       'Cancelled',
@@ -2418,13 +2426,13 @@
         // User said: "pickup booked -> item delivered -> admin approves". 
         // So we show buttons if status is 'delivered'.
         
-        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'failed', 'rejected'].includes(data.status)) {
+        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'rejected'].includes(data.status)) {
             console.log('Action block status matched:', data.status);
             modalActions.classList.remove('hidden');
             
             // Show carrier override for ALL action statuses (not just pending/pickup_pending)
             if (carrierOverrideSection) {
-                const showCarrierOverride = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'failed'].includes(data.status);
+                const showCarrierOverride = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed'].includes(data.status);
                 if (showCarrierOverride) {
                     carrierOverrideSection.classList.remove('hidden');
                     
@@ -2456,7 +2464,7 @@
                             warningDiv.classList.remove('hidden');
                             warningTextEl.textContent = 'Re-dispatching will reset to pending and allow fresh carrier booking.';
                         }
-                    } else if (['scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'delivered'].includes(data.status)) {
+                    } else if (['scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered'].includes(data.status)) {
                         if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Duplicate Pickup';
                         if (descEl) descEl.textContent = 'Select carrier for creating a duplicate pickup. Useful when original pickup was cancelled.';
                         if (warningDiv && warningTextEl) {
@@ -2512,7 +2520,7 @@
 
             // Show manual received button for all active shipment statuses AND pending (as fallback)
             if (manualReceivedBtn) {
-                const statusArr = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit'];
+                const statusArr = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery'];
                 const shouldShow = statusArr.includes(data.status);
                 console.log('Mark as Received - checking status:', data.status, 'is in array:', shouldShow);
                 console.log('Mark as Received button element:', manualReceivedBtn);
@@ -2532,7 +2540,7 @@
             // Pickup management buttons: available on every request so admins can
             // create a fresh (duplicate) pickup or revert a pickup when a carrier
             // booking gets cancelled. Shown for all pickup-flow statuses.
-            const pickupActionStatuses = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'failed'];
+            const pickupActionStatuses = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed'];
             const showPickupActions = pickupActionStatuses.includes(data.status);
 
             // Create Duplicate Pickup button (books a brand new carrier pickup)
@@ -2554,7 +2562,7 @@
             // Revert Pickup button (clears carrier booking and resets to pending)
             let revertPickupBtn = modalActions.querySelector('button[onclick="revertPickup()"]');
             // Reverting only makes sense once a pickup has actually been booked/attempted
-            const revertableFrontStatuses = ['pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'cancelled', 'failed'];
+            const revertableFrontStatuses = ['pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'cancelled', 'failed'];
             if (revertableFrontStatuses.includes(data.status)) {
                 if (!revertPickupBtn) {
                     revertPickupBtn = document.createElement('button');
@@ -4866,11 +4874,13 @@
             'pending': 'Pending Admin',
             'waiting_payment': 'Waiting Payment',
             'pickup_pending': 'Pickup Pending',
+            'scheduled': 'Scheduled',
             'pickup_booked': 'Pickup Booked',
             'picked_up': 'Picked Up',
             'in_transit': 'In Transit',
             'out_for_delivery': 'Out for Delivery',
             'delivered': 'Delivered',
+            'inspected': 'Inspected',
             'approved': 'Approved',
             'rejected': 'Rejected',
             'cancelled': 'Cancelled',
@@ -4881,11 +4891,13 @@
             'pending': '#ff6b35',
             'waiting_payment': '#ffd54f',
             'pickup_pending': '#fed7aa',
+            'scheduled': '#3b82f6',
             'pickup_booked': '#3b82f6',
             'picked_up': '#6366f1',
             'in_transit': '#6366f1',
             'out_for_delivery': '#f59e0b',
             'delivered': '#10b981',
+            'inspected': '#10b981',
             'approved': '#10b981',
             'rejected': '#ef4444',
             'cancelled': '#9ca3af',
@@ -4944,11 +4956,13 @@
             'pending': 'Pending Admin',
             'waiting_payment': 'Waiting Payment',
             'pickup_pending': 'Pickup Pending',
+            'scheduled': 'Scheduled',
             'pickup_booked': 'Pickup Booked',
             'picked_up': 'Picked Up',
             'in_transit': 'In Transit',
             'out_for_delivery': 'Out for Delivery',
             'delivered': 'Delivered',
+            'inspected': 'Inspected',
             'approved': 'Approved',
             'rejected': 'Rejected',
             'cancelled': 'Cancelled',
@@ -4959,11 +4973,13 @@
             'pending': '#ff6b35',
             'waiting_payment': '#ffd54f',
             'pickup_pending': '#fed7aa',
+            'scheduled': '#3b82f6',
             'pickup_booked': '#3b82f6',
             'picked_up': '#6366f1',
             'in_transit': '#6366f1',
             'out_for_delivery': '#f59e0b',
             'delivered': '#10b981',
+            'inspected': '#10b981',
             'approved': '#10b981',
             'rejected': '#ef4444',
             'cancelled': '#9ca3af',
