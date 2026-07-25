@@ -332,6 +332,7 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.forwardShipmentId) updateData.forward_shipment_id = updates.forwardShipmentId;
     if (updates.forwardAwbNumber) updateData.forward_awb_number = updates.forwardAwbNumber;
     if (updates.forwardStatus) updateData.forward_status = updates.forwardStatus;
+    if (updates.forwardCarrier) updateData.forward_carrier = updates.forwardCarrier;
 
     // Carrier Tracking
     if (updates.carrier !== undefined) updateData.carrier = updates.carrier;
@@ -412,6 +413,7 @@ function convertFromSnakeCase(data) {
         forwardShipmentId: data.forward_shipment_id,
         forwardAwbNumber: data.forward_awb_number,
         forwardStatus: data.forward_status,
+        forwardCarrier: data.forward_carrier,
         carrier: data.carrier,
         carrierShipmentId: data.carrier_shipment_id,
         carrierAwb: data.carrier_awb,

@@ -2224,7 +2224,8 @@ async function createShiprocketForwardOrder(requestData) {
             : 'Primary';
 
         const payload = {
-            order_id: requestData.requestId + '-FWD',
+            // Optional suffix (e.g. -R1) keeps duplicate forward orders unique — Shiprocket rejects re-used order ids
+            order_id: requestData.requestId + '-FWD' + (requestData.forwardOrderIdSuffix || ''),
             order_date: new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0],
             pickup_location: pickupLocationNickname, // Dynamically set from Shiprocket settings
             billing_customer_name: customerName,
@@ -2770,7 +2771,8 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         };
 
         // Build forward order ID with fws- prefix (required by Delhivery for forward shipments)
-        const forwardOrderId = `fws-${requestData.requestId}`;
+        // Optional suffix (e.g. -R1) keeps duplicate forward orders unique — Delhivery rejects re-used order ids
+        const forwardOrderId = `fws-${requestData.requestId}${requestData.forwardOrderIdSuffix || ''}`;
 
         // Get Delhivery pickup location nickname
         const delhiveryPickupLocationSetting = await getSetting('delhivery_pickup_location', null);
@@ -6145,6 +6147,104 @@ app.post('/api/admin/create-duplicate-pickup', authenticateAdmin, async (req, re
     } catch (error) {
         console.error('Create duplicate pickup error:', error);
         res.status(500).json({ error: 'Failed to create duplicate pickup: ' + error.message });
+    }
+});
+
+// Create a fresh (duplicate) forward/replacement shipment for an approved exchange.
+// Useful when the original forward order was cancelled or lost by the carrier.
+app.post('/api/admin/create-duplicate-forward', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, carrierOverride } = req.body;
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        if (requestDetails.type !== 'exchange') {
+            return res.status(400).json({ error: 'Duplicate forward orders are only available for exchange requests' });
+        }
+        if (requestDetails.status !== 'approved') {
+            return res.status(400).json({
+                error: 'Can only create a duplicate forward order after the request is approved',
+                currentStatus: requestDetails.status
+            });
+        }
+
+        const prevForwardAwb = requestDetails.forwardAwbNumber || 'none';
+        console.log(`[${requestId}] Creating DUPLICATE forward order (previous forward AWB: ${prevForwardAwb})`);
+
+        // Parse replacement items
+        let items = requestDetails.items;
+        if (typeof items === 'string') {
+            try { items = JSON.parse(items); } catch (e) { items = []; }
+        }
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: 'No replacement items found on this request' });
+        }
+
+        // Carriers reject re-used order ids, so tag the duplicate with a unique -R{n} suffix.
+        // Derive the retry number from how many duplicate forward orders were previously logged.
+        const priorDuplicateCount = ((requestDetails.adminNotes || '').match(/\[SYSTEM\] Duplicate forward order created/g) || []).length;
+        const forwardOrderIdSuffix = `-R${priorDuplicateCount + 1}`;
+
+        const carrierMode = await getCarrierMode('dispatch');
+        const carrierResolution = resolveCarrier(carrierMode, carrierOverride || null, 'dispatch');
+        const primaryCarrier = carrierResolution.primary;
+        const useFallback = carrierResolution.useFallback;
+
+        const attempt = async (carrier) => {
+            if (carrier === 'shiprocket') {
+                if (!process.env.SHIPROCKET_EMAIL) throw new Error('Shiprocket not configured');
+                const d = await createShiprocketForwardOrder({ ...requestDetails, items, forwardOrderIdSuffix });
+                if (d && d.shipment_id) return { carrierUsed: 'shiprocket', forwardOrder: d };
+                throw new Error('Shiprocket returned empty response');
+            } else {
+                if (!process.env.DELHIVERY_API_KEY) throw new Error('Delhivery not configured');
+                const d = await createDelhiveryForwardOrder({ ...requestDetails, items, forwardOrderIdSuffix });
+                if (d && d.waybill) return { carrierUsed: 'delhivery', forwardOrder: d };
+                throw new Error('Delhivery returned empty response');
+            }
+        };
+
+        let result = null;
+        let fallbackReason = null;
+        try {
+            result = await attempt(primaryCarrier);
+        } catch (primaryError) {
+            if (!useFallback) throw primaryError;
+            const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
+            fallbackReason = `${primaryCarrier} failed: ${primaryError.message}`;
+            console.warn(`[${requestId}] ⚠️ ${primaryCarrier} failed for duplicate forward, falling back to ${fallbackCarrier}:`, primaryError.message);
+            try {
+                result = await attempt(fallbackCarrier);
+            } catch (fallbackError) {
+                throw new Error(`Both carriers failed: ${primaryError.message} | ${fallbackError.message}`);
+            }
+        }
+
+        const { carrierUsed, forwardOrder } = result;
+        const newAwb = forwardOrder.awb_code || forwardOrder.waybill || '';
+
+        let adminNotes = requestDetails.adminNotes || '';
+        adminNotes += `\n[SYSTEM] Duplicate forward order created via ${carrierUsed}: AWB ${newAwb || 'Pending'} (previous forward AWB: ${prevForwardAwb}). Previous shipment may remain in carrier system.`;
+        if (fallbackReason) adminNotes += `\nFallback: ${fallbackReason}`;
+
+        const request = await updateRequestStatus(requestId, {
+            forwardShipmentId: String(forwardOrder.shipment_id || forwardOrder.order_id),
+            forwardAwbNumber: newAwb,
+            forwardStatus: 'scheduled',
+            forwardCarrier: carrierUsed,
+            adminNotes
+        });
+
+        res.json({
+            success: true,
+            message: `Duplicate forward order created via ${carrierUsed}. New AWB: ${newAwb || 'Pending'}`,
+            request
+        });
+    } catch (error) {
+        console.error('Create duplicate forward order error:', error);
+        res.status(500).json({ error: 'Failed to create duplicate forward order: ' + error.message });
     }
 });
 
@@ -12113,6 +12213,138 @@ async function aggregateDailyMarketingAnalytics() {
     }
 }
 
+
+// ==================== AI COPILOT (admin dashboards) ====================
+// Tool-calling AI assistant with confirmation-gated actions. Engine in config/ai/.
+// Server-internal functions are injected so tools can reuse existing integrations.
+
+function getAiDeps() {
+    return {
+        shopifyAPI,
+        schedulePickup,
+        getShiprocketToken,
+        getDelhiveryTracking,
+        createShopifyDiscountCode,
+        getLeaderboard,
+        getAnalyticsForInfluencer
+    };
+}
+
+app.post('/api/admin/ai/chat', authenticateAdmin, async (req, res) => {
+    try {
+        const { message } = req.body;
+        if (!message || !String(message).trim()) {
+            return res.status(400).json({ success: false, error: 'Message is required' });
+        }
+        const { runAgent } = require('./config/ai/agent');
+        const result = await runAgent({
+            actor: req.user?.username || 'admin',
+            userMessage: String(message).trim().substring(0, 4000),
+            deps: getAiDeps()
+        });
+        res.json({ success: true, reply: result.reply, pendingAction: result.pendingAction, usage: result.usage });
+    } catch (error) {
+        console.error('AI chat error:', error.message);
+        const friendly = error.code === 'AI_RATE_LIMIT' ? error.message : 'AI request failed. Please try again.';
+        res.status(500).json({ success: false, error: friendly });
+    }
+});
+
+app.post('/api/admin/ai/confirm/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const { executeConfirmedAction } = require('./config/ai/agent');
+        const result = await executeConfirmedAction(req.params.id, req.user?.username || 'admin', getAiDeps());
+        if (!result.ok) return res.status(400).json({ success: false, error: result.error, summary: result.summary });
+        res.json({ success: true, result: result.result, summary: result.summary });
+    } catch (error) {
+        console.error('AI confirm error:', error.message);
+        res.status(500).json({ success: false, error: 'Failed to execute action' });
+    }
+});
+
+app.post('/api/admin/ai/cancel/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const aiStore = require('./config/ai/aiStore');
+        const result = await aiStore.cancelPendingAction(req.params.id, req.user?.username || 'admin');
+        if (!result.ok) return res.status(400).json({ success: false, error: result.error });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('AI cancel error:', error.message);
+        res.status(500).json({ success: false, error: 'Failed to cancel action' });
+    }
+});
+
+app.get('/api/admin/ai/usage', authenticateAdmin, async (req, res) => {
+    try {
+        const aiStore = require('./config/ai/aiStore');
+        const { getConfig, isConfigured } = require('./config/ai/aiClient');
+        const days = Math.min(parseInt(req.query.days) || 30, 90);
+        const stats = await aiStore.getUsageStats(days);
+        const cfg = getConfig();
+        res.json({ success: true, configured: isConfigured(), provider: cfg.provider, model: cfg.model, ...stats });
+    } catch (error) {
+        console.error('AI usage error:', error.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch AI usage' });
+    }
+});
+
+app.get('/api/admin/ai/history', authenticateAdmin, async (req, res) => {
+    try {
+        const aiStore = require('./config/ai/aiStore');
+        const history = await aiStore.getChatHistory(req.user?.username || 'admin');
+        res.json({ success: true, history });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Failed to load history' });
+    }
+});
+
+app.post('/api/admin/ai/clear-history', authenticateAdmin, async (req, res) => {
+    try {
+        const aiStore = require('./config/ai/aiStore');
+        await aiStore.clearChatHistory(req.user?.username || 'admin');
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Failed to clear history' });
+    }
+});
+
+// Internal read-only data endpoint for the WhatsApp bot's AI copilot (reciprocal
+// of the bot's /api/internal/ai-data). Auth: x-internal-token.
+app.get('/api/internal/ai-data', async (req, res) => {
+    try {
+        const expectedToken = process.env.WHATSAPP_INTERNAL_TOKEN;
+        if (expectedToken && req.headers['x-internal-token'] !== expectedToken) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        const { resource, query = '', limit } = req.query;
+        const n = Math.min(parseInt(limit) || 20, 50);
+        const q = String(query).trim();
+
+        switch (resource) {
+            case 'requests': {
+                const result = await getAllRequests({ search: q || undefined, status: undefined, limit: n, page: 1 });
+                return res.json({ count: result.data.length, total: result.pagination?.total, requests: result.data });
+            }
+            case 'request_stats': {
+                const stats = await getRequestStats();
+                return res.json(stats);
+            }
+            case 'influencers': {
+                const rows = await getAllInfluencers();
+                const list = (rows || [])
+                    .filter(i => !q || String(i.name || '').toLowerCase().includes(q.toLowerCase()) || String(i.referral_code || '').toLowerCase().includes(q.toLowerCase()))
+                    .slice(0, n)
+                    .map(i => ({ id: i.id, name: i.name, referralCode: i.referral_code, status: i.status }));
+                return res.json({ count: list.length, influencers: list });
+            }
+            default:
+                return res.status(400).json({ error: `Unknown resource '${resource}'. Use: requests, request_stats, influencers` });
+        }
+    } catch (error) {
+        console.error('AI data endpoint error:', error.message);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 
 // ==================== ERROR HANDLING ====================
 

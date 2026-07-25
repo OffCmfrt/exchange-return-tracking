@@ -2426,13 +2426,16 @@
         // User said: "pickup booked -> item delivered -> admin approves". 
         // So we show buttons if status is 'delivered'.
         
-        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'rejected'].includes(data.status)) {
+        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'rejected'].includes(data.status) || (data.status === 'approved' && data.type === 'exchange')) {
             console.log('Action block status matched:', data.status);
             modalActions.classList.remove('hidden');
             
+            // Approved exchanges get forward-shipment actions (duplicate forward order)
+            const isApprovedExchange = data.status === 'approved' && data.type === 'exchange';
+            
             // Show carrier override for ALL action statuses (not just pending/pickup_pending)
             if (carrierOverrideSection) {
-                const showCarrierOverride = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed'].includes(data.status);
+                const showCarrierOverride = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed'].includes(data.status) || isApprovedExchange;
                 if (showCarrierOverride) {
                     carrierOverrideSection.classList.remove('hidden');
                     
@@ -2470,6 +2473,13 @@
                         if (warningDiv && warningTextEl) {
                             warningDiv.classList.remove('hidden');
                             warningTextEl.textContent = 'This books a fresh pickup. Any previous booking may still exist in carrier system.';
+                        }
+                    } else if (isApprovedExchange) {
+                        if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Duplicate Forward Order';
+                        if (descEl) descEl.textContent = 'Select carrier for dispatching a duplicate replacement shipment. Useful when the original forward order was cancelled.';
+                        if (warningDiv && warningTextEl) {
+                            warningDiv.classList.remove('hidden');
+                            warningTextEl.textContent = 'This creates a fresh forward shipment with a new AWB. The previous shipment may still exist in the carrier system.';
                         }
                     }
                 } else {
@@ -2577,6 +2587,23 @@
                 revertPickupBtn.classList.add('hidden');
             }
 
+            // Duplicate Forward Order button (dispatches a brand new replacement shipment)
+            // Shown after an exchange is approved, when a forward order was already created.
+            let dupForwardBtn = modalActions.querySelector('button[onclick="createDuplicateForwardOrder()"]');
+            if (isApprovedExchange) {
+                if (!dupForwardBtn) {
+                    dupForwardBtn = document.createElement('button');
+                    dupForwardBtn.setAttribute('onclick', 'createDuplicateForwardOrder()');
+                    dupForwardBtn.onclick = () => createDuplicateForwardOrder();
+                    dupForwardBtn.textContent = '🚚 Duplicate Forward Order';
+                    dupForwardBtn.style.cssText = 'flex: 1; background: #0ea5e9; color: white; border: 1px solid #0ea5e9; min-width: 150px; font-weight: 600;';
+                    modalActions.appendChild(dupForwardBtn);
+                }
+                dupForwardBtn.classList.remove('hidden');
+            } else if (dupForwardBtn) {
+                dupForwardBtn.classList.add('hidden');
+            }
+
             // Add re-dispatch button for cancelled/failed orders
             let redispatchBtn = modalActions.querySelector('button[onclick="redispatchOrder()"]');
             if (data.status === 'cancelled' || data.status === 'failed') {
@@ -2604,7 +2631,12 @@
             }
 
             if (rejectBtn) {
-                rejectBtn.classList.remove('hidden');
+                // No reject action once the request is already approved
+                if (isApprovedExchange) {
+                    rejectBtn.classList.add('hidden');
+                } else {
+                    rejectBtn.classList.remove('hidden');
+                }
             }
 
             // Add undo rejection button for rejected requests
@@ -3361,6 +3393,40 @@
         } catch (error) {
             console.error('Create duplicate pickup error:', error);
             alert('Failed to create duplicate pickup');
+        }
+    }
+
+    // Create a brand new (duplicate) forward/replacement shipment for an approved
+    // exchange. Useful when the original forward order was cancelled by the carrier.
+    async function createDuplicateForwardOrder() {
+        if (!currentRequest) return;
+        const carrierOverride = document.getElementById('carrierOverride')?.value || null;
+        if (!confirm(`Create a DUPLICATE forward order for this exchange?\n\n⚠️ This dispatches a fresh replacement shipment with the carrier and generates a new AWB. The previous forward shipment may still remain in the carrier system. Use this when the original forward order was cancelled.`)) return;
+
+        try {
+            const response = await fetch(`${API_URL}/admin/create-duplicate-forward`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    requestId: currentRequest.requestId,
+                    carrierOverride
+                })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                alert(data.message || 'Duplicate forward order created successfully.');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('Failed to create duplicate forward order: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Create duplicate forward order error:', error);
+            alert('Failed to create duplicate forward order');
         }
     }
 
@@ -5614,5 +5680,6 @@
     </div>
 </div>
 
+<script src="/admin/ai-copilot.js?v=1"></script>
 </body>
 </html>
