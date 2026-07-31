@@ -37,6 +37,7 @@
     <!-- Login Section -->
     <div id="loginSection" class="container">
         <div class="header">
+            <div class="dash-kicker" style="margin-bottom: 0.5rem;">OFFCOMFRT</div>
             <h1>Admin Dashboard</h1>
             <p>Login to manage return and exchange requests</p>
         </div>
@@ -61,19 +62,21 @@
     <!-- Dashboard Section -->
     <div id="dashboardSection" class="hidden">
         <div class="container">
-            <div class="flex-between" style="margin-bottom: 2rem; align-items: center;">
-                <h1 style="font-size: 1.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #111827; margin: 0;">
-                    Returns & Exchanges Dashboard</h1>
-                <div style="display: flex; gap: 0.75rem; align-items: center;">
-                    <button onclick="openAnalyticsPage()" class="btn" style="background: white; border: 1px solid #e5e7eb; color: #111827; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s;">
+            <div class="flex-between dash-header">
+                <div>
+                    <div class="dash-kicker">OFFCOMFRT · Operations</div>
+                    <h1 class="dash-title">Returns & Exchanges</h1>
+                </div>
+                <div class="dash-actions">
+                    <button onclick="openAnalyticsPage()" class="top-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
                         Analytics
                     </button>
-                    <button onclick="openSettingsModal()" class="btn" style="background: white; border: 1px solid #e5e7eb; color: #111827; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s;">
+                    <button onclick="openSettingsModal()" class="top-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         Settings
                     </button>
-                    <button onclick="logout()" class="btn" style="background: white; border: 1px solid #e5e7eb; color: #111827; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500; font-size: 0.85rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s;">
+                    <button onclick="logout()" class="top-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                         Logout
                     </button>
@@ -87,27 +90,27 @@
                 </div>
                 
                 <!-- KPI Cards -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
-                    <div class="card" style="padding: 1.5rem; border-left: 4px solid #111827; transition: transform 0.3s ease; cursor: default;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
-                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Total Requests</p>
-                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1;" id="totalRequests">0</p>
+                <div class="kpi-grid">
+                    <div class="card kpi-card kpi-ink">
+                        <p class="kpi-label">Total Requests</p>
+                        <p class="kpi-value" id="totalRequests">0</p>
                     </div>
-                    <div class="card" style="padding: 1.5rem; border-left: 4px solid #3b82f6; transition: transform 0.3s ease; cursor: default;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
-                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Pending Action</p>
-                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1;" id="pendingRequests">0</p>
-                        <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.5rem;"><span id="waitingPaymentRequests">0</span> waiting payment</div>
+                    <div class="card kpi-card kpi-blue">
+                        <p class="kpi-label">Pending Action</p>
+                        <p class="kpi-value" id="pendingRequests">0</p>
+                        <div class="kpi-sub"><span id="waitingPaymentRequests">0</span> waiting payment</div>
                     </div>
-                    <div class="card" style="padding: 1.5rem; border-left: 4px solid #10b981; transition: transform 0.3s ease; cursor: default;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
-                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Approved</p>
-                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1;" id="approvedRequests">0</p>
+                    <div class="card kpi-card kpi-green">
+                        <p class="kpi-label">Approved</p>
+                        <p class="kpi-value" id="approvedRequests">0</p>
                     </div>
-                    <div class="card" style="padding: 1.5rem; border-left: 4px solid #ef4444; transition: transform 0.3s ease; cursor: default;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
-                        <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Rejected</p>
-                        <p style="font-size: 2.5rem; font-weight: 300; color: #111827; line-height: 1;" id="rejectedRequests">0</p>
+                    <div class="card kpi-card kpi-red">
+                        <p class="kpi-label">Rejected</p>
+                        <p class="kpi-value" id="rejectedRequests">0</p>
                     </div>
-                    <div class="card" style="padding: 1.5rem; background: #111827; color: white; transition: transform 0.3s ease;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
-                        <p style="font-size: 0.85rem; color: #9ca3af; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Processed Value</p>
-                        <p style="font-size: 2.5rem; font-weight: 300; line-height: 1;" id="totalRevenue">₹0</p>
+                    <div class="card kpi-card kpi-dark">
+                        <p class="kpi-label">Processed Value</p>
+                        <p class="kpi-value" id="totalRevenue">₹0</p>
                     </div>
                 </div>
 
@@ -136,8 +139,8 @@
                     
                     <!-- Dropdowns -->
                     <div style="display: flex; gap: 0.75rem; flex: 1; min-width: 300px;">
-                        <div style="position: relative; flex: 1;">
-                            <select id="statusFilter" onchange="loadRequests(true)" style="width: 100%; padding: 0.6rem 2rem 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; background: white; appearance: none; cursor: pointer; color: #374151;">
+                        <div class="filter-field">
+                            <select id="statusFilter" onchange="loadRequests(true)" class="filter-select">
                                 <option value="">All Statuses</option>
                                 <option value="waiting_payment">Waiting Payment</option>
                                 <option value="pending">Pending Admin</option>
@@ -154,100 +157,107 @@
                                 <option value="cancelled">Cancelled</option>
                                 <option value="failed">Failed</option>
                             </select>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-caret"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </div>
 
-                        <div style="position: relative; flex: 1;">
-                            <select id="typeFilter" onchange="loadRequests(true)" style="width: 100%; padding: 0.6rem 2rem 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; background: white; appearance: none; cursor: pointer; color: #374151;">
+                        <div class="filter-field">
+                            <select id="typeFilter" onchange="loadRequests(true)" class="filter-select">
                                 <option value="">All Types</option>
                                 <option value="return">Returns</option>
                                 <option value="exchange">Exchanges</option>
                             </select>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-caret"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </div>
                         
-                        <div style="position: relative; flex: 1;">
-                            <select id="carrierFilter" onchange="loadRequests(true)" style="width: 100%; padding: 0.6rem 2rem 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; background: white; appearance: none; cursor: pointer; color: #374151;">
+                        <div class="filter-field">
+                            <select id="carrierFilter" onchange="loadRequests(true)" class="filter-select">
                                 <option value="">All Carriers</option>
                                 <option value="shiprocket">Shiprocket</option>
                                 <option value="delhivery">Delhivery</option>
                             </select>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; color: #9ca3af;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-caret"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </div>
                         
-                        <input type="date" id="dateFilter" onchange="loadRequests(true)" style="padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; background: white; color: #374151;">
+                        <input type="date" id="dateFilter" onchange="loadRequests(true)" class="filter-date" style="width: auto;">
                     </div>
 
                     <!-- Search -->
                     <div class="search-container" style="flex: 1.5; min-width: 300px; position: relative; display: flex; align-items: center;">
                         <input type="text" id="searchInput" placeholder="Search by Order #, Email, Customer, AWB..." 
                                onkeyup="if(event.key === 'Enter') loadRequests(true)"
-                               style="width: 100%; padding: 0.6rem 3.5rem 0.6rem 2.5rem; border: 1px solid #e5e7eb; border-radius: 9999px; font-family: inherit; font-size: 0.9rem; transition: border-color 0.2s, box-shadow 0.2s; background: white;">
+                               class="search-input">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 1rem; color: #9ca3af; pointer-events: none;">
                             <circle cx="11" cy="11" r="8"></circle>
                             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                         </svg>
-                        <button onclick="loadRequests(true)" style="position: absolute; right: 0.25rem; padding: 0.35rem 1rem; background: #111827; color: white; border: none; border-radius: 9999px; font-size: 0.8rem; font-weight: 500; cursor: pointer; transition: background 0.2s;">
+                        <button onclick="loadRequests(true)" class="search-submit">
                             Search
                         </button>
                     </div>
 
                     <style>
-                        #searchInput:focus { outline: none; border-color: #000000; box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1); }
-                        
                         /* Status Badge Colors */
                         .badge-pending {
-                            background-color: #ff6b35 !important;
+                            background: linear-gradient(135deg, #ff7a3d, #ff5722) !important;
                             color: #ffffff !important;
-                            border: 1px solid #ff5722 !important;
+                            border: 1px solid transparent !important;
+                            box-shadow: 0 2px 8px rgba(255, 87, 34, 0.35);
                         }
                         .badge-pickup-pending {
-                            background-color: #fed7aa !important;
+                            background-color: #fff7ed !important;
                             color: #9a3412 !important;
-                            border: 1px solid #fdba74 !important;
+                            border: 1px solid #fed7aa !important;
                         }
                         .badge-waiting-payment {
-                            background-color: #ffd54f !important;
-                            color: #5d4037 !important;
-                            border: 1px solid #ffc107 !important;
+                            background-color: #fef9c3 !important;
+                            color: #854d0e !important;
+                            border: 1px solid #fde68a !important;
                         }
                         .badge-scheduled,
-                        .badge-pickup-booked,
-                        .badge-picked-up,
+                        .badge-pickup-booked {
+                            background-color: #eff6ff !important;
+                            color: #1d4ed8 !important;
+                            border: 1px solid #bfdbfe !important;
+                        }
+                        .badge-picked-up {
+                            background-color: #eef2ff !important;
+                            color: #4338ca !important;
+                            border: 1px solid #c7d2fe !important;
+                        }
                         .badge-in-transit,
                         .badge-out-for-delivery {
-                            background-color: #dbeafe !important;
-                            color: #1e40af !important;
-                            border: 1px solid #93c5fd !important;
+                            background-color: #ecfeff !important;
+                            color: #0e7490 !important;
+                            border: 1px solid #a5f3fc !important;
                         }
                         .badge-delivered {
-                            background-color: #d1fae5 !important;
-                            color: #065f46 !important;
-                            border: 1px solid #6ee7b7 !important;
+                            background-color: #ecfdf5 !important;
+                            color: #047857 !important;
+                            border: 1px solid #a7f3d0 !important;
                         }
                         .badge-inspected {
-                            background-color: #d1fae5 !important;
-                            color: #065f46 !important;
-                            border: 1px solid #6ee7b7 !important;
+                            background-color: #f0fdfa !important;
+                            color: #0f766e !important;
+                            border: 1px solid #99f6e4 !important;
                         }
                         .badge-approved {
-                            background-color: #d1fae5 !important;
-                            color: #065f46 !important;
-                            border: 1px solid #6ee7b7 !important;
+                            background-color: #dcfce7 !important;
+                            color: #15803d !important;
+                            border: 1px solid #bbf7d0 !important;
                         }
                         .badge-rejected {
                             background-color: #fee2e2 !important;
-                            color: #991b1b !important;
-                            border: 1px solid #fca5a5 !important;
+                            color: #b91c1c !important;
+                            border: 1px solid #fecaca !important;
                         }
                         
                         .admin-btn {
                             display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; 
-                            font-size: 0.85rem; font-weight: 500; border-radius: 6px; cursor: pointer; 
-                            transition: all 0.2s; border: 1px solid transparent; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+                            font-size: 0.85rem; font-weight: 600; letter-spacing: 0.2px; border-radius: 10px; cursor: pointer; 
+                            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid transparent; box-shadow: 0 1px 2px rgba(16,24,40,0.05);
                         }
-                        .admin-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-                        .admin-btn:active { transform: translateY(0); }
+                        .admin-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(16,24,40,0.08); }
+                        .admin-btn:active { transform: translateY(0); box-shadow: none; }
                         .admin-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
                         
                         /* Admin Items Comparison View */
@@ -1026,21 +1036,22 @@
 
                     /* Primary Button Gradient Enhancement */
                     .btn-primary {
-                        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+                        background: linear-gradient(135deg, #1f232b 0%, #0b0c0f 100%);
                         border: none;
                         color: white;
                         padding: 0.875rem 1.5rem;
-                        border-radius: 8px;
+                        border-radius: 10px;
                         font-weight: 600;
+                        letter-spacing: 0.4px;
                         cursor: pointer;
                         transition: all 0.3s ease;
-                        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+                        box-shadow: 0 4px 12px rgba(11, 12, 15, 0.25);
                     }
 
                     .btn-primary:hover {
                         transform: translateY(-2px);
-                        box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
-                        filter: brightness(1.05);
+                        box-shadow: 0 6px 16px rgba(11, 12, 15, 0.32);
+                        filter: brightness(1.15);
                     }
 
                     .btn-primary:active {
