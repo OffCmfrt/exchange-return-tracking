@@ -465,11 +465,13 @@ async function performBackgroundSync() {
     };
     
     try {
-        // Fetch only active requests (not all requests)
+        // Fetch only active requests (not all requests).
+        // out_for_delivery MUST be included — it's the most common state for
+        // carrier-side cancellations/RTOs to be missed if skipped.
         const { data: activeRequests, error } = await supabase
             .from('requests')
             .select('*')
-            .or('status.eq.pending,status.eq.pickup_pending,status.eq.pickup_booked,status.eq.scheduled,status.eq.picked_up,status.eq.in_transit')
+            .or('status.eq.pending,status.eq.pickup_pending,status.eq.pickup_booked,status.eq.scheduled,status.eq.picked_up,status.eq.in_transit,status.eq.out_for_delivery')
             .not('awb_number', 'is', null)
             .order('created_at', { ascending: false });
         
@@ -643,17 +645,39 @@ function mapCarrierStatus(carrierStatus, carrier = 'shiprocket', statusType = nu
         return { status: 'exception', shouldUpdate: false, needsNote: true };
     }
 
-    // 2. RTO / DTO / RETURN TO ORIGIN — courier is sending the parcel back.
+    // 2a. RTO / RETURN TO ORIGIN — the carrier aborted the shipment and is
+    //     sending the parcel back. Terminal failure in both directions: an
+    //     exchange delivery going RTO failed, and a return pickup going RTO
+    //     means the parcel is headed back to the customer. Mark 'failed' so
+    //     the request is re-dispatchable and never stuck showing
+    //     in-transit/out-for-delivery.
+    //     RTO/RT stays failed even with StatusType DL (a forward shipment
+    //     RTO-delivered back to origin is NOT a successful delivery).
     if (st === 'RT' || has('RTO', 'RETURN TO ORIGIN', 'RETURN INITIATED',
-                           'RETURN ACCEPTED') ||
-        (isDelhivery && s.includes('DTO') && !s.includes('DELIVERED'))) {
+                           'RETURN ACCEPTED')) {
+        return { status: 'failed', shouldUpdate: true, terminal: true, needsNote: true };
+    }
+
+    // 2b. Delhivery DTO (return pickup) flow in progress — note-only here.
+    //     The flow terminates with status "DTO" + StatusType "DL", meaning the
+    //     return parcel was DELIVERED back to the warehouse — that's terminal
+    //     success, so let rule 4 map it.
+    if (isDelhivery && s.includes('DTO') && !s.includes('DELIVERED') && st !== 'DL') {
         return { status: 'exception', shouldUpdate: false, needsNote: true };
     }
 
-    // 3. LOST / DAMAGED / CANCELLED / PICKUP ERROR — hard exceptions.
-    if (has('LOST', 'DAMAGED', 'DESTROYED', 'CANCELLED', 'CANCELED',
+    // 3a. CANCELLED — the carrier cancelled the shipment (e.g. pickup
+    //     cancelled on the carrier dashboard). Terminal: the platform must
+    //     never keep showing out-for-delivery/in-transit for a cancelled
+    //     waybill. Delhivery also reports cancellations via StatusType 'CR'.
+    if (st === 'CR' || has('CANCELLED', 'CANCELED')) {
+        return { status: 'cancelled', shouldUpdate: true, terminal: true, needsNote: true };
+    }
+
+    // 3b. LOST / DAMAGED / PICKUP ERROR — hard terminal carrier failures.
+    if (has('LOST', 'DAMAGED', 'DESTROYED',
             'PICKUP ERROR', 'PICKUP FAILED')) {
-        return { status: 'exception', shouldUpdate: false, needsNote: true };
+        return { status: 'failed', shouldUpdate: true, terminal: true, needsNote: true };
     }
 
     // 4. TERMINAL — DELIVERED / RECEIVED AT WAREHOUSE.
@@ -721,7 +745,7 @@ function mapCarrierStatus(carrierStatus, carrier = 'shiprocket', statusType = nu
 // Extract sync logic into reusable function.
 // Returns { changed, carrier } so callers can report accurate update counts.
 async function syncSingleRequest(req) {
-    const carrier = detectCarrier(req);
+    let carrier = detectCarrier(req);
     let changed = false;
 
     // Self-heal: if the stored carrier disagrees with the smart detection,
@@ -775,7 +799,7 @@ async function syncSingleRequest(req) {
         }
         
         // Fallback to shipment ID for Shiprocket
-        if (!trackingData && carrier === 'shiprocket' && req.shipmentId) {
+        if (!currentStatus && carrier === 'shiprocket' && req.shipmentId) {
             try { 
                 trackingData = await shiprocketAPI(`/courier/track/shipment/${req.shipmentId}`);
                 if (trackingData && trackingData.tracking_data) {
@@ -787,6 +811,35 @@ async function syncSingleRequest(req) {
             }
         }
         
+        // Cross-carrier rescue: a request mislabeled as Shiprocket but carrying a
+        // Delhivery-format waybill (all digits, 12+ chars) can never be tracked via
+        // Shiprocket. Try our Delhivery account and self-heal the stored carrier.
+        if (!currentStatus && carrier === 'shiprocket' && req.awbNumber &&
+            /^\d{12,}$/.test(req.awbNumber.toString().trim())) {
+            try {
+                const dlvData = await getDelhiveryTracking(req.awbNumber);
+                if (dlvData && dlvData.shipments && dlvData.shipments.length > 0) {
+                    const shipment = dlvData.shipments[0];
+                    if (shipment.status || shipment.status_type) {
+                        trackingData = dlvData;
+                        currentStatus = shipment.status || shipment.delivered_status;
+                        currentStatusType = shipment.status_type || null;
+                        newAwb = shipment.waybill_code || req.awbNumber;
+                        carrier = 'delhivery';
+                        console.log(`[${req.requestId}] Cross-carrier rescue: AWB ${req.awbNumber} found on Delhivery (status: ${currentStatus})`);
+                        try {
+                            await updateRequestStatus(req.requestId, { carrier: 'delhivery' });
+                            req.carrier = 'delhivery';
+                        } catch (healErr) {
+                            console.warn(`[${req.requestId}] Carrier heal to delhivery failed: ${healErr.message}`);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn(`[Sync] Cross-carrier Delhivery check for AWB ${req.awbNumber} (${req.requestId}) failed: ${e.message}`);
+            }
+        }
+        
         // Process tracking data
         if (currentStatus) {
             const statusMapping = mapCarrierStatus(currentStatus, carrier, currentStatusType);
@@ -794,8 +847,13 @@ async function syncSingleRequest(req) {
             if (statusMapping && statusMapping.shouldUpdate && statusMapping.status) {
                 let newStatus = statusMapping.status;
 
-                // Only advance forward — never regress on a stale/duplicate scan.
-                if (newStatus !== req.status && isForwardProgress(req.status, newStatus)) {
+                // Only advance forward — never regress on a stale/duplicate
+                // scan. EXCEPTION: terminal carrier states (cancelled / lost /
+                // RTO) always override, because the carrier is authoritative —
+                // a request must never stay out_for_delivery/in_transit when
+                // the carrier has cancelled the shipment.
+                if (newStatus !== req.status &&
+                    (statusMapping.terminal || isForwardProgress(req.status, newStatus))) {
                     // Build update object
                     const updates = { status: newStatus };
                     if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
@@ -871,9 +929,12 @@ async function syncSingleRequest(req) {
                 if (forwardStatusMapping && forwardStatusMapping.shouldUpdate && forwardStatusMapping.status) {
                     const newForwardStatus = forwardStatusMapping.status;
                     
-                    // Only advance forward — never regress on a stale/duplicate scan.
+                    // Only advance forward — never regress on a stale/duplicate
+                    // scan, EXCEPT terminal carrier states (cancelled / lost /
+                    // RTO) which always override a stale forward status.
                     if (newForwardStatus !== req.forwardStatus &&
-                        isForwardProgress(req.forwardStatus, newForwardStatus)) {
+                        (forwardStatusMapping.terminal ||
+                         isForwardProgress(req.forwardStatus, newForwardStatus))) {
                         console.log(`[${req.requestId}] Updating Forward Status: ${req.forwardStatus} → ${newForwardStatus} (${forwardCarrier})`);
                         await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
                         changed = true;
@@ -898,9 +959,10 @@ async function syncSingleRequest(req) {
     return { changed, carrier };
 }
 
-// Schedule sync to run 4 times per day (6AM, 12PM, 6PM, 12AM IST)
+// Schedule sync to run hourly so carrier-side cancellations/RTOs surface
+// quickly instead of lingering as stale out-for-delivery/in-transit.
 // Cron format: minute hour * * *
-cron.schedule('0 0,6,12,18 * * *', () => {
+cron.schedule('0 * * * *', () => {
     performBackgroundSync();
 }, {
     scheduled: true,
@@ -913,7 +975,7 @@ setTimeout(() => {
     performBackgroundSync();
 }, 30000);
 
-console.log('✅ Background sync scheduled: 4 times daily (6AM, 12PM, 6PM, 12AM IST)');
+console.log('✅ Background sync scheduled: hourly (IST timezone)');
 
 // ==================== SHOPIFY INFLUENCER USAGE SYNC ====================
 
@@ -6538,7 +6600,7 @@ app.get('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
             isRunning: isSyncRunning,
             lastSync: lastSyncTimestamp,
             message: isSyncRunning ? 'Sync in progress' : 'Sync completed',
-            schedule: '4 times daily (6AM, 12PM, 6PM, 12AM IST)'
+            schedule: 'Hourly (IST timezone)'
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to get sync status' });
