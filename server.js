@@ -12408,6 +12408,72 @@ app.get('/api/internal/ai-data', async (req, res) => {
     }
 });
 
+// ==================== PHONE OTP LOGIN (STOREFRONT) ====================
+// Classic-account phone OTP login: MSG91 sends/verifies the OTP, then the
+// Shopify account is activated server-side and the storefront JS submits a
+// normal /account/login form to receive the session cookie.
+// See config/otp-service.js for the full flow and required env vars.
+const otpService = require('./config/otp-service');
+
+// Strict limiter for OTP endpoints (on top of the general /api/ limiter)
+const otpLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 mins
+    max: 15, // 15 OTP requests per IP per 5 minutes
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many login attempts. Please try again in a few minutes.',
+    handler: rateLimitHandler
+});
+
+// Step 1: send OTP to the customer's phone
+app.post('/api/auth/otp/send', otpLimiter, async (req, res) => {
+    try {
+        const { phone } = req.body || {};
+        const normalized = otpService.normalizeIndianPhone(phone);
+        if (!normalized) {
+            return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number' });
+        }
+
+        const result = await otpService.sendOtp(normalized);
+        res.json({
+            success: true,
+            expiresInSeconds: result.expiresInSeconds,
+            resendInSeconds: result.resendInSeconds,
+            ...(result.devOtp ? { devOtp: result.devOtp } : {})
+        });
+    } catch (err) {
+        if (err instanceof otpService.OtpError) {
+            return res.status(err.status).json({ error: err.message, code: err.code });
+        }
+        console.error('[OTP] send error:', err.message);
+        res.status(500).json({ error: 'Could not send OTP. Please try again.' });
+    }
+});
+
+// Step 2: verify OTP, activate the Shopify account, return login credentials
+// The theme submits these to /account/login as a normal same-origin form POST,
+// which makes Shopify set the _secure_customer_session cookie directly.
+app.post('/api/auth/otp/verify', otpLimiter, async (req, res) => {
+    try {
+        const { phone, otp } = req.body || {};
+        const normalized = otpService.normalizeIndianPhone(phone);
+        if (!normalized || !otp) {
+            return res.status(400).json({ error: 'Phone and OTP are required' });
+        }
+
+        await otpService.verifyOtp(normalized, otp);
+
+        const login = await otpService.issueStorefrontLogin(normalized);
+        res.json({ success: true, login });
+    } catch (err) {
+        if (err instanceof otpService.OtpError) {
+            return res.status(err.status).json({ error: err.message, code: err.code });
+        }
+        console.error('[OTP] verify error:', err.message);
+        res.status(500).json({ error: 'Login failed. Please try again.' });
+    }
+});
+
 // ==================== ERROR HANDLING ====================
 
 // 404 handler
