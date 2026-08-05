@@ -8,7 +8,7 @@
 //
 // API contract (v3, per the official VerifyNow onboarding guide):
 //   send:   POST /verification/v3/send?countryCode=91&customerId&flowType=SMS&type=OTP&mobileNumber&otpLength
-//   verify: POST /verification/v3/validateOtp?verificationId&code&flowType=SMS&customerId
+//   verify: GET  /verification/v3/validateOtp?verificationId&code&flowType=SMS&customerId
 //   Auth: the authToken is issued by the Message Central console
 //   (Developer Guide > API Credentials) and used verbatim via MC_AUTH_TOKEN.
 //   Optional fallback: MC_PASSWORD + MC_ACCOUNT_EMAIL fetch a token via
@@ -288,7 +288,9 @@ async function verifyOtp(phone, otp) {
             throw new OtpError('otp_expired', 'OTP expired. Please request a new one.', 410);
         }
 
-        // validateOtp (v3): verificationId from the send call + the user's code
+        // validateOtp (v3): verificationId from the send call + the user's
+        // code. NOTE: the guide labels this POST but its own cURL is a bare
+        // GET - GET is what the endpoint accepts (POST returns 401).
         const params = new URLSearchParams({
             verificationId: record.sessionId,
             code: String(otp),
@@ -300,7 +302,7 @@ async function verifyOtp(phone, otp) {
         let response;
         try {
             response = await fetch(url, {
-                method: 'POST',
+                method: 'GET',
                 headers: { authToken: await getAuthToken() },
                 signal: AbortSignal.timeout(15000)
             });
