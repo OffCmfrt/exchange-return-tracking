@@ -120,7 +120,11 @@ async function sendOtp(phone) {
     let sessionId = null;
     let devOtp = null;
 
-    if (isMsg91Configured()) {
+    const configured = isMsg91Configured();
+    console.log(`[OTP] send request for +${phone} | MSG91 configured: ${configured}` +
+        (configured ? ` | template_id: ${process.env.MSG91_OTP_TEMPLATE_ID} | authkey set: ${String(Boolean(process.env.MSG91_AUTH_KEY)).slice(0, 4)}` : ''));
+
+    if (configured) {
         const url = `${msg91Base()}/api/v5/otp?type=text&template_id=${encodeURIComponent(process.env.MSG91_OTP_TEMPLATE_ID)}&mobile=${phone}`;
         let response;
         try {
@@ -142,6 +146,7 @@ async function sendOtp(phone) {
             throw new OtpError('provider_error', 'Could not send OTP right now. Please try again.', 502);
         }
         sessionId = data.session_id || null;
+        console.log(`[OTP] MSG91 accepted send for +${phone} | session_id: ${sessionId || 'none'}`);
     } else {
         // Dev mode: no MSG91 credentials - generate the OTP locally and log it.
         devOtp = String(Math.floor(100000 + Math.random() * 900000));
@@ -158,6 +163,7 @@ async function sendOtp(phone) {
     otpStore.set(phone, record);
 
     return {
+        via: configured ? 'msg91' : 'dev',
         expiresInSeconds: Math.round(OTP_TTL_MS / 1000),
         resendInSeconds: Math.round(OTP_RESEND_COOLDOWN_MS / 1000),
         devOtp: devOtp && process.env.NODE_ENV !== 'production' ? devOtp : undefined

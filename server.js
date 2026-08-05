@@ -12437,6 +12437,7 @@ app.post('/api/auth/otp/send', otpLimiter, async (req, res) => {
         const result = await otpService.sendOtp(normalized);
         res.json({
             success: true,
+            via: result.via,
             expiresInSeconds: result.expiresInSeconds,
             resendInSeconds: result.resendInSeconds,
             ...(result.devOtp ? { devOtp: result.devOtp } : {})
