@@ -208,6 +208,8 @@ async function verifyOtp(phone, otp) {
         try { data = await response.json(); } catch { /* non-JSON response */ }
         ok = response.status === 200 && !!data && data.type === 'success';
 
+        console.log(`[OTP] MSG91 verify response for +${phone} | status: ${response.status} | body: ${JSON.stringify(data)} | used: ${record.sessionId ? 'session_id' : 'mobile'}`);
+
         if (!ok) {
             console.warn(`[OTP] Verify rejected for +${phone} (attempt ${record.attempts}/${OTP_MAX_VERIFY_ATTEMPTS})`);
         }
