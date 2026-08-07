@@ -895,7 +895,21 @@ module.exports = {
     getAdminMessages,
     getInfluencerMessages,
     markMessageAsRead,
-    getUnreadMessageCount
+    getUnreadMessageCount,
+
+    // Operator Helpers (Team & Permissions)
+    hashOperatorPassword,
+    verifyOperatorPassword,
+    createOperator,
+    getOperatorByUsername,
+    getOperatorById,
+    listOperators,
+    updateOperator,
+    setOperatorActive,
+    deleteOperator,
+    touchOperatorLogin,
+    logOperatorActivity,
+    getOperatorActivityLogs
 };
 
 // ── Influencer Product Shipments ──
@@ -1408,4 +1422,196 @@ async function getUnreadMessageCount(influencerId) {
 
     if (error) throw error;
     return count || 0;
+}
+
+// ── Operator Helpers (Team & Permissions) ──
+
+const crypto = require('crypto');
+
+const SCRYPT_KEYLEN = 64;
+const SCRYPT_OPTS = { N: 16384, r: 8, p: 1 }; // modest params: ~50ms, login/reset only
+
+/**
+ * Hash an operator password with scrypt (built-in crypto, no dependency).
+ * Stored format: scrypt:<saltHex>:<hashHex>
+ */
+function hashOperatorPassword(password) {
+    const salt = crypto.randomBytes(16);
+    const hash = crypto.scryptSync(String(password), salt, SCRYPT_KEYLEN, SCRYPT_OPTS);
+    return `scrypt:${salt.toString('hex')}:${hash.toString('hex')}`;
+}
+
+/**
+ * Verify a password against a stored scrypt hash (timing-safe).
+ */
+function verifyOperatorPassword(password, stored) {
+    try {
+        if (!stored || typeof stored !== 'string') return false;
+        const parts = stored.split(':');
+        if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+        const salt = Buffer.from(parts[1], 'hex');
+        const expected = Buffer.from(parts[2], 'hex');
+        const actual = crypto.scryptSync(String(password), salt, expected.length, SCRYPT_OPTS);
+        return crypto.timingSafeEqual(actual, expected);
+    } catch (err) {
+        console.error('verifyOperatorPassword error:', err.message);
+        return false;
+    }
+}
+
+/** Strip sensitive fields before returning an operator row to clients */
+function sanitizeOperator(op) {
+    if (!op) return null;
+    const { password_hash, ...rest } = op;
+    return rest;
+}
+
+async function createOperator(opData) {
+    const { data, error } = await supabase
+        .from('operators')
+        .insert([{
+            username: opData.username,
+            name: opData.name || null,
+            email: opData.email || null,
+            password_hash: opData.passwordHash,
+            permissions: opData.permissions || [],
+            is_active: true
+        }])
+        .select()
+        .single();
+
+    if (error) throw error;
+    return sanitizeOperator(data);
+}
+
+async function getOperatorByUsername(username) {
+    const { data, error } = await supabase
+        .from('operators')
+        .select('*')
+        .ilike('username', username)
+        .limit(1);
+
+    if (error) throw error;
+    return (data && data[0]) || null; // full row incl. password_hash (login only)
+}
+
+async function getOperatorById(id) {
+    const { data, error } = await supabase
+        .from('operators')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (error) {
+        if (error.code === 'PGRST116') return null;
+        throw error;
+    }
+    return data;
+}
+
+async function listOperators() {
+    const { data, error } = await supabase
+        .from('operators')
+        .select('id, username, name, email, permissions, is_active, banned_at, last_login_at, created_at, updated_at')
+        .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+}
+
+async function updateOperator(id, updates) {
+    const updateData = { updated_at: new Date().toISOString() };
+    if (updates.name !== undefined) updateData.name = updates.name;
+    if (updates.email !== undefined) updateData.email = updates.email;
+    if (updates.permissions !== undefined) updateData.permissions = updates.permissions;
+    if (updates.passwordHash !== undefined) updateData.password_hash = updates.passwordHash;
+
+    const { data, error } = await supabase
+        .from('operators')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return sanitizeOperator(data);
+}
+
+async function setOperatorActive(id, active) {
+    const { data, error } = await supabase
+        .from('operators')
+        .update({
+            is_active: active,
+            banned_at: active ? null : new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) throw error;
+    return sanitizeOperator(data);
+}
+
+async function deleteOperator(id) {
+    const { error } = await supabase
+        .from('operators')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw error;
+    return { success: true };
+}
+
+/** Update last_login_at (fire-and-forget friendly) */
+async function touchOperatorLogin(id) {
+    const { error } = await supabase
+        .from('operators')
+        .update({ last_login_at: new Date().toISOString() })
+        .eq('id', id);
+    if (error) console.error('touchOperatorLogin error:', error.message);
+}
+
+/** Insert an audit entry. Callers treat this as fire-and-forget. */
+async function logOperatorActivity(entry) {
+    const { error } = await supabase
+        .from('operator_activity_logs')
+        .insert([{
+            operator_id: entry.operatorId || null,
+            username: entry.username || 'super-admin',
+            action: entry.action,
+            method: entry.method || null,
+            path: entry.path || null,
+            target: entry.target || null,
+            success: entry.success !== false,
+            ip: entry.ip || null
+        }]);
+    if (error) throw error;
+}
+
+/** Paginated activity logs with filters */
+async function getOperatorActivityLogs(filters = {}) {
+    let query = supabase
+        .from('operator_activity_logs')
+        .select('*', { count: 'exact' });
+
+    if (filters.operatorId) query = query.eq('operator_id', filters.operatorId);
+    if (filters.username) query = query.eq('username', filters.username);
+    if (filters.action) query = query.eq('action', filters.action);
+    if (filters.fromDate) query = query.gte('created_at', filters.fromDate);
+    if (filters.toDate) query = query.lte('created_at', filters.toDate);
+
+    query = query.order('created_at', { ascending: false });
+
+    const page = parseInt(filters.page, 10) || 1;
+    const limit = Math.min(parseInt(filters.limit, 10) || 50, 200);
+    const offset = (page - 1) * limit;
+
+    const { data, count, error } = await query.range(offset, offset + limit - 1);
+    if (error) throw error;
+
+    return {
+        logs: data || [],
+        pagination: { page, limit, total: count || 0 }
+    };
 }

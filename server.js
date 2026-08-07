@@ -334,7 +334,19 @@ const {
     getAdminMessages,
     getInfluencerMessages,
     markMessageAsRead,
-    getUnreadMessageCount
+    getUnreadMessageCount,
+    hashOperatorPassword,
+    verifyOperatorPassword,
+    createOperator,
+    getOperatorByUsername,
+    getOperatorById,
+    listOperators,
+    updateOperator,
+    setOperatorActive,
+    deleteOperator,
+    touchOperatorLogin,
+    logOperatorActivity,
+    getOperatorActivityLogs
 } = require('./config/db-helpers');
 const supabase = require('./config/supabase');
 
@@ -4976,8 +4988,168 @@ app.post('/api/track-order', async (req, res) => {
 
 // ==================== ADMIN ENDPOINTS ====================
 
-// Admin authentication middleware with JWT
-function authenticateAdmin(req, res, next) {
+// ── Operator Accounts, Permissions & Activity Tracking ──
+
+// All permission keys that can be granted to an operator (team management is super-admin-only)
+const VALID_PERMISSIONS = [
+    'approve', 'reject', 'edit_requests', 'delete_requests', 'book_pickups',
+    'view_analytics', 'manage_settings', 'manage_influencers', 'manage_marketing'
+];
+
+// Route → permission rules (first match wins; influencer approve/reject rules precede the catch-all)
+const PERMISSION_RULES = [
+    { method: 'POST', pattern: /^\/api\/admin\/approve(-return|-exchange)?$/, perm: 'approve', label: 'Approve Request' },
+    { method: 'POST', pattern: /^\/api\/admin\/approve-return-with-discount$/, perm: 'approve', label: 'Approve with Discount' },
+    { method: 'POST', pattern: /^\/api\/admin\/send-coupon-code$/, perm: 'approve', label: 'Send Coupon Code' },
+    { method: 'POST', pattern: /^\/api\/admin\/reject(-return|-exchange)?$/, perm: 'reject', label: 'Reject Request' },
+    { method: 'POST', pattern: /^\/api\/admin\/undo-rejection$/, perm: 'reject', label: 'Undo Rejection' },
+    { method: 'PUT', pattern: /^\/api\/admin\/update-request\/[^/]+$/, perm: 'edit_requests', label: 'Edit Request' },
+    { method: 'POST', pattern: /^\/api\/admin\/create-request$/, perm: 'edit_requests', label: 'Create Request' },
+    { method: 'POST', pattern: /^\/api\/admin\/lookup-order-force$/, perm: 'edit_requests', label: 'Force Order Lookup' },
+    { method: 'POST', pattern: /^\/api\/admin\/delete-requests$/, perm: 'delete_requests', label: 'Delete Requests' },
+    { method: 'POST', pattern: /^\/api\/admin\/bulk-initiate-pickup$/, perm: 'book_pickups', label: 'Bulk Initiate Pickup' },
+    { method: 'POST', pattern: /^\/api\/admin\/reset-pickup$/, perm: 'book_pickups', label: 'Reset Pickup' },
+    { method: 'POST', pattern: /^\/api\/admin\/redispatch$/, perm: 'book_pickups', label: 'Redispatch' },
+    { method: 'POST', pattern: /^\/api\/admin\/create-duplicate-pickup$/, perm: 'book_pickups', label: 'Create Duplicate Pickup' },
+    { method: 'POST', pattern: /^\/api\/admin\/create-duplicate-forward$/, perm: 'book_pickups', label: 'Create Duplicate Forward' },
+    { method: 'POST', pattern: /^\/api\/admin\/mark-delivered$/, perm: 'book_pickups', label: 'Mark Delivered' },
+    { method: 'GET', pattern: /^\/api\/admin\/stats$/, perm: 'view_analytics', label: 'View Stats' },
+    { method: 'GET', pattern: /^\/api\/admin\/analytics\/detailed$/, perm: 'view_analytics', label: 'View Detailed Analytics' },
+    { method: 'GET', pattern: /^\/api\/admin\/settings$/, perm: 'manage_settings', label: 'View Settings' },
+    { method: 'POST', pattern: /^\/api\/admin\/settings$/, perm: 'manage_settings', label: 'Update Settings' },
+    { method: 'GET', pattern: /^\/api\/admin\/shiprocket-locations$/, perm: 'manage_settings', label: 'View Pickup Locations' },
+    { method: 'GET', pattern: /^\/api\/admin\/sync-status$/, perm: 'manage_settings', label: 'View Sync Status' },
+    { method: 'POST', pattern: /^\/api\/admin\/sync-status$/, perm: 'manage_settings', label: 'Update Sync Status' },
+    { method: 'GET', pattern: /^\/api\/admin\/shopify-sync-status$/, perm: 'manage_settings', label: 'View Shopify Sync Status' },
+    { method: 'POST', pattern: /^\/api\/admin\/trigger-shopify-sync$/, perm: 'manage_settings', label: 'Trigger Shopify Sync' },
+    { method: '*', pattern: /^\/api\/admin\/operators(\/|$)/, superOnly: true, label: 'Team Management' },
+    { method: '*', pattern: /^\/api\/admin\/marketing(\/|$)/, perm: 'manage_marketing', label: 'Marketing Dashboard' },
+    { method: 'POST', pattern: /^\/api\/influencer-admin\/(bulk-approve|approve)/, perm: 'approve', label: 'Approve Influencer' },
+    { method: 'POST', pattern: /^\/api\/influencer-admin\/(bulk-reject|reject)/, perm: 'reject', label: 'Reject Influencer' },
+    { method: '*', pattern: /^\/api\/influencer-admin(\/|$)/, perm: 'manage_influencers', label: 'Influencer Management' }
+];
+
+// Bounded in-memory operator cache (same pattern as settingsCache) — avoids a DB hit per request
+const operatorCache = new Map();
+const OPERATOR_CACHE_TTL = 30 * 1000;
+
+function invalidateOperatorCache() {
+    operatorCache.clear();
+}
+
+async function getCachedOperator(operatorId) {
+    const cached = operatorCache.get(operatorId);
+    if (cached && Date.now() - cached.fetchedAt < OPERATOR_CACHE_TTL) {
+        return cached.op;
+    }
+    const op = await getOperatorById(operatorId);
+    operatorCache.set(operatorId, { op: op || null, fetchedAt: Date.now() });
+    return op || null;
+}
+
+function matchPermissionRule(method, pathname) {
+    return PERMISSION_RULES.find(r =>
+        (r.method === '*' || r.method === method) && r.pattern.test(pathname)
+    ) || null;
+}
+
+// Fire-and-forget audit insert — never blocks or breaks the response path
+function audit(entry) {
+    logOperatorActivity(entry).catch(err => {
+        console.error('[Audit] Failed to log activity:', err.message);
+    });
+}
+
+// Extract a target identifier (e.g. REQ id) from the request for the audit trail
+function extractAuditTarget(req) {
+    if (req.params && req.params.requestId) return String(req.params.requestId);
+    const body = req.body || {};
+    return body.requestId || body.request_id || body.requestID || null;
+}
+
+// Centralized permission enforcement + activity audit for all admin surfaces.
+// Registered BEFORE the admin routes. Super admin: zero DB calls. Operators: cached lookup only.
+app.use(['/api/admin', '/api/influencer-admin'], async function enforceOperatorPermissions(req, res, next) {
+    // Let CORS preflight and the login endpoint pass through (login has no token yet)
+    if (req.method === 'OPTIONS' || req.path === '/login') return next();
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return next(); // authenticateAdmin will 401
+
+    const decoded = verifyToken(authHeader.substring(7));
+    if (!decoded || (decoded.role !== 'admin' && decoded.role !== 'operator')) return next();
+
+    const pathname = req.originalUrl.split('?')[0];
+    const rule = matchPermissionRule(req.method, pathname);
+    const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+
+    if (decoded.role === 'operator') {
+        let op = null;
+        try {
+            op = await getCachedOperator(decoded.operatorId);
+        } catch (err) {
+            console.error('[OperatorAuth] Cache lookup failed:', err.message);
+        }
+
+        if (!op || op.is_active === false) {
+            audit({ operatorId: decoded.operatorId, username: decoded.username || 'operator', action: 'banned_or_deleted_access', method: req.method, path: pathname, success: false, ip: req.ip });
+            return res.status(401).json({ error: 'This account has been banned or removed. Contact the administrator.' });
+        }
+
+        req.operator = op;
+        req.permissions = op.permissions || [];
+
+        // Team management is never grantable to operators
+        if (rule && rule.superOnly) {
+            audit({ operatorId: op.id, username: op.username, action: 'permission_denied', method: req.method, path: pathname, success: false, ip: req.ip });
+            return res.status(403).json({ error: 'You do not have permission to perform this action' });
+        }
+
+        if (rule && rule.perm && !req.permissions.includes(rule.perm)) {
+            audit({ operatorId: op.id, username: op.username, action: 'permission_denied', method: req.method, path: pathname, success: false, ip: req.ip });
+            return res.status(403).json({ error: `You do not have permission for: ${rule.label}` });
+        }
+
+        // Default-deny unmatched write routes for operators
+        if (!rule && isMutation) {
+            audit({ operatorId: op.id, username: op.username, action: 'permission_denied', method: req.method, path: pathname, success: false, ip: req.ip });
+            return res.status(403).json({ error: 'You do not have permission to perform this action' });
+        }
+
+        req.user = decoded;
+    } else {
+        req.user = decoded; // super admin: always passes
+    }
+
+    // Activity audit for mutating actions (fire-and-forget, attached before handlers run).
+    // Team-management routes are excluded here — their handlers log richer entries themselves.
+    if (isMutation && !(rule && rule.superOnly)) {
+        const actor = decoded.role === 'admin'
+            ? { operatorId: null, username: 'super-admin' }
+            : { operatorId: decoded.operatorId, username: decoded.username };
+        res.on('finish', () => {
+            audit({
+                ...actor,
+                action: rule ? rule.label : `${req.method} ${pathname}`,
+                method: req.method,
+                path: pathname,
+                target: extractAuditTarget(req),
+                success: res.statusCode < 400,
+                ip: req.ip
+            });
+        });
+    }
+
+    next();
+});
+
+// Admin authentication middleware with JWT (accepts super admin + operators)
+async function authenticateAdmin(req, res, next) {
+    // Already verified by the enforcement middleware above (normal path)
+    if (req.user && (req.user.role === 'admin' || req.user.role === 'operator')) {
+        return next();
+    }
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -4987,29 +5159,264 @@ function authenticateAdmin(req, res, next) {
     const token = authHeader.substring(7);
     const decoded = verifyToken(token);
 
-    if (!decoded || decoded.role !== 'admin') {
+    if (!decoded || (decoded.role !== 'admin' && decoded.role !== 'operator')) {
         trackSuspicious(req.ip, 'invalid_admin_token');
         return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    // Fallback operator resolution (enforcement middleware normally handles this)
+    if (decoded.role === 'operator') {
+        try {
+            const op = await getCachedOperator(decoded.operatorId);
+            if (!op || op.is_active === false) {
+                return res.status(401).json({ error: 'This account has been banned or removed. Contact the administrator.' });
+            }
+            req.operator = op;
+            req.permissions = op.permissions || [];
+        } catch (err) {
+            console.error('[OperatorAuth] Resolution failed:', err.message);
+            return res.status(500).json({ error: 'Authentication error' });
+        }
     }
 
     req.user = decoded;
     next();
 }
 
-// Admin login with JWT
-app.post('/api/admin/login', (req, res) => {
-    const { password } = req.body;
+// Super-admin-only gate (team management)
+function requireSuperAdmin(req, res, next) {
+    if (req.user && req.user.role === 'admin') return next();
+    return res.status(403).json({ error: 'Super admin access required' });
+}
+
+// Admin login with JWT — super admin (env password) or operator (username + password)
+app.post('/api/admin/login', async (req, res) => {
+    const { username, password } = req.body;
 
     if (!password) {
         return res.status(400).json({ error: 'Password required' });
     }
 
-    if (password === process.env.ADMIN_PASSWORD) {
-        const token = generateToken({ role: 'admin', timestamp: Date.now() });
-        res.json({ success: true, token });
-    } else {
+    // ── Super admin path (unchanged behaviour) ──
+    if (!username) {
+        if (password === process.env.ADMIN_PASSWORD) {
+            const token = generateToken({ role: 'admin', timestamp: Date.now() });
+            return res.json({ success: true, token, role: 'admin', username: 'super-admin' });
+        }
         trackSuspicious(req.ip, 'failed_admin_login');
-        res.status(401).json({ error: 'Invalid password' });
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    // ── Operator path ──
+    try {
+        const op = await getOperatorByUsername(username.trim());
+
+        if (!op || !verifyOperatorPassword(password, op.password_hash)) {
+            audit({ operatorId: op ? op.id : null, username, action: 'login_failed', success: false, ip: req.ip });
+            trackSuspicious(req.ip, 'failed_operator_login');
+            return res.status(401).json({ error: 'Invalid username or password' });
+        }
+
+        if (!op.is_active) {
+            audit({ operatorId: op.id, username: op.username, action: 'login_banned', success: false, ip: req.ip });
+            return res.status(403).json({ error: 'This account has been banned. Contact the administrator.' });
+        }
+
+        touchOperatorLogin(op.id); // fire-and-forget
+        invalidateOperatorCache(); // fresh permissions/state from next request
+
+        const token = generateToken({ role: 'operator', operatorId: op.id, username: op.username, timestamp: Date.now() });
+        audit({ operatorId: op.id, username: op.username, action: 'login', ip: req.ip });
+
+        res.json({
+            success: true,
+            token,
+            role: 'operator',
+            operator: {
+                id: op.id,
+                username: op.username,
+                name: op.name,
+                permissions: op.permissions || []
+            }
+        });
+    } catch (error) {
+        console.error('Operator login error:', error);
+        res.status(500).json({ error: 'Login failed. Please try again.' });
+    }
+});
+
+// ==================== TEAM MANAGEMENT (Super Admin only) ====================
+
+// Current session identity + permissions (drives frontend UI gating)
+app.get('/api/admin/operators/me', authenticateAdmin, (req, res) => {
+    if (req.user.role === 'admin') {
+        return res.json({ role: 'admin', username: 'super-admin', name: 'Super Admin', permissions: VALID_PERMISSIONS });
+    }
+    const op = req.operator || {};
+    res.json({
+        role: 'operator',
+        id: op.id,
+        username: op.username,
+        name: op.name || op.username,
+        permissions: op.permissions || []
+    });
+});
+
+// List all operators (password hashes never returned)
+app.get('/api/admin/operators', authenticateAdmin, requireSuperAdmin, async (req, res) => {
+    try {
+        const operators = await listOperators();
+        res.json({ success: true, operators });
+    } catch (error) {
+        console.error('List operators error:', error);
+        res.status(500).json({ error: 'Failed to load operators' });
+    }
+});
+
+// Create an operator
+app.post('/api/admin/operators', authenticateAdmin, requireSuperAdmin, async (req, res) => {
+    try {
+        const { username, name, email, password, permissions } = req.body;
+
+        const cleanUsername = String(username || '').trim().toLowerCase();
+        if (!/^[a-z0-9._-]{2,50}$/.test(cleanUsername)) {
+            return res.status(400).json({ error: 'Username must be 2-50 characters (letters, numbers, dot, dash, underscore)' });
+        }
+        if (!password || String(password).length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        const cleanPerms = Array.isArray(permissions)
+            ? permissions.filter(p => VALID_PERMISSIONS.includes(p))
+            : [];
+
+        const existing = await getOperatorByUsername(cleanUsername);
+        if (existing) {
+            return res.status(409).json({ error: 'This username is already taken' });
+        }
+
+        const operator = await createOperator({
+            username: cleanUsername,
+            name: (name || '').trim() || null,
+            email: (email || '').trim() || null,
+            passwordHash: hashOperatorPassword(password),
+            permissions: cleanPerms
+        });
+
+        audit({ username: 'super-admin', action: 'operator_created', target: cleanUsername, ip: req.ip });
+        res.json({ success: true, operator });
+    } catch (error) {
+        console.error('Create operator error:', error);
+        res.status(500).json({ error: 'Failed to create operator' });
+    }
+});
+
+// Edit an operator (name/email/permissions, optional password reset)
+app.patch('/api/admin/operators/:id', authenticateAdmin, requireSuperAdmin, async (req, res) => {
+    try {
+        const opId = parseInt(req.params.id, 10);
+        const { name, email, permissions, newPassword } = req.body;
+
+        const existing = await getOperatorById(opId);
+        if (!existing) return res.status(404).json({ error: 'Operator not found' });
+
+        const updates = {};
+        if (name !== undefined) updates.name = String(name).trim() || null;
+        if (email !== undefined) updates.email = String(email).trim() || null;
+        if (permissions !== undefined) {
+            updates.permissions = Array.isArray(permissions)
+                ? permissions.filter(p => VALID_PERMISSIONS.includes(p))
+                : [];
+        }
+        if (newPassword) {
+            if (String(newPassword).length < 6) {
+                return res.status(400).json({ error: 'Password must be at least 6 characters' });
+            }
+            updates.passwordHash = hashOperatorPassword(newPassword);
+        }
+
+        const operator = await updateOperator(opId, updates);
+        invalidateOperatorCache();
+
+        audit({ username: 'super-admin', action: updates.passwordHash ? 'operator_password_reset' : 'operator_updated', target: existing.username, ip: req.ip });
+        res.json({ success: true, operator });
+    } catch (error) {
+        console.error('Update operator error:', error);
+        res.status(500).json({ error: 'Failed to update operator' });
+    }
+});
+
+// Ban an operator (immediately blocks login; tokens rejected within cache window)
+app.post('/api/admin/operators/:id/ban', authenticateAdmin, requireSuperAdmin, async (req, res) => {
+    try {
+        const opId = parseInt(req.params.id, 10);
+        const existing = await getOperatorById(opId);
+        if (!existing) return res.status(404).json({ error: 'Operator not found' });
+
+        const operator = await setOperatorActive(opId, false);
+        invalidateOperatorCache();
+
+        audit({ username: 'super-admin', action: 'operator_banned', target: existing.username, ip: req.ip });
+        res.json({ success: true, operator });
+    } catch (error) {
+        console.error('Ban operator error:', error);
+        res.status(500).json({ error: 'Failed to ban operator' });
+    }
+});
+
+// Unban an operator
+app.post('/api/admin/operators/:id/unban', authenticateAdmin, requireSuperAdmin, async (req, res) => {
+    try {
+        const opId = parseInt(req.params.id, 10);
+        const existing = await getOperatorById(opId);
+        if (!existing) return res.status(404).json({ error: 'Operator not found' });
+
+        const operator = await setOperatorActive(opId, true);
+        invalidateOperatorCache();
+
+        audit({ username: 'super-admin', action: 'operator_unbanned', target: existing.username, ip: req.ip });
+        res.json({ success: true, operator });
+    } catch (error) {
+        console.error('Unban operator error:', error);
+        res.status(500).json({ error: 'Failed to unban operator' });
+    }
+});
+
+// Delete an operator (activity history is preserved via denormalized username)
+app.delete('/api/admin/operators/:id', authenticateAdmin, requireSuperAdmin, async (req, res) => {
+    try {
+        const opId = parseInt(req.params.id, 10);
+        const existing = await getOperatorById(opId);
+        if (!existing) return res.status(404).json({ error: 'Operator not found' });
+
+        await deleteOperator(opId);
+        invalidateOperatorCache();
+
+        audit({ username: 'super-admin', action: 'operator_deleted', target: existing.username, ip: req.ip });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete operator error:', error);
+        res.status(500).json({ error: 'Failed to delete operator' });
+    }
+});
+
+// Activity log with filters + pagination
+app.get('/api/admin/operators/activity', authenticateAdmin, requireSuperAdmin, async (req, res) => {
+    try {
+        const filters = {};
+        if (req.query.operatorId) filters.operatorId = parseInt(req.query.operatorId, 10);
+        if (req.query.username) filters.username = String(req.query.username);
+        if (req.query.action) filters.action = String(req.query.action);
+        if (req.query.fromDate) filters.fromDate = String(req.query.fromDate);
+        if (req.query.toDate) filters.toDate = String(req.query.toDate);
+        filters.page = req.query.page;
+        filters.limit = req.query.limit;
+
+        const result = await getOperatorActivityLogs(filters);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Get activity logs error:', error);
+        res.status(500).json({ error: 'Failed to load activity logs' });
     }
 });
 

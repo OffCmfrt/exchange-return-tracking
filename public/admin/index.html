@@ -47,6 +47,11 @@
 
             <form id="loginForm" onsubmit="handleLogin(event)">
                 <div class="form-group">
+                    <label for="operatorUsername">Operator ID <span style="color: #9ca3af; font-weight: 400; text-transform: none; letter-spacing: 0;">(optional — leave empty for Super Admin)</span></label>
+                    <input type="text" id="operatorUsername" name="operatorUsername" autocomplete="username" placeholder="e.g. rahul.ops">
+                </div>
+
+                <div class="form-group">
                     <label for="adminPassword">Password</label>
                     <input type="password" id="adminPassword" name="adminPassword" required>
                 </div>
@@ -68,13 +73,21 @@
                     <h1 class="dash-title">Returns & Exchanges</h1>
                 </div>
                 <div class="dash-actions">
-                    <button onclick="openAnalyticsPage()" class="top-btn">
+                    <span id="identityChip" class="identity-chip hidden">
+                        <span id="identityChipDot" class="identity-chip-dot"></span>
+                        <span id="identityChipText"></span>
+                    </span>
+                    <button id="analyticsTopBtn" onclick="openAnalyticsPage()" class="top-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
                         Analytics
                     </button>
-                    <button onclick="openSettingsModal()" class="top-btn">
+                    <button id="settingsTopBtn" onclick="openSettingsModal()" class="top-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         Settings
+                    </button>
+                    <button id="teamTopBtn" onclick="openTeamConsole()" class="top-btn hidden">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                        Team
                     </button>
                     <button onclick="logout()" class="top-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
@@ -84,7 +97,7 @@
             </div>
 
             <!-- Premium Analytics Section -->
-            <div style="margin-bottom: 2rem; animation: fadeIn 0.5s ease-out;">
+            <div id="analyticsOverviewSection" style="margin-bottom: 2rem; animation: fadeIn 0.5s ease-out;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1rem;">
                     <h2 style="font-size: 1.25rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #111827; margin: 0;">Analytics Overview</h2>
                 </div>
@@ -309,7 +322,7 @@
                             Export Excel
                         </button>
 
-                        <button onclick="openCreateModal()" class="admin-btn" style="background: #111827; color: white;">
+                        <button onclick="openCreateModal()" class="admin-btn" id="createRequestBtn" style="background: #111827; color: white;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                             Create Request
                         </button>
@@ -1643,6 +1656,111 @@
     </div>
 </div>
 </div>
+
+<!-- ══════════════ Team & Permissions Console (Super Admin) ══════════════ -->
+<div id="teamModal" class="modal">
+    <div class="modal-overlay" onclick="closeTeamConsole()"></div>
+    <div class="modal-container team-modal">
+        <div class="team-header">
+            <div>
+                <div class="dash-kicker" style="color:#9ca3af;">OFFCOMFRT · Access Control</div>
+                <h2 class="team-title">Team &amp; Permissions</h2>
+            </div>
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <button class="admin-btn" id="addOperatorBtn" onclick="openOperatorForm()" style="background: #111827; color: white;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Add Operator
+                </button>
+                <button class="team-close-btn" onclick="closeTeamConsole()" aria-label="Close">&times;</button>
+            </div>
+        </div>
+
+        <div class="team-tabs">
+            <button id="teamTabOperators" class="team-tab active" onclick="switchTeamTab('operators')">Operators</button>
+            <button id="teamTabActivity" class="team-tab" onclick="switchTeamTab('activity')">Activity Log</button>
+        </div>
+
+        <!-- Operators Pane -->
+        <div id="teamOperatorsPane" class="team-pane">
+            <div id="operatorsTableWrap">
+                <div class="team-empty">Loading operators...</div>
+            </div>
+        </div>
+
+        <!-- Activity Pane -->
+        <div id="teamActivityPane" class="team-pane hidden">
+            <div class="activity-filters">
+                <select id="activityOperatorFilter" class="filter-select" onchange="activityPage = 1; loadActivityLogs();" style="max-width: 200px;">
+                    <option value="">All Operators</option>
+                </select>
+                <select id="activityActionFilter" class="filter-select" onchange="activityPage = 1; loadActivityLogs();" style="max-width: 220px;">
+                    <option value="">All Actions</option>
+                    <option value="login">Logins</option>
+                    <option value="login_failed">Failed Logins</option>
+                    <option value="permission_denied">Permission Denied</option>
+                    <option value="Approve Request">Approvals</option>
+                    <option value="Reject Request">Rejections</option>
+                    <option value="Update Settings">Settings Changes</option>
+                    <option value="Delete Requests">Deletions</option>
+                </select>
+                <input type="date" id="activityFromFilter" class="filter-date" onchange="activityPage = 1; loadActivityLogs();" style="width: auto;">
+                <button class="admin-btn" onclick="activityPage = 1; loadActivityLogs();" style="background: white; border-color: #d1d5db; color: #374151;">Refresh</button>
+            </div>
+            <div id="activityTableWrap">
+                <div class="team-empty">Loading activity...</div>
+            </div>
+            <div class="activity-pager">
+                <button class="admin-btn" id="activityPrevBtn" onclick="activityPage = Math.max(1, activityPage - 1); loadActivityLogs();" style="background: white; border-color: #d1d5db; color: #374151;">&larr; Prev</button>
+                <span id="activityPageInfo" class="activity-page-info">Page 1</span>
+                <button class="admin-btn" id="activityNextBtn" onclick="activityPage++; loadActivityLogs();" style="background: white; border-color: #d1d5db; color: #374151;">Next &rarr;</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════ Operator Create/Edit Form ══════════════ -->
+<div id="operatorFormModal" class="modal">
+    <div class="modal-overlay" onclick="closeOperatorForm()"></div>
+    <div class="modal-container operator-form-modal">
+        <div class="team-header" style="margin-bottom: 1rem;">
+            <div>
+                <div class="dash-kicker" style="color:#9ca3af;">Operator Account</div>
+                <h2 class="team-title" id="operatorFormTitle" style="font-size: 1.3rem;">Add Operator</h2>
+            </div>
+            <button class="team-close-btn" onclick="closeOperatorForm()" aria-label="Close">&times;</button>
+        </div>
+
+        <div id="operatorFormAlert"></div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="opName">Full Name</label>
+                <input type="text" id="opName" placeholder="e.g. Rahul Sharma">
+            </div>
+            <div class="form-group">
+                <label for="opUsername">Operator ID (login username)</label>
+                <input type="text" id="opUsername" placeholder="e.g. rahul.ops" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="opEmail">Email <span style="color:#9ca3af; font-weight:400;">(optional)</span></label>
+                <input type="email" id="opEmail" placeholder="operator@offcomfrt.com">
+            </div>
+            <div class="form-group">
+                <label for="opPassword" id="opPasswordLabel">Password <span style="color:#9ca3af; font-weight:400;">(min 6 chars)</span></label>
+                <input type="password" id="opPassword" placeholder="••••••••" autocomplete="new-password">
+            </div>
+        </div>
+
+        <div class="perm-section-title">Allowed Functions</div>
+        <div id="permTogglesWrap" class="perm-groups"></div>
+
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem;">
+            <button class="admin-btn" onclick="closeOperatorForm()" style="background: white; border-color: #d1d5db; color: #374151;">Cancel</button>
+            <button class="admin-btn" id="saveOperatorBtn" onclick="saveOperator()" style="background: #111827; color: white;">Save Operator</button>
+        </div>
+    </div>
+</div>
+
 <script>
     // Safety mock to prevent theme scripts from throwing "Cannot read properties of null (reading 'find')"
     window.initializeSelections = function() {
@@ -1659,6 +1777,85 @@
     let currentRequestId = null;
     let fetchedRequests = [];
     let selectedRequests = new Set();
+
+    // ── Operator session & permissions (Team & Permissions feature) ──
+    let sessionRole = 'admin';            // 'admin' (super admin) | 'operator'
+    let sessionUsername = 'super-admin';
+    let sessionDisplayName = 'Super Admin';
+    let sessionOperatorId = null;
+    let sessionPermissions = [];          // granted permission keys (operators)
+
+    // Permission check — super admin always passes; server is the source of truth
+    function can(perm) {
+        if (sessionRole === 'admin') return true;
+        return sessionPermissions.includes(perm);
+    }
+
+    function resetSessionIdentity() {
+        sessionRole = 'admin';
+        sessionUsername = 'super-admin';
+        sessionDisplayName = 'Super Admin';
+        sessionOperatorId = null;
+        sessionPermissions = [];
+    }
+
+    // Show/hide UI elements based on granted permissions (cosmetic; server enforces)
+    function applyRoleUI() {
+        const show = (id, visible) => {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('hidden', !visible);
+        };
+
+        // Identity chip in header
+        const chip = document.getElementById('identityChip');
+        if (chip) {
+            chip.classList.remove('hidden');
+            document.getElementById('identityChipText').textContent =
+                sessionRole === 'admin' ? 'Super Admin' : `${sessionDisplayName} · Operator`;
+            document.getElementById('identityChipDot').style.background =
+                sessionRole === 'admin' ? '#22c55e' : '#2563eb';
+        }
+
+        show('analyticsTopBtn', can('view_analytics'));
+        show('analyticsOverviewSection', can('view_analytics'));
+        show('settingsTopBtn', can('manage_settings'));
+        show('teamTopBtn', sessionRole === 'admin');
+        show('deleteBtn', can('delete_requests'));
+        show('bulkPickupBtn', can('book_pickups'));
+        show('createRequestBtn', can('edit_requests'));
+        show('syncBtn', can('manage_settings'));
+    }
+
+    // Transient toast for permission errors
+    function showPermissionToast(message) {
+        let toast = document.getElementById('permToast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'permToast';
+            toast.style.cssText = 'position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: #111827; color: white; padding: 0.9rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 500; z-index: 10000; box-shadow: 0 10px 30px rgba(0,0,0,0.25); opacity: 0; transition: opacity 0.3s; pointer-events: none; max-width: 90vw; text-align: center;';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.style.opacity = '1';
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 3500);
+    }
+
+    // Intercept 403 responses globally so operators see clear feedback
+    const _rawFetch = window.fetch;
+    window.fetch = async function (...args) {
+        const res = await _rawFetch.apply(this, args);
+        if (res.status === 403 && sessionRole === 'operator') {
+            let msg = 'You do not have permission to perform this action';
+            try {
+                const clone = res.clone();
+                const data = await clone.json();
+                if (data && data.error) msg = data.error;
+            } catch (e) { /* non-JSON body */ }
+            showPermissionToast(msg);
+        }
+        return res;
+    };
 
     // Store discount section HTML on load so we can recreate it if removed from DOM
     const _discountEl = document.getElementById('discountCodeSection');
@@ -1714,6 +1911,7 @@
     async function handleLogin(e) {
         e.preventDefault();
         const password = document.getElementById('adminPassword').value;
+        const username = document.getElementById('operatorUsername').value.trim();
         const loginBtn = document.getElementById('loginBtnText');
         const spinner = document.getElementById('loginSpinner');
 
@@ -1724,7 +1922,7 @@
             const response = await fetch(`${API_URL}/admin/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password })
+                body: JSON.stringify({ username: username || undefined, password })
             });
             const data = await response.json();
 
@@ -1732,9 +1930,21 @@
                 authToken = data.token;
                 // JWT token stored in memory only (not localStorage) for security
                 // Token expires in 24 hours as configured on the server
+
+                // Capture identity & permissions for UI gating
+                if (data.role === 'operator' && data.operator) {
+                    sessionRole = 'operator';
+                    sessionOperatorId = data.operator.id;
+                    sessionUsername = data.operator.username;
+                    sessionDisplayName = data.operator.name || data.operator.username;
+                    sessionPermissions = data.operator.permissions || [];
+                } else {
+                    resetSessionIdentity();
+                }
+
                 showDashboard();
             } else {
-                showLoginAlert(data.error || 'Invalid password', 'error');
+                showLoginAlert(data.error || 'Invalid credentials', 'error');
             }
         } catch (error) {
             showLoginAlert('Login failed. Please try again.', 'error');
@@ -1758,6 +1968,7 @@
     function showDashboard() {
         document.getElementById('loginSection').classList.add('hidden');
         document.getElementById('dashboardSection').classList.remove('hidden');
+        applyRoleUI();
         loadRequests();
         if (typeof resetInactivityTimer === 'function') resetInactivityTimer();
     }
@@ -1767,6 +1978,9 @@
         // Clear any sensitive data from memory
         currentRequestId = null;
         selectedRequests.clear();
+        resetSessionIdentity();
+        const chip = document.getElementById('identityChip');
+        if (chip) chip.classList.add('hidden');
         document.getElementById('dashboardSection').classList.add('hidden');
         document.getElementById('loginSection').classList.remove('hidden');
     }
@@ -2676,6 +2890,31 @@
                 if (undoBtn) {
                     undoBtn.classList.add('hidden');
                 }
+            }
+
+            // ── Operator permission gating (Team & Permissions feature) ──
+            // Cosmetic layer; the server enforces permissions regardless.
+            if (sessionRole === 'operator') {
+                if (!can('approve') && approveBtn) approveBtn.classList.add('hidden');
+                const couponBtn = document.getElementById('sendCouponBtn');
+                if (!can('approve') && couponBtn) couponBtn.style.display = 'none';
+                else if (couponBtn) couponBtn.style.display = '';
+                if (!can('reject') && rejectBtn) rejectBtn.classList.add('hidden');
+                if (!can('reject') && undoBtn) undoBtn.classList.add('hidden');
+                if (!can('book_pickups')) {
+                    if (manualReceivedBtn) manualReceivedBtn.classList.add('hidden');
+                    if (dupPickupBtn) dupPickupBtn.classList.add('hidden');
+                    if (revertPickupBtn) revertPickupBtn.classList.add('hidden');
+                    if (dupForwardBtn) dupForwardBtn.classList.add('hidden');
+                    if (redispatchBtn) redispatchBtn.classList.add('hidden');
+                }
+                if (!can('edit_requests')) {
+                    const modifyBtn = document.getElementById('modifyBeforeDispatchBtn');
+                    if (modifyBtn) modifyBtn.classList.add('hidden');
+                }
+                // Hide the whole action bar if nothing is permitted
+                const visibleActions = modalActions.querySelectorAll('button:not(.hidden)');
+                if (visibleActions.length === 0) modalActions.classList.add('hidden');
             }
         } else {
             modalActions.classList.add('hidden');
@@ -4249,7 +4488,10 @@
             const response = await fetch(`${API_URL}/admin/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: pwdInput.value })
+                body: JSON.stringify({
+                    username: sessionRole === 'operator' ? sessionUsername : undefined,
+                    password: pwdInput.value
+                })
             });
 
             const data = await response.json();
@@ -5310,6 +5552,357 @@
         window.URL.revokeObjectURL(url);
         
         alert('✅ Analytics exported successfully!');
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // TEAM & PERMISSIONS CONSOLE (Super Admin only)
+    // ════════════════════════════════════════════════════════════════════
+
+    const PERMISSION_META = [
+        { key: 'approve',             label: 'Approve Requests',        group: 'Request Management' },
+        { key: 'reject',              label: 'Reject / Undo Rejection', group: 'Request Management' },
+        { key: 'edit_requests',       label: 'Edit / Create Requests',  group: 'Request Management' },
+        { key: 'delete_requests',     label: 'Delete Requests',         group: 'Request Management' },
+        { key: 'book_pickups',        label: 'Pickups & Dispatch',      group: 'Request Management' },
+        { key: 'view_analytics',      label: 'View Analytics',          group: 'Insights' },
+        { key: 'manage_settings',     label: 'Store Settings & Sync',   group: 'System' },
+        { key: 'manage_influencers',  label: 'Influencer Management',   group: 'System' },
+        { key: 'manage_marketing',    label: 'Marketing Dashboard',     group: 'System' }
+    ];
+
+    const PERM_LABEL_MAP = Object.fromEntries(PERMISSION_META.map(p => [p.key, p.label]));
+
+    const ACTIVITY_LABELS = {
+        'login': 'Logged in',
+        'login_failed': 'Failed login attempt',
+        'login_banned': 'Login blocked (banned)',
+        'permission_denied': 'Permission denied',
+        'operator_created': 'Created operator',
+        'operator_updated': 'Updated operator',
+        'operator_password_reset': 'Reset operator password',
+        'operator_banned': 'Banned operator',
+        'operator_unbanned': 'Unbanned operator',
+        'operator_deleted': 'Deleted operator',
+        'banned_or_deleted_access': 'Blocked (banned/removed account)'
+    };
+
+    let teamOperatorsCache = [];
+    let editingOperatorId = null;
+    let activityPage = 1;
+    const ACTIVITY_LIMIT = 25;
+
+    function teamAuthHeaders() {
+        return { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' };
+    }
+
+    function escapeHtml(str) {
+        return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    function openTeamConsole() {
+        if (sessionRole !== 'admin') return;
+        document.getElementById('teamModal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+        switchTeamTab('operators');
+        loadOperators();
+    }
+
+    function closeTeamConsole() {
+        document.getElementById('teamModal').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    function switchTeamTab(tab) {
+        const opsTab = document.getElementById('teamTabOperators');
+        const actTab = document.getElementById('teamTabActivity');
+        const opsPane = document.getElementById('teamOperatorsPane');
+        const actPane = document.getElementById('teamActivityPane');
+        if (tab === 'activity') {
+            actTab.classList.add('active'); opsTab.classList.remove('active');
+            actPane.classList.remove('hidden'); opsPane.classList.add('hidden');
+            loadActivityLogs();
+        } else {
+            opsTab.classList.add('active'); actTab.classList.remove('active');
+            opsPane.classList.remove('hidden'); actPane.classList.add('hidden');
+        }
+    }
+
+    // ── Operators list ──
+    async function loadOperators() {
+        const wrap = document.getElementById('operatorsTableWrap');
+        try {
+            const res = await fetch(`${API_URL}/admin/operators`, { headers: teamAuthHeaders() });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load operators');
+            teamOperatorsCache = data.operators || [];
+            renderOperatorsTable();
+            populateActivityOperatorFilter();
+        } catch (err) {
+            wrap.innerHTML = `<div class="team-empty" style="color:#b91c1c;">${escapeHtml(err.message)}</div>`;
+        }
+    }
+
+    function renderOperatorsTable() {
+        const wrap = document.getElementById('operatorsTableWrap');
+        if (!teamOperatorsCache.length) {
+            wrap.innerHTML = `<div class="team-empty">No operators yet. Click <strong>Add Operator</strong> to create the first account.</div>`;
+            return;
+        }
+
+        const rows = teamOperatorsCache.map(op => {
+            const initials = (op.name || op.username || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+            const perms = (op.permissions || [])
+                .map(p => `<span class="perm-chip">${escapeHtml(PERM_LABEL_MAP[p] || p)}</span>`)
+                .join('') || '<span class="perm-chip perm-chip-none">No functions granted</span>';
+            const statusBadge = op.is_active
+                ? '<span class="op-status op-active">Active</span>'
+                : '<span class="op-status op-banned">Banned</span>';
+            const lastLogin = op.last_login_at ? formatDateIST(op.last_login_at) : 'Never';
+
+            return `
+                <tr>
+                    <td>
+                        <div class="op-identity">
+                            <span class="op-avatar ${op.is_active ? '' : 'op-avatar-banned'}">${escapeHtml(initials)}</span>
+                            <div>
+                                <div class="op-name">${escapeHtml(op.name || '—')}</div>
+                                <div class="op-username">@${escapeHtml(op.username)}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td><div class="op-perms">${perms}</div></td>
+                    <td>${statusBadge}</td>
+                    <td class="op-lastlogin">${escapeHtml(lastLogin)}</td>
+                    <td>
+                        <div class="op-actions">
+                            <button class="op-action" onclick="openOperatorForm(${op.id})">Edit</button>
+                            ${op.is_active
+                                ? `<button class="op-action op-action-danger" onclick="toggleOperatorBan(${op.id}, true)">Ban</button>`
+                                : `<button class="op-action op-action-ok" onclick="toggleOperatorBan(${op.id}, false)">Unban</button>`}
+                            <button class="op-action op-action-danger" onclick="removeOperator(${op.id}, '${escapeHtml(op.username)}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>`;
+        }).join('');
+
+        wrap.innerHTML = `
+            <table class="admin-table op-table">
+                <thead>
+                    <tr><th>Operator</th><th>Allowed Functions</th><th>Status</th><th>Last Login</th><th>Actions</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    }
+
+    // ── Create / Edit form ──
+    function renderPermToggles(selected = []) {
+        const wrap = document.getElementById('permTogglesWrap');
+        const groups = [...new Set(PERMISSION_META.map(p => p.group))];
+        wrap.innerHTML = groups.map(group => `
+            <div class="perm-group">
+                <div class="perm-group-title">${escapeHtml(group)}</div>
+                <div class="perm-group-items">
+                    ${PERMISSION_META.filter(p => p.group === group).map(p => `
+                        <label class="perm-toggle">
+                            <input type="checkbox" data-perm="${p.key}" ${selected.includes(p.key) ? 'checked' : ''}>
+                            <span>${escapeHtml(p.label)}</span>
+                        </label>`).join('')}
+                </div>
+            </div>`).join('');
+    }
+
+    function openOperatorForm(operatorId = null) {
+        editingOperatorId = operatorId;
+        document.getElementById('operatorFormAlert').innerHTML = '';
+        document.getElementById('operatorFormTitle').textContent = operatorId ? 'Edit Operator' : 'Add Operator';
+        document.getElementById('opPassword').value = '';
+
+        const usernameInput = document.getElementById('opUsername');
+        const passwordLabel = document.getElementById('opPasswordLabel');
+
+        if (operatorId) {
+            const op = teamOperatorsCache.find(o => o.id === operatorId);
+            if (!op) return;
+            document.getElementById('opName').value = op.name || '';
+            usernameInput.value = op.username;
+            usernameInput.disabled = true;
+            document.getElementById('opEmail').value = op.email || '';
+            passwordLabel.innerHTML = 'New Password <span style="color:#9ca3af; font-weight:400;">(leave blank to keep current)</span>';
+            renderPermToggles(op.permissions || []);
+        } else {
+            document.getElementById('opName').value = '';
+            usernameInput.value = '';
+            usernameInput.disabled = false;
+            document.getElementById('opEmail').value = '';
+            passwordLabel.innerHTML = 'Password <span style="color:#9ca3af; font-weight:400;">(min 6 chars)</span>';
+            renderPermToggles([]);
+        }
+
+        document.getElementById('operatorFormModal').classList.add('active');
+    }
+
+    function closeOperatorForm() {
+        document.getElementById('operatorFormModal').classList.remove('active');
+        editingOperatorId = null;
+    }
+
+    function showOperatorFormAlert(msg, type = 'error') {
+        const el = document.getElementById('operatorFormAlert');
+        const color = type === 'error' ? '#b91c1c' : '#15803d';
+        const bg = type === 'error' ? '#fef2f2' : '#f0fdf4';
+        el.innerHTML = `<div style="padding:0.75rem 1rem; border-radius:8px; background:${bg}; color:${color}; font-size:0.85rem; margin-bottom:1rem;">${escapeHtml(msg)}</div>`;
+    }
+
+    async function saveOperator() {
+        const btn = document.getElementById('saveOperatorBtn');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        const permissions = [...document.querySelectorAll('#permTogglesWrap input[data-perm]:checked')].map(i => i.dataset.perm);
+        const payload = {
+            name: document.getElementById('opName').value.trim(),
+            email: document.getElementById('opEmail').value.trim(),
+            permissions
+        };
+
+        try {
+            let res;
+            if (editingOperatorId) {
+                const newPass = document.getElementById('opPassword').value;
+                if (newPass) payload.newPassword = newPass;
+                res = await fetch(`${API_URL}/admin/operators/${editingOperatorId}`, {
+                    method: 'PATCH', headers: teamAuthHeaders(), body: JSON.stringify(payload)
+                });
+            } else {
+                payload.username = document.getElementById('opUsername').value.trim();
+                payload.password = document.getElementById('opPassword').value;
+                res = await fetch(`${API_URL}/admin/operators`, {
+                    method: 'POST', headers: teamAuthHeaders(), body: JSON.stringify(payload)
+                });
+            }
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to save operator');
+
+            closeOperatorForm();
+            await loadOperators();
+            showPermissionToast(editingOperatorId ? 'Operator updated' : 'Operator created');
+        } catch (err) {
+            showOperatorFormAlert(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Operator';
+        }
+    }
+
+    async function toggleOperatorBan(operatorId, ban) {
+        const op = teamOperatorsCache.find(o => o.id === operatorId);
+        const verb = ban ? 'ban' : 'unban';
+        if (!confirm(`Are you sure you want to ${verb} ${op ? op.name || op.username : 'this operator'}?${ban ? ' They will be blocked from logging in immediately.' : ''}`)) return;
+
+        try {
+            const res = await fetch(`${API_URL}/admin/operators/${operatorId}/${ban ? 'ban' : 'unban'}`, {
+                method: 'POST', headers: teamAuthHeaders()
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `Failed to ${verb} operator`);
+            await loadOperators();
+        } catch (err) {
+            showPermissionToast(err.message);
+        }
+    }
+
+    async function removeOperator(operatorId, username) {
+        if (!confirm(`Permanently delete operator @${username}? Their activity history will be preserved.`)) return;
+
+        try {
+            const res = await fetch(`${API_URL}/admin/operators/${operatorId}`, {
+                method: 'DELETE', headers: teamAuthHeaders()
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to delete operator');
+            await loadOperators();
+        } catch (err) {
+            showPermissionToast(err.message);
+        }
+    }
+
+    // ── Activity Log ──
+    function populateActivityOperatorFilter() {
+        const select = document.getElementById('activityOperatorFilter');
+        if (!select) return;
+        const current = select.value;
+        select.innerHTML = '<option value="">All Operators</option>' +
+            '<option value="super">Super Admin</option>' +
+            teamOperatorsCache.map(op => `<option value="${op.id}">@${escapeHtml(op.username)}</option>`).join('');
+        select.value = current;
+    }
+
+    async function loadActivityLogs() {
+        const wrap = document.getElementById('activityTableWrap');
+        const operatorFilter = document.getElementById('activityOperatorFilter').value;
+        const actionFilter = document.getElementById('activityActionFilter').value;
+        const fromDate = document.getElementById('activityFromFilter').value;
+
+        const params = new URLSearchParams({ page: activityPage, limit: ACTIVITY_LIMIT });
+        if (operatorFilter === 'super') params.set('username', 'super-admin');
+        else if (operatorFilter) params.set('operatorId', operatorFilter);
+        if (actionFilter) params.set('action', actionFilter);
+        if (fromDate) params.set('fromDate', new Date(fromDate + 'T00:00:00').toISOString());
+
+        wrap.innerHTML = '<div class="team-empty">Loading activity...</div>';
+
+        try {
+            const res = await fetch(`${API_URL}/admin/operators/activity?${params}`, { headers: teamAuthHeaders() });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to load activity');
+            renderActivityTable(data.logs || [], data.pagination || {});
+        } catch (err) {
+            wrap.innerHTML = `<div class="team-empty" style="color:#b91c1c;">${escapeHtml(err.message)}</div>`;
+        }
+    }
+
+    function renderActivityTable(logs, pagination) {
+        const wrap = document.getElementById('activityTableWrap');
+        const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / ACTIVITY_LIMIT));
+
+        document.getElementById('activityPageInfo').textContent = `Page ${pagination.page || 1} of ${totalPages} · ${pagination.total || 0} events`;
+        document.getElementById('activityPrevBtn').disabled = (pagination.page || 1) <= 1;
+        document.getElementById('activityNextBtn').disabled = (pagination.page || 1) >= totalPages;
+
+        if (!logs.length) {
+            wrap.innerHTML = '<div class="team-empty">No activity found for the selected filters.</div>';
+            return;
+        }
+
+        const rows = logs.map(log => {
+            const label = ACTIVITY_LABELS[log.action] || log.action;
+            const isDenied = log.action === 'permission_denied' || log.action === 'login_failed' || log.action === 'login_banned' || log.success === false;
+            const badge = isDenied
+                ? '<span class="log-badge log-badge-denied">Denied</span>'
+                : '<span class="log-badge log-badge-ok">OK</span>';
+            const who = log.username === 'super-admin'
+                ? '<span class="log-user log-user-super">Super Admin</span>'
+                : `<span class="log-user">@${escapeHtml(log.username)}</span>`;
+
+            return `
+                <tr>
+                    <td class="log-time">${escapeHtml(formatDateIST(log.created_at))}</td>
+                    <td>${who}</td>
+                    <td class="log-action">${escapeHtml(label)}</td>
+                    <td class="log-target">${log.target ? escapeHtml(log.target) : '<span style="color:#d1d5db;">—</span>'}</td>
+                    <td>${badge}</td>
+                </tr>`;
+        }).join('');
+
+        wrap.innerHTML = `
+            <table class="admin-table op-table">
+                <thead>
+                    <tr><th>Time (IST)</th><th>Operator</th><th>Action</th><th>Target</th><th>Result</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
     }
 
 </script>
