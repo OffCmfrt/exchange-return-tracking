@@ -2437,7 +2437,7 @@
         // User said: "pickup booked -> item delivered -> admin approves". 
         // So we show buttons if status is 'delivered'.
         
-        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'rejected'].includes(data.status) || (data.status === 'approved' && data.type === 'exchange')) {
+        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'rejected', 'approved'].includes(data.status)) {
             console.log('Action block status matched:', data.status);
             modalActions.classList.remove('hidden');
             
@@ -2446,7 +2446,7 @@
             
             // Show carrier override for ALL action statuses (not just pending/pickup_pending)
             if (carrierOverrideSection) {
-                const showCarrierOverride = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed'].includes(data.status) || isApprovedExchange;
+                const showCarrierOverride = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'approved'].includes(data.status);
                 if (showCarrierOverride) {
                     carrierOverrideSection.classList.remove('hidden');
                     
@@ -2478,19 +2478,19 @@
                             warningDiv.classList.remove('hidden');
                             warningTextEl.textContent = 'Re-dispatching will reset to pending and allow fresh carrier booking.';
                         }
-                    } else if (['scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered'].includes(data.status)) {
+                    } else if (isApprovedExchange) {
+                        if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Duplicate Forward Order';
+                        if (descEl) descEl.textContent = 'Select carrier for dispatching a duplicate replacement shipment or fresh pickup. Useful when the original forward order or pickup was cancelled.';
+                        if (warningDiv && warningTextEl) {
+                            warningDiv.classList.remove('hidden');
+                            warningTextEl.textContent = 'This creates a fresh carrier booking with a new AWB. The previous booking may still exist in the carrier system.';
+                        }
+                    } else if (['scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'approved'].includes(data.status)) {
                         if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Duplicate Pickup';
                         if (descEl) descEl.textContent = 'Select carrier for creating a duplicate pickup. Useful when original pickup was cancelled.';
                         if (warningDiv && warningTextEl) {
                             warningDiv.classList.remove('hidden');
                             warningTextEl.textContent = 'This books a fresh pickup. Any previous booking may still exist in carrier system.';
-                        }
-                    } else if (isApprovedExchange) {
-                        if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Duplicate Forward Order';
-                        if (descEl) descEl.textContent = 'Select carrier for dispatching a duplicate replacement shipment. Useful when the original forward order was cancelled.';
-                        if (warningDiv && warningTextEl) {
-                            warningDiv.classList.remove('hidden');
-                            warningTextEl.textContent = 'This creates a fresh forward shipment with a new AWB. The previous shipment may still exist in the carrier system.';
                         }
                     }
                 } else {
@@ -2561,7 +2561,7 @@
             // Pickup management buttons: available on every request so admins can
             // create a fresh (duplicate) pickup or revert a pickup when a carrier
             // booking gets cancelled. Shown for all pickup-flow statuses.
-            const pickupActionStatuses = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed'];
+            const pickupActionStatuses = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'approved'];
             const showPickupActions = pickupActionStatuses.includes(data.status);
 
             // Create Duplicate Pickup button (books a brand new carrier pickup)
@@ -2643,7 +2643,7 @@
 
             if (rejectBtn) {
                 // No reject action once the request is already approved
-                if (isApprovedExchange) {
+                if (data.status === 'approved') {
                     rejectBtn.classList.add('hidden');
                 } else {
                     rejectBtn.classList.remove('hidden');
