@@ -394,8 +394,6 @@ async function syncWithRetry(req, maxRetries = 3) {
             
             // Update sync tracking fields (if they exist in DB)
             try {
-                const { createClient } = require('@supabase/supabase-js');
-                const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
                 await supabase
                     .from('requests')
                     .update({
@@ -413,8 +411,6 @@ async function syncWithRetry(req, maxRetries = 3) {
             if (attempt === maxRetries) {
                 // Final failure - log permanently
                 try {
-                    const { createClient } = require('@supabase/supabase-js');
-                    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
                     await supabase
                         .from('requests')
                         .update({
@@ -996,8 +992,6 @@ async function performShopifyUsageSync() {
     console.log('[Shopify Usage Sync] Starting Shopify usage & stats sync (INCREMENTAL)...');
 
     try {
-        const { createClient } = require('@supabase/supabase-js');
-        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
         // Fetch all active influencers and build a code -> influencer map
         const { data: influencers, error } = await supabase
@@ -7370,8 +7364,6 @@ app.get('/api/influencer-admin/stats/:id', authenticateAdmin, async (req, res) =
         console.log(`[Admin Influencer Stats] Fetching cached stats for ${influencer.name} (Code: ${referralCode})`);
 
         // FAST: Read pre-calculated stats from Supabase (no Shopify API calls!)
-        const { createClient } = require('@supabase/supabase-js');
-        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
         const { data: influencerData, error } = await supabase
             .from('influencers')
@@ -7477,8 +7469,6 @@ app.get('/api/influencer-admin/conversions/:id', authenticateAdmin, async (req, 
         }
         // 'all' => no date filter (return everything we have)
 
-        const { createClient } = require('@supabase/supabase-js');
-        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
         // Fast path: if range='all' AND we have a cached JSON snapshot, return it immediately
         if (!createdAtMin && Array.isArray(influencer.recent_conversions_cache) && influencer.recent_conversions_cache.length > 0) {
@@ -8002,8 +7992,6 @@ app.get('/api/influencer/stats/:token', async (req, res) => {
         }
         // 'all' => no date filter
 
-        const { createClient } = require('@supabase/supabase-js');
-        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
         // Fast path for range='all': use pre-aggregated stats + cached conversions
         if (!createdAtMin && !createdAtMax) {
@@ -8822,15 +8810,13 @@ app.delete('/api/influencer-admin/shipments/:shipmentId', authenticateAdmin, asy
 // ==================== PAYOUTS (MONTHLY) ====================
 
 async function generatePayoutsForMonth(month) {
-    const { createClient } = require('@supabase/supabase-js');
-    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
     const startDate = `${month}-01T00:00:00Z`;
     const endD = new Date(startDate);
     endD.setMonth(endD.getMonth() + 1);
     const endDate = endD.toISOString();
 
-    const { data: rows, error } = await supabaseAdmin
+    const { data: rows, error } = await supabase
         .from('influencer_orders')
         .select('influencer_id, total_price')
         .gte('order_created_at', startDate)
@@ -8855,7 +8841,7 @@ async function generatePayoutsForMonth(month) {
         const amountDue = (agg.revenue * commissionRate) / 100;
 
         // Skip if already paid
-        const { data: existing } = await supabaseAdmin
+        const { data: existing } = await supabase
             .from('influencer_payouts')
             .select('status')
             .eq('influencer_id', infId)
@@ -8895,8 +8881,6 @@ app.post('/api/influencer-admin/payouts/generate', authenticateAdmin, async (req
 // ==================== ANALYTICS AGGREGATE ====================
 
 async function getAnalyticsForInfluencer(influencer, range = 'all') {
-    const { createClient } = require('@supabase/supabase-js');
-    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
     let createdAtMin = null;
     if (range === '30d') {
@@ -8908,9 +8892,9 @@ async function getAnalyticsForInfluencer(influencer, range = 'all') {
     }
 
     // Summary from influencer_orders
-    let orderQuery = supabaseAdmin.from('influencer_orders').select('total_price').eq('influencer_id', influencer.id);
-    let countQuery = supabaseAdmin.from('influencer_orders').select('*', { count: 'exact', head: true }).eq('influencer_id', influencer.id);
-    let monthlyQuery = supabaseAdmin.from('influencer_orders').select('order_created_at, total_price').eq('influencer_id', influencer.id);
+    let orderQuery = supabase.from('influencer_orders').select('total_price').eq('influencer_id', influencer.id);
+    let countQuery = supabase.from('influencer_orders').select('*', { count: 'exact', head: true }).eq('influencer_id', influencer.id);
+    let monthlyQuery = supabase.from('influencer_orders').select('order_created_at, total_price').eq('influencer_id', influencer.id);
 
     if (createdAtMin) {
         orderQuery = orderQuery.gte('order_created_at', createdAtMin);
@@ -8962,7 +8946,7 @@ async function getAnalyticsForInfluencer(influencer, range = 'all') {
     });
 
     // Recent orders (last 10)
-    let recentOrdersQuery = supabaseAdmin
+    let recentOrdersQuery = supabase
         .from('influencer_orders')
         .select('shopify_order_id, order_name, total_price, currency, financial_status, customer_name, order_created_at, referral_code')
         .eq('influencer_id', influencer.id)
@@ -9051,15 +9035,13 @@ app.get('/api/influencer/analytics/:token', async (req, res) => {
 // ==================== LEADERBOARD ====================
 
 async function getLeaderboard(range = 'all', limit = 10, currentToken = null) {
-    const { createClient } = require('@supabase/supabase-js');
-    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
     let createdAtMin = null;
     if (range === '30d') { const d = new Date(); d.setDate(d.getDate() - 30); createdAtMin = d.toISOString(); }
     else if (range === '90d') { const d = new Date(); d.setDate(d.getDate() - 90); createdAtMin = d.toISOString(); }
     else if (range === '6m') { const d = new Date(); d.setMonth(d.getMonth() - 6); createdAtMin = d.toISOString(); }
 
-    let query = supabaseAdmin
+    let query = supabase
         .from('influencer_orders')
         .select('influencer_id, total_price')
         .order('order_created_at', { ascending: false });
@@ -11722,6 +11704,9 @@ app.post('/api/webhooks/shopify/orders-create', express.json(), async (req, res)
 
 // ── Gokwik Webhook ──
 
+// Log the "no secret configured" warning once instead of on every webhook hit (log clutter fix)
+let gokwikSecretWarned = false;
+
 // POST /api/webhooks/gokwik/abandoned-cart - Receive abandoned cart events from Gokwik
 app.post('/api/webhooks/gokwik/abandoned-cart', express.json(), async (req, res) => {
     try {
@@ -11735,7 +11720,8 @@ app.post('/api/webhooks/gokwik/abandoned-cart', express.json(), async (req, res)
                 console.warn('[Gokwik Webhook] Invalid signature from IP:', req.ip);
                 return res.status(401).json({ error: 'Invalid webhook signature' });
             }
-        } else if (!webhookSecret) {
+        } else if (!webhookSecret && !gokwikSecretWarned) {
+            gokwikSecretWarned = true;
             console.log('[Gokwik Webhook] No webhook secret configured - accepting without verification');
         }
         
@@ -11743,7 +11729,6 @@ app.post('/api/webhooks/gokwik/abandoned-cart', express.json(), async (req, res)
         // Gokwik payload uses 'token' as checkout ID; fallback chain: checkout_id > id > order_id > token > session_id
         const checkoutIdLog = payload.checkout_id || payload.id || payload.order_id || payload.token || payload.session_id;
         console.log('[Gokwik Webhook] Received abandoned cart event:', checkoutIdLog);
-        console.log('[Gokwik Webhook] Payload keys:', Object.keys(payload));
         
         // Extract checkout ID — Gokwik uses 'token' as the primary checkout identifier
         const checkout_id = payload.checkout_id || payload.id || payload.order_id || payload.token || payload.session_id;
