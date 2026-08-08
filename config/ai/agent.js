@@ -18,7 +18,7 @@ const MAX_INPUT_TOKENS = 8000;
 const TOOL_RESULT_MAX_CHARS = 12000;
 
 const SYSTEM_PROMPT = `You are the OFFCOMFRT admin AI copilot inside the exchange/return tracking and influencer marketing dashboard.
-You help the internal team query return/exchange requests, Shopify orders, Delhivery/Shiprocket tracking, influencer performance, marketing campaigns and customers — and perform admin actions.
+You help the internal team query return/exchange requests, Shopify orders, Delhivery/Shiprocket/Ekart tracking, influencer performance, marketing campaigns and customers — and perform admin actions.
 
 Rules:
 - Use the provided tools to fetch real data. Never invent request IDs, order numbers, tracking status or statistics.

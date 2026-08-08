@@ -467,6 +467,7 @@ async function performBackgroundSync() {
         carrierBreakdown: {
             shiprocket: { success: 0, failed: 0 },
             delhivery: { success: 0, failed: 0 },
+            ekart: { success: 0, failed: 0 },
             unknown: { success: 0, failed: 0 }
         },
         errors: []
@@ -541,6 +542,7 @@ async function performBackgroundSync() {
         console.log(`[Background Sync] Total: ${syncMetrics.total}, Success: ${syncMetrics.success}, Updated: ${syncMetrics.updated}, Failed: ${syncMetrics.failed}, Skipped: ${syncMetrics.skipped}`);
         console.log(`[Background Sync] Shiprocket: ${syncMetrics.carrierBreakdown.shiprocket.success} success, ${syncMetrics.carrierBreakdown.shiprocket.failed} failed`);
         console.log(`[Background Sync] Delhivery: ${syncMetrics.carrierBreakdown.delhivery.success} success, ${syncMetrics.carrierBreakdown.delhivery.failed} failed`);
+        console.log(`[Background Sync] Ekart: ${syncMetrics.carrierBreakdown.ekart.success} success, ${syncMetrics.carrierBreakdown.ekart.failed} failed`);
         
         if (syncMetrics.errors.length > 0) {
             console.log(`[Background Sync] Errors:`);
@@ -571,7 +573,7 @@ function detectCarrierForAwb(awb, shipmentId, carrierField, fallbackReason) {
     const shipStr = shipmentId ? shipmentId.toString().trim() : '';
 
     // 1. Explicit, trusted carrier field
-    if (carrier === 'delhivery' || carrier === 'shiprocket') {
+    if (carrier === 'delhivery' || carrier === 'shiprocket' || carrier === 'ekart') {
         return carrier;
     }
 
@@ -791,6 +793,16 @@ async function syncSingleRequest(req) {
                         currentStatusType = shipment.status_type || null;
                         newAwb = shipment.waybill_code || req.awbNumber;
                     }
+                } else if (carrier === 'ekart') {
+                    console.log(`[${req.requestId}] Fetching Ekart tracking for AWB: ${req.awbNumber}`);
+                    trackingData = await getEkartTracking(req.awbNumber);
+                    
+                    if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
+                        const shipment = trackingData.shipments[0];
+                        currentStatus = shipment.status || shipment.delivered_status;
+                        currentStatusType = shipment.status_type || null;
+                        newAwb = shipment.waybill_code || req.awbNumber;
+                    }
                 } else {
                     // Shiprocket
                     trackingData = await shiprocketAPI(`/courier/track/awb/${req.awbNumber}`);
@@ -915,6 +927,15 @@ async function syncSingleRequest(req) {
             if (forwardCarrier === 'delhivery') {
                 console.log(`[${req.requestId}] Fetching Delhivery forward tracking for AWB: ${req.forwardAwbNumber}`);
                 forwardTrack = await getDelhiveryTracking(req.forwardAwbNumber);
+                
+                if (forwardTrack && forwardTrack.shipments && forwardTrack.shipments.length > 0) {
+                    const shipment = forwardTrack.shipments[0];
+                    forwardCurrentStatus = shipment.status || shipment.delivered_status;
+                    forwardStatusType = shipment.status_type || null;
+                }
+            } else if (forwardCarrier === 'ekart') {
+                console.log(`[${req.requestId}] Fetching Ekart forward tracking for AWB: ${req.forwardAwbNumber}`);
+                forwardTrack = await getEkartTracking(req.forwardAwbNumber);
                 
                 if (forwardTrack && forwardTrack.shipments && forwardTrack.shipments.length > 0) {
                     const shipment = forwardTrack.shipments[0];
@@ -1795,10 +1816,10 @@ async function activateShopifyDiscountCode(priceRuleId, code) {
 
 /**
  * Resolve which carrier to use based on settings and optional override
- * @param {string} carrierMode - The carrier mode setting (e.g., 'shiprocket_only', 'delhivery_only', 'shiprocket_with_fallback', 'delhivery_with_fallback')
- * @param {string} carrierOverride - Optional per-request override ('shiprocket' or 'delhivery')
+ * @param {string} carrierMode - The carrier mode setting (e.g., 'shiprocket_only', 'delhivery_only', 'ekart_only', 'shiprocket_with_fallback', 'delhivery_with_fallback', 'ekart_with_fallback')
+ * @param {string} carrierOverride - Optional per-request override ('shiprocket', 'delhivery' or 'ekart')
  * @param {string} operationType - 'pickup' or 'dispatch' for logging
- * @returns {object} - { primary: 'shiprocket'|'delhivery', useFallback: boolean }
+ * @returns {object} - { primary: 'shiprocket'|'delhivery'|'ekart', useFallback: boolean }
  */
 function resolveCarrier(carrierMode, carrierOverride = null, operationType = 'pickup') {
     // If admin overrides on a per-request basis, use that as primary but still allow fallback
@@ -1814,9 +1835,15 @@ function resolveCarrier(carrierMode, carrierOverride = null, operationType = 'pi
         const allowsFallback = carrierMode.includes('with_fallback');
         return { primary: 'delhivery', useFallback: allowsFallback };
     }
+    if (carrierOverride === 'ekart') {
+        console.log(`[${operationType}] Carrier override: Ekart (with fallback if enabled)`);
+        // Check if the carrier mode allows fallback
+        const allowsFallback = carrierMode.includes('with_fallback');
+        return { primary: 'ekart', useFallback: allowsFallback };
+    }
 
     // Resolve based on carrier mode setting
-    const validModes = ['shiprocket_only', 'delhivery_only', 'shiprocket_with_fallback', 'delhivery_with_fallback'];
+    const validModes = ['shiprocket_only', 'delhivery_only', 'ekart_only', 'shiprocket_with_fallback', 'delhivery_with_fallback', 'ekart_with_fallback'];
     if (!validModes.includes(carrierMode)) {
         console.warn(`[${operationType}] Invalid carrier mode '${carrierMode}', defaulting to shiprocket_with_fallback`);
         carrierMode = 'shiprocket_with_fallback';
@@ -1827,13 +1854,69 @@ function resolveCarrier(carrierMode, carrierOverride = null, operationType = 'pi
             return { primary: 'shiprocket', useFallback: false };
         case 'delhivery_only':
             return { primary: 'delhivery', useFallback: false };
+        case 'ekart_only':
+            return { primary: 'ekart', useFallback: false };
         case 'shiprocket_with_fallback':
             return { primary: 'shiprocket', useFallback: true };
         case 'delhivery_with_fallback':
             return { primary: 'delhivery', useFallback: true };
+        case 'ekart_with_fallback':
+            return { primary: 'ekart', useFallback: true };
         default:
             return { primary: 'shiprocket', useFallback: true };
     }
+}
+
+// Fallback partner for a failed primary. Shiprocket falls back to Delhivery;
+// Delhivery and Ekart fall back to Shiprocket.
+function getFallbackCarrier(primaryCarrier) {
+    return primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
+}
+
+// ── Unified per-carrier return pickup booking ──
+// Normalizes every carrier response to { carrierUsed, awbNumber, shipmentId, pickupDate }.
+// Throws with a carrier-specific message when the carrier is unconfigured or
+// returns no usable shipment data (callers decide whether to fall back).
+async function returnBookingAttempt(carrier, requestData, shopifyOrder) {
+    if (carrier === 'shiprocket') {
+        if (!process.env.SHIPROCKET_EMAIL) throw new Error('Shiprocket not configured on server');
+        const d = await createShiprocketReturnOrder(requestData, shopifyOrder);
+        if (!d || !d.shipment_id) throw new Error('Shiprocket did not return shipment data');
+        return { carrierUsed: 'shiprocket', awbNumber: d.awb_code, shipmentId: d.shipment_id, pickupDate: d.pickup_scheduled_date };
+    }
+    if (carrier === 'ekart') {
+        if (!ekartConfigured()) throw new Error('Ekart not configured on server');
+        const d = await createEkartReturnOrder(requestData, shopifyOrder);
+        if (!d || !d.waybill) throw new Error('Ekart did not return waybill data');
+        return { carrierUsed: 'ekart', awbNumber: d.waybill, shipmentId: d.shipment_id, pickupDate: new Date().toISOString() };
+    }
+    // delhivery
+    if (!process.env.DELHIVERY_API_KEY) throw new Error('Delhivery not configured on server');
+    const d = await createDelhiveryReturnOrder(requestData, shopifyOrder);
+    if (!d || !d.waybill) throw new Error('Delhivery did not return waybill data');
+    return { carrierUsed: 'delhivery', awbNumber: d.waybill, shipmentId: d.shipment_id, pickupDate: new Date().toISOString() };
+}
+
+// Same normalization for forward (exchange dispatch) orders.
+// Returns { carrierUsed, forwardOrder } or throws.
+async function forwardBookingAttempt(carrier, requestData) {
+    if (carrier === 'shiprocket') {
+        if (!process.env.SHIPROCKET_EMAIL) throw new Error('Shiprocket not configured');
+        const d = await createShiprocketForwardOrder(requestData);
+        if (!d || !d.shipment_id) throw new Error('Shiprocket returned empty response');
+        return { carrierUsed: 'shiprocket', forwardOrder: d };
+    }
+    if (carrier === 'ekart') {
+        if (!ekartConfigured()) throw new Error('Ekart not configured');
+        const d = await createEkartForwardOrder(requestData);
+        if (!d || !d.waybill) throw new Error('Ekart returned empty response');
+        return { carrierUsed: 'ekart', forwardOrder: d };
+    }
+    // delhivery
+    if (!process.env.DELHIVERY_API_KEY) throw new Error('Delhivery not configured');
+    const d = await createDelhiveryForwardOrder(requestData);
+    if (!d || !d.waybill) throw new Error('Delhivery returned empty response');
+    return { carrierUsed: 'delhivery', forwardOrder: d };
 }
 
 /**
@@ -3052,6 +3135,437 @@ async function getDelhiveryTracking(waybill) {
     return null;
 }
 
+// ==================== EKART API HELPERS ====================
+// Ekart Elite API (app.elite.ekartlogistics.in) — same integration as the
+// WhatsApp bot's ekartAdapter, built from the official OpenAPI spec v3.8.9.
+//
+// Endpoints used:
+//   Auth token      : POST /integrations/v2/auth/token/{client_id}  ({username, password})
+//   Create shipment : PUT  /api/v1/package/create  (forward + reverse via payment_mode)
+//   Track           : GET  /api/v1/track/{awb}
+
+const EKART_BASE_URL = () => (process.env.EKART_BASE_URL || 'https://app.elite.ekartlogistics.in').replace(/\/+$/, '');
+
+function ekartConfigured() {
+    return !!(process.env.EKART_CLIENT_ID && process.env.EKART_USERNAME && process.env.EKART_PASSWORD);
+}
+
+let ekartToken = null;
+let ekartTokenExpiry = null;
+
+async function getEkartToken() {
+    // Return cached token if still valid
+    if (ekartToken && ekartTokenExpiry && Date.now() < ekartTokenExpiry) {
+        return ekartToken;
+    }
+    if (!ekartConfigured()) {
+        throw new Error('Ekart not configured (EKART_CLIENT_ID / EKART_USERNAME / EKART_PASSWORD missing)');
+    }
+
+    const response = await fetch(
+        `${EKART_BASE_URL()}/integrations/v2/auth/token/${encodeURIComponent(process.env.EKART_CLIENT_ID)}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: process.env.EKART_USERNAME,
+                password: process.env.EKART_PASSWORD
+            })
+        }
+    );
+
+    const text = await response.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (_) { /* non-JSON */ }
+
+    if (!response.ok || !data || !data.access_token) {
+        throw new Error(`Ekart auth failed: ${response.status} - ${(text || '').substring(0, 300)}`);
+    }
+
+    console.log('✅ Ekart authenticated (Elite API)');
+    ekartToken = data.access_token;
+    // Refresh 5 min before expiry (expires_in is in seconds)
+    const expiresInSec = Math.max(parseInt(data.expires_in, 10) || 3600, 600) - 300;
+    ekartTokenExpiry = Date.now() + expiresInSec * 1000;
+    return ekartToken;
+}
+
+async function ekartAPI(endpoint, options = {}) {
+    const token = await getEkartToken();
+
+    const response = await fetchWithRetry(`${EKART_BASE_URL()}${endpoint}`, {
+        ...options,
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        // Token expired mid-session — retry once with a fresh token
+        if (response.status === 401 && !options._ekartRetried) {
+            ekartToken = null;
+            ekartTokenExpiry = null;
+            return ekartAPI(endpoint, { ...options, _ekartRetried: true });
+        }
+        throw new Error(`Ekart API error: ${response.status} - ${errorText.substring(0, 300)}`);
+    }
+
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
+}
+
+// Today / tomorrow in IST as YYYY-MM-DD (invoice date = today, dispatch date
+// must be tomorrow or later per Ekart's rules)
+function ekartIstDates() {
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' });
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    return {
+        today: fmt.format(new Date()),
+        tomorrow: fmt.format(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))
+    };
+}
+
+// Fields shared by forward & reverse shipments (seller identity, package size).
+// Ekart rejects the request when any of the required seller fields is missing.
+function ekartCommonShipmentFields(orderNumber, totalAmount, totalQuantity) {
+    const amount = Math.max(1, totalAmount || 0); // API minimum is 1
+    return {
+        seller_name: process.env.EKART_SELLER_NAME || 'Offcomfrt',
+        seller_address: process.env.EKART_SELLER_ADDRESS || '',
+        seller_gst_tin: process.env.EKART_SELLER_GST_TIN || '',
+        seller_gst_amount: 0,
+        consignee_gst_amount: 0,
+        integrated_gst_amount: 0,
+        order_number: String(orderNumber),
+        invoice_number: String(orderNumber),
+        invoice_date: ekartIstDates().today,
+        category_of_goods: process.env.EKART_CATEGORY_OF_GOODS || 'Apparel',
+        total_amount: amount,
+        tax_value: 0,
+        taxable_amount: amount,
+        commodity_value: String(amount),
+        quantity: totalQuantity || 1,
+        weight: Math.max(1, Math.round(parseFloat(process.env.EKART_DEFAULT_WEIGHT) || 500)), // grams
+        length: Math.max(1, Math.round(parseFloat(process.env.EKART_DEFAULT_LENGTH) || 30)),
+        width: Math.max(1, Math.round(parseFloat(process.env.EKART_DEFAULT_WIDTH) || 40)),
+        height: Math.max(1, Math.round(parseFloat(process.env.EKART_DEFAULT_HEIGHT) || 2)),
+        preferred_dispatch_date: ekartIstDates().tomorrow
+    };
+}
+
+// Pickup/RTO addresses are registered with Ekart beforehand; we reference them
+// by alias. Ekart requires an explicit pickup_location in the payload.
+function ekartPickupLocationFields() {
+    return {
+        pickup_location: { name: process.env.EKART_PICKUP_ALIAS || 'Warehouse' },
+        return_location: { name: process.env.EKART_RETURN_ALIAS || process.env.EKART_PICKUP_ALIAS || 'Warehouse' }
+    };
+}
+
+// Customer drop-location block (used as drop_location for BOTH directions —
+// for reverse shipments Ekart's naming is semantically opposite to the ground
+// flow: drop = customer address, pickup = seller alias)
+function ekartDropLocation(name, address, city, state, pincode, phone) {
+    return {
+        name: (name || 'Customer').substring(0, 100),
+        address: [address, city, state].filter(Boolean).join(', ').substring(0, 500),
+        city: city || '',
+        state: state || '',
+        country: 'India',
+        phone: Number(String(phone || '').replace(/\D/g, '').slice(-10)) || 9999999999,
+        pin: Number(pincode)
+    };
+}
+
+// Backfill city/state from Ekart's own pincode master when the order lacks
+// them — Swift validation rejects blank drop city/state.
+async function ekartBackfillCityState(pincode, city, state) {
+    if (city && state) return { city, state };
+    try {
+        const svc = await ekartAPI(`/api/v2/serviceability/${encodeURIComponent(pincode)}`);
+        return {
+            city: city || svc?.details?.city || '',
+            state: state || svc?.details?.state || ''
+        };
+    } catch (e) {
+        console.warn(`⚠️ Ekart city/state backfill unavailable: ${e.message}`);
+        return { city, state };
+    }
+}
+
+// PUT /api/v1/package/create — shared submit + response handling for both
+// directions. Returns { waybill, shipment_id, data } or throws.
+async function ekartCreateShipment(payload, requestId) {
+    console.log(`[${requestId}] 🚀 Creating Ekart shipment. Payload:`, JSON.stringify(payload, null, 2));
+    const data = await ekartAPI('/api/v1/package/create', {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+    });
+    console.log(`[${requestId}] 📦 Ekart Response:`, JSON.stringify(data, null, 2));
+
+    if (data && data.status === true && data.tracking_id) {
+        return { waybill: data.tracking_id, shipment_id: data.tracking_id, data };
+    }
+
+    // A bare exception code as remark hides the real reason — dump the body
+    const remark = data && data.remark && !/^[A-Z0-9_]{6,}$/.test(data.remark)
+        ? data.remark
+        : `${(data && data.remark) || 'rejected'} — ${JSON.stringify(data || {}).substring(0, 300)}`;
+    throw new Error(`Ekart API Error: ${remark}`);
+}
+
+/**
+ * Create Ekart Return Order (reverse pickup from customer to warehouse)
+ * Returns { waybill, shipment_id } or null on failure.
+ */
+async function createEkartReturnOrder(requestData, shopifyOrder) {
+    try {
+        // Fetch Shopify Order if missing
+        if (!shopifyOrder && requestData.orderNumber) {
+            try {
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                }
+
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+                if (!shopifyOrder) console.warn(`[${requestData.requestId}] ⚠️ Ekart: Shopify order not found for ${orderName}`);
+            } catch (e) {
+                console.error(`[${requestData.requestId}] Ekart: Failed to fetch original order:`, e.message);
+            }
+        }
+
+        const address = shopifyOrder ? (shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address)) : null;
+        if (!address) {
+            console.error(`[${requestData.requestId}] ❌ Ekart Error: No customer address found. ShopifyOrder fetched: ${!!shopifyOrder}`);
+            return null;
+        }
+
+        // Customer (pickup) details
+        const customerName = `${address.first_name || ''} ${address.last_name || ''}`.trim() || 'Customer';
+        const customerAddress = ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 200);
+        let customerCity = address.city || '';
+        let customerState = address.province || '';
+        const customerPincode = address.zip;
+
+        let customerPhone = requestData.customerPhone || address.phone || shopifyOrder?.phone || '9999999999';
+        const digits = String(customerPhone).replace(/\D/g, '');
+        customerPhone = digits.length >= 10 ? digits.slice(-10) : '9999999999';
+
+        // Swift validation rejects blank drop city/state — backfill from Ekart's pincode master
+        ({ city: customerCity, state: customerState } = await ekartBackfillCityState(customerPincode, customerCity, customerState));
+
+        // Items summary
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        let totalQuantity = 0;
+        let totalAmount = 0;
+        const productsDesc = [];
+        for (const item of items) {
+            const title = item.replacementProductTitle || item.name || 'Item';
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const quantity = parseInt(item.quantity) || 1;
+            const price = parseFloat(item.replacementPrice || item.price) || 0;
+            totalQuantity += quantity;
+            totalAmount += price * quantity;
+            productsDesc.push(title + variantStr);
+        }
+
+        const orderIdSuffix = requestData.delhiveryOrderIdSuffix || requestData.ekartOrderIdSuffix || '';
+        const ekartOrderId = `${requestData.requestId}${orderIdSuffix}`;
+
+        // Reverse shipment: payment_mode 'Pickup', drop_location = customer
+        // address, pickup_location = registered warehouse alias (Ekart's naming
+        // is semantically opposite to the ground flow).
+        const payload = {
+            ...ekartCommonShipmentFields(ekartOrderId, totalAmount, totalQuantity),
+            consignee_name: customerName,
+            consignee_phone: customerPhone,
+            payment_mode: 'Pickup',
+            products_desc: productsDesc.join(', ').substring(0, 250) || 'Return shipment',
+            cod_amount: 0,
+            return_reason: requestData.reason || requestData.returnReason || 'Customer return request',
+            drop_location: ekartDropLocation(customerName, customerAddress, customerCity, customerState, customerPincode, customerPhone),
+            ...ekartPickupLocationFields()
+        };
+
+        const { waybill, shipment_id, data } = await ekartCreateShipment(payload, requestData.requestId);
+        return { waybill, shipment_id, success: true, data };
+    } catch (error) {
+        console.error(`[${requestData.requestId}] ❌ Failed to create Ekart return:`, error.message);
+        return null;
+    }
+}
+
+/**
+ * Create Ekart Forward Order (for exchange/replacement dispatch)
+ * This sends item FROM warehouse TO customer (opposite of return pickup)
+ */
+async function createEkartForwardOrder(requestData, shopifyOrder) {
+    try {
+        console.log(`\n📦 Creating Ekart Forward Order for ${requestData.requestId}...`);
+
+        // Fetch Shopify Order if we need customer address
+        if (!shopifyOrder && requestData.orderNumber) {
+            try {
+                let orderName = requestData.orderNumber;
+                let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+                if (!shopifyData.orders || shopifyData.orders.length === 0) {
+                    const altName = orderName.startsWith('#') ? orderName.substring(1) : `#${orderName}`;
+                    shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+                }
+
+                shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+            } catch (e) {
+                console.error(`[${requestData.requestId}] Ekart: Failed to fetch Shopify order:`, e.message);
+            }
+        }
+
+        // Customer details (TO customer) - use new_* fields for exchange address, fall back to original
+        let customerName = requestData.newName || requestData.customerName || 'Customer';
+        let customerAddress = requestData.newAddress || requestData.shippingAddress || requestData.customerAddress || '';
+        let customerCity = requestData.newCity || requestData.shippingCity || requestData.customerCity || '';
+        let customerState = requestData.newState || requestData.shippingState || requestData.customerState || '';
+        let customerPincode = requestData.newPincode || requestData.shippingPincode || requestData.customerPincode || '';
+        let customerPhone = requestData.customerPhone || requestData.newPhone || '9999999999';
+
+        // Parser: extract city/state/pincode from combined address string if missing
+        // Indian address format: "street, area, CITY, STATE, PINCODE, Country"
+        if (customerAddress && (!customerPincode || !customerCity || !customerState)) {
+            const addrParts = customerAddress.split(',').map(s => s.trim()).filter(Boolean);
+            if (addrParts.length >= 3) {
+                const pincodeIdx = addrParts.findIndex(p => /^\d{6}$/.test(p));
+                if (pincodeIdx > 0) {
+                    if (!customerPincode) customerPincode = addrParts[pincodeIdx];
+                    if (!customerState && pincodeIdx >= 2) customerState = addrParts[pincodeIdx - 1];
+                    if (!customerCity && pincodeIdx >= 3) customerCity = addrParts[pincodeIdx - 2];
+                } else {
+                    const lastPart = addrParts[addrParts.length - 1];
+                    const isCountry = /^(india|IN)$/i.test(lastPart);
+                    const endIdx = isCountry ? addrParts.length - 2 : addrParts.length - 1;
+                    if (!customerState && endIdx >= 1) customerState = addrParts[endIdx];
+                    if (!customerCity && endIdx >= 2) customerCity = addrParts[endIdx - 1];
+                }
+            }
+        }
+
+        // Shopify fallback: if still missing city/state/pincode, use the original order address
+        if (shopifyOrder && (!customerPincode || !customerCity || !customerState || !customerAddress)) {
+            const address = shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address);
+            if (address) {
+                customerName = customerName && customerName !== 'Customer' ? customerName : (`${address.first_name || ''} ${address.last_name || ''}`.trim() || customerName);
+                if (!customerAddress) customerAddress = ((address.address1 || '') + ' ' + (address.address2 || '')).trim().substring(0, 200);
+                customerCity = customerCity || address.city || '';
+                customerState = customerState || address.province || '';
+                customerPincode = customerPincode || address.zip || '';
+                customerPhone = (customerPhone && customerPhone !== '9999999999') ? customerPhone : (address.phone || shopifyOrder?.phone || '9999999999');
+            }
+        }
+
+        if (!customerAddress || !customerPincode) {
+            console.error(`[${requestData.requestId}] ❌ Ekart forward: customer address/pincode empty after all resolution attempts`);
+            return null;
+        }
+
+        const phoneDigits = String(customerPhone).replace(/\D/g, '');
+        customerPhone = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : '9999999999';
+
+        // Swift validation rejects blank drop city/state — backfill from Ekart's pincode master
+        ({ city: customerCity, state: customerState } = await ekartBackfillCityState(customerPincode, customerCity, customerState));
+
+        // Items summary
+        const items = Array.isArray(requestData.items) ? requestData.items : [];
+        let totalQuantity = 0;
+        let totalAmount = 0;
+        const productsDesc = [];
+        for (const item of items) {
+            const title = item.replacementProductTitle || item.name || 'Item';
+            const variantStr = (item.replacementVariant && item.replacementVariant !== 'Same') ? ` (${item.replacementVariant})` : '';
+            const quantity = parseInt(item.quantity) || 1;
+            const price = parseFloat(item.replacementPrice || item.price) || 0;
+            totalQuantity += quantity;
+            totalAmount += price * quantity;
+            productsDesc.push(title + variantStr);
+        }
+
+        // 'fws-' prefix keeps forward order ids distinct from return pickups of the same request;
+        // suffix (e.g. -R1) keeps duplicate forward orders unique
+        const ekartOrderId = `fws-${requestData.requestId}${requestData.forwardOrderIdSuffix || requestData.ekartOrderIdSuffix || ''}`;
+
+        // Forward shipment: Prepaid, drop_location = customer address,
+        // pickup_location = registered warehouse alias
+        const payload = {
+            ...ekartCommonShipmentFields(ekartOrderId, totalAmount, totalQuantity),
+            consignee_name: customerName,
+            consignee_phone: customerPhone,
+            payment_mode: 'Prepaid',
+            products_desc: productsDesc.join(', ').substring(0, 250) || 'Exchange shipment',
+            cod_amount: 0,
+            return_reason: '',
+            drop_location: ekartDropLocation(customerName, customerAddress, customerCity, customerState, customerPincode, customerPhone),
+            ...ekartPickupLocationFields()
+        };
+
+        const { waybill, shipment_id, data } = await ekartCreateShipment(payload, requestData.requestId);
+        return { waybill, shipment_id, order_id: ekartOrderId, success: true, data };
+    } catch (error) {
+        console.error(`[${requestData.requestId}] ❌ Error creating Ekart forward order:`, error.message);
+        return null;
+    }
+}
+
+/**
+ * Get Ekart tracking details via GET /api/v1/track/{awb}, normalized to the
+ * same { shipments: [...] } shape that getDelhiveryTracking returns so sync
+ * consumers stay identical. Ekart returns:
+ *   { track: { status, ctime, desc, location, details: [...] }, edd }
+ */
+async function getEkartTracking(waybill) {
+    if (!waybill || !ekartConfigured()) return null;
+    try {
+        const raw = await ekartAPI(`/api/v1/track/${encodeURIComponent(waybill)}`);
+        if (!raw || !raw.track) return null;
+
+        const toIso = ms => {
+            const n = Number(ms);
+            return Number.isFinite(n) && n > 0 ? new Date(n).toISOString() : null;
+        };
+
+        const currentStatus = raw.track.status || null;
+        const isDelivered = /^delivered$/i.test(currentStatus || '');
+        const isRtoDelivered = /^rto delivered$/i.test(currentStatus || '');
+        // Status history, newest first (Ekart returns chronological)
+        const events = (Array.isArray(raw.track.details) ? raw.track.details : [])
+            .map(d => ({ status: d.status || '', desc: d.desc || '', location: d.location || '', datetime: toIso(d.ctime) }))
+            .reverse();
+
+        return {
+            shipments: [{
+                status: currentStatus,
+                status_type: currentStatus,
+                status_datetime: toIso(raw.track.ctime),
+                delivered_status: (isDelivered || isRtoDelivered) ? currentStatus : null,
+                delivered_date: (isDelivered || isRtoDelivered) ? toIso(raw.track.ctime) : null,
+                waybill_code: waybill,
+                eta: toIso(raw.edd),
+                origin: null,
+                destination: null,
+                tracking_data: events,
+                scans: events
+            }]
+        };
+    } catch (error) {
+        console.error('Ekart tracking fetch error:', error.message);
+    }
+    return null;
+}
+
 /**
  * Schedule pickup via Shiprocket with Delhivery fallback
  * This function is used by admin create-request endpoint
@@ -3063,13 +3577,9 @@ async function schedulePickup(token, requestId, order, items, type, carrierOverr
         const carrierResolution = resolveCarrier(carrierMode, carrierOverride, 'pickup');
         console.log(`[${requestId}] Scheduling pickup: primary=${carrierResolution.primary}, fallback=${carrierResolution.useFallback}`);
         
-        let awbNumber = null;
-        let shipmentId = null;
-        let pickupDate = null;
-        let carrierUsed = null;
         let fallbackReason = null;
         
-        // Prepare request data for Shiprocket/Delhivery
+        // Prepare request data for Shiprocket/Delhivery/Ekart
         const requestData = {
             requestId,
             orderNumber: order.name,
@@ -3077,129 +3587,25 @@ async function schedulePickup(token, requestId, order, items, type, carrierOverr
             items: items
         };
 
-        // Handle based on resolved carrier
-        if (carrierResolution.primary === 'shiprocket' && !carrierResolution.useFallback) {
-            // Shiprocket only mode
-            if (!process.env.SHIPROCKET_EMAIL) {
-                console.error(`[${requestId}] ❌ Shiprocket not configured`);
-                return null;
-            }
-            
-            console.log(`[${requestId}] Using Shiprocket only...`);
-            const srResponse = await createShiprocketReturnOrder(requestData, order);
-            
-            if (!srResponse || !srResponse.shipment_id) {
-                throw new Error('Shiprocket returned empty response');
-            }
-            
-            carrierUsed = 'shiprocket';
-            awbNumber = srResponse.awb_code;
-            shipmentId = srResponse.shipment_id;
-            pickupDate = srResponse.pickup_scheduled_date;
-            console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-            
-        } else if (carrierResolution.primary === 'delhivery' && !carrierResolution.useFallback) {
-            // Delhivery only mode
-            if (!process.env.DELHIVERY_API_KEY) {
-                console.error(`[${requestId}] ❌ Delhivery not configured`);
-                return null;
-            }
-            
-            console.log(`[${requestId}] Using Delhivery only...`);
-            const delhiveryResponse = await createDelhiveryReturnOrder(requestData, order);
-            
-            if (!delhiveryResponse || !delhiveryResponse.waybill) {
-                throw new Error('Delhivery returned empty response');
-            }
-            
-            carrierUsed = 'delhivery';
-            awbNumber = delhiveryResponse.waybill;
-            shipmentId = delhiveryResponse.shipment_id;
-            pickupDate = new Date().toISOString();
-            console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
-            
-        } else {
-            // Fallback mode: try primary, then fallback if it fails
-            console.log(`[${requestId}] Using ${carrierResolution.primary} with fallback...`);
-            
-            let primaryResponse = null;
-            const primaryCarrier = carrierResolution.primary;
-
-            try {
-                if (primaryCarrier === 'shiprocket') {
-                    if (!process.env.SHIPROCKET_EMAIL) {
-                        throw new Error('Shiprocket not configured');
-                    }
-                    primaryResponse = await createShiprocketReturnOrder(requestData, order);
-                } else {
-                    if (!process.env.DELHIVERY_API_KEY) {
-                        throw new Error('Delhivery not configured');
-                    }
-                    primaryResponse = await createDelhiveryReturnOrder(requestData, order);
-                }
-
-                if (!primaryResponse || (primaryResponse.shipment_id || primaryResponse.waybill)) {
-                    // Check if response is valid
-                    const isValid = primaryCarrier === 'shiprocket' 
-                        ? (primaryResponse && primaryResponse.shipment_id)
-                        : (primaryResponse && primaryResponse.waybill);
-                    if (!isValid) {
-                        throw new Error(`${primaryCarrier} returned empty response`);
-                    }
-                }
-            } catch (primaryError) {
-                // Fallback to other carrier
-                fallbackReason = `${primaryCarrier} failed: ${primaryError.message}`;
-                console.warn(`[${requestId}] ⚠️ ${primaryCarrier} failed, falling back to ${primaryCarrier === 'shiprocket' ? 'Delhivery' : 'Shiprocket'}:`, primaryError.message);
-                
-                const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
-                const fallbackEnv = fallbackCarrier === 'shiprocket' ? process.env.SHIPROCKET_EMAIL : process.env.DELHIVERY_API_KEY;
-                
-                if (fallbackEnv) {
-                    try {
-                        const fallbackResponse = fallbackCarrier === 'shiprocket'
-                            ? await createShiprocketReturnOrder(requestData, order)
-                            : await createDelhiveryReturnOrder(requestData, order);
-                        
-                        const isValid = fallbackCarrier === 'shiprocket'
-                            ? (fallbackResponse && fallbackResponse.shipment_id)
-                            : (fallbackResponse && fallbackResponse.waybill);
-                        
-                        if (isValid) {
-                            carrierUsed = fallbackCarrier;
-                            awbNumber = fallbackCarrier === 'shiprocket' ? fallbackResponse.awb_code : fallbackResponse.waybill;
-                            shipmentId = fallbackResponse.shipment_id;
-                            pickupDate = fallbackCarrier === 'shiprocket' ? fallbackResponse.pickup_scheduled_date : new Date().toISOString();
-                            
-                            console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success: AWB ${awbNumber}`);
-                        } else {
-                            throw new Error(`${fallbackCarrier} also failed to create shipment`);
-                        }
-                    } catch (fallbackError) {
-                        console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
-                        return null;
-                    }
-                } else {
-                    console.error(`[${requestId}] ❌ ${primaryCarrier} failed and ${fallbackCarrier} not configured`);
-                    return null;
-                }
-            }
-
-            // If primary succeeded
-            if (primaryResponse) {
-                carrierUsed = primaryCarrier;
-                awbNumber = primaryCarrier === 'shiprocket' ? primaryResponse.awb_code : primaryResponse.waybill;
-                shipmentId = primaryResponse.shipment_id;
-                pickupDate = primaryCarrier === 'shiprocket' ? primaryResponse.pickup_scheduled_date : new Date().toISOString();
-                console.log(`[${requestId}] ✅ ${primaryCarrier} success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-            }
+        // Try the resolved primary carrier, then the fallback partner if enabled
+        let booking = null;
+        try {
+            booking = await returnBookingAttempt(carrierResolution.primary, requestData, order);
+        } catch (primaryError) {
+            if (!carrierResolution.useFallback) throw primaryError;
+            const fallbackCarrier = getFallbackCarrier(carrierResolution.primary);
+            fallbackReason = `${carrierResolution.primary} failed: ${primaryError.message}`;
+            console.warn(`[${requestId}] ⚠️ ${carrierResolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
+            booking = await returnBookingAttempt(fallbackCarrier, requestData, order);
         }
 
+        console.log(`[${requestId}] ✅ ${booking.carrierUsed} success: ShipmentID ${booking.shipmentId}, AWB ${booking.awbNumber || 'PENDING'}`);
+
         return {
-            awbNumber,
-            shipmentId,
-            pickupDate,
-            carrier: carrierUsed,
+            awbNumber: booking.awbNumber,
+            shipmentId: booking.shipmentId,
+            pickupDate: booking.pickupDate,
+            carrier: booking.carrierUsed,
             fallbackReason: fallbackReason
         };
     } catch (error) {
@@ -3822,114 +4228,23 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
             let fallbackReason = null;
 
             try {
-                if (carrierResolution.primary === 'shiprocket' && !carrierResolution.useFallback) {
-                    // Shiprocket only mode
-                    if (!process.env.SHIPROCKET_EMAIL) {
-                        throw new Error('Shiprocket not configured');
-                    }
-                    
-                    console.log(`[${requestId}] Using Shiprocket only...`);
-                    const srResponse = await createShiprocketReturnOrder(requestData, null);
-                    
-                    if (!srResponse || !srResponse.shipment_id) {
-                        throw new Error('Shiprocket returned empty response');
-                    }
-                    
-                    carrierUsed = 'shiprocket';
-                    awbNumber = srResponse.awb_code;
-                    shipmentId = srResponse.shipment_id;
-                    pickupDate = srResponse.pickup_scheduled_date;
-                    console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                    
-                } else if (carrierResolution.primary === 'delhivery' && !carrierResolution.useFallback) {
-                    // Delhivery only mode
-                    if (!process.env.DELHIVERY_API_KEY) {
-                        throw new Error('Delhivery not configured');
-                    }
-                    
-                    console.log(`[${requestId}] Using Delhivery only...`);
-                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, null);
-                    
-                    if (!delhiveryResponse || !delhiveryResponse.waybill) {
-                        throw new Error('Delhivery returned empty response');
-                    }
-                    
-                    carrierUsed = 'delhivery';
-                    awbNumber = delhiveryResponse.waybill;
-                    shipmentId = delhiveryResponse.shipment_id;
-                    pickupDate = new Date().toISOString();
-                    console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
-                    
-                } else {
-                    // Fallback mode
-                    console.log(`[${requestId}] Using ${carrierResolution.primary} with fallback...`);
-                    let primaryResponse = null;
-                    const primaryCarrier = carrierResolution.primary;
-
-                    try {
-                        if (primaryCarrier === 'shiprocket') {
-                            if (!process.env.SHIPROCKET_EMAIL) {
-                                throw new Error('Shiprocket not configured');
-                            }
-                            primaryResponse = await createShiprocketReturnOrder(requestData, null);
-                            if (!primaryResponse || !primaryResponse.shipment_id) {
-                                throw new Error('Shiprocket returned empty response');
-                            }
-                        } else {
-                            if (!process.env.DELHIVERY_API_KEY) {
-                                throw new Error('Delhivery not configured');
-                            }
-                            primaryResponse = await createDelhiveryReturnOrder(requestData, null);
-                            if (!primaryResponse || !primaryResponse.waybill) {
-                                throw new Error('Delhivery returned empty response');
-                            }
-                        }
-                    } catch (primaryError) {
-                        // Fallback to other carrier
-                        fallbackReason = `${primaryCarrier} failed: ${primaryError.message}`;
-                        console.warn(`[${requestId}] ⚠️ ${primaryCarrier} failed, falling back to ${primaryCarrier === 'shiprocket' ? 'Delhivery' : 'Shiprocket'}:`, primaryError.message);
-                        
-                        const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
-                        const fallbackEnv = fallbackCarrier === 'shiprocket' ? process.env.SHIPROCKET_EMAIL : process.env.DELHIVERY_API_KEY;
-                        
-                        if (fallbackEnv) {
-                            try {
-                                const fallbackResponse = fallbackCarrier === 'shiprocket'
-                                    ? await createShiprocketReturnOrder(requestData, null)
-                                    : await createDelhiveryReturnOrder(requestData, null);
-                                
-                                const isValid = fallbackCarrier === 'shiprocket'
-                                    ? (fallbackResponse && fallbackResponse.shipment_id)
-                                    : (fallbackResponse && fallbackResponse.waybill);
-                                
-                                if (isValid) {
-                                    carrierUsed = fallbackCarrier;
-                                    awbNumber = fallbackCarrier === 'shiprocket' ? fallbackResponse.awb_code : fallbackResponse.waybill;
-                                    shipmentId = fallbackResponse.shipment_id;
-                                    pickupDate = fallbackCarrier === 'shiprocket' ? fallbackResponse.pickup_scheduled_date : new Date().toISOString();
-                                    console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success: AWB ${awbNumber}`);
-                                } else {
-                                    throw new Error(`${fallbackCarrier} also failed to create shipment`);
-                                }
-                            } catch (fallbackError) {
-                                console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
-                                throw fallbackError;
-                            }
-                        } else {
-                            console.error(`[${requestId}] ❌ ${primaryCarrier} failed and ${fallbackCarrier} not configured`);
-                            throw primaryError;
-                        }
-                    }
-
-                    // If primary succeeded
-                    if (primaryResponse) {
-                        carrierUsed = primaryCarrier;
-                        awbNumber = primaryCarrier === 'shiprocket' ? primaryResponse.awb_code : primaryResponse.waybill;
-                        shipmentId = primaryResponse.shipment_id;
-                        pickupDate = primaryCarrier === 'shiprocket' ? primaryResponse.pickup_scheduled_date : new Date().toISOString();
-                        console.log(`[${requestId}] ✅ ${primaryCarrier} success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                    }
+                // Try the resolved primary carrier, then the fallback partner if enabled
+                let booking = null;
+                try {
+                    booking = await returnBookingAttempt(carrierResolution.primary, requestData, null);
+                } catch (primaryError) {
+                    if (!carrierResolution.useFallback) throw primaryError;
+                    const fallbackCarrier = getFallbackCarrier(carrierResolution.primary);
+                    fallbackReason = `${carrierResolution.primary} failed: ${primaryError.message}`;
+                    console.warn(`[${requestId}] ⚠️ ${carrierResolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
+                    booking = await returnBookingAttempt(fallbackCarrier, requestData, null);
                 }
+
+                carrierUsed = booking.carrierUsed;
+                awbNumber = booking.awbNumber;
+                shipmentId = booking.shipmentId;
+                pickupDate = booking.pickupDate;
+                console.log(`[${requestId}] ✅ ${carrierUsed} success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
 
                 // Update with success data
                 if (carrierUsed) {
@@ -4110,92 +4425,25 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             };
 
             try {
-                if (carrierMode === 'shiprocket_only') {
-                    // Shiprocket only mode
-                    if (!process.env.SHIPROCKET_EMAIL) {
-                        throw new Error('Shiprocket not configured');
-                    }
-                    
-                    console.log(`[${requestId}] Using Shiprocket only...`);
-                    const srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
-                    
-                    if (!srResponse || !srResponse.shipment_id) {
-                        throw new Error('Shiprocket returned empty response');
-                    }
-                    
-                    carrierUsed = 'shiprocket';
-                    awbNumber = srResponse.awb_code;
-                    shipmentId = srResponse.shipment_id;
-                    pickupDate = srResponse.pickup_scheduled_date;
-                    console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                    
-                } else if (carrierMode === 'delhivery_only') {
-                    // Delhivery only mode
-                    if (!process.env.DELHIVERY_API_KEY) {
-                        throw new Error('Delhivery not configured');
-                    }
-                    
-                    console.log(`[${requestId}] Using Delhivery only...`);
-                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
-                    
-                    if (!delhiveryResponse || !delhiveryResponse.waybill) {
-                        throw new Error('Delhivery returned empty response');
-                    }
-                    
-                    carrierUsed = 'delhivery';
-                    awbNumber = delhiveryResponse.waybill;
-                    shipmentId = delhiveryResponse.shipment_id;
-                    pickupDate = new Date().toISOString();
-                    console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
-                    
-                } else {
-                    // Shiprocket with Delhivery fallback (default)
-                    console.log(`[${requestId}] Using Shiprocket with Delhivery fallback...`);
-                    let srResponse = null;
+                const resolution = resolveCarrier(carrierMode, null, 'pickup');
 
-                    try {
-                        srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
-
-                        if (!srResponse || !srResponse.shipment_id) {
-                            throw new Error('Shiprocket returned empty response');
-                        }
-                    } catch (shiprocketError) {
-                        // Fallback to Delhivery
-                        fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
-                        console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
-                        
-                        if (process.env.DELHIVERY_API_KEY) {
-                            try {
-                                const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
-                                
-                                if (delhiveryResponse && delhiveryResponse.waybill) {
-                                    carrierUsed = 'delhivery';
-                                    awbNumber = delhiveryResponse.waybill;
-                                    shipmentId = delhiveryResponse.shipment_id;
-                                    pickupDate = new Date().toISOString();
-                                    console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
-                                } else {
-                                    throw new Error('Delhivery also failed to create shipment');
-                                }
-                            } catch (delhiveryError) {
-                                console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
-                                throw delhiveryError;
-                            }
-                        } else {
-                            console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
-                            throw shiprocketError;
-                        }
-                    }
-
-                    // If Shiprocket succeeded
-                    if (srResponse && srResponse.shipment_id) {
-                        carrierUsed = 'shiprocket';
-                        awbNumber = srResponse.awb_code;
-                        shipmentId = srResponse.shipment_id;
-                        pickupDate = srResponse.pickup_scheduled_date;
-                        console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                    }
+                // Try the resolved primary carrier, then the fallback partner if enabled
+                let booking = null;
+                try {
+                    booking = await returnBookingAttempt(resolution.primary, requestData, shopifyOrder);
+                } catch (primaryError) {
+                    if (!resolution.useFallback) throw primaryError;
+                    const fallbackCarrier = getFallbackCarrier(resolution.primary);
+                    fallbackReason = `${resolution.primary} failed: ${primaryError.message}`;
+                    console.warn(`[${requestId}] ⚠️ ${resolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
+                    booking = await returnBookingAttempt(fallbackCarrier, requestData, shopifyOrder);
                 }
+
+                carrierUsed = booking.carrierUsed;
+                awbNumber = booking.awbNumber;
+                shipmentId = booking.shipmentId;
+                pickupDate = booking.pickupDate;
+                console.log(`[${requestId}] ✅ ${carrierUsed} success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
             } catch (error) {
                 console.error(`[${requestId}] ❌ Auto-pickup failed:`, error.message);
                 // Continue without shipment - will be pending
@@ -4397,92 +4645,25 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
             };
 
             try {
-                if (carrierMode === 'shiprocket_only') {
-                    // Shiprocket only mode
-                    if (!process.env.SHIPROCKET_EMAIL) {
-                        throw new Error('Shiprocket not configured');
-                    }
-                    
-                    console.log(`[${requestId}] Using Shiprocket only...`);
-                    const srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
-                    
-                    if (!srResponse || !srResponse.shipment_id) {
-                        throw new Error('Shiprocket returned empty response');
-                    }
-                    
-                    carrierUsed = 'shiprocket';
-                    awbNumber = srResponse.awb_code;
-                    shipmentId = srResponse.shipment_id;
-                    pickupDate = srResponse.pickup_scheduled_date;
-                    console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                    
-                } else if (carrierMode === 'delhivery_only') {
-                    // Delhivery only mode
-                    if (!process.env.DELHIVERY_API_KEY) {
-                        throw new Error('Delhivery not configured');
-                    }
-                    
-                    console.log(`[${requestId}] Using Delhivery only...`);
-                    const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
-                    
-                    if (!delhiveryResponse || !delhiveryResponse.waybill) {
-                        throw new Error('Delhivery returned empty response');
-                    }
-                    
-                    carrierUsed = 'delhivery';
-                    awbNumber = delhiveryResponse.waybill;
-                    shipmentId = delhiveryResponse.shipment_id;
-                    pickupDate = new Date().toISOString();
-                    console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
-                    
-                } else {
-                    // Shiprocket with Delhivery fallback (default)
-                    console.log(`[${requestId}] Using Shiprocket with Delhivery fallback...`);
-                    let srResponse = null;
+                const resolution = resolveCarrier(carrierMode, null, 'pickup');
 
-                    try {
-                        srResponse = await createShiprocketReturnOrder(requestData, shopifyOrder);
-
-                        if (!srResponse || !srResponse.shipment_id) {
-                            throw new Error('Shiprocket returned empty response');
-                        }
-                    } catch (shiprocketError) {
-                        // Fallback to Delhivery
-                        fallbackReason = `Shiprocket failed: ${shiprocketError.message}`;
-                        console.warn(`[${requestId}] ⚠️ Shiprocket failed, falling back to Delhivery:`, shiprocketError.message);
-                        
-                        if (process.env.DELHIVERY_API_KEY) {
-                            try {
-                                const delhiveryResponse = await createDelhiveryReturnOrder(requestData, shopifyOrder);
-                                
-                                if (delhiveryResponse && delhiveryResponse.waybill) {
-                                    carrierUsed = 'delhivery';
-                                    awbNumber = delhiveryResponse.waybill;
-                                    shipmentId = delhiveryResponse.shipment_id;
-                                    pickupDate = new Date().toISOString();
-                                    console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
-                                } else {
-                                    throw new Error('Delhivery also failed to create shipment');
-                                }
-                            } catch (delhiveryError) {
-                                console.error(`[${requestId}] ❌ Both carriers failed. Delhivery error:`, delhiveryError.message);
-                                throw delhiveryError;
-                            }
-                        } else {
-                            console.error(`[${requestId}] ❌ Shiprocket failed and Delhivery not configured`);
-                            throw shiprocketError;
-                        }
-                    }
-
-                    // If Shiprocket succeeded
-                    if (srResponse && srResponse.shipment_id) {
-                        carrierUsed = 'shiprocket';
-                        awbNumber = srResponse.awb_code;
-                        shipmentId = srResponse.shipment_id;
-                        pickupDate = srResponse.pickup_scheduled_date;
-                        console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                    }
+                // Try the resolved primary carrier, then the fallback partner if enabled
+                let booking = null;
+                try {
+                    booking = await returnBookingAttempt(resolution.primary, requestData, shopifyOrder);
+                } catch (primaryError) {
+                    if (!resolution.useFallback) throw primaryError;
+                    const fallbackCarrier = getFallbackCarrier(resolution.primary);
+                    fallbackReason = `${resolution.primary} failed: ${primaryError.message}`;
+                    console.warn(`[${requestId}] ⚠️ ${resolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
+                    booking = await returnBookingAttempt(fallbackCarrier, requestData, shopifyOrder);
                 }
+
+                carrierUsed = booking.carrierUsed;
+                awbNumber = booking.awbNumber;
+                shipmentId = booking.shipmentId;
+                pickupDate = booking.pickupDate;
+                console.log(`[${requestId}] ✅ ${carrierUsed} success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
             } catch (error) {
                 console.error(`[${requestId}] ❌ Auto-pickup failed:`, error.message);
                 // Continue without shipment - will be pending
@@ -5853,114 +6034,41 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
 
             try {
                 const { primary: carrierToUse, useFallback } = carrierResolution;
-                const fallbackCarrier = carrierToUse === 'shiprocket' ? 'delhivery' : 'shiprocket';
 
-                // Try primary carrier
+                // Try the resolved primary carrier, then the fallback partner if enabled
+                const bookingData = {
+                    ...requestDetails,
+                    requestId,
+                    orderNumber: requestDetails.orderNumber,
+                    customerPhone: requestDetails.customerPhone
+                };
+
+                let booking = null;
                 try {
-                    if (carrierToUse === 'shiprocket') {
-                        if (!process.env.SHIPROCKET_EMAIL) {
-                            throw new Error('Shiprocket not configured on server');
-                        }
-                        
-                        console.log(`[${requestId}] Using Shiprocket (fallback: ${useFallback})...`);
-                        const shiprocketData = await createShiprocketReturnOrder({
-                            ...requestDetails,
-                            requestId
-                        }, shopifyOrder);
-
-                        if (shiprocketData && shiprocketData.shipment_id) {
-                            carrierUsed = 'shiprocket';
-                            awbNumber = shiprocketData.awb_code;
-                            shipmentId = shiprocketData.shipment_id;
-                            pickupDate = shiprocketData.pickup_scheduled_date;
-                            console.log(`[${requestId}] ✅ Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                        } else {
-                            throw new Error('Shiprocket did not return shipment data');
-                        }
-                    } else if (carrierToUse === 'delhivery') {
-                        if (!process.env.DELHIVERY_API_KEY) {
-                            throw new Error('Delhivery not configured on server');
-                        }
-                        
-                        console.log(`[${requestId}] Using Delhivery (fallback: ${useFallback})...`);
-                        const delhiveryData = await createDelhiveryReturnOrder({
-                            ...requestDetails,
-                            requestId,
-                            orderNumber: requestDetails.orderNumber,
-                            customerPhone: requestDetails.customerPhone
-                        }, shopifyOrder);
-
-                        if (delhiveryData && delhiveryData.waybill) {
-                            carrierUsed = 'delhivery';
-                            awbNumber = delhiveryData.waybill;
-                            shipmentId = delhiveryData.shipment_id;
-                            pickupDate = new Date().toISOString();
-                            console.log(`[${requestId}] ✅ Delhivery success: AWB ${awbNumber}`);
-                        } else {
-                            const errorMsg = delhiveryData ? 'Delhivery returned incomplete data' : 'Delhivery did not return waybill data';
-                            console.error(`[${requestId}] ❌ ${errorMsg}`, delhiveryData);
-                            throw new Error(errorMsg);
-                        }
-                    }
+                    console.log(`[${requestId}] Using ${carrierToUse} (fallback: ${useFallback})...`);
+                    booking = await returnBookingAttempt(carrierToUse, bookingData, shopifyOrder);
                 } catch (primaryError) {
                     // If fallback is enabled, try the fallback carrier
-                    if (useFallback) {
-                        fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
-                        console.warn(`[${requestId}] ⚠️ ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
-                        
-                        try {
-                            if (fallbackCarrier === 'shiprocket') {
-                                if (!process.env.SHIPROCKET_EMAIL) {
-                                    throw new Error('Shiprocket not configured for fallback');
-                                }
-                                
-                                const shiprocketData = await createShiprocketReturnOrder({
-                                    ...requestDetails,
-                                    requestId
-                                }, shopifyOrder);
+                    if (!useFallback) throw primaryError;
 
-                                if (shiprocketData && shiprocketData.shipment_id) {
-                                    carrierUsed = 'shiprocket';
-                                    awbNumber = shiprocketData.awb_code;
-                                    shipmentId = shiprocketData.shipment_id;
-                                    pickupDate = shiprocketData.pickup_scheduled_date;
-                                    console.log(`[${requestId}] ✅ Shiprocket fallback success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                                } else {
-                                    throw new Error('Shiprocket did not return shipment data');
-                                }
-                            } else if (fallbackCarrier === 'delhivery') {
-                                if (!process.env.DELHIVERY_API_KEY) {
-                                    throw new Error('Delhivery not configured for fallback');
-                                }
-                                
-                                const delhiveryData = await createDelhiveryReturnOrder({
-                                    ...requestDetails,
-                                    requestId,
-                                    orderNumber: requestDetails.orderNumber,
-                                    customerPhone: requestDetails.customerPhone
-                                }, shopifyOrder);
+                    const fallbackCarrier = getFallbackCarrier(carrierToUse);
+                    fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
+                    console.warn(`[${requestId}] ⚠️ ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
 
-                                if (delhiveryData && delhiveryData.waybill) {
-                                    carrierUsed = 'delhivery';
-                                    awbNumber = delhiveryData.waybill;
-                                    shipmentId = delhiveryData.shipment_id;
-                                    pickupDate = new Date().toISOString();
-                                    console.log(`[${requestId}] ✅ Delhivery fallback success: AWB ${awbNumber}`);
-                                } else {
-                                    const errorMsg = delhiveryData ? 'Delhivery fallback returned incomplete data' : 'Delhivery fallback did not return waybill data';
-                                    console.error(`[${requestId}] ❌ ${errorMsg}`, delhiveryData);
-                                    throw new Error(errorMsg);
-                                }
-                            }
-                        } catch (fallbackError) {
-                            console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
-                            throw new Error(`Both carriers failed: ${primaryError.message} | ${fallbackError.message}`);
-                        }
-                    } else {
-                        // No fallback enabled, just throw the primary error
-                        throw primaryError;
+                    try {
+                        booking = await returnBookingAttempt(fallbackCarrier, bookingData, shopifyOrder);
+                        console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success: AWB ${booking.awbNumber || 'PENDING'}`);
+                    } catch (fallbackError) {
+                        console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
+                        throw new Error(`Both carriers failed: ${primaryError.message} | ${fallbackError.message}`);
                     }
                 }
+
+                carrierUsed = booking.carrierUsed;
+                awbNumber = booking.awbNumber;
+                shipmentId = booking.shipmentId;
+                pickupDate = booking.pickupDate;
+                console.log(`[${requestId}] ✅ ${carrierUsed} success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
 
                 // Update with success data
                 if (carrierUsed) {
@@ -6026,60 +6134,24 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
             const useFallback = carrierResolution.useFallback;
 
             try {
-                if (primaryCarrier === 'shiprocket') {
-                    if (!process.env.SHIPROCKET_EMAIL) {
-                        throw new Error('Shiprocket not configured');
-                    }
-                    console.log(`[${requestId}] Using Shiprocket for forward dispatch...`);
-                    forwardOrder = await createShiprocketForwardOrder({ ...requestDetails, items });
-                    carrierUsed = 'shiprocket';
-                    
-                    if (!forwardOrder || !forwardOrder.shipment_id) {
-                        throw new Error('Shiprocket returned empty response');
-                    }
-                } else if (primaryCarrier === 'delhivery') {
-                    if (!process.env.DELHIVERY_API_KEY) {
-                        throw new Error('Delhivery not configured');
-                    }
-                    console.log(`[${requestId}] Using Delhivery for forward dispatch...`);
-                    forwardOrder = await createDelhiveryForwardOrder({ ...requestDetails, items });
-                    carrierUsed = 'delhivery';
-                    
-                    if (!forwardOrder || !forwardOrder.waybill) {
-                        throw new Error('Delhivery returned empty response');
-                    }
-                }
+                const primaryResult = await forwardBookingAttempt(primaryCarrier, { ...requestDetails, items });
+                forwardOrder = primaryResult.forwardOrder;
+                carrierUsed = primaryResult.carrierUsed;
+                console.log(`[${requestId}] ✅ ${primaryCarrier} forward dispatch success`);
             } catch (primaryError) {
                 console.error(`[${requestId}] ❌ Primary carrier (${primaryCarrier}) failed:`, primaryError.message);
                 
                 // Try fallback if enabled
                 if (useFallback) {
-                    const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
-                    const fallbackEnv = fallbackCarrier === 'shiprocket' ? process.env.SHIPROCKET_EMAIL : process.env.DELHIVERY_API_KEY;
-                    
-                    if (fallbackEnv) {
-                        try {
-                            console.log(`[${requestId}] ⚠️ Falling back to ${fallbackCarrier}...`);
-                            forwardOrder = fallbackCarrier === 'shiprocket'
-                                ? await createShiprocketForwardOrder({ ...requestDetails, items })
-                                : await createDelhiveryForwardOrder({ ...requestDetails, items });
-                            carrierUsed = fallbackCarrier;
-                            
-                            const isValid = fallbackCarrier === 'shiprocket'
-                                ? (forwardOrder && forwardOrder.shipment_id)
-                                : (forwardOrder && forwardOrder.waybill);
-                            
-                            if (!isValid) {
-                                throw new Error(`${fallbackCarrier} also failed to create forward shipment`);
-                            }
-                            
-                            console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success`);
-                        } catch (fallbackError) {
-                            console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
-                            forwardOrder = null;
-                        }
-                    } else {
-                        console.error(`[${requestId}] ❌ ${primaryCarrier} failed and ${fallbackCarrier} not configured`);
+                    const fallbackCarrier = getFallbackCarrier(primaryCarrier);
+                    try {
+                        console.log(`[${requestId}] ⚠️ Falling back to ${fallbackCarrier}...`);
+                        const fallbackResult = await forwardBookingAttempt(fallbackCarrier, { ...requestDetails, items });
+                        forwardOrder = fallbackResult.forwardOrder;
+                        carrierUsed = fallbackResult.carrierUsed;
+                        console.log(`[${requestId}] ✅ ${fallbackCarrier} fallback success`);
+                    } catch (fallbackError) {
+                        console.error(`[${requestId}] ❌ Both carriers failed. Fallback error:`, fallbackError.message);
                         forwardOrder = null;
                     }
                 } else {
@@ -6091,7 +6163,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
             if (forwardOrder && (forwardOrder.shipment_id || forwardOrder.waybill)) {
                 const shipmentInfo = carrierUsed === 'shiprocket' 
                     ? `Shiprocket ID: ${forwardOrder.shipment_id}` 
-                    : `Delhivery AWB: ${forwardOrder.waybill}`;
+                    : `${carrierUsed === 'ekart' ? 'Ekart' : 'Delhivery'} AWB: ${forwardOrder.waybill}`;
                 adminNotes += `\nReplacement Shipment Created (${carrierUsed}: ${shipmentInfo})`;
                 updates.forwardShipmentId = String(forwardOrder.shipment_id || forwardOrder.order_id);
                 updates.forwardAwbNumber = forwardOrder.awb_code || forwardOrder.waybill || '';
@@ -6518,31 +6590,15 @@ async function bookReturnPickup(requestDetails, requestId, carrierOverride = nul
     }
 
     const { primary: carrierToUse, useFallback } = carrierResolution;
-    const fallbackCarrier = carrierToUse === 'shiprocket' ? 'delhivery' : 'shiprocket';
+    const fallbackCarrier = getFallbackCarrier(carrierToUse);
 
-    const attempt = async (carrier) => {
-        if (carrier === 'shiprocket') {
-            if (!process.env.SHIPROCKET_EMAIL) throw new Error('Shiprocket not configured on server');
-            const d = await createShiprocketReturnOrder({ ...requestDetails, requestId }, shopifyOrder);
-            if (d && d.shipment_id) {
-                return { carrierUsed: 'shiprocket', awbNumber: d.awb_code, shipmentId: d.shipment_id, pickupDate: d.pickup_scheduled_date };
-            }
-            throw new Error('Shiprocket did not return shipment data');
-        } else {
-            if (!process.env.DELHIVERY_API_KEY) throw new Error('Delhivery not configured on server');
-            const d = await createDelhiveryReturnOrder({
-                ...requestDetails,
-                requestId,
-                orderNumber: requestDetails.orderNumber,
-                customerPhone: requestDetails.customerPhone,
-                delhiveryOrderIdSuffix
-            }, shopifyOrder);
-            if (d && d.waybill) {
-                return { carrierUsed: 'delhivery', awbNumber: d.waybill, shipmentId: d.shipment_id, pickupDate: new Date().toISOString() };
-            }
-            throw new Error('Delhivery did not return waybill data');
-        }
-    };
+    const attempt = (carrier) => returnBookingAttempt(carrier, {
+        ...requestDetails,
+        requestId,
+        orderNumber: requestDetails.orderNumber,
+        customerPhone: requestDetails.customerPhone,
+        delhiveryOrderIdSuffix
+    }, shopifyOrder);
 
     let result = null;
     let fallbackReason = null;
@@ -6655,19 +6711,7 @@ app.post('/api/admin/create-duplicate-forward', authenticateAdmin, async (req, r
         const primaryCarrier = carrierResolution.primary;
         const useFallback = carrierResolution.useFallback;
 
-        const attempt = async (carrier) => {
-            if (carrier === 'shiprocket') {
-                if (!process.env.SHIPROCKET_EMAIL) throw new Error('Shiprocket not configured');
-                const d = await createShiprocketForwardOrder({ ...requestDetails, items, forwardOrderIdSuffix });
-                if (d && d.shipment_id) return { carrierUsed: 'shiprocket', forwardOrder: d };
-                throw new Error('Shiprocket returned empty response');
-            } else {
-                if (!process.env.DELHIVERY_API_KEY) throw new Error('Delhivery not configured');
-                const d = await createDelhiveryForwardOrder({ ...requestDetails, items, forwardOrderIdSuffix });
-                if (d && d.waybill) return { carrierUsed: 'delhivery', forwardOrder: d };
-                throw new Error('Delhivery returned empty response');
-            }
-        };
+        const attempt = (carrier) => forwardBookingAttempt(carrier, { ...requestDetails, items, forwardOrderIdSuffix });
 
         let result = null;
         let fallbackReason = null;
@@ -6675,7 +6719,7 @@ app.post('/api/admin/create-duplicate-forward', authenticateAdmin, async (req, r
             result = await attempt(primaryCarrier);
         } catch (primaryError) {
             if (!useFallback) throw primaryError;
-            const fallbackCarrier = primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
+            const fallbackCarrier = getFallbackCarrier(primaryCarrier);
             fallbackReason = `${primaryCarrier} failed: ${primaryError.message}`;
             console.warn(`[${requestId}] ⚠️ ${primaryCarrier} failed for duplicate forward, falling back to ${fallbackCarrier}:`, primaryError.message);
             try {
@@ -7224,8 +7268,8 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
             return;
         }
 
-        if (!process.env.SHIPROCKET_EMAIL && !process.env.DELHIVERY_API_KEY) {
-            if (!res.headersSent) return res.status(400).json({ error: 'No carrier configured. Please configure Shiprocket or Delhivery.' });
+        if (!process.env.SHIPROCKET_EMAIL && !process.env.DELHIVERY_API_KEY && !ekartConfigured()) {
+            if (!res.headersSent) return res.status(400).json({ error: 'No carrier configured. Please configure Shiprocket, Delhivery or Ekart.' });
             return;
         }
 
@@ -7277,113 +7321,45 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
 
                 // Use carrier resolution to determine which carrier to use
                 const { primary: carrierToUse, useFallback } = carrierResolution;
-                const fallbackCarrier = carrierToUse === 'shiprocket' ? 'delhivery' : 'shiprocket';
                 let carrierUsed = null;
                 let awbNumber = null;
                 let shipmentId = null;
                 let pickupDate = null;
                 let fallbackReason = null;
 
-                // Try primary carrier
+                // Try the resolved primary carrier, then the fallback partner if enabled
+                const bookingData = {
+                    ...requestDetails,
+                    requestId,
+                    orderNumber: requestDetails.orderNumber,
+                    customerPhone: requestDetails.customerPhone
+                };
+
+                let booking = null;
                 try {
-                    if (carrierToUse === 'shiprocket') {
-                        if (!process.env.SHIPROCKET_EMAIL) {
-                            throw new Error('Shiprocket not configured');
-                        }
-                        
-                        const shiprocketData = await createShiprocketReturnOrder({
-                            ...requestDetails,
-                            requestId
-                        }, shopifyOrder);
-
-                        if (shiprocketData && shiprocketData.shipment_id) {
-                            carrierUsed = 'shiprocket';
-                            awbNumber = shiprocketData.awb_code;
-                            shipmentId = shiprocketData.shipment_id;
-                            pickupDate = shiprocketData.pickup_scheduled_date;
-                            console.log(`[${requestId}] ✅ Bulk Shiprocket success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                        } else {
-                            throw new Error('Shiprocket did not return shipment data');
-                        }
-                    } else if (carrierToUse === 'delhivery') {
-                        if (!process.env.DELHIVERY_API_KEY) {
-                            throw new Error('Delhivery not configured');
-                        }
-                        
-                        const delhiveryData = await createDelhiveryReturnOrder({
-                            ...requestDetails,
-                            requestId,
-                            orderNumber: requestDetails.orderNumber,
-                            customerPhone: requestDetails.customerPhone
-                        }, shopifyOrder);
-
-                        if (delhiveryData && delhiveryData.waybill) {
-                            carrierUsed = 'delhivery';
-                            awbNumber = delhiveryData.waybill;
-                            shipmentId = delhiveryData.shipment_id;
-                            pickupDate = new Date().toISOString();
-                            console.log(`[${requestId}] ✅ Bulk Delhivery success: AWB ${awbNumber}`);
-                        } else {
-                            throw new Error('Delhivery did not return waybill data');
-                        }
-                    }
+                    booking = await returnBookingAttempt(carrierToUse, bookingData, shopifyOrder);
+                    console.log(`[${requestId}] ✅ Bulk ${carrierToUse} success: ShipmentID ${booking.shipmentId}, AWB ${booking.awbNumber || 'PENDING'}`);
                 } catch (primaryError) {
                     // If fallback is enabled, try the fallback carrier
-                    if (useFallback) {
-                        fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
-                        console.warn(`[${requestId}] ⚠️ Bulk ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
-                        
-                        try {
-                            if (fallbackCarrier === 'shiprocket') {
-                                if (!process.env.SHIPROCKET_EMAIL) {
-                                    throw new Error('Shiprocket not configured for fallback');
-                                }
-                                
-                                const shiprocketData = await createShiprocketReturnOrder({
-                                    ...requestDetails,
-                                    requestId
-                                }, shopifyOrder);
+                    if (!useFallback) throw primaryError;
 
-                                if (shiprocketData && shiprocketData.shipment_id) {
-                                    carrierUsed = 'shiprocket';
-                                    awbNumber = shiprocketData.awb_code;
-                                    shipmentId = shiprocketData.shipment_id;
-                                    pickupDate = shiprocketData.pickup_scheduled_date;
-                                    console.log(`[${requestId}] ✅ Bulk Shiprocket fallback success: ShipmentID ${shipmentId}, AWB ${awbNumber || 'PENDING'}`);
-                                } else {
-                                    throw new Error('Shiprocket did not return shipment data');
-                                }
-                            } else if (fallbackCarrier === 'delhivery') {
-                                if (!process.env.DELHIVERY_API_KEY) {
-                                    throw new Error('Delhivery not configured for fallback');
-                                }
-                                
-                                const delhiveryData = await createDelhiveryReturnOrder({
-                                    ...requestDetails,
-                                    requestId,
-                                    orderNumber: requestDetails.orderNumber,
-                                    customerPhone: requestDetails.customerPhone
-                                }, shopifyOrder);
+                    const fallbackCarrier = getFallbackCarrier(carrierToUse);
+                    fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
+                    console.warn(`[${requestId}] ⚠️ Bulk ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
 
-                                if (delhiveryData && delhiveryData.waybill) {
-                                    carrierUsed = 'delhivery';
-                                    awbNumber = delhiveryData.waybill;
-                                    shipmentId = delhiveryData.shipment_id;
-                                    pickupDate = new Date().toISOString();
-                                    console.log(`[${requestId}] ✅ Bulk Delhivery fallback success: AWB ${awbNumber}`);
-                                } else {
-                                    throw new Error('Delhivery did not return waybill data');
-                                }
-                            }
-                        } catch (fallbackError) {
-                            console.error(`[${requestId}] ❌ Bulk both carriers failed. Fallback error:`, fallbackError.message);
-                            throw new Error(`Both carriers failed: ${primaryError.message} | ${fallbackError.message}`);
-                        }
-                    } else {
-                        // No fallback enabled, just throw the primary error
-                        throw primaryError;
+                    try {
+                        booking = await returnBookingAttempt(fallbackCarrier, bookingData, shopifyOrder);
+                        console.log(`[${requestId}] ✅ Bulk ${fallbackCarrier} fallback success: AWB ${booking.awbNumber || 'PENDING'}`);
+                    } catch (fallbackError) {
+                        console.error(`[${requestId}] ❌ Bulk both carriers failed. Fallback error:`, fallbackError.message);
+                        throw new Error(`Both carriers failed: ${primaryError.message} | ${fallbackError.message}`);
                     }
                 }
+
+                carrierUsed = booking.carrierUsed;
+                awbNumber = booking.awbNumber;
+                shipmentId = booking.shipmentId;
+                pickupDate = booking.pickupDate;
 
                 if (carrierUsed) {
                     let adminNotes = requestDetails.adminNotes || '';

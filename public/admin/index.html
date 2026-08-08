@@ -187,6 +187,7 @@
                                 <option value="">All Carriers</option>
                                 <option value="shiprocket">Shiprocket</option>
                                 <option value="delhivery">Delhivery</option>
+                                <option value="ekart">Ekart</option>
                             </select>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="filter-caret"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </div>
@@ -311,7 +312,7 @@
 
                     <!-- Right: Primary Actions -->
                     <div style="display: flex; gap: 0.75rem; align-items: center;">
-                        <button onclick="syncStatus()" class="admin-btn" id="syncBtn" style="background: white; border-color: #d1d5db; color: #111827;" title="Manually sync tracking status from carriers (Shiprocket/Delhivery)">
+                        <button onclick="syncStatus()" class="admin-btn" id="syncBtn" style="background: white; border-color: #d1d5db; color: #111827;" title="Manually sync tracking status from carriers (Shiprocket/Delhivery/Ekart)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                             <span id="syncBtnText">Sync Tracking</span>
                             <span id="syncSpinner" class="spinner hidden" style="width: 14px; height: 14px;"></span>
@@ -658,6 +659,11 @@
                     
                     .delhivery-icon {
                         background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+                        color: white;
+                    }
+                    
+                    .ekart-icon {
+                        background: linear-gradient(135deg, #2874f0 0%, #1a5dc8 100%);
                         color: white;
                     }
                     
@@ -1301,6 +1307,32 @@
                                         </div>
                                     </div>
                                 </label>
+
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-pickup" value="ekart_only" id="carrier-pickup-ekart-only">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon ekart-icon">
+                                            <i class="fas fa-shipping-fast"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Ekart Only</div>
+                                            <div class="carrier-desc">Use only Ekart for pickups</div>
+                                        </div>
+                                    </div>
+                                </label>
+
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-pickup" value="ekart_with_fallback" id="carrier-pickup-ekart-fallback">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon combo-icon">
+                                            <i class="fas fa-layer-group"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Ekart + Shiprocket Fallback</div>
+                                            <div class="carrier-desc">Primary: Ekart, Fallback: Shiprocket</div>
+                                        </div>
+                                    </div>
+                                </label>
                             </div>
                         </div>
 
@@ -1356,6 +1388,32 @@
                                         <div class="carrier-info">
                                             <div class="carrier-name">Delhivery + Shiprocket Fallback</div>
                                             <div class="carrier-desc">Primary: Delhivery, Fallback: Shiprocket</div>
+                                        </div>
+                                    </div>
+                                </label>
+
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-dispatch" value="ekart_only" id="carrier-dispatch-ekart-only">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon ekart-icon">
+                                            <i class="fas fa-shipping-fast"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Ekart Only</div>
+                                            <div class="carrier-desc">Use only Ekart for dispatches</div>
+                                        </div>
+                                    </div>
+                                </label>
+
+                                <label class="carrier-option">
+                                    <input type="radio" name="carrier-mode-dispatch" value="ekart_with_fallback" id="carrier-dispatch-ekart-fallback">
+                                    <div class="carrier-option-content">
+                                        <div class="carrier-icon combo-icon">
+                                            <i class="fas fa-layer-group"></i>
+                                        </div>
+                                        <div class="carrier-info">
+                                            <div class="carrier-name">Ekart + Shiprocket Fallback</div>
+                                            <div class="carrier-desc">Primary: Ekart, Fallback: Shiprocket</div>
                                         </div>
                                     </div>
                                 </label>
@@ -1496,6 +1554,7 @@
                 <option value="">Default (Use System Settings)</option>
                 <option value="shiprocket">📦 Shiprocket</option>
                 <option value="delhivery">🚚 Delhivery</option>
+                <option value="ekart">🛵 Ekart</option>
             </select>
             <div id="carrierOverrideWarning" class="hidden" style="margin-top: 0.75rem; padding: 0.625rem; background: #fef3c7; border-left: 3px solid #f59e0b; border-radius: 4px;">
                 <p style="font-size: 0.75rem; color: #92400e; margin: 0; font-weight: 500;">

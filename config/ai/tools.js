@@ -54,7 +54,7 @@ const tools = [
                 status: { type: 'string', description: 'e.g. pending, approved, rejected, pickup_pending, scheduled, waiting_payment' },
                 type: { type: 'string', enum: ['return', 'exchange'], description: 'Request type' },
                 search: { type: 'string', description: 'Order number, customer name, email or phone fragment' },
-                carrier: { type: 'string', description: 'Carrier filter (delhivery/shiprocket)' },
+                carrier: { type: 'string', description: 'Carrier filter (delhivery/shiprocket/ekart)' },
                 limit: { type: 'integer', description: 'Max rows (default 25, max 50)' }
             },
             required: []
@@ -103,12 +103,12 @@ const tools = [
     },
     {
         name: 'book_return_pickup',
-        description: 'Schedule a reverse (return) pickup for a request via the configured carrier (Shiprocket/Delhivery). Fetches the Shopify order automatically. Requires admin confirmation.',
+        description: 'Schedule a reverse (return) pickup for a request via the configured carrier (Shiprocket/Delhivery/Ekart). Fetches the Shopify order automatically. Requires admin confirmation.',
         parameters: {
             type: 'object',
             properties: {
                 requestId: { type: 'string', description: 'Request ID like REQ-12345' },
-                carrier: { type: 'string', enum: ['delhivery', 'shiprocket'], description: 'Optional carrier override' }
+                carrier: { type: 'string', enum: ['delhivery', 'shiprocket', 'ekart'], description: 'Optional carrier override' }
             },
             required: ['requestId']
         },
