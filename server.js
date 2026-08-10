@@ -352,6 +352,7 @@ const supabase = require('./config/supabase');
 
 // Marketing Dashboard modules (isolated from return/exchange logic)
 const marketingDB = require('./config/marketing-db-helpers');
+const shopperHubDB = require('./config/shopper-hub-db');
 const metaWhatsApp = require('./config/meta-whatsapp');
 
 async function generateUniqueRequestId() {
@@ -3881,7 +3882,8 @@ app.post('/api/lookup-order', async (req, res) => {
         }
         // ────────────────────────────────────────────────────────────────────────
 
-        const isFulfilled = order.fulfillment_status === 'fulfilled';
+        // Mutable — the Shopper Hub fallback below can mark unfulfilled orders as shipped
+        let isFulfilled = order.fulfillment_status === 'fulfilled';
 
         // Fetch delivery date BEFORE eligibility check so we can base window on it
         let deliveredDate = null;
@@ -3905,6 +3907,39 @@ app.post('/api/lookup-order', async (req, res) => {
         } else {
             console.log('No fulfillments found for order');
         }
+
+        // ── Shopper Hub fallback (WhatsApp Shoppers Hub orders) ─────────────────
+        // Some orders were shipped under Shiprocket's "Custom" channel instead of
+        // the Shopify channel, so Shopify never received a fulfillment and the
+        // portal wrongly blocks returns/exchanges for them. When the admin toggle
+        // is on, trust the shopper data stored by the WhatsApp bot (its Supabase
+        // store_shoppers + orders tables) as proof the order shipped/delivered.
+        let shopperHubOrder = false;
+        if ((!isFulfilled || !deliveredDate) && await getSetting('allow_shopper_hub_orders', true)) {
+            try {
+                const shopperInfo = await shopperHubDB.findShopperOrder(order.name);
+                if (shopperInfo) {
+                    console.log(`[ShopperHub] Order ${order.name} resolved via shopper data (AWB ${shopperInfo.awb}, status ${shopperInfo.orderStatus})`);
+                    isFulfilled = true;
+                    shopperHubOrder = true;
+
+                    // Resolve the real delivery date for the return window check
+                    if (!deliveredDate && shopperInfo.deliveredAt) {
+                        deliveredDate = shopperInfo.deliveredAt;
+                    }
+                    if (!deliveredDate && shopperInfo.awb) {
+                        const shopperTracking = await getShiprocketTracking(shopperInfo.awb);
+                        if (shopperTracking && shopperTracking.delivered_date) {
+                            deliveredDate = shopperTracking.delivered_date;
+                        }
+                    }
+                    console.log(`[ShopperHub] deliveredDate resolved to: ${deliveredDate || 'unknown (allowing as fulfilled)'}`);
+                }
+            } catch (shopperErr) {
+                console.warn('Shopper Hub fallback failed (non-fatal):', shopperErr.message);
+            }
+        }
+        // ──────────────────────────────────────────────────────────────────────────
 
         // Eligibility: Check cutoff date first
         const CUTOFF_ENABLED = await getSetting('cutoff_date_enabled', false);
@@ -4042,6 +4077,7 @@ app.post('/api/lookup-order', async (req, res) => {
         res.json({
             isEligible: isFulfilled && isWithinWindow,
             eligibilityMessage,
+            shopperHubOrder, // true when eligibility was proven via WhatsApp shopper data
             productVariants: productDataMap, // Send variants to frontend
             order: {
                 orderNumber: order.name,
@@ -5614,6 +5650,7 @@ app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
             delhivery_pickup_location: await getSetting('delhivery_pickup_location', null),
             cutoff_date_enabled: await getSetting('cutoff_date_enabled', false),
             cutoff_date: await getSetting('cutoff_date', null),
+            allow_shopper_hub_orders: await getSetting('allow_shopper_hub_orders', true),
             // Separate pickup/dispatch carrier settings (new)
             carrier_mode_pickup: await getSetting('carrier_mode_pickup', null),
             carrier_mode_dispatch: await getSetting('carrier_mode_dispatch', null),

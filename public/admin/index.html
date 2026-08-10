@@ -1244,6 +1244,17 @@
                                 </span>
                                 <input type="checkbox" id="set-allow-exchanges" class="toggle-switch">
                             </label>
+
+                            <label class="toggle-item">
+                                <span class="toggle-label">
+                                    <i class="fab fa-whatsapp"></i>
+                                    <div>
+                                        <div class="toggle-title">Allow Shoppers Hub / Custom Channel Orders</div>
+                                        <div class="toggle-desc">Let WhatsApp Shoppers Hub orders shipped under Shiprocket's Custom channel apply for return/exchange (verified against shopper data)</div>
+                                    </div>
+                                </span>
+                                <input type="checkbox" id="set-allow-shopper-hub-orders" class="toggle-switch">
+                            </label>
                         </div>
                     </div>
 
@@ -4279,6 +4290,9 @@
                     
                     const allowExchanges = document.getElementById('set-allow-exchanges');
                     if (allowExchanges) allowExchanges.checked = data.allow_exchanges !== false;
+
+                    const allowShopperHubOrders = document.getElementById('set-allow-shopper-hub-orders');
+                    if (allowShopperHubOrders) allowShopperHubOrders.checked = data.allow_shopper_hub_orders !== false;
                     
                     const returnWindow = document.getElementById('set-return-window');
                     if (returnWindow) returnWindow.value = data.return_window_days || 2;
@@ -4403,6 +4417,7 @@
         const updates = {
             allow_returns: document.getElementById('set-allow-returns').checked,
             allow_exchanges: document.getElementById('set-allow-exchanges').checked,
+            allow_shopper_hub_orders: document.getElementById('set-allow-shopper-hub-orders').checked,
             return_window_days: parseInt(document.getElementById('set-return-window').value, 10),
             return_window_mode: windowMode,
             carrier_mode_pickup: pickupCarrierMode,
