@@ -2492,8 +2492,12 @@
         if (_existingWhatsapp) _savedDiscount.phone = _existingWhatsapp.value;
         if (_existingSendWhatsapp) _savedDiscount.sendWhatsapp = _existingSendWhatsapp.checked;
         // Track which request the saved form data belongs to
-        _savedDiscount.requestId = (window.currentRequestData && window.currentRequestData.requestId) || null;
-        const _hasUserDiscountEdits = !!( _existingCode || _existingType || _existingValue || _existingUsage || _existingWhatsapp || _existingSendWhatsapp);
+        const _previousRequestId = (window.currentRequestData && window.currentRequestData.requestId) || null;
+        _savedDiscount.requestId = _previousRequestId;
+        // Only preserve user edits when re-opening the SAME request (e.g. refresh);
+        // switching to a different request must always start from fresh values
+        const _isSameRequest = _previousRequestId !== null && _previousRequestId === data.requestId;
+        const _hasUserDiscountEdits = _isSameRequest && !!( _existingCode || _existingType || _existingValue || _existingUsage || _existingWhatsapp || _existingSendWhatsapp);
         
         // Debug: Log incoming data status
         console.log('displayRequestDetails called with status:', data.status, 'full data keys:', Object.keys(data));
@@ -3031,12 +3035,13 @@
                 whatsappPhoneInput.value = data.customerPhone;
             }
 
-            // Auto-fill discount code only if empty or no prior user edits (preserve on refresh)
+            // Auto-fill discount code: preserve only for the SAME request, otherwise
+            // always generate a fresh code from the current request's details
             const discountCodeEl = document.getElementById('discountCode');
             if (discountCodeEl) {
                 if (_hasUserDiscountEdits && _savedDiscount.code) {
                     discountCodeEl.value = _savedDiscount.code;
-                } else if (!discountCodeEl.value.trim()) {
+                } else {
                     const namePart = (data.customerName || 'CUST').replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase();
                     const idPart = (data.requestId || '').replace(/[^0-9]/g, '').slice(-4);
                     const randPart = Math.random().toString(36).substring(2, 5).toUpperCase();
@@ -3058,8 +3063,8 @@
             if (discountValueEl) {
                 if (_hasUserDiscountEdits && _savedDiscount.value) {
                     discountValueEl.value = _savedDiscount.value;
-                } else if (!discountValueEl.value.trim()) {
-                    // Calculate total product price from items
+                } else {
+                    // Different request: recalculate from the current request's items
                     const items = Array.isArray(data.items)
                         ? data.items
                         : (typeof data.items === 'string' ? (() => { try { return JSON.parse(data.items); } catch(e) { return []; } })() : []);
@@ -3070,14 +3075,15 @@
                     }, 0);
                     if (totalPrice > 0) {
                         discountValueEl.value = totalPrice;
+                    } else {
+                        discountValueEl.value = '';
                     }
                 }
             }
             
-            // Restore WhatsApp checkbox and phone if user had set them FOR THE SAME REQUEST
+            // Restore WhatsApp checkbox and phone only if user had set them FOR THE SAME REQUEST
             // Never carry over phone from a different request
-            const _isSameRequest = _savedDiscount.requestId === data.requestId;
-            if (_hasUserDiscountEdits && _isSameRequest) {
+            if (_hasUserDiscountEdits) {
                 const sendWhatsappEl = document.getElementById('sendWhatsAppDiscount');
                 if (sendWhatsappEl && _savedDiscount.sendWhatsapp !== undefined) {
                     sendWhatsappEl.checked = _savedDiscount.sendWhatsapp;
