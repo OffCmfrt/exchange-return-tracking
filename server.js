@@ -3774,6 +3774,51 @@ async function getShiprocketTracking(awb) {
     return null;
 }
 
+// Enrich return/exchange items with the ACTUAL amount paid by the customer per unit.
+// Customers often pay less than the product price (coupon codes, discount apps, etc.),
+// so panels/refunds must reflect the paid amount, not the raw product price.
+// Shopify line items carry `discount_allocations` for order-level discounts; when those
+// are missing we fall back to a proportional split of the order's `total_discounts`.
+function enrichItemsWithPaidPrice(items, shopifyOrder) {
+    if (!Array.isArray(items) || items.length === 0 || !shopifyOrder) return items;
+    const lineItems = Array.isArray(shopifyOrder.line_items) ? shopifyOrder.line_items : [];
+    if (lineItems.length === 0) return items;
+
+    const orderLevelDiscount = parseFloat(shopifyOrder.total_discounts || 0);
+    const orderItemsSubtotal = lineItems.reduce((s, li) => s + parseFloat(li.price || 0) * (li.quantity || 1), 0);
+    const usedLineIds = new Set();
+
+    return items.map(item => {
+        // Match the Shopify line item: variant id → product id → name (first unused match)
+        let lineItem = lineItems.find(li => !usedLineIds.has(li.id) && item.variantId && String(li.variant_id) === String(item.variantId));
+        if (!lineItem) lineItem = lineItems.find(li => !usedLineIds.has(li.id) && item.productId && String(li.product_id) === String(item.productId));
+        if (!lineItem) lineItem = lineItems.find(li => !usedLineIds.has(li.id) && item.name && li.name === item.name);
+        if (!lineItem) return item;
+        usedLineIds.add(lineItem.id);
+
+        const qty = lineItem.quantity || parseInt(item.quantity || 1, 10) || 1;
+        const unitPrice = parseFloat(lineItem.price || item.price || 0);
+        const lineTotal = unitPrice * qty;
+
+        // Discount allocated to this line by coupon/order-level discounts
+        let lineDiscount = (lineItem.discount_allocations || []).reduce((s, da) => s + parseFloat(da.amount || 0), 0);
+        if (!lineDiscount && orderLevelDiscount > 0 && orderItemsSubtotal > 0) {
+            // No per-line allocation available — spread the order-level discount proportionally
+            lineDiscount = orderLevelDiscount * (lineTotal / orderItemsSubtotal);
+        }
+
+        const paidTotal = Math.max(0, lineTotal - lineDiscount);
+        const paidPrice = Math.round((paidTotal / qty) * 100) / 100;
+
+        return {
+            ...item,
+            originalPrice: unitPrice,
+            paidPrice,
+            discounted: paidPrice < unitPrice
+        };
+    });
+}
+
 // Lookup order (improved with better error handling)
 app.post('/api/lookup-order', async (req, res) => {
     try {
@@ -3964,7 +4009,7 @@ app.post('/api/lookup-order', async (req, res) => {
                         phone: order.customer?.phone || order.shipping_address?.phone || '',
                         orderDate: order.created_at,
                         totalAmount: order.total_price,
-                        items: order.line_items.map(item => ({
+                        items: enrichItemsWithPaidPrice(order.line_items.map(item => ({
                             id: item.id,
                             productId: item.product_id,
                             variantId: item.variant_id,
@@ -3974,7 +4019,7 @@ app.post('/api/lookup-order', async (req, res) => {
                             price: item.price,
                             image: item.properties?.image ||
                                 (item.product_id ? `https://cdn.shopify.com/shopifycloud/placeholder.jpg` : '')
-                        }))
+                        })), order)
                     }
                 });
             }
@@ -4090,7 +4135,7 @@ app.post('/api/lookup-order', async (req, res) => {
                 deliveredDate: deliveredDate, // NEW FIELD
                 totalAmount: order.total_price,
                 shippingAddress,
-                items: order.line_items.map(item => {
+                items: enrichItemsWithPaidPrice(order.line_items.map(item => {
                     const pData = productDataMap[item.product_id] || {};
                     return {
                         id: item.id,
@@ -4102,7 +4147,7 @@ app.post('/api/lookup-order', async (req, res) => {
                         price: item.price,
                         image: pData.image || (item.properties && item.properties.image) || `https://cdn.shopify.com/shopifycloud/placeholder.jpg`
                     };
-                })
+                }), order)
             }
         });
     } catch (error) {
@@ -4410,6 +4455,10 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
         const email = req.body.email || shopifyOrder?.email;
 
+        // Store the amount actually PAID by the customer (after coupon/discounts),
+        // not the raw product price — the panel/refunds must reflect the paid amount
+        items = enrichItemsWithPaidPrice(items, shopifyOrder);
+
         // Verify Payment logic
         // Fee is ONLY waived for defective/wrong items (requires manual review)
         const isFeeWaived = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
@@ -4634,6 +4683,10 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         const customerName = req.body.customerName || (shopifyOrder?.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer');
         const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
         const email = req.body.email || shopifyOrder?.email;
+
+        // Store the amount actually PAID by the customer (after coupon/discounts),
+        // not the raw product price — the panel/refunds must reflect the paid amount
+        items = enrichItemsWithPaidPrice(items, shopifyOrder);
 
         // Verify Payment logic for Return
         const isFeeWaivedReturn = req.body.reason === 'defective' || req.body.reason === 'wrong_item';

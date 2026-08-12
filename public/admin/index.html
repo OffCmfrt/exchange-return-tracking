@@ -2471,6 +2471,17 @@
         }
     }
 
+    // Show the amount actually PAID by the customer (after coupon/discounts).
+    // Falls back to the raw product price for older requests without paidPrice.
+    function itemPriceDisplay(item) {
+        const paid = parseFloat(item.paidPrice);
+        const original = parseFloat(item.originalPrice || item.price);
+        if (!isNaN(paid) && item.discounted && paid < original) {
+            return `₹${paid} <s style="color: #9ca3af;">₹${original}</s> <span style="color: #b45309; font-size: 0.85em;">(paid after discount)</span>`;
+        }
+        return `₹${!isNaN(paid) ? paid : item.price}`;
+    }
+
     function displayRequestDetails(data) {
         const modalContent = document.getElementById('modalContent');
         
@@ -2591,7 +2602,7 @@
                                     <img src="${item.image || 'https://via.placeholder.com/100'}" class="comparison-img">
                                     <div class="comparison-info">
                                         <h4>${item.name}</h4>
-                                        <p>Size: ${item.variant} | Price: ₹${item.price}</p>
+                                        <p>Size: ${item.variant} | Paid: ${itemPriceDisplay(item)}</p>
                                     </div>
                                 </div>
                             </div>
@@ -2620,7 +2631,7 @@
                         return `
                         <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 0.5rem; border: 1px solid var(--gray-medium);">
                             <p style="font-size: 0.9rem; font-weight: 500;">${item.name}</p>
-                            <p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.25rem;">Size: ${item.variant} | Qty: ${item.quantity} | Price: ₹${item.price}</p>
+                            <p style="font-size: 0.85rem; color: var(--gray-dark); margin-top: 0.25rem;">Size: ${item.variant} | Qty: ${item.quantity} | Paid: ${itemPriceDisplay(item)}</p>
                         </div>
                         `;
                     }
@@ -3071,7 +3082,8 @@
                         ? data.items
                         : (typeof data.items === 'string' ? (() => { try { return JSON.parse(data.items); } catch(e) { return []; } })() : []);
                     const totalPrice = items.reduce((sum, item) => {
-                        const price = parseFloat(item.price || item.replacementPrice || 0);
+                        // Use the amount actually paid by the customer (after coupon/discounts)
+                        const price = parseFloat(item.paidPrice || item.price || item.replacementPrice || 0);
                         const qty = parseInt(item.quantity || 1);
                         return sum + (price * qty);
                     }, 0);
