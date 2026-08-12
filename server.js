@@ -3819,6 +3819,44 @@ function enrichItemsWithPaidPrice(items, shopifyOrder) {
     });
 }
 
+// Lazy backfill for requests created BEFORE paid-price tracking existed:
+// when a request's items have no paidPrice, fetch the Shopify order once,
+// enrich the items and persist them so coupon values/panel display use the
+// amount the customer actually paid. Non-fatal — never breaks tracking.
+async function ensurePaidPrices(request) {
+    try {
+        if (!request || !request.orderNumber) return request;
+        let items = request.items;
+        if (typeof items === 'string') { try { items = JSON.parse(items); } catch (e) { items = []; } }
+        if (!Array.isArray(items) || items.length === 0) return request;
+
+        // Already enriched — nothing to do
+        if (items.every(i => typeof i.paidPrice === 'number')) return request;
+
+        let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(request.orderNumber)}&status=any&limit=1`);
+        if (!shopifyData.orders || shopifyData.orders.length === 0) {
+            const altName = request.orderNumber.startsWith('#') ? request.orderNumber.substring(1) : '#' + request.orderNumber;
+            shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(altName)}&status=any&limit=1`);
+        }
+        const shopifyOrder = shopifyData.orders && shopifyData.orders[0];
+        if (!shopifyOrder) return request;
+
+        const enriched = enrichItemsWithPaidPrice(items, shopifyOrder);
+        request.items = enriched;
+
+        // Persist so Shopify is only hit once per legacy request
+        const { error: updErr } = await supabase
+            .from('requests')
+            .update({ items: enriched })
+            .eq('request_id', request.requestId);
+        if (updErr) console.warn(`[PaidPrice] Persist failed for ${request.requestId}:`, updErr.message);
+        else console.log(`[PaidPrice] Backfilled paid prices for ${request.requestId} (order ${request.orderNumber})`);
+    } catch (err) {
+        console.warn(`[PaidPrice] Enrichment failed for ${request && request.requestId}:`, err.message);
+    }
+    return request;
+}
+
 // Lookup order (improved with better error handling)
 app.post('/api/lookup-order', async (req, res) => {
     try {
@@ -5029,6 +5067,7 @@ app.get('/api/track-request/:identifier', async (req, res) => {
             
             console.log(`[Track Request] DB status for ${identifier}:`, request.status);
             
+            await ensurePaidPrices(request);
             await enrichWithTracking(request);
             console.log(`[Track Request] After enrichment, status:`, request.status);
             return res.json(request);
@@ -5038,8 +5077,8 @@ app.get('/api/track-request/:identifier', async (req, res) => {
             if (!requests || requests.length === 0) {
                 return res.status(404).json({ error: 'No return or exchange request found for this order number' });
             }
-            // Enrich all with live tracking data
-            const enriched = await Promise.all(requests.map(enrichWithTracking));
+            // Backfill paid prices (legacy requests), then enrich with live tracking data
+            const enriched = await Promise.all(requests.map(async r => enrichWithTracking(await ensurePaidPrices(r))));
             // If exactly one, return as single object (keeps frontend backward compatible)
             if (enriched.length === 1) return res.json(enriched[0]);
             // Multiple: return as array under 'requests' key
@@ -5930,7 +5969,8 @@ app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => 
                 // Calculate from items array
                 if (r.items && Array.isArray(r.items)) {
                     const itemsTotal = r.items.reduce((itemSum, item) => {
-                        const price = parseFloat(item.price) || 0;
+                        // Prefer the amount actually paid (after coupon/discounts)
+                        const price = parseFloat(item.paidPrice) || parseFloat(item.price) || 0;
                         const quantity = parseInt(item.quantity) || 1;
                         return itemSum + (price * quantity);
                     }, 0);
@@ -5949,7 +5989,8 @@ app.get('/api/admin/analytics/detailed', authenticateAdmin, async (req, res) => 
                 // Calculate from items array
                 if (r.items && Array.isArray(r.items)) {
                     const itemsTotal = r.items.reduce((itemSum, item) => {
-                        const price = parseFloat(item.price) || 0;
+                        // Prefer the amount actually paid (after coupon/discounts)
+                        const price = parseFloat(item.paidPrice) || parseFloat(item.price) || 0;
                         const quantity = parseInt(item.quantity) || 1;
                         return itemSum + (price * quantity);
                     }, 0);
