@@ -2474,6 +2474,9 @@
     function displayRequestDetails(data) {
         const modalContent = document.getElementById('modalContent');
         
+        // Capture which request was previously open BEFORE overwriting global state
+        const _previousRequestId = (window.currentRequestData && window.currentRequestData.requestId) || null;
+        
         // Store request data globally for workflow timeline access
         window.currentRequestData = data;
         
@@ -2492,7 +2495,6 @@
         if (_existingWhatsapp) _savedDiscount.phone = _existingWhatsapp.value;
         if (_existingSendWhatsapp) _savedDiscount.sendWhatsapp = _existingSendWhatsapp.checked;
         // Track which request the saved form data belongs to
-        const _previousRequestId = (window.currentRequestData && window.currentRequestData.requestId) || null;
         _savedDiscount.requestId = _previousRequestId;
         // Only preserve user edits when re-opening the SAME request (e.g. refresh);
         // switching to a different request must always start from fresh values
