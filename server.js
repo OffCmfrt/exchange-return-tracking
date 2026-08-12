@@ -1336,7 +1336,16 @@ try {
     uploadStorage = multer.memoryStorage();
 }
 
-const upload = multer({ storage: uploadStorage });
+// 20MB per file — phone photos/videos can exceed busboy's default limit
+const MAX_UPLOAD_FILE_SIZE = 20 * 1024 * 1024;
+const upload = multer({
+    storage: uploadStorage,
+    limits: {
+        fileSize: MAX_UPLOAD_FILE_SIZE,
+        files: 10,
+        fieldSize: 2 * 1024 * 1024, // large items JSON payloads
+    },
+});
 
 // ==================== RAZORPAY CONFIG ====================
 let razorpay;
@@ -3819,6 +3828,20 @@ function enrichItemsWithPaidPrice(items, shopifyOrder) {
     });
 }
 
+// Extract extra order-level charges the customer pays on top of item prices.
+// COD orders carry a "COD Charges" shipping line (e.g. ₹99) which must count
+// toward the amount actually paid by the customer.
+function getOrderExtraCharges(shopifyOrder) {
+    let codCharges = 0;
+    if (shopifyOrder && Array.isArray(shopifyOrder.shipping_lines)) {
+        for (const sl of shopifyOrder.shipping_lines) {
+            const label = `${sl.title || ''} ${sl.code || ''}`.toLowerCase();
+            if (label.includes('cod')) codCharges += parseFloat(sl.price || 0);
+        }
+    }
+    return Math.round(codCharges * 100) / 100;
+}
+
 // Lazy backfill for requests created BEFORE paid-price tracking existed:
 // when a request's items have no paidPrice, fetch the Shopify order once,
 // enrich the items and persist them so coupon values/panel display use the
@@ -3830,8 +3853,9 @@ async function ensurePaidPrices(request) {
         if (typeof items === 'string') { try { items = JSON.parse(items); } catch (e) { items = []; } }
         if (!Array.isArray(items) || items.length === 0) return request;
 
-        // Already enriched — nothing to do
-        if (items.every(i => typeof i.paidPrice === 'number')) return request;
+        // Already enriched (items have paidPrice AND COD charges captured) — nothing to do
+        const itemsEnriched = items.every(i => typeof i.paidPrice === 'number');
+        if (itemsEnriched && typeof request.codCharges === 'number') return request;
 
         let shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(request.orderNumber)}&status=any&limit=1`);
         if (!shopifyData.orders || shopifyData.orders.length === 0) {
@@ -3841,16 +3865,18 @@ async function ensurePaidPrices(request) {
         const shopifyOrder = shopifyData.orders && shopifyData.orders[0];
         if (!shopifyOrder) return request;
 
-        const enriched = enrichItemsWithPaidPrice(items, shopifyOrder);
+        const enriched = itemsEnriched ? items : enrichItemsWithPaidPrice(items, shopifyOrder);
+        const codCharges = getOrderExtraCharges(shopifyOrder);
         request.items = enriched;
+        request.codCharges = codCharges;
 
         // Persist so Shopify is only hit once per legacy request
         const { error: updErr } = await supabase
             .from('requests')
-            .update({ items: enriched })
+            .update({ items: enriched, cod_charges: codCharges })
             .eq('request_id', request.requestId);
         if (updErr) console.warn(`[PaidPrice] Persist failed for ${request.requestId}:`, updErr.message);
-        else console.log(`[PaidPrice] Backfilled paid prices for ${request.requestId} (order ${request.orderNumber})`);
+        else console.log(`[PaidPrice] Backfilled paid prices for ${request.requestId} (order ${request.orderNumber}, COD charges ₹${codCharges})`);
     } catch (err) {
         console.warn(`[PaidPrice] Enrichment failed for ${request && request.requestId}:`, err.message);
     }
@@ -4047,6 +4073,7 @@ app.post('/api/lookup-order', async (req, res) => {
                         phone: order.customer?.phone || order.shipping_address?.phone || '',
                         orderDate: order.created_at,
                         totalAmount: order.total_price,
+                        codCharges: getOrderExtraCharges(order),
                         items: enrichItemsWithPaidPrice(order.line_items.map(item => ({
                             id: item.id,
                             productId: item.product_id,
@@ -4172,6 +4199,7 @@ app.post('/api/lookup-order', async (req, res) => {
                 orderDate: order.created_at,
                 deliveredDate: deliveredDate, // NEW FIELD
                 totalAmount: order.total_price,
+                codCharges: getOrderExtraCharges(order),
                 shippingAddress,
                 items: enrichItemsWithPaidPrice(order.line_items.map(item => {
                     const pData = productDataMap[item.product_id] || {};
@@ -4496,6 +4524,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         // Store the amount actually PAID by the customer (after coupon/discounts),
         // not the raw product price — the panel/refunds must reflect the paid amount
         items = enrichItemsWithPaidPrice(items, shopifyOrder);
+        const codCharges = getOrderExtraCharges(shopifyOrder);
 
         // Verify Payment logic
         // Fee is ONLY waived for defective/wrong items (requires manual review)
@@ -4585,6 +4614,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 customerName,
                 customerPhone,
                 items,
+                codCharges,
                 images: imageUrls,
                 type: 'exchange',
                 shippingAddress: originalAddressFormatted,
@@ -4725,6 +4755,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         // Store the amount actually PAID by the customer (after coupon/discounts),
         // not the raw product price — the panel/refunds must reflect the paid amount
         items = enrichItemsWithPaidPrice(items, shopifyOrder);
+        const codCharges = getOrderExtraCharges(shopifyOrder);
 
         // Verify Payment logic for Return
         const isFeeWaivedReturn = req.body.reason === 'defective' || req.body.reason === 'wrong_item';
@@ -4809,6 +4840,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 customerName,
                 customerPhone,
                 items,
+                codCharges,
                 images: imageUrls,
                 type: 'return',
                 shippingAddress: originalAddressFormatted,
@@ -12983,6 +13015,24 @@ app.use((req, res) => {
 
 // Global error handler - Sanitized for production
 app.use((err, req, res, next) => {
+    // Multer upload errors (file too large, too many files, etc.) — return a clear client-facing message
+    if (err.name === 'MulterError' || err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            logger.warn('Upload rejected — file size limit exceeded:', {
+                url: req.originalUrl,
+                message: err.message,
+                ip: req.ip
+            });
+            return res.status(413).json({
+                error: `File is too large. Please upload images under ${MAX_UPLOAD_FILE_SIZE / (1024 * 1024)}MB.`
+            });
+        }
+        if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+            return res.status(400).json({ error: 'Too many files attached. Maximum is 10 images per request.' });
+        }
+        return res.status(400).json({ error: 'File upload failed. Please try again.' });
+    }
+
     logger.error('Unhandled error:', { 
         message: err.message, 
         stack: err.stack,

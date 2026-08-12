@@ -6,43 +6,57 @@ const supabase = require('./supabase');
  * Create a new request (return or exchange)
  */
 async function createRequest(requestData) {
-    const { data, error } = await supabase
+    const row = {
+        request_id: requestData.requestId,
+        order_number: requestData.orderNumber,
+        email: requestData.email,
+        customer_name: requestData.customerName,
+        customer_email: requestData.customerEmail || requestData.email,
+        customer_phone: requestData.customerPhone,
+        type: requestData.type,
+        status: requestData.status || 'pending',
+        reason: requestData.reason,
+        comments: requestData.comments,
+        items: requestData.items,
+        shipping_address: requestData.shippingAddress,
+        shipping_city: requestData.shippingCity || null,
+        shipping_state: requestData.shippingState || null,
+        shipping_pincode: requestData.shippingPincode || null,
+        new_address: requestData.newAddress,
+        new_city: requestData.newCity,
+        new_state: requestData.newState,
+        new_pincode: requestData.newPincode,
+        payment_id: requestData.paymentId,
+        payment_amount: requestData.paymentAmount,
+        cod_charges: requestData.codCharges || 0,
+        awb_number: requestData.awbNumber,
+        shipment_id: requestData.shipmentId,
+        pickup_date: requestData.pickupDate,
+        images: requestData.images,
+        admin_notes: requestData.adminNotes || null,
+        agent_notes: requestData.agentNotes || null,
+        carrier: requestData.carrier || 'shiprocket',
+        carrier_shipment_id: requestData.carrierShipmentId,
+        carrier_awb: requestData.carrierAwb,
+        carrier_fallback_reason: requestData.carrierFallbackReason || null
+    };
+
+    let { data, error } = await supabase
         .from('requests')
-        .insert([{
-            request_id: requestData.requestId,
-            order_number: requestData.orderNumber,
-            email: requestData.email,
-            customer_name: requestData.customerName,
-            customer_email: requestData.customerEmail || requestData.email,
-            customer_phone: requestData.customerPhone,
-            type: requestData.type,
-            status: requestData.status || 'pending',
-            reason: requestData.reason,
-            comments: requestData.comments,
-            items: requestData.items,
-            shipping_address: requestData.shippingAddress,
-            shipping_city: requestData.shippingCity || null,
-            shipping_state: requestData.shippingState || null,
-            shipping_pincode: requestData.shippingPincode || null,
-            new_address: requestData.newAddress,
-            new_city: requestData.newCity,
-            new_state: requestData.newState,
-            new_pincode: requestData.newPincode,
-            payment_id: requestData.paymentId,
-            payment_amount: requestData.paymentAmount,
-            awb_number: requestData.awbNumber,
-            shipment_id: requestData.shipmentId,
-            pickup_date: requestData.pickupDate,
-            images: requestData.images,
-            admin_notes: requestData.adminNotes || null,
-            agent_notes: requestData.agentNotes || null,
-            carrier: requestData.carrier || 'shiprocket',
-            carrier_shipment_id: requestData.carrierShipmentId,
-            carrier_awb: requestData.carrierAwb,
-            carrier_fallback_reason: requestData.carrierFallbackReason || null
-        }])
+        .insert([row])
         .select()
         .single();
+
+    // Fallback: cod_charges migration not applied yet — retry without the column
+    if (error && /cod_charges/.test(error.message || '')) {
+        console.warn('[createRequest] cod_charges column missing, retrying insert without it. Run supabase_migration_add_cod_charges.sql');
+        const { cod_charges, ...rowWithoutCod } = row;
+        ({ data, error } = await supabase
+            .from('requests')
+            .insert([rowWithoutCod])
+            .select()
+            .single());
+    }
 
     if (error) throw error;
     return data;
@@ -398,6 +412,7 @@ function convertFromSnakeCase(data) {
         newPincode: data.new_pincode,
         paymentId: data.payment_id,
         paymentAmount: data.payment_amount,
+        codCharges: parseFloat(data.cod_charges) || 0,
         awbNumber: data.awb_number,
         shipmentId: data.shipment_id,
         pickupDate: data.pickup_date,
