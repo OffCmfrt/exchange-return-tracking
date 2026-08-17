@@ -4295,6 +4295,104 @@ app.post('/api/get-variants', async (req, res) => {
 
 // ==================== WHATSAPP BOT INTEGRATION ====================
 
+// ── Meta Template Definition: Return/Exchange Approval ──
+const RETURN_EXCHANGE_APPROVAL_TEMPLATE = {
+    name: 'return_exchange_approved',
+    category: 'UTILITY',
+    language: 'en',
+    header: null,
+    body: `📦 *RETURN / EXCHANGE APPROVED – MANDATORY STEPS*
+
+Hi! Your *Return/Exchange Request* has been approved and is ready for pickup.
+
+🆔 *Request ID:* {{1}}
+📦 *Order Number:* {{2}}
+🔄 *Request Type:* {{3}}
+
+*Before handing over the package to the pickup executive, please record a continuous handover video showing:*
+
+• The product(s) being packed.
+• The package being sealed properly.
+• The pickup executive receiving the package.
+• The AWB/shipping label clearly visible (if applicable).
+
+⚠️ *Important:* This handover video is *mandatory* and will be required in case of any future disputes, such as:
+• Wrong product received at our warehouse
+• Missing item(s)
+• Empty package claims
+• Transit-related issues
+
+*Without a valid handover video, we may be unable to process such claims.*
+
+Thank you for your cooperation! 💙`,
+    footer: null,
+    buttons: null,
+    variables: [
+        { name: 'request_id', example: 'REQ-67796' },
+        { name: 'order_number', example: '#12345' },
+        { name: 'request_type', example: 'Return' }
+    ]
+};
+
+/**
+ * Submit the Return/Exchange Approval template to Meta for review.
+ * Call once (e.g. via a one-time script or admin endpoint) to get the template approved.
+ */
+async function submitReturnExchangeApprovalTemplate() {
+    const tpl = RETURN_EXCHANGE_APPROVAL_TEMPLATE;
+    console.log('[Meta Template] Submitting return_exchange_approved template to Meta…');
+    const result = await metaWhatsApp.submitTemplateToMeta(tpl);
+    if (result.success) {
+        console.log('[Meta Template] ✅ Template submitted. ID:', result.templateId);
+    } else {
+        console.error('[Meta Template] ❌ Submission failed:', result.error);
+    }
+    return result;
+}
+
+/**
+ * Utility: Send the Return/Exchange Approval WhatsApp message via Meta Cloud API.
+ * Uses the approved Meta template "return_exchange_approved" with 3 body variables.
+ *
+ * @param {Object} opts
+ * @param {string} opts.phone        - Customer phone (with country code, e.g. '919876543210')
+ * @param {string} opts.requestId    - e.g. "REQ-67796"
+ * @param {string} opts.orderNumber  - e.g. "#12345"
+ * @param {string} opts.type         - "return" or "exchange"
+ * @returns {Promise<{success, messageId?, error?}>}
+ */
+async function sendReturnExchangeApprovalWhatsApp({ phone, requestId, orderNumber, type }) {
+    if (!phone) {
+        console.warn(`[${requestId}] ⚠️ No phone number – skipping approval WhatsApp`);
+        return { success: false, error: 'No phone number' };
+    }
+
+    const typeLabel = (type || 'return').charAt(0).toUpperCase() + (type || 'return').slice(1);
+
+    // Ordered variable pool matching {{1}}, {{2}}, {{3}} in the Meta template body
+    const parameters = [requestId, orderNumber, typeLabel];
+
+    try {
+        console.log(`[${requestId}] 📤 Sending Meta template "return_exchange_approved" to ${phone}`);
+        const result = await metaWhatsApp.sendTemplateMessage(
+            phone,
+            'return_exchange_approved',   // Meta-approved template name
+            parameters,
+            'en'
+        );
+
+        if (result.success) {
+            console.log(`[${requestId}] ✅ Approval WhatsApp sent via ${result.fallback ? 'bot fallback' : 'Meta Cloud API'}. Message ID: ${result.messageId}`);
+        } else {
+            console.error(`[${requestId}] ❌ Approval WhatsApp failed:`, result.error);
+        }
+        return result;
+    } catch (error) {
+        console.error(`[${requestId}] ❌ Approval WhatsApp exception:`, error.message);
+        return { success: false, error: error.message };
+    }
+}
+
 async function sendWhatsAppNotification(phone, message, type, requestId, templateData = null) {
     if (!phone || !message) return null;
 
@@ -4422,10 +4520,29 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
         console.log(`[${requestId}] ✅ Request finalized and updated in DB`);
 
         // 4. Send WhatsApp Notification
-        const customerName = request.customerName || 'Customer';
-        const typeLabel = request.type === 'exchange' ? 'Exchange' : 'Return';
-        const message = `Payment confirmed for your ${typeLabel} Request ${requestId}. Status: ${updates.status.replace('_', ' ')}. We've recorded your request and will process it shortly.`;
-        sendWhatsAppNotification(request.customerPhone, message, request.type, requestId).catch(err => console.error(err));
+        if (updates.status === 'pickup_booked') {
+            // Send the approval template with handover-video instructions
+            sendReturnExchangeApprovalWhatsApp({
+                phone: request.customerPhone,
+                requestId,
+                orderNumber: request.orderNumber,
+                type: request.type
+            }).then(waResult => {
+                if (waResult?.success) {
+                    updateRequestStatus(requestId, {
+                        whatsappSent: true,
+                        whatsappMessageId: waResult.messageId || null,
+                        whatsappSentAt: new Date().toISOString()
+                    }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
+                }
+            }).catch(() => {}); // fire-and-forget
+        } else {
+            // Fee-waived / still pending — send generic payment confirmation
+            const customerName = request.customerName || 'Customer';
+            const typeLabel = request.type === 'exchange' ? 'Exchange' : 'Return';
+            const message = `Payment confirmed for your ${typeLabel} Request ${requestId}. Status: ${updates.status.replace('_', ' ')}. We've recorded your request and will process it shortly.`;
+            sendWhatsAppNotification(request.customerPhone, message, request.type, requestId).catch(err => console.error(err));
+        }
 
         return { success: true, status: updates.status };
     } catch (error) {
@@ -6250,6 +6367,23 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                     updates.adminNotes = adminNotes + `\nPickup scheduled via ${carrierUsed}: AWB ${awbNumber || 'Pending'}`;
 
                     const request = await updateRequestStatus(requestId, updates);
+
+                    // ── Send approval WhatsApp message (non-blocking) ──
+                    sendReturnExchangeApprovalWhatsApp({
+                        phone: requestDetails.customerPhone,
+                        requestId,
+                        orderNumber: requestDetails.orderNumber,
+                        type: requestDetails.type
+                    }).then(waResult => {
+                        if (waResult?.success) {
+                            updateRequestStatus(requestId, {
+                                whatsappSent: true,
+                                whatsappMessageId: waResult.messageId || null,
+                                whatsappSentAt: new Date().toISOString()
+                            }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
+                        }
+                    }).catch(() => {}); // fire-and-forget
+
                     return res.json({ success: true, message: `Pickup initiated via ${carrierUsed} and status updated to pickup_booked`, request });
                 } else {
                     throw new Error('No carrier was used');
@@ -6822,6 +6956,22 @@ app.post('/api/admin/create-duplicate-pickup', authenticateAdmin, async (req, re
             carrierAwb: booking.awbNumber,
             carrierFallbackReason: booking.fallbackReason || null
         });
+
+        // ── Send approval WhatsApp message (non-blocking) ──
+        sendReturnExchangeApprovalWhatsApp({
+            phone: requestDetails.customerPhone,
+            requestId,
+            orderNumber: requestDetails.orderNumber,
+            type: requestDetails.type
+        }).then(waResult => {
+            if (waResult?.success) {
+                updateRequestStatus(requestId, {
+                    whatsappSent: true,
+                    whatsappMessageId: waResult.messageId || null,
+                    whatsappSentAt: new Date().toISOString()
+                }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
+            }
+        }).catch(() => {}); // fire-and-forget
 
         res.json({
             success: true,
@@ -7546,6 +7696,22 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
                         carrierAwb: awbNumber,
                         carrierFallbackReason: fallbackReason || null
                     });
+
+                    // ── Send approval WhatsApp message (non-blocking) ──
+                    sendReturnExchangeApprovalWhatsApp({
+                        phone: requestDetails.customerPhone,
+                        requestId,
+                        orderNumber: requestDetails.orderNumber,
+                        type: requestDetails.type
+                    }).then(waResult => {
+                        if (waResult?.success) {
+                            updateRequestStatus(requestId, {
+                                whatsappSent: true,
+                                whatsappMessageId: waResult.messageId || null,
+                                whatsappSentAt: new Date().toISOString()
+                            }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
+                        }
+                    }).catch(() => {}); // fire-and-forget
 
                     results.successful.push(requestId);
                 } else {
