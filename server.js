@@ -4229,15 +4229,17 @@ app.post('/api/lookup-order', async (req, res) => {
 app.get('/api/products/search', async (req, res) => {
     try {
         const query = req.query.q || '';
-        // Fetch products - limit to 50 for performance
-        const data = await shopifyAPI(`products.json?limit=50&fields=id,title,image,variants`);
+        // Fetch ALL active products from Shopify (uses cache, paginates up to 5000 products)
+        const allProducts = await fetchAllShopifyProducts();
 
-        let products = data.products || [];
+        let products = allProducts || [];
 
         if (query) {
             const lowerQuery = query.toLowerCase();
             products = products.filter(p =>
                 p.title.toLowerCase().includes(lowerQuery) ||
+                (p.handle && p.handle.toLowerCase().includes(lowerQuery)) ||
+                (p.product_type && p.product_type.toLowerCase().includes(lowerQuery)) ||
                 p.id.toString() === query
             );
         }
@@ -4246,7 +4248,7 @@ app.get('/api/products/search', async (req, res) => {
             id: p.id,
             title: p.title,
             image: p.image ? p.image.src : (p.images && p.images.length > 0 ? p.images[0].src : null),
-            variants: p.variants.map(v => ({
+            variants: (p.variants || []).map(v => ({
                 id: v.id,
                 title: v.title,
                 price: v.price,
@@ -6942,12 +6944,14 @@ app.put('/api/admin/update-request/:requestId', authenticateAdmin, async (req, r
             });
         }
         
-        // Only allow modifications for requests that haven't been shipped yet
-        const blockedStatuses = ['shipped', 'delivered', 'resolved'];
+        // Only allow modifications for requests where forward shipment hasn't been dispatched yet
+        // 'delivered' = return received at warehouse (forward not yet created) — ALLOW modifications
+        // 'shipped' = forward dispatched, 'resolved' = completed — BLOCK modifications
+        const blockedStatuses = ['shipped', 'resolved'];
         if (blockedStatuses.includes(existingRequest.status)) {
             console.log(`[ADMIN UPDATE] ${requestId} — Cannot modify request with status: ${existingRequest.status}`);
             return res.status(400).json({ 
-                error: 'Cannot modify request after shipment has been initiated' 
+                error: 'Cannot modify request after forward shipment has been dispatched' 
             });
         }
         

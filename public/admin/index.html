@@ -1105,6 +1105,248 @@
                         background: rgba(0, 0, 0, 0.5);
                         backdrop-filter: blur(4px);
                     }
+
+                    /* ── Toast Notifications ── */
+                    .toast-container {
+                        position: fixed;
+                        top: 1.5rem;
+                        right: 1.5rem;
+                        z-index: 99999;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 0.75rem;
+                        pointer-events: none;
+                    }
+                    .toast {
+                        pointer-events: auto;
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        padding: 1rem 1.25rem;
+                        border-radius: 12px;
+                        font-size: 0.875rem;
+                        font-weight: 500;
+                        color: white;
+                        box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+                        animation: toastIn 0.35s cubic-bezier(0.21, 1.02, 0.73, 1);
+                        max-width: 420px;
+                        backdrop-filter: blur(8px);
+                    }
+                    .toast.toast-success { background: linear-gradient(135deg, #059669, #10b981); }
+                    .toast.toast-error { background: linear-gradient(135deg, #dc2626, #ef4444); }
+                    .toast.toast-warning { background: linear-gradient(135deg, #d97706, #f59e0b); }
+                    .toast.toast-info { background: linear-gradient(135deg, #2563eb, #3b82f6); }
+                    .toast.removing {
+                        animation: toastOut 0.3s ease-in forwards;
+                    }
+                    @keyframes toastIn {
+                        from { opacity: 0; transform: translateX(60px) scale(0.95); }
+                        to { opacity: 1; transform: translateX(0) scale(1); }
+                    }
+                    @keyframes toastOut {
+                        from { opacity: 1; transform: translateX(0) scale(1); }
+                        to { opacity: 0; transform: translateX(60px) scale(0.95); }
+                    }
+                    .toast-icon { font-size: 1.25rem; flex-shrink: 0; }
+                    .toast-close {
+                        margin-left: auto;
+                        background: none;
+                        border: none;
+                        color: rgba(255,255,255,0.7);
+                        cursor: pointer;
+                        font-size: 1.1rem;
+                        padding: 0 0.25rem;
+                        line-height: 1;
+                    }
+                    .toast-close:hover { color: white; }
+
+                    /* ── Search Result Enhancements ── */
+                    .product-result-item {
+                        position: relative;
+                    }
+                    .product-result-item.kb-highlight {
+                        background: #fef3c7 !important;
+                        border-left: 3px solid #f59e0b;
+                    }
+                    .product-result-item .inv-badge {
+                        display: inline-block;
+                        padding: 2px 8px;
+                        border-radius: 999px;
+                        font-size: 0.7rem;
+                        font-weight: 600;
+                        margin-top: 4px;
+                    }
+                    .inv-badge.in-stock { background: #dcfce7; color: #166534; }
+                    .inv-badge.low-stock { background: #fef3c7; color: #92400e; }
+                    .inv-badge.out-of-stock { background: #fee2e2; color: #991b1b; }
+                    .product-result-item .sku-tag {
+                        display: inline-block;
+                        padding: 1px 6px;
+                        border-radius: 4px;
+                        font-size: 0.65rem;
+                        background: #f3f4f6;
+                        color: #6b7280;
+                        margin-left: 6px;
+                        font-family: monospace;
+                    }
+                    .product-result-item .type-tag {
+                        display: inline-block;
+                        padding: 1px 6px;
+                        border-radius: 4px;
+                        font-size: 0.65rem;
+                        background: #ede9fe;
+                        color: #5b21b6;
+                        margin-left: 4px;
+                    }
+
+                    /* ── Loading Skeleton ── */
+                    .search-skeleton {
+                        padding: 0.75rem;
+                    }
+                    .search-skeleton-row {
+                        display: flex;
+                        gap: 0.75rem;
+                        align-items: center;
+                        padding: 0.75rem 0;
+                        border-bottom: 1px solid #f3f4f6;
+                    }
+                    .skeleton-img {
+                        width: 50px; height: 50px;
+                        border-radius: 6px;
+                        background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+                        background-size: 200% 100%;
+                        animation: shimmer 1.5s infinite;
+                    }
+                    .skeleton-text {
+                        height: 14px;
+                        border-radius: 4px;
+                        background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+                        background-size: 200% 100%;
+                        animation: shimmer 1.5s infinite;
+                    }
+                    .skeleton-text.w60 { width: 60%; }
+                    .skeleton-text.w40 { width: 40%; }
+                    @keyframes shimmer {
+                        0% { background-position: 200% 0; }
+                        100% { background-position: -200% 0; }
+                    }
+
+                    /* ─ Revert Button ── */
+                    .revert-btn {
+                        position: absolute;
+                        top: 0.75rem;
+                        right: 2.75rem;
+                        background: #f3f4f6;
+                        border: 1px solid #d1d5db;
+                        color: #6b7280;
+                        width: 28px; height: 28px;
+                        border-radius: 50%;
+                        cursor: pointer;
+                        font-size: 0.85rem;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        transition: all 0.2s;
+                        z-index: 10;
+                    }
+                    .revert-btn:hover {
+                        background: #dbeafe;
+                        border-color: #3b82f6;
+                        color: #2563eb;
+                        transform: scale(1.1);
+                    }
+
+                    /* ── Price Diff Warning ── */
+                    .price-diff-warning {
+                        display: none;
+                        padding: 0.5rem 0.75rem;
+                        background: #fef3c7;
+                        border: 1px solid #fcd34d;
+                        border-radius: 6px;
+                        font-size: 0.75rem;
+                        color: #92400e;
+                        margin-top: 0.5rem;
+                        align-items: center;
+                        gap: 0.5rem;
+                    }
+                    .price-diff-warning.visible { display: flex; }
+
+                    /* ── Change Summary Modal ── */
+                    .change-summary-overlay {
+                        position: fixed;
+                        inset: 0;
+                        background: rgba(0,0,0,0.5);
+                        backdrop-filter: blur(4px);
+                        z-index: 99998;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        animation: fadeIn 0.2s ease;
+                    }
+                    .change-summary-card {
+                        background: white;
+                        border-radius: 16px;
+                        max-width: 560px;
+                        width: 90%;
+                        max-height: 80vh;
+                        overflow-y: auto;
+                        box-shadow: 0 24px 48px rgba(0,0,0,0.2);
+                        animation: slideUp 0.3s ease-out;
+                    }
+                    .change-summary-header {
+                        padding: 1.5rem;
+                        border-bottom: 1px solid #e5e7eb;
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                    }
+                    .change-summary-body { padding: 1.5rem; }
+                    .change-summary-footer {
+                        padding: 1rem 1.5rem;
+                        border-top: 1px solid #e5e7eb;
+                        display: flex;
+                        gap: 0.75rem;
+                        justify-content: flex-end;
+                    }
+                    .change-row {
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 0.75rem;
+                        padding: 0.75rem 0;
+                        border-bottom: 1px solid #f3f4f6;
+                    }
+                    .change-row:last-child { border-bottom: none; }
+                    .change-icon {
+                        width: 28px; height: 28px;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        flex-shrink: 0;
+                        font-size: 0.85rem;
+                    }
+                    .change-icon.modified { background: #dbeafe; color: #2563eb; }
+                    .change-icon.added { background: #dcfce7; color: #16a34a; }
+                    .change-icon.removed { background: #fee2e2; color: #dc2626; }
+                    .change-details { flex: 1; }
+                    .change-label { font-size: 0.8rem; color: #6b7280; font-weight: 500; }
+                    .change-value { font-size: 0.875rem; color: #111827; font-weight: 600; margin-top: 2px; }
+                    .change-old { text-decoration: line-through; color: #9ca3af; font-size: 0.8rem; }
+                    .change-new { color: #059669; font-weight: 600; }
+
+                    /* ─ Change History Badge ── */
+                    .change-history-badge {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 0.35rem;
+                        padding: 4px 10px;
+                        background: #fef3c7;
+                        border: 1px solid #fcd34d;
+                        border-radius: 999px;
+                        font-size: 0.7rem;
+                        font-weight: 600;
+                        color: #92400e;
+                    }
                 </style>
 
                 <div id="paginationControls" class="premium-pagination">
@@ -2833,10 +3075,12 @@
                 }
             }
 
-            // Add 'Modify Before Dispatch' button for exchange requests with 'delivered' status
+            // Add 'Modify Before Dispatch' button for exchange requests in pre-dispatch statuses
+            // Allowed: delivered, delivered (pending insp.), inspected, approved (return received, forward not yet dispatched)
             const modifyBeforeDispatchBtn = document.getElementById('modifyBeforeDispatchBtn');
             if (modifyBeforeDispatchBtn) {
-                if (data.status === 'delivered' && data.type === 'exchange') {
+                const preDispatchStatuses = ['delivered', 'delivered (pending insp.)', 'inspected', 'approved'];
+                if (preDispatchStatuses.includes(data.status) && data.type === 'exchange') {
                     modifyBeforeDispatchBtn.classList.remove('hidden');
                 } else {
                     modifyBeforeDispatchBtn.classList.add('hidden');
@@ -4636,75 +4880,151 @@
         }, { passive: true });
     });
 
-    // ── MODIFY EXCHANGE DETAILS ──────────────────────────────────────────────
+    // ── MODIFY EXCHANGE DETAILS (PREMIUM) ────────────────────────────────────
+
+    // Toast notification system
+    function showToast(message, type = 'info', duration = 4000) {
+        const container = document.getElementById('toastContainer');
+        if (!container) return;
+        const icons = { success: '\u2713', error: '\u2717', warning: '\u26A0', info: '\u2139' };
+        const toast = document.createElement('div');
+        toast.className = 'toast toast-' + type;
+        toast.innerHTML = '<span class="toast-icon">' + (icons[type] || icons.info) + '</span><span style="flex:1">' + message + '</span><button class="toast-close" onclick="this.parentElement.classList.add(\'removing\');setTimeout(()=>this.parentElement.remove(),300)">&times;</button>';
+        container.appendChild(toast);
+        setTimeout(function() {
+            if (toast.parentElement) { toast.classList.add('removing'); setTimeout(function() { toast.remove(); }, 300); }
+        }, duration);
+    }
 
     let modifyModalData = null;
     let productSearchCache = {};
     let productSearchTimeout = null;
+    let modifyOriginalState = null;
+    let kbSearchIndex = -1;
+
+    function debounce(fn, ms) { let t; return function() { var a = arguments, s = this; clearTimeout(t); t = setTimeout(function() { fn.apply(s, a); }, ms); }; }
 
     function openModifyModal() {
         if (!currentRequest) return;
+        modifyModalData = JSON.parse(JSON.stringify(currentRequest));
         
-        modifyModalData = JSON.parse(JSON.stringify(currentRequest)); // Deep copy
+        // Capture original state for change tracking
+        const origItems = Array.isArray(currentRequest.items)
+            ? currentRequest.items
+            : (typeof currentRequest.items === 'string' ? JSON.parse(currentRequest.items) : []);
+        modifyOriginalState = {
+            customerName: currentRequest.customerName || '',
+            customerPhone: currentRequest.customerPhone || '',
+            newAddress: currentRequest.newAddress || currentRequest.shippingAddress || '',
+            items: JSON.parse(JSON.stringify(origItems))
+        };
         
-        // Pre-fill customer information
-        document.getElementById('modify-customerName').value = currentRequest.customerName || '';
-        document.getElementById('modify-customerPhone').value = currentRequest.customerPhone || '';
+        document.getElementById('modify-customerName').value = modifyOriginalState.customerName;
+        document.getElementById('modify-customerPhone').value = modifyOriginalState.customerPhone;
+        document.getElementById('modify-newAddress').value = modifyOriginalState.newAddress;
         
-        // Pre-fill shipping address (full address string only)
-        document.getElementById('modify-newAddress').value = currentRequest.newAddress || currentRequest.shippingAddress || '';
-        
-        // Pre-fill exchange items
         const itemsContainer = document.getElementById('modify-items-container');
         itemsContainer.innerHTML = '';
         
-        const items = Array.isArray(currentRequest.items) 
-            ? currentRequest.items 
-            : (typeof currentRequest.items === 'string' 
-                ? JSON.parse(currentRequest.items) 
-                : []);
+        if (origItems.length === 0) { addExchangeItem(); }
+        else { origItems.forEach(function(item) { addExchangeItem(item); }); }
         
-        if (items.length === 0) {
-            addExchangeItem();
-        } else {
-            items.forEach(item => addExchangeItem(item));
-        }
-        
+        updateChangeHistoryBadge();
         document.getElementById('modifyModal').classList.add('active');
+        showToast('Modify mode opened. Changes are tracked in real-time.', 'info', 3000);
     }
 
     function closeModifyModal() {
         document.getElementById('modifyModal').classList.remove('active');
         modifyModalData = null;
+        modifyOriginalState = null;
+        productSearchCache = {};
     }
 
-    function addExchangeItem(existingItem = null) {
-        const template = document.getElementById('exchange-item-template');
-        const clone = template.content.cloneNode(true);
-        const container = document.getElementById('modify-items-container');
-        container.appendChild(clone);
-        
-        // If editing existing item, populate fields
-        if (existingItem) {
-            const card = container.lastElementChild;
-            populateExchangeItemCard(card, existingItem);
+    function updateChangeHistoryBadge() {
+        var header = document.querySelector('#modifyModal .modal-header h2');
+        if (!header || !modifyOriginalState) return;
+        var existing = header.querySelector('.change-history-badge');
+        if (existing) existing.remove();
+        var changes = computeChanges();
+        if (changes.length > 0) {
+            var badge = document.createElement('span');
+            badge.className = 'change-history-badge';
+            badge.innerHTML = '\uD83D\uDCDD ' + changes.length + ' change' + (changes.length > 1 ? 's' : '');
+            header.appendChild(badge);
         }
     }
 
+    function computeChanges() {
+        if (!modifyOriginalState) return [];
+        var changes = [];
+        var curName = document.getElementById('modify-customerName').value.trim();
+        var curPhone = document.getElementById('modify-customerPhone').value.trim();
+        var curAddress = document.getElementById('modify-newAddress').value.trim();
+        if (curName !== modifyOriginalState.customerName)
+            changes.push({ type: 'modified', label: 'Customer Name', old: modifyOriginalState.customerName, 'new': curName });
+        if (curPhone !== modifyOriginalState.customerPhone)
+            changes.push({ type: 'modified', label: 'Phone Number', old: modifyOriginalState.customerPhone, 'new': curPhone });
+        if (curAddress !== modifyOriginalState.newAddress)
+            changes.push({ type: 'modified', label: 'Shipping Address', old: modifyOriginalState.newAddress, 'new': curAddress });
+        var itemCards = document.querySelectorAll('.exchange-item-card');
+        var origItems = modifyOriginalState.items;
+        for (var i = 0; i < itemCards.length; i++) {
+            var card = itemCards[i];
+            var prodTitle = card.querySelector('.product-title-input').value;
+            var variantTitle = card.querySelector('.variant-title-input').value;
+            var price = parseFloat(card.querySelector('.price-input').value) || 0;
+            var qty = parseInt(card.querySelector('.quantity-input').value) || 1;
+            if (i < origItems.length) {
+                var orig = origItems[i];
+                var origProd = orig.replacementProductTitle || orig.name || '';
+                var origVar = orig.replacementVariant || orig.variant || '';
+                var origPrice = parseFloat(orig.replacementPrice || orig.price) || 0;
+                var origQty = parseInt(orig.quantity) || 1;
+                if (prodTitle !== origProd) changes.push({ type: 'modified', label: 'Item ' + (i+1) + ' Product', old: origProd, 'new': prodTitle });
+                if (variantTitle !== origVar) changes.push({ type: 'modified', label: 'Item ' + (i+1) + ' Variant', old: origVar, 'new': variantTitle });
+                if (price !== origPrice) changes.push({ type: 'modified', label: 'Item ' + (i+1) + ' Price', old: '\u20B9' + origPrice, 'new': '\u20B9' + price });
+                if (qty !== origQty) changes.push({ type: 'modified', label: 'Item ' + (i+1) + ' Qty', old: origQty, 'new': qty });
+            } else {
+                changes.push({ type: 'added', label: 'Item ' + (i+1), 'new': prodTitle + ' (' + variantTitle + ') \u00D7 ' + qty });
+            }
+        }
+        if (itemCards.length < origItems.length) {
+            for (var j = itemCards.length; j < origItems.length; j++) {
+                var o = origItems[j];
+                changes.push({ type: 'removed', label: 'Item ' + (j+1), old: (o.replacementProductTitle || o.name) + ' (' + (o.replacementVariant || o.variant) + ')' });
+            }
+        }
+        return changes;
+    }
+
+    function addExchangeItem(existingItem) {
+        existingItem = existingItem || null;
+        var template = document.getElementById('exchange-item-template');
+        var clone = template.content.cloneNode(true);
+        var container = document.getElementById('modify-items-container');
+        container.appendChild(clone);
+        if (existingItem) {
+            var card = container.lastElementChild;
+            populateExchangeItemCard(card, existingItem);
+            var revertBtn = card.querySelector('.revert-btn');
+            if (revertBtn) revertBtn.style.display = 'flex';
+        }
+        container.lastElementChild.querySelectorAll('input, select').forEach(function(el) {
+            el.addEventListener('change', updateChangeHistoryBadge);
+            el.addEventListener('input', debounce(updateChangeHistoryBadge, 500));
+        });
+    }
+
     function populateExchangeItemCard(card, item) {
-        // Store original item data (what customer selected)
         card.querySelector('.original-product-id').value = item.productId || '';
         card.querySelector('.original-product-title').value = item.name || '';
         card.querySelector('.original-product-variant').value = item.variant || '';
         card.querySelector('.original-product-image').value = item.image || '';
         card.querySelector('.original-price').value = item.price || 0;
-        
-        // Display original item
         card.querySelector('.original-product-title').textContent = item.name || '';
-        card.querySelector('.original-product-variant').textContent = item.variant ? `Size: ${item.variant}` : '';
+        card.querySelector('.original-product-variant').textContent = item.variant ? 'Size: ' + item.variant : '';
         card.querySelector('.original-product-image').src = item.image || '';
-        
-        // Store and display replacement item data (what will be dispatched)
         card.querySelector('.product-id-input').value = item.replacementProductId || '';
         card.querySelector('.product-title-input').value = item.replacementProductTitle || '';
         card.querySelector('.variant-id-input').value = item.replacementVariantId || '';
@@ -4712,89 +5032,118 @@
         card.querySelector('.product-image-input').value = item.replacementProductImage || '';
         card.querySelector('.quantity-input').value = item.quantity || 1;
         card.querySelector('.price-input').value = item.replacementPrice || item.price || 0;
-        
-        // Calculate and display price difference
-        const originalPrice = parseFloat(item.price || 0);
-        const newPrice = parseFloat(item.replacementPrice || item.price || 0);
-        const priceDiff = newPrice - originalPrice;
-        const priceDiffDisplay = card.querySelector('.price-diff-display');
-        if (priceDiff > 0) {
-            priceDiffDisplay.textContent = `+₹${priceDiff}`;
-            priceDiffDisplay.style.background = '#fee2e2';
-            priceDiffDisplay.style.borderColor = '#fca5a5';
-            priceDiffDisplay.style.color = '#991b1b';
-        } else if (priceDiff < 0) {
-            priceDiffDisplay.textContent = `-₹${Math.abs(priceDiff)}`;
-            priceDiffDisplay.style.background = '#dcfce7';
-            priceDiffDisplay.style.borderColor = '#86efac';
-            priceDiffDisplay.style.color = '#166534';
-        } else {
-            priceDiffDisplay.textContent = '₹0';
-            priceDiffDisplay.style.background = '#fef3c7';
-            priceDiffDisplay.style.borderColor = '#fcd34d';
-            priceDiffDisplay.style.color = '#92400e';
-        }
-        
-        // Display selected replacement product info
+        updatePriceDiffDisplay(card);
         if (item.replacementProductTitle) {
             card.querySelector('.selected-product-info').style.display = 'block';
             card.querySelector('.selected-product-title').textContent = item.replacementProductTitle;
             card.querySelector('.selected-product-image').src = item.replacementProductImage || item.image || '';
-            
-            // Show and populate variant dropdown
             if (item.replacementVariantId) {
                 card.querySelector('.variant-selection').style.display = 'block';
-                // Pre-select the correct variant (M) if it exists in the item
-                const variantSelect = card.querySelector('.variant-select');
-                const variantOption = document.createElement('option');
+                var variantSelect = card.querySelector('.variant-select');
+                var variantOption = document.createElement('option');
                 variantOption.value = item.replacementVariantId;
-                variantOption.textContent = `${item.replacementVariant} - ₹${item.replacementPrice || item.price} (Selected)`;
+                variantOption.textContent = item.replacementVariant + ' - \u20B9' + (item.replacementPrice || item.price) + ' (Selected)';
                 variantOption.selected = true;
                 variantOption.dataset.title = item.replacementVariant || '';
                 variantOption.dataset.price = item.replacementPrice || item.price || '0';
                 variantSelect.appendChild(variantOption);
             }
+            var revertBtn = card.querySelector('.revert-btn');
+            if (revertBtn) revertBtn.style.display = 'flex';
+        }
+    }
+
+    function updatePriceDiffDisplay(card) {
+        var originalPrice = parseFloat(card.querySelector('.original-price').value) || 0;
+        var newPrice = parseFloat(card.querySelector('.price-input').value) || 0;
+        var priceDiff = newPrice - originalPrice;
+        var priceDiffDisplay = card.querySelector('.price-diff-display');
+        var warningEl = card.querySelector('.price-diff-warning');
+        if (priceDiff > 0) {
+            priceDiffDisplay.textContent = '+\u20B9' + priceDiff.toFixed(2);
+            priceDiffDisplay.style.background = '#fee2e2';
+            priceDiffDisplay.style.borderColor = '#fca5a5';
+            priceDiffDisplay.style.color = '#991b1b';
+        } else if (priceDiff < 0) {
+            priceDiffDisplay.textContent = '-\u20B9' + Math.abs(priceDiff).toFixed(2);
+            priceDiffDisplay.style.background = '#dcfce7';
+            priceDiffDisplay.style.borderColor = '#86efac';
+            priceDiffDisplay.style.color = '#166534';
+        } else {
+            priceDiffDisplay.textContent = '\u20B90';
+            priceDiffDisplay.style.background = '#fef3c7';
+            priceDiffDisplay.style.borderColor = '#fcd34d';
+            priceDiffDisplay.style.color = '#92400e';
+        }
+        if (warningEl && originalPrice > 0) {
+            var pct = Math.abs(priceDiff) / originalPrice * 100;
+            if (pct > 50) {
+                warningEl.classList.add('visible');
+                warningEl.querySelector('.price-diff-warning-text').textContent =
+                    'Large price difference: ' + (priceDiff > 0 ? '+' : '-') + '\u20B9' + Math.abs(priceDiff).toFixed(2) + ' (' + pct.toFixed(0) + '% of original \u20B9' + originalPrice + '). Please verify.';
+            } else {
+                warningEl.classList.remove('visible');
+            }
         }
     }
 
     function removeExchangeItem(btn) {
-        const card = btn.closest('.exchange-item-card');
-        const container = document.getElementById('modify-items-container');
+        var card = btn.closest('.exchange-item-card');
+        var container = document.getElementById('modify-items-container');
         if (container.children.length > 1) {
-            card.remove();
+            card.style.transition = 'all 0.3s ease';
+            card.style.opacity = '0';
+            card.style.transform = 'translateX(30px)';
+            setTimeout(function() { card.remove(); updateChangeHistoryBadge(); }, 300);
+            showToast('Item removed', 'info', 2000);
         } else {
-            alert('At least one item is required');
+            showToast('At least one item is required', 'warning');
         }
     }
 
+    function revertItemToOriginal(btn) {
+        var card = btn.closest('.exchange-item-card');
+        var origTitle = card.querySelector('.original-product-title').value;
+        var origVariant = card.querySelector('.original-product-variant').value;
+        var origImage = card.querySelector('.original-product-image').value;
+        var origPrice = parseFloat(card.querySelector('.original-price').value) || 0;
+        card.querySelector('.product-id-input').value = card.querySelector('.original-product-id').value;
+        card.querySelector('.product-title-input').value = origTitle;
+        card.querySelector('.variant-id-input').value = '';
+        card.querySelector('.variant-title-input').value = origVariant.replace('Size: ', '');
+        card.querySelector('.product-image-input').value = origImage;
+        card.querySelector('.price-input').value = origPrice;
+        card.querySelector('.quantity-input').value = 1;
+        card.querySelector('.selected-product-info').style.display = 'block';
+        card.querySelector('.selected-product-title').textContent = origTitle;
+        card.querySelector('.selected-product-image').src = origImage;
+        var variantSelect = card.querySelector('.variant-select');
+        variantSelect.innerHTML = '<option value="">Select Size / Variant</option>';
+        card.querySelector('.variant-selection').style.display = 'none';
+        updatePriceDiffDisplay(card);
+        updateChangeHistoryBadge();
+        showToast('Reverted to original item', 'info', 2500);
+    }
+
     async function searchProductsForItem(input) {
-        const query = input.value.trim();
-        const resultsDiv = input.parentElement.querySelector('.product-search-results');
-        
+        var query = input.value.trim();
+        var resultsDiv = input.parentElement.querySelector('.product-search-results');
         if (productSearchTimeout) clearTimeout(productSearchTimeout);
-        
-        if (query.length < 2) {
-            resultsDiv.style.display = 'none';
-            return;
-        }
-        
-        // Debounce search
-        productSearchTimeout = setTimeout(async () => {
+        kbSearchIndex = -1;
+        if (query.length < 2) { resultsDiv.style.display = 'none'; return; }
+        resultsDiv.innerHTML = '<div class="search-skeleton"><div class="search-skeleton-row"><div class="skeleton-img"></div><div style="flex:1"><div class="skeleton-text w60" style="margin-bottom:6px"></div><div class="skeleton-text w40"></div></div></div><div class="search-skeleton-row"><div class="skeleton-img"></div><div style="flex:1"><div class="skeleton-text w60" style="margin-bottom:6px"></div><div class="skeleton-text w40"></div></div></div><div class="search-skeleton-row"><div class="skeleton-img"></div><div style="flex:1"><div class="skeleton-text w60" style="margin-bottom:6px"></div><div class="skeleton-text w40"></div></div></div></div>';
+        resultsDiv.style.display = 'block';
+        productSearchTimeout = setTimeout(async function() {
             try {
-                // Use cache if available
-                if (productSearchCache[query]) {
-                    displayProductSearchResults(resultsDiv, productSearchCache[query], input);
-                    return;
-                }
-                
-                const response = await fetch(`${API_URL}/products/search?q=${encodeURIComponent(query)}`);
-                const products = await response.json();
-                
+                if (productSearchCache[query]) { displayProductSearchResults(resultsDiv, productSearchCache[query], input); return; }
+                var response = await fetch(API_URL + '/products/search?q=' + encodeURIComponent(query));
+                if (!response.ok) throw new Error('Search failed');
+                var products = await response.json();
                 productSearchCache[query] = products;
                 displayProductSearchResults(resultsDiv, products, input);
             } catch (error) {
                 console.error('Product search failed:', error);
-                resultsDiv.innerHTML = '<div style="padding: 1rem; text-align: center; color: #ef4444;">Search failed. Please try again.</div>';
+                resultsDiv.innerHTML = '<div style="padding:1rem;text-align:center;color:#ef4444;"><span style="font-size:1.2rem">&#x26A0;</span><br>Search failed. Please try again.</div>';
                 resultsDiv.style.display = 'block';
             }
         }, 300);
@@ -4802,137 +5151,120 @@
 
     function displayProductSearchResults(resultsDiv, products, input) {
         if (!products || products.length === 0) {
-            resultsDiv.innerHTML = '<div style="padding: 1rem; text-align: center; color: #6b7280;">No products found</div>';
+            resultsDiv.innerHTML = '<div style="padding:1.5rem;text-align:center;color:#6b7280;"><span style="font-size:1.5rem;display:block;margin-bottom:0.5rem;opacity:0.4">&#x1F50D;</span>No products found. Try a different search term.</div>';
             resultsDiv.style.display = 'block';
             return;
         }
-        
-        resultsDiv.innerHTML = products.map(product => `
-            <div class="product-result-item" onclick="selectProductForItem(this)" 
-                 data-product-id="${product.id}" 
-                 data-product-title="${product.title}"
-                 data-product-image="${product.image || ''}"
-                 data-variants='${JSON.stringify(product.variants)}'
-                 style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; cursor: pointer; display: flex; gap: 0.75rem; align-items: center; transition: background 0.2s;"
-                 onmouseover="this.style.background='#f9fafb'" 
-                 onmouseout="this.style.background='white'">
-                <img src="${product.image || 'https://via.placeholder.com/50'}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px;">
-                <div style="flex: 1;">
-                    <p style="font-weight: 600; color: #111827; margin: 0; font-size: 0.875rem;">${product.title}</p>
-                    <p style="font-size: 0.75rem; color: #6b7280; margin: 0.25rem 0 0 0;">${product.variants.length} variant(s) available</p>
-                </div>
-            </div>
-        `).join('');
-        
+        var html = '';
+        for (var idx = 0; idx < products.length; idx++) {
+            var product = products[idx];
+            var variants = product.variants || [];
+            var totalInv = 0;
+            for (var vi = 0; vi < variants.length; vi++) totalInv += (variants[vi].inventory_quantity || 0);
+            var invBadge = totalInv === 0 ? '<span class="inv-badge out-of-stock">Out of Stock</span>' : totalInv <= 5 ? '<span class="inv-badge low-stock">Only ' + totalInv + ' left</span>' : '<span class="inv-badge in-stock">' + totalInv + ' in stock</span>';
+            var firstSku = variants[0] && variants[0].sku;
+            var skuTag = firstSku ? '<span class="sku-tag">' + firstSku + '</span>' : '';
+            var typeTag = product.product_type ? '<span class="type-tag">' + product.product_type + '</span>' : '';
+            var titleEscaped = product.title.replace(/"/g, '&quot;');
+            var variantsEscaped = JSON.stringify(variants).replace(/'/g, '&#39;');
+            html += '<div class="product-result-item" onclick="selectProductForItem(this)" data-product-id="' + product.id + '" data-product-title="' + titleEscaped + '" data-product-image="' + (product.image || '') + '" data-variants=\'' + variantsEscaped + '\' style="padding:0.75rem;border-bottom:1px solid #e5e7eb;cursor:pointer;display:flex;gap:0.75rem;align-items:center;transition:background 0.2s;" onmouseover="this.style.background=\'#f9fafb\'" onmouseout="this.style.background=\'white\'"><img src="' + (product.image || 'https://via.placeholder.com/50') + '" style="width:50px;height:50px;object-fit:cover;border-radius:6px;flex-shrink:0;"><div style="flex:1;min-width:0;"><p style="font-weight:600;color:#111827;margin:0;font-size:0.875rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + product.title + skuTag + typeTag + '</p><div style="display:flex;align-items:center;gap:0.5rem;margin-top:4px;flex-wrap:wrap;"><span style="font-size:0.75rem;color:#6b7280;">' + variants.length + ' variant(s)</span>' + invBadge + '</div></div></div>';
+        }
+        resultsDiv.innerHTML = html;
         resultsDiv.style.display = 'block';
+        resultsDiv.onkeydown = function(e) { handleSearchKeyboard(e, resultsDiv, input); };
+        resultsDiv.setAttribute('tabindex', '0');
+        resultsDiv.focus();
+    }
+
+    function handleSearchKeyboard(e, resultsDiv, input) {
+        var items = resultsDiv.querySelectorAll('.product-result-item');
+        if (!items.length) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); kbSearchIndex = Math.min(kbSearchIndex + 1, items.length - 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); kbSearchIndex = Math.max(kbSearchIndex - 1, 0); }
+        else if (e.key === 'Enter' && kbSearchIndex >= 0) { e.preventDefault(); items[kbSearchIndex].click(); return; }
+        else if (e.key === 'Escape') { resultsDiv.style.display = 'none'; input.focus(); return; }
+        else return;
+        for (var i = 0; i < items.length; i++) items[i].classList.toggle('kb-highlight', i === kbSearchIndex);
+        if (kbSearchIndex >= 0) items[kbSearchIndex].scrollIntoView({ block: 'nearest' });
     }
 
     function selectProductForItem(element) {
-        const card = element.closest('.exchange-item-card');
-        const productId = element.dataset.productId;
-        const productTitle = element.dataset.productTitle;
-        const productImage = element.dataset.productImage;
-        const variants = JSON.parse(element.dataset.variants);
-        
-        // Hide search results
+        var card = element.closest('.exchange-item-card');
+        var productId = element.dataset.productId;
+        var productTitle = element.dataset.productTitle;
+        var productImage = element.dataset.productImage;
+        var variants = JSON.parse(element.dataset.variants.replace(/&#39;/g, "'"));
         element.closest('.product-search-results').style.display = 'none';
-        
-        // Update hidden fields
         card.querySelector('.product-id-input').value = productId;
         card.querySelector('.product-title-input').value = productTitle;
         card.querySelector('.product-image-input').value = productImage;
-        
-        // Show selected product info
         card.querySelector('.selected-product-info').style.display = 'block';
         card.querySelector('.selected-product-title').textContent = productTitle;
         card.querySelector('.selected-product-image').src = productImage;
-        
-        // Populate variant dropdown
-        const variantSelect = card.querySelector('.variant-select');
-        variantSelect.innerHTML = '<option value="">Select Size / Variant</option>' + 
-            variants.map(v => `
-                <option value="${v.id}" 
-                        data-title="${v.title}" 
-                        data-price="${v.price}"
-                        data-inventory="${v.inventory_quantity || 0}"
-                        ${v.inventory_quantity === 0 ? 'disabled' : ''}>
-                    ${v.title} - ₹${v.price} ${v.inventory_quantity === 0 ? '(Out of Stock)' : `(${v.inventory_quantity} available)`}
-                </option>
-            `).join('');
-        
+        var variantSelect = card.querySelector('.variant-select');
+        var opts = '<option value="">Select Size / Variant</option>';
+        for (var i = 0; i < variants.length; i++) {
+            var v = variants[i];
+            var inv = v.inventory_quantity || 0;
+            var invLabel = inv === 0 ? '(Out of Stock)' : inv <= 5 ? '(Only ' + inv + ' left)' : '(' + inv + ' available)';
+            opts += '<option value="' + v.id + '" data-title="' + v.title + '" data-price="' + v.price + '" data-inventory="' + inv + '"' + (inv === 0 ? ' disabled' : '') + '>' + v.title + ' - \u20B9' + v.price + ' ' + invLabel + '</option>';
+        }
+        variantSelect.innerHTML = opts;
         card.querySelector('.variant-selection').style.display = 'block';
+        var revertBtn = card.querySelector('.revert-btn');
+        if (revertBtn) revertBtn.style.display = 'flex';
+        showToast('Selected: ' + productTitle, 'success', 2000);
     }
 
     function onVariantSelect(select) {
-        const card = select.closest('.exchange-item-card');
-        const selectedOption = select.options[select.selectedIndex];
-        
+        var card = select.closest('.exchange-item-card');
+        var selectedOption = select.options[select.selectedIndex];
         if (selectedOption.value) {
             card.querySelector('.variant-id-input').value = selectedOption.value;
             card.querySelector('.variant-title-input').value = selectedOption.dataset.title;
             card.querySelector('.price-input').value = selectedOption.dataset.price;
-            
-            // Recalculate price difference
-            const originalPrice = parseFloat(card.querySelector('.original-price').value) || 0;
-            const newPrice = parseFloat(selectedOption.dataset.price) || 0;
-            const priceDiff = newPrice - originalPrice;
-            const priceDiffDisplay = card.querySelector('.price-diff-display');
-            
-            if (priceDiff > 0) {
-                priceDiffDisplay.textContent = `+₹${priceDiff}`;
-                priceDiffDisplay.style.background = '#fee2e2';
-                priceDiffDisplay.style.borderColor = '#fca5a5';
-                priceDiffDisplay.style.color = '#991b1b';
-            } else if (priceDiff < 0) {
-                priceDiffDisplay.textContent = `-₹${Math.abs(priceDiff)}`;
-                priceDiffDisplay.style.background = '#dcfce7';
-                priceDiffDisplay.style.borderColor = '#86efac';
-                priceDiffDisplay.style.color = '#166534';
-            } else {
-                priceDiffDisplay.textContent = '₹0';
-                priceDiffDisplay.style.background = '#fef3c7';
-                priceDiffDisplay.style.borderColor = '#fcd34d';
-                priceDiffDisplay.style.color = '#92400e';
-            }
+            updatePriceDiffDisplay(card);
+            updateChangeHistoryBadge();
         }
     }
 
-    async function saveExchangeModifications() {
-        const saveBtn = document.getElementById('saveModifyBtn');
-        const originalText = saveBtn.textContent;
-        
+    function showChangeSummaryPreview() {
+        var changes = computeChanges();
+        if (changes.length === 0) return false;
+        var overlay = document.createElement('div');
+        overlay.className = 'change-summary-overlay';
+        overlay.id = 'changeSummaryOverlay';
+        var typeIcons = { modified: '\u270F\uFE0F', added: '\u2795', removed: '\u2796' };
+        var bodyHtml = '';
+        for (var i = 0; i < changes.length; i++) {
+            var c = changes[i];
+            bodyHtml += '<div class="change-row"><div class="change-icon ' + c.type + '">' + (typeIcons[c.type] || '?') + '</div><div class="change-details"><div class="change-label">' + c.label + '</div>';
+            if (c.old) bodyHtml += '<div class="change-old">' + c.old + '</div>';
+            bodyHtml += '<div class="change-new">' + (c['new'] || '(removed)') + '</div></div></div>';
+        }
+        overlay.innerHTML = '<div class="change-summary-card"><div class="change-summary-header"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><h3 style="margin:0;font-size:1.1rem;font-weight:700;color:#111827;">Review Changes (' + changes.length + ')</h3></div><div class="change-summary-body">' + bodyHtml + '</div><div class="change-summary-footer"><button onclick="document.getElementById(\'changeSummaryOverlay\').remove()" class="btn btn-secondary" style="padding:0.6rem 1.2rem;font-size:0.85rem;border-radius:8px;">Review Again</button><button onclick="document.getElementById(\'changeSummaryOverlay\').remove();confirmSaveModifications()" class="btn btn-primary" style="padding:0.6rem 1.2rem;font-size:0.85rem;border-radius:8px;background:linear-gradient(135deg,#059669,#10b981);color:white;border:none;font-weight:600;cursor:pointer;">Confirm &amp; Save</button></div></div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+        return true;
+    }
+
+    async function confirmSaveModifications() {
+        var saveBtn = document.getElementById('saveModifyBtn');
+        var originalText = saveBtn.textContent;
         try {
-            // Validate phone number
-            const customerPhone = document.getElementById('modify-customerPhone').value.trim();
-            if (!customerPhone || !/^[0-9]{10}$/.test(customerPhone)) {
-                alert('Please enter a valid 10-digit phone number');
-                return;
-            }
-            
-            // Validate address
-            const newAddress = document.getElementById('modify-newAddress').value.trim();
-            
-            if (!newAddress) {
-                alert('Please fill in the address');
-                return;
-            }
-            
-            // Collect exchange items
-            const itemCards = document.querySelectorAll('.exchange-item-card');
-            const items = [];
-            
-            for (const card of itemCards) {
-                const productId = card.querySelector('.product-id-input').value;
-                const variantId = card.querySelector('.variant-id-input').value;
-                
-                if (!productId || !variantId) {
-                    alert('Please select a product and variant for all items');
-                    return;
-                }
-                
+            var customerPhone = document.getElementById('modify-customerPhone').value.trim();
+            if (!customerPhone || !/^[0-9]{10}$/.test(customerPhone)) { showToast('Please enter a valid 10-digit phone number', 'error'); return; }
+            var newAddress = document.getElementById('modify-newAddress').value.trim();
+            if (!newAddress) { showToast('Please fill in the shipping address', 'error'); return; }
+            var itemCards = document.querySelectorAll('.exchange-item-card');
+            var items = [];
+            for (var i = 0; i < itemCards.length; i++) {
+                var card = itemCards[i];
+                var productId = card.querySelector('.product-id-input').value;
+                var variantId = card.querySelector('.variant-id-input').value;
+                if (!productId || !variantId) { showToast('Please select a product and variant for all items', 'error'); return; }
                 items.push({
-                    replacementProductId: productId,
-                    replacementVariantId: variantId,
+                    replacementProductId: productId, replacementVariantId: variantId,
                     replacementProductTitle: card.querySelector('.product-title-input').value,
                     replacementVariant: card.querySelector('.variant-title-input').value,
                     replacementProductImage: card.querySelector('.product-image-input').value,
@@ -4943,58 +5275,31 @@
                     price: parseFloat(card.querySelector('.price-input').value)
                 });
             }
-            
-            if (items.length === 0) {
-                alert('Please add at least one exchange item');
-                return;
-            }
-            
-            // Show loading state
+            if (items.length === 0) { showToast('Please add at least one exchange item', 'error'); return; }
             saveBtn.disabled = true;
             saveBtn.innerHTML = '<span class="save-spinner"></span>Saving...';
-            
-            // Send update request
-            const response = await fetch(`${API_URL}/admin/update-request/${modifyModalData.requestId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
-                },
-                body: JSON.stringify({
-                    items,
-                    customerPhone,
-                    newAddress,
-                    customerName: document.getElementById('modify-customerName').value.trim()
-                })
+            var response = await fetch(API_URL + '/admin/update-request/' + modifyModalData.requestId, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                body: JSON.stringify({ items: items, customerPhone: customerPhone, newAddress: newAddress, customerName: document.getElementById('modify-customerName').value.trim() })
             });
-            
-            const data = await response.json();
-            
+            var data = await response.json();
             if (response.ok && data.success) {
-                // Update local currentRequest
                 currentRequest = data.data;
-                
-                // Close modal
                 closeModifyModal();
-                
-                // Refresh modal display
                 displayRequestDetails(currentRequest);
-                
-                // Show success message
-                alert('✅ Exchange details updated successfully!');
-                
-                // Refresh the requests table
+                showToast('Exchange details updated successfully!', 'success', 5000);
                 loadRequests();
-            } else {
-                throw new Error(data.error || 'Failed to update request');
-            }
+            } else { throw new Error(data.error || 'Failed to update request'); }
         } catch (error) {
             console.error('Save modifications error:', error);
-            alert('❌ Failed to save changes: ' + error.message);
-        } finally {
-            saveBtn.disabled = false;
-            saveBtn.textContent = originalText;
-        }
+            showToast('Failed to save changes: ' + error.message, 'error', 6000);
+        } finally { saveBtn.disabled = false; saveBtn.textContent = originalText; }
+    }
+
+    async function saveExchangeModifications() {
+        var changes = computeChanges();
+        if (changes.length === 0) { showToast('No changes detected. Nothing to save.', 'warning'); return; }
+        showChangeSummaryPreview();
     }
 
     // ============================================================
@@ -6012,6 +6317,7 @@
 <template id="exchange-item-template">
     <div class="exchange-item-card" style="background: white; border: 2px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; position: relative;">
         <button onclick="removeExchangeItem(this)" class="remove-item-btn" style="position: absolute; top: 0.75rem; right: 0.75rem; background: #fee2e2; border: none; color: #dc2626; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; z-index: 10;">×</button>
+        <button onclick="revertItemToOriginal(this)" class="revert-btn" title="Revert to original item" style="display:none;">&#x21BA;</button>
         
         <!-- Original Item Section (Customer's Choice) -->
         <div class="original-item-section" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
@@ -6088,6 +6394,10 @@
                     <label style="font-weight: 500; color: #374151; font-size: 0.8rem;">Price Diff</label>
                     <div class="price-diff-display" style="padding: 0.5rem 0.75rem; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; font-size: 0.875rem; font-weight: 600; color: #92400e; text-align: center;">₹0</div>
                 </div>
+            </div>
+            <div class="price-diff-warning">
+                <span>️</span>
+                <span class="price-diff-warning-text">Large price difference detected. Please verify this is intentional.</span>
             </div>
         </div>
 
@@ -6386,5 +6696,9 @@
 </div>
 
 <script src="/admin/ai-copilot.js?v=1"></script>
+
+<!-- Toast Notification Container -->
+<div id="toastContainer" class="toast-container"></div>
+
 </body>
 </html>
