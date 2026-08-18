@@ -12765,9 +12765,9 @@ async function processAbandonedCartReminders() {
                 if (!reminderType) continue;
 
                 // Skip if this specific reminder type is disabled in settings
-                if (reminderType === 'first'  && !firstReminderEnabled)  { console.log(`[Marketing Cron] First reminder disabled, skipping cart ${cart.id}`);  continue; }
-                if (reminderType === 'second' && !secondReminderEnabled) { console.log(`[Marketing Cron] Second reminder disabled, skipping cart ${cart.id}`); continue; }
-                if (reminderType === 'final'  && !finalReminderEnabled)  { console.log(`[Marketing Cron] Final reminder disabled, skipping cart ${cart.id}`);  continue; }
+                if (reminderType === 'first'  && !firstReminderEnabled)  { continue; }
+                if (reminderType === 'second' && !secondReminderEnabled) { continue; }
+                if (reminderType === 'final'  && !finalReminderEnabled)  { continue; }
 
                 // Get template from settings (same logic as manual send-reminder)
                 const settingKey = `abandoned_cart_${reminderType}_template_id`;
