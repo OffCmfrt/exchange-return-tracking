@@ -207,20 +207,36 @@ app.use(cors(corsOptions));
 // Rate limiters
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 mins
-    max: 100, // limit each IP to 100 requests per windowMs
+    max: 300, // limit each IP to 300 requests per windowMs (increased for admin dashboard usage)
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
     message: 'Too many requests from this IP, please try again after 15 minutes.',
-    handler: rateLimitHandler
+    handler: rateLimitHandler,
+    // Skip rate limiting for authenticated admin requests (they have their own auth)
+    skip: (req) => {
+        const authHeader = req.headers['authorization'];
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            return true; // Skip rate limit for authenticated requests
+        }
+        return false;
+    }
 });
 
 const writeLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: 20, // Max 20 requests per IP per hour for write
+    max: 60, // Max 60 requests per IP per hour for write (increased from 20)
     standardHeaders: true,
     legacyHeaders: false,
     message: 'Too many submissions from this IP, please try again after an hour.',
-    handler: rateLimitHandler
+    handler: rateLimitHandler,
+    // Skip rate limiting for authenticated admin requests
+    skip: (req) => {
+        const authHeader = req.headers['authorization'];
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            return true; // Skip rate limit for authenticated requests
+        }
+        return false;
+    }
 });
 
 
