@@ -4916,12 +4916,19 @@
             customerName: currentRequest.customerName || '',
             customerPhone: currentRequest.customerPhone || '',
             newAddress: currentRequest.newAddress || currentRequest.shippingAddress || '',
+            adminNotes: currentRequest.adminNotes || '',
             items: JSON.parse(JSON.stringify(origItems))
         };
         
         document.getElementById('modify-customerName').value = modifyOriginalState.customerName;
         document.getElementById('modify-customerPhone').value = modifyOriginalState.customerPhone;
         document.getElementById('modify-newAddress').value = modifyOriginalState.newAddress;
+        
+        // Pre-populate admin notes if exists
+        var adminNotesField = document.getElementById('modify-adminNotes');
+        if (adminNotesField) {
+            adminNotesField.value = currentRequest.adminNotes || '';
+        }
         
         const itemsContainer = document.getElementById('modify-items-container');
         itemsContainer.innerHTML = '';
@@ -4967,6 +4974,13 @@
             changes.push({ type: 'modified', label: 'Phone Number', old: modifyOriginalState.customerPhone, 'new': curPhone });
         if (curAddress !== modifyOriginalState.newAddress)
             changes.push({ type: 'modified', label: 'Shipping Address', old: modifyOriginalState.newAddress, 'new': curAddress });
+        var adminNotesEl = document.getElementById('modify-adminNotes');
+        if (adminNotesEl) {
+            var curNotes = adminNotesEl.value.trim();
+            var origNotes = (modifyOriginalState.adminNotes || '').trim();
+            if (curNotes !== origNotes)
+                changes.push({ type: 'modified', label: 'Admin Notes', old: origNotes || '(none)', 'new': curNotes || '(cleared)' });
+        }
         var itemCards = document.querySelectorAll('.exchange-item-card');
         var origItems = modifyOriginalState.items;
         for (var i = 0; i < itemCards.length; i++) {
@@ -5263,6 +5277,10 @@
                 var productId = card.querySelector('.product-id-input').value;
                 var variantId = card.querySelector('.variant-id-input').value;
                 if (!productId || !variantId) { showToast('Please select a product and variant for all items', 'error'); return; }
+                // Preserve original item data — only replacement fields change
+                var origName = card.querySelector('.original-product-title').value;
+                var origVariant = card.querySelector('.original-product-variant').value;
+                var origPrice = parseFloat(card.querySelector('.original-price').value) || 0;
                 items.push({
                     replacementProductId: productId, replacementVariantId: variantId,
                     replacementProductTitle: card.querySelector('.product-title-input').value,
@@ -5270,17 +5288,21 @@
                     replacementProductImage: card.querySelector('.product-image-input').value,
                     replacementPrice: parseFloat(card.querySelector('.price-input').value),
                     quantity: parseInt(card.querySelector('.quantity-input').value) || 1,
-                    name: card.querySelector('.product-title-input').value,
-                    variant: card.querySelector('.variant-title-input').value,
-                    price: parseFloat(card.querySelector('.price-input').value)
+                    // Keep original item fields intact — do NOT overwrite with replacement values
+                    productId: card.querySelector('.original-product-id').value,
+                    name: origName,
+                    variant: origVariant,
+                    image: card.querySelector('.original-product-image').value,
+                    price: origPrice
                 });
             }
             if (items.length === 0) { showToast('Please add at least one exchange item', 'error'); return; }
             saveBtn.disabled = true;
             saveBtn.innerHTML = '<span class="save-spinner"></span>Saving...';
+            var adminNotes = document.getElementById('modify-adminNotes') ? document.getElementById('modify-adminNotes').value.trim() : '';
             var response = await fetch(API_URL + '/admin/update-request/' + modifyModalData.requestId, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
-                body: JSON.stringify({ items: items, customerPhone: customerPhone, newAddress: newAddress, customerName: document.getElementById('modify-customerName').value.trim() })
+                body: JSON.stringify({ items: items, customerPhone: customerPhone, newAddress: newAddress, customerName: document.getElementById('modify-customerName').value.trim(), adminNotes: adminNotes })
             });
             var data = await response.json();
             if (response.ok && data.success) {
@@ -6494,6 +6516,24 @@
                     <label style="font-weight: 500; color: #374151; font-size: 0.875rem;">Full Address <span style="color: #ef4444;">*</span></label>
                     <textarea id="modify-newAddress" class="form-control" rows="3" placeholder="House No., Street, Locality, City, State, Pincode"></textarea>
                     <p style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">Enter the complete address including city, state and pincode</p>
+                </div>
+            </div>
+
+            <!-- Section 4: Admin Notes -->
+            <div style="margin-bottom: 2.5rem; padding: 1.5rem; background: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb;">
+                <h3 style="font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    Admin Notes
+                </h3>
+                <p style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">Add a note explaining why this exchange was modified (optional but recommended).</p>
+                <div class="form-group">
+                    <textarea id="modify-adminNotes" class="form-control" rows="3" placeholder="e.g. Customer requested different size, original variant out of stock, etc."></textarea>
                 </div>
             </div>
 

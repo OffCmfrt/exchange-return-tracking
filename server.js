@@ -7089,7 +7089,7 @@ app.post('/api/admin/create-duplicate-forward', authenticateAdmin, async (req, r
 // ── Admin: Update exchange details (items, phone, address) ──
 app.put('/api/admin/update-request/:requestId', authenticateAdmin, async (req, res) => {
     const requestId = req.params.requestId;
-    const { items, customerPhone, newAddress, newCity, newPincode, newState, customerName } = req.body;
+    const { items, customerPhone, newAddress, newCity, newPincode, newState, customerName, adminNotes } = req.body;
     
     console.log(`[ADMIN UPDATE] ${requestId} — Exchange details modification started`);
     console.log(`[ADMIN UPDATE] ${requestId} — Request body:`, { items: items?.length, customerPhone, newAddress, newCity, newState, newPincode, customerName });
@@ -7159,10 +7159,14 @@ app.put('/api/admin/update-request/:requestId', authenticateAdmin, async (req, r
             });
         }
         
-        // Add audit trail
+        // Add audit trail with optional admin notes
         const timestamp = new Date().toISOString();
-        updateData.admin_notes = `[${timestamp}] Exchange details modified by admin\n` + 
-            (existingRequest.admin_notes || '');
+        let auditEntry = `[${timestamp}] Exchange details modified by admin`;
+        if (adminNotes && adminNotes.trim()) {
+            auditEntry += ` — Note: ${adminNotes.trim()}`;
+        }
+        auditEntry += '\n';
+        updateData.admin_notes = auditEntry + (existingRequest.admin_notes || '');
         updateData.updated_at = timestamp;
         
         console.log(`[ADMIN UPDATE] ${requestId} — Update data:`, updateData);
