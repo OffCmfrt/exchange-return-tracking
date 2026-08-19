@@ -264,6 +264,20 @@
                             color: #b91c1c !important;
                             border: 1px solid #fecaca !important;
                         }
+                        .badge-refunded {
+                            background: linear-gradient(135deg, #10b981, #059669) !important;
+                            color: #ffffff !important;
+                            border: 1px solid transparent !important;
+                            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+                        }
+                        /* Refunded row highlight */
+                        tr.row-refunded {
+                            background-color: #ecfdf5 !important;
+                            border-left: 4px solid #10b981 !important;
+                        }
+                        tr.row-refunded:hover {
+                            background-color: #d1fae5 !important;
+                        }
                         
                         .admin-btn {
                             display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; 
@@ -2673,8 +2687,12 @@
             return;
         }
 
-        table.innerHTML = requests.map(req => `
-            <tr>
+        table.innerHTML = requests.map(req => {
+            const isRefunded = req.refundId || req.refundedAt;
+            const rowClass = isRefunded ? 'row-refunded' : '';
+            const refundBadge = isRefunded ? `<span class="badge badge-refunded" style="margin-left: 0.4rem; font-size: 0.7rem; vertical-align: middle;">₹${req.refundAmount || 150} Refunded</span>` : '';
+            return `
+            <tr class="${rowClass}">
                 <td class="select-col hidden"><input type="checkbox" class="req-checkbox" value="${req.requestId}" onchange="updateDeleteButton()"></td>
                 <td>${req.requestId}</td>
                 <td style="text-transform: capitalize;">${req.type}</td>
@@ -2684,14 +2702,14 @@
                 <td>
                     ${carrierBadge(req)}
                 </td>
-                <td><span class="badge badge-${req.status.replace(/_/g, '-')}">${getStatusLabel(req.status)}</span></td>
+                <td><span class="badge badge-${req.status.replace(/_/g, '-')}">${getStatusLabel(req.status)}</span>${refundBadge}</td>
                 <td>
                     <button onclick="viewDetails('${req.requestId}')" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
                         View
                     </button>
                 </td>
-            </tr>
-        `).join('');
+            </tr>`;
+        }).join('');
     }
 
     // View Request Details
