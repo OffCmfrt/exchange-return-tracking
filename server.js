@@ -4733,11 +4733,27 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                     }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
                 }
             }).catch(() => {}); // fire-and-forget
-        } else if (primaryCarrierFailed && !isFeeWaived) {
-            // Selected carrier failed for a paid request – refund pickup fee + send self-ship WhatsApp
-            console.log(`[${requestId}] 📦 Selected carrier failed – refunding pickup fee + sending self-ship WhatsApp to ${request.customerPhone}`);
 
-            // Issue Razorpay refund for the pickup fee
+            // If primary carrier failed (but fallback succeeded), also send self-ship WhatsApp
+            // NO refund — fallback carrier booked the pickup successfully
+            if (primaryCarrierFailed && !isFeeWaived) {
+                console.log(`[${requestId}] 📦 Primary carrier failed but fallback succeeded – sending self-ship WhatsApp (no refund) to ${request.customerPhone}`);
+                resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
+                    return sendSelfShipRequiredWhatsApp({
+                        phone: request.customerPhone,
+                        requestId,
+                        orderNumber: request.orderNumber,
+                        type: request.type,
+                        warehouseAddress: address,
+                        warehousePhone: whPhone
+                    });
+                }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
+            }
+        } else if (primaryCarrierFailed && !isFeeWaived) {
+            // All carriers failed for a paid request – refund pickup fee + send self-ship WhatsApp
+            console.log(`[${requestId}] 📦 All carriers failed – refunding pickup fee + sending self-ship WhatsApp to ${request.customerPhone}`);
+
+            // Issue Razorpay refund (no carrier booked)
             if (paymentId && paymentAmount > 0) {
                 issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
                     if (refundResult.success) {
@@ -5009,14 +5025,15 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
 
-        // If selected carrier failed for a paid request, refund pickup fee + send self-ship WhatsApp
+        // If selected carrier failed for a paid request, send self-ship WhatsApp
         if (!isFeeWaived && !needsPayment && primaryCarrierFailed) {
-            console.log(`[${requestId}] 📦 Selected carrier failed – refunding pickup fee + sending self-ship WhatsApp to ${customerPhone}`);
+            console.log(`[${requestId}] 📦 Selected carrier failed – sending self-ship WhatsApp to ${customerPhone}`);
 
-            // Issue Razorpay refund for the pickup fee
+            // Issue Razorpay refund ONLY if no carrier was actually booked (all failed)
             const paymentId = req.body.paymentId || null;
             const paymentAmount = parseFloat(req.body.paymentAmount) || 0;
-            if (paymentId && paymentAmount > 0) {
+            if (!awbNumber && !shipmentId && paymentId && paymentAmount > 0) {
+                console.log(`[${requestId}] 💰 No carrier booked – issuing ₹${paymentAmount} refund for payment ${paymentId}`);
                 issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
                     if (refundResult.success) {
                         updateRequestStatus(requestId, {
@@ -5027,6 +5044,8 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                         }).catch(e => console.warn(`[${requestId}] Refund status update failed:`, e.message));
                     }
                 }).catch(err => console.error(`[${requestId}] Pickup fee refund error:`, err.message));
+            } else if (awbNumber || shipmentId) {
+                console.log(`[${requestId}] ℹ️ Fallback carrier succeeded (AWB: ${awbNumber}) – skipping refund`);
             }
 
             // Send self-ship WhatsApp
@@ -5275,14 +5294,15 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         console.log(`[${requestId}] ✅ Return Request Submitted Successfully`);
 
-        // If selected carrier failed for a paid request, refund pickup fee + send self-ship WhatsApp
+        // If selected carrier failed for a paid request, send self-ship WhatsApp
         if (!isFeeWaivedReturn && !needsPayment && primaryCarrierFailed) {
-            console.log(`[${requestId}] 📦 Selected carrier failed – refunding pickup fee + sending self-ship WhatsApp to ${customerPhone}`);
+            console.log(`[${requestId}] 📦 Selected carrier failed – sending self-ship WhatsApp to ${customerPhone}`);
 
-            // Issue Razorpay refund for the pickup fee
+            // Issue Razorpay refund ONLY if no carrier was actually booked (all failed)
             const paymentId = req.body.paymentId || null;
             const paymentAmount = parseFloat(req.body.paymentAmount) || 0;
-            if (paymentId && paymentAmount > 0) {
+            if (!awbNumber && !shipmentId && paymentId && paymentAmount > 0) {
+                console.log(`[${requestId}] 💰 No carrier booked – issuing ₹${paymentAmount} refund for payment ${paymentId}`);
                 issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
                     if (refundResult.success) {
                         updateRequestStatus(requestId, {
@@ -5293,6 +5313,8 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                         }).catch(e => console.warn(`[${requestId}] Refund status update failed:`, e.message));
                     }
                 }).catch(err => console.error(`[${requestId}] Pickup fee refund error:`, err.message));
+            } else if (awbNumber || shipmentId) {
+                console.log(`[${requestId}] ℹ️ Fallback carrier succeeded (AWB: ${awbNumber}) – skipping refund`);
             }
 
             // Send self-ship WhatsApp
