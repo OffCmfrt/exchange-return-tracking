@@ -46,7 +46,7 @@ Thank you for your cooperation, and we sincerely apologize for the inconvenience
     variables: [
         { name: 'request_type',      example: 'Return/Exchange' },
         { name: 'warehouse_address', example: 'BURB MANUFACTURES PRIVATE LIMITED, K NO 181/169, K NO 229, Vill. BAIRAWAS, Distt. Mahendergarh, Haryana - 123028' },
-        { name: 'warehouse_phone',   example: '9138514222' },
+        { name: 'warehouse_phone',   example: '+91 82959 88424' },
         { name: 'order_number',      example: '#12345' },
         { name: 'request_id',        example: 'REQ-67796' }
     ]

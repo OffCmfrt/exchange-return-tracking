@@ -4477,7 +4477,7 @@ Thank you for your cooperation, and we sincerely apologize for the inconvenience
     variables: [
         { name: 'request_type', example: 'Return/Exchange' },
         { name: 'warehouse_address', example: 'BURB MANUFACTURES PRIVATE LIMITED, K NO 181/169, K NO 229, Vill. BAIRAWAS, Distt. Mahendergarh, Haryana - 123028' },
-        { name: 'warehouse_phone', example: '9138514222' },
+        { name: 'warehouse_phone', example: '+91 82959 88424' },
         { name: 'order_number', example: '#12345' },
         { name: 'request_id', example: 'REQ-67796' }
     ]
@@ -4558,7 +4558,7 @@ async function resolveWarehouseAddress() {
     const warehouseLocation = await getSetting('warehouse_location', null);
 
     let address = 'BURB MANUFACTURES PRIVATE LIMITED, K NO 181/169, K NO 229, Vill. BAIRAWAS, Distt. Mahendergarh, Haryana - 123028';
-    let phone = '9138514222';
+    let phone = '8295988424';
 
     if (warehouseLocation) {
         const parts = [
@@ -4572,6 +4572,10 @@ async function resolveWarehouseAddress() {
         if (parts.length > 0) address = parts.join(', ');
         if (warehouseLocation.phone) phone = warehouseLocation.phone;
     }
+
+    // Format for WhatsApp display: 10-digit number → "+91 XXXXX XXXXX"
+    const phoneDigits = String(phone).replace(/\D/g, '').slice(-10);
+    if (phoneDigits.length === 10) phone = `+91 ${phoneDigits.slice(0, 5)} ${phoneDigits.slice(5)}`;
 
     return { address, phone };
 }
