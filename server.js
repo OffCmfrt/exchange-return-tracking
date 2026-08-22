@@ -4562,6 +4562,7 @@ async function resolveWarehouseAddress() {
 
     if (warehouseLocation) {
         const parts = [
+            warehouseLocation.name,
             warehouseLocation.address || warehouseLocation.address_line_1,
             warehouseLocation.address_2 || warehouseLocation.address_line_2,
             warehouseLocation.city,
