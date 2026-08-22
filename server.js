@@ -4476,7 +4476,7 @@ Thank you for your cooperation, and we sincerely apologize for the inconvenience
     buttons: null,
     variables: [
         { name: 'request_type', example: 'Return/Exchange' },
-        { name: 'warehouse_address', example: '1590, HUDA Sector 1, Narnaul, Haryana – 123001' },
+        { name: 'warehouse_address', example: 'BURB MANUFACTURES PRIVATE LIMITED, K NO 181/169, K NO 229, Vill. BAIRAWAS, Distt. Mahendergarh, Haryana - 123028' },
         { name: 'warehouse_phone', example: '9138514222' },
         { name: 'order_number', example: '#12345' },
         { name: 'request_id', example: 'REQ-67796' }
@@ -4557,7 +4557,7 @@ async function sendSelfShipRequiredWhatsApp({ phone, requestId, orderNumber, typ
 async function resolveWarehouseAddress() {
     const warehouseLocation = await getSetting('warehouse_location', null);
 
-    let address = '1590, HUDA Sector 1, Narnaul, Haryana – 123001';
+    let address = 'BURB MANUFACTURES PRIVATE LIMITED, K NO 181/169, K NO 229, Vill. BAIRAWAS, Distt. Mahendergarh, Haryana - 123028';
     let phone = '9138514222';
 
     if (warehouseLocation) {
@@ -4574,6 +4574,46 @@ async function resolveWarehouseAddress() {
 
     return { address, phone };
 }
+
+/**
+ * Test endpoint: send the self-ship required template to test numbers.
+ * Auth: x-internal-token (same as other /api/internal/* endpoints).
+ * POST /api/internal/test/self-ship  { phones: ['91xxxxxxxxxx', ...] }
+ */
+app.post('/api/internal/test/self-ship', async (req, res) => {
+    try {
+        const expectedToken = process.env.WHATSAPP_INTERNAL_TOKEN;
+        if (expectedToken && req.headers['x-internal-token'] !== expectedToken) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const DEFAULT_TEST_PHONES = ['917419112241', '919992722207', '919413378016'];
+        const phones = (Array.isArray(req.body?.phones) && req.body.phones.length > 0)
+            ? req.body.phones.map(p => String(p).replace(/\D/g, '')).filter(d => d.length >= 10)
+            : DEFAULT_TEST_PHONES;
+
+        const { address, phone: warehousePhone } = await resolveWarehouseAddress();
+        console.log(`[Self-Ship Test] Resolved warehouse address: ${address} | phone: ${warehousePhone}`);
+
+        const results = [];
+        for (const phone of phones) {
+            const result = await sendSelfShipRequiredWhatsApp({
+                phone,
+                requestId: 'REQ-TEST-0001',
+                orderNumber: '#TEST-0001',
+                type: 'return',
+                warehouseAddress: address,
+                warehousePhone
+            });
+            results.push({ phone, success: result.success, messageId: result.messageId || null, error: result.error || null, fallback: !!result.fallback });
+        }
+
+        res.json({ success: true, warehouseAddress: address, warehousePhone, results });
+    } catch (error) {
+        console.error('[Self-Ship Test] Error:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 /**
  * Issue a Razorpay refund for the pickup fee when all carriers fail (unserviceable pincode).
