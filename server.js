@@ -4729,6 +4729,7 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
         let awbNumber = null;
         let shipmentId = null;
         let pickupDate = null;
+        let primaryCarrierFailed = false;
 
         if (!isFeeWaived) {
             // Get carrier mode from settings
@@ -4745,7 +4746,6 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
             
             let carrierUsed = null;
             let fallbackReason = null;
-            let primaryCarrierFailed = false;
 
             try {
                 // Try the resolved primary carrier, then the fallback partner if enabled
