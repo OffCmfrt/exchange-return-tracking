@@ -38,8 +38,9 @@
 //           normal /account/login form (same-origin -> Shopify issues the
 //           _secure_customer_session cookie directly in the browser)
 //
-// Limitation: customers whose legacy account is ALREADY activated
-// (state === 'enabled') keep their own password and must use email login.
+// Note: already-activated accounts are taken over by disabling them and
+// re-activating with a fresh random password (their old password stops
+// working after an OTP login).
 //
 // Env vars:
 //   SHOPIFY_STORE, SHOPIFY_ACCESS_TOKEN      (already present)
@@ -697,11 +698,19 @@ async function issueStorefrontLogin(phone) {
         console.log(`[OTP] Created Shopify customer ${customer.id} for +${phone} | email: ${resolved ? `real (${resolved.source})` : 'synthetic'}`);
     }
 
-    // Already-activated accounts have a password we cannot override -
-    // those users must log in with email + password.
+    // Already-activated accounts: OTP takes over. Disable the account
+    // first so it can be re-activated with a fresh random password via the
+    // one-time activation URL (the only way to issue a classic-account
+    // session without knowing the customer's original password).
+    // Side effect: after an OTP login the old password no longer works -
+    // the customer keeps logging in via OTP (or uses email recovery).
     if (customer.state === 'enabled') {
-        throw new OtpError('already_active',
-            'This account already has a password. Please use email + password login.', 409);
+        const data = await shopifyAdmin(`customers/${customer.id}.json`, {
+            method: 'PUT',
+            body: JSON.stringify({ customer: { id: customer.id, state: 'disabled' } })
+        });
+        customer = data.customer || { ...customer, state: 'disabled' };
+        console.log(`[OTP] Disabled enabled account ${customer.id} for OTP takeover (+${phone})`);
     }
 
     // Phone-only customers (common with GoKwik checkout) have no email,
@@ -733,11 +742,6 @@ async function issueStorefrontLogin(phone) {
             }
         }
         console.log(`[OTP] ${resolved ? `Resolved real email from ${resolved.source}` : 'Assigned synthetic email'} for customer ${customer.id} (+${phone})`);
-
-        if (customer.state === 'enabled') {
-            throw new OtpError('already_active',
-                'This account already has a password. Please use email + password login.', 409);
-        }
     }
 
     const password = randomPassword();
