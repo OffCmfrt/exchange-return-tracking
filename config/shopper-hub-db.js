@@ -114,4 +114,33 @@ async function findShopperOrder(orderNumber) {
     }
 }
 
-module.exports = { findShopperOrder };
+/**
+ * Resolve a shopper's email from their phone number (matched on the last
+ * 10 digits so +91/91/10-digit formats all work). Used by the OTP login
+ * flow to attach a real email to phone-only Shopify customers.
+ * Returns the email string or null.
+ */
+async function findShopperEmailByPhone(phone) {
+    const activePool = getPool();
+    if (!activePool) return null;
+
+    const digits = String(phone || '').replace(/\D/g, '').slice(-10);
+    if (digits.length < 10) return null;
+
+    try {
+        const { rows } = await activePool.query(`
+            SELECT email
+            FROM store_shoppers
+            WHERE email IS NOT NULL AND email <> ''
+              AND RIGHT(regexp_replace(COALESCE(phone, ''), '\D', '', 'g'), 10) = $1
+            ORDER BY updated_at DESC NULLS LAST
+            LIMIT 1
+        `, [digits]);
+        return rows[0]?.email?.trim() || null;
+    } catch (err) {
+        console.warn('Shopper Hub email-by-phone lookup failed (non-fatal):', err.message);
+        return null;
+    }
+}
+
+module.exports = { findShopperOrder, findShopperEmailByPhone };

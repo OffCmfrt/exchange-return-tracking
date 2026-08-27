@@ -24,7 +24,10 @@
 //   1. /api/auth/otp/send   -> VerifyNow sends the OTP
 //                              (dev mode: logs to console when unconfigured)
 //   2. /api/auth/otp/verify -> VerifyNow validateOtp checks the OTP, then:
-//        a. Find Shopify customer by phone (Admin API) - create if missing
+//        a. Find Shopify customer by phone (Admin API) - create if missing.
+//           Phone-only customers get an email resolved from real sources
+//           (Shopify order checkout emails -> local DB requests/abandoned
+//           carts) before falling back to a synthetic <phone>@<store> email.
 //        b. Generate a one-time account activation URL via Admin API
 //           (customerGenerateAccountActivationUrl equivalent - NO email needed,
 //           unlike the password-reset-token trick which requires intercepting
@@ -56,6 +59,7 @@
 // ============================================================================
 
 const crypto = require('crypto');
+const shopperHubDb = require('./shopper-hub-db');
 
 const SHOPIFY_API_VERSION = '2024-01';
 const STOREFRONT_USER_AGENT = 'Mozilla/5.0 (compatible; OFFCOMFRT-OTP/1.0)';
@@ -446,10 +450,119 @@ function syntheticEmail(phone) {
     return `${phone}@${domain}`;
 }
 
-async function createCustomer(phone) {
+function isValidEmail(email) {
+    return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+// Lazily load the Supabase client (module throws only if required without env)
+let _supabase = null;
+function getSupabase() {
+    if (_supabase === undefined) return null;
+    if (_supabase === null) {
+        try { _supabase = require('./supabase'); } catch { _supabase = undefined; }
+        if (_supabase === null) _supabase = undefined;
+    }
+    return _supabase || null;
+}
+
+// Search Shopify orders by the checkout phone (covers GoKwik + Shiprocket
+// shipments, since every shipped order originates from a Shopify order).
+async function emailFromShopifyOrders(phone) {
+    const bare = phone.replace(/\D/g, '').slice(-10);
+    const variants = [`+91${bare}`, bare];
+    for (const variant of variants) {
+        const query = {
+            query: `{ orders(first: 1, query: "phone:${variant}", sortKey: CREATED_AT, reverse: true) { nodes { email } } }`
+        };
+        try {
+            const data = await shopifyAdmin('graphql.json', {
+                method: 'POST',
+                body: JSON.stringify(query)
+            });
+            const email = data?.data?.orders?.nodes?.[0]?.email;
+            if (isValidEmail(email)) return email;
+        } catch (err) {
+            console.warn(`[OTP] Shopify order email lookup failed for variant ${variant}:`, err.message);
+        }
+    }
+    return null;
+}
+
+// Search our own Supabase tables that store phone + email together
+async function emailFromLocalDb(phone) {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const bare = phone.replace(/\D/g, '').slice(-10);
+    const variants = [`+91${bare}`, bare, phone];
+
+    // 1. Return/exchange requests
+    try {
+        const { data, error } = await supabase
+            .from('requests')
+            .select('customer_email, customer_phone')
+            .in('customer_phone', variants)
+            .not('customer_email', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        if (!error && data?.[0]?.customer_email && isValidEmail(data[0].customer_email)) {
+            return data[0].customer_email.trim();
+        }
+    } catch (err) {
+        console.warn('[OTP] requests table email lookup failed:', err.message);
+    }
+
+    // 2. GoKwik / Shopify abandoned carts (often hold the checkout email)
+    try {
+        const { data, error } = await supabase
+            .from('marketing_abandoned_carts')
+            .select('customer_email, customer_phone')
+            .not('customer_phone', 'is', null)
+            .not('customer_email', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(200);
+        if (!error && Array.isArray(data)) {
+            const match = data.find(c => {
+                const digits = (c.customer_phone || '').replace(/\D/g, '').slice(-10);
+                return digits === bare && isValidEmail(c.customer_email);
+            });
+            if (match) return match.customer_email.trim();
+        }
+    } catch (err) {
+        console.warn('[OTP] abandoned-carts email lookup failed:', err.message);
+    }
+
+    // 3. WhatsApp Shoppers Hub DB (store_shoppers holds all WhatsApp-bot
+    // customer records - phone + email together)
+    try {
+        const shopperEmail = await shopperHubDb.findShopperEmailByPhone(phone);
+        if (shopperEmail && isValidEmail(shopperEmail)) return shopperEmail;
+    } catch (err) {
+        console.warn('[OTP] Shoppers Hub email lookup failed:', err.message);
+    }
+
+    return null;
+}
+
+/**
+ * Resolve a real email for a phone-only customer before resorting to the
+ * synthetic one. Chain: Shopify orders -> local DB (requests, abandoned
+ * carts, Shoppers Hub) -> null (caller falls back to syntheticEmail).
+ * Never throws.
+ */
+async function resolveRealEmail(phone) {
+    const fromOrders = await emailFromShopifyOrders(phone);
+    if (fromOrders) return { email: fromOrders, source: 'shopify_orders' };
+
+    const fromDb = await emailFromLocalDb(phone);
+    if (fromDb) return { email: fromDb, source: 'local_db' };
+
+    return null;
+}
+
+async function createCustomer(phone, email) {
     const payload = {
         customer: {
-            email: syntheticEmail(phone),
+            email: email || syntheticEmail(phone),
             phone: `+${phone}`,
             first_name: 'Customer',
             tags: 'otp-login',
@@ -568,8 +681,10 @@ async function issueStorefrontLogin(phone) {
 
     let customer = await findCustomerByPhone(phone);
     if (!customer) {
-        customer = await createCustomer(phone);
-        console.log(`[OTP] Created Shopify customer ${customer.id} for +${phone}`);
+        // Brand-new customer: try to attach a real email from day one
+        const resolved = await resolveRealEmail(phone);
+        customer = await createCustomer(phone, resolved?.email);
+        console.log(`[OTP] Created Shopify customer ${customer.id} for +${phone} | email: ${resolved ? `real (${resolved.source})` : 'synthetic'}`);
     }
 
     // Already-activated accounts have a password we cannot override -
@@ -580,14 +695,34 @@ async function issueStorefrontLogin(phone) {
     }
 
     // Phone-only customers (common with GoKwik checkout) have no email,
-    // but classic-account login needs one: assign a synthetic email now.
+    // but classic-account login needs one. Resolution order: real email
+    // from Shopify orders / our DB -> synthetic email as last resort.
     if (!customer.email) {
-        const data = await shopifyAdmin(`customers/${customer.id}.json`, {
-            method: 'PUT',
-            body: JSON.stringify({ customer: { id: customer.id, email: syntheticEmail(phone) } })
-        });
-        customer = data.customer || { ...customer, email: syntheticEmail(phone) };
-        console.log(`[OTP] Assigned synthetic email to phone-only customer ${customer.id} (+${phone})`);
+        const resolved = await resolveRealEmail(phone);
+        const email = resolved?.email || syntheticEmail(phone);
+
+        try {
+            const data = await shopifyAdmin(`customers/${customer.id}.json`, {
+                method: 'PUT',
+                body: JSON.stringify({ customer: { id: customer.id, email } })
+            });
+            customer = data.customer || { ...customer, email };
+        } catch (err) {
+            // Real email already belongs to another customer record -
+            // fall back to the unique synthetic one instead of failing
+            if (resolved && err.message.includes('422')) {
+                console.warn(`[OTP] Resolved email ${resolved.email} already taken; using synthetic for customer ${customer.id}`);
+                const fallback = syntheticEmail(phone);
+                const data = await shopifyAdmin(`customers/${customer.id}.json`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ customer: { id: customer.id, email: fallback } })
+                });
+                customer = data.customer || { ...customer, email: fallback };
+            } else {
+                throw err;
+            }
+        }
+        console.log(`[OTP] ${resolved ? `Resolved real email from ${resolved.source}` : 'Assigned synthetic email'} for customer ${customer.id} (+${phone})`);
 
         if (customer.state === 'enabled') {
             throw new OtpError('already_active',
