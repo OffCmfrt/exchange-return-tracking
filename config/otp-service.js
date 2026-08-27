@@ -613,6 +613,27 @@ async function generateActivationUrl(customerId) {
     return activationUrl;
 }
 
+/**
+ * Generate an activation URL, retrying while Shopify reports the account
+ * still enabled. Customer state changes (our disable-for-takeover PUT)
+ * propagate asynchronously, so the first attempt can race the state flip.
+ */
+async function generateActivationUrlWithRetry(customerId) {
+    let lastErr = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+            return await generateActivationUrl(customerId);
+        } catch (err) {
+            lastErr = err;
+            const alreadyEnabled = err.message.includes('422') && /already enabled/i.test(err.message);
+            if (!alreadyEnabled || attempt === 3) throw err;
+            console.log(`[OTP] Activation URL attempt ${attempt + 1} raced the state flip ("account already enabled") - retrying`);
+            await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+        }
+    }
+    throw lastErr;
+}
+
 // Extract hidden form inputs from a Shopify storefront page
 function parseHiddenInputs(html) {
     const hidden = {};
@@ -821,7 +842,7 @@ async function issueStorefrontLogin(phone) {
     }
 
     const password = randomPassword();
-    const activationUrl = await generateActivationUrl(customer.id);
+    const activationUrl = await generateActivationUrlWithRetry(customer.id);
     await activateAccount(activationUrl, password);
 
     // Make guest orders placed with this phone visible in the account's
