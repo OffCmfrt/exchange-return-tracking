@@ -474,7 +474,7 @@ async function emailFromShopifyOrders(phone) {
     const bare = phone.replace(/\D/g, '').slice(-10);
     const query = {
         query: `{ orders(first: 50, query: "phone:${phone}", sortKey: CREATED_AT, reverse: true) {
-            nodes { email phone customer { phone } } } }`
+            nodes { email phone customer { phone } shippingAddress { phone } billingAddress { phone } } } }`
     };
 
     let nodes = [];
@@ -490,9 +490,14 @@ async function emailFromShopifyOrders(phone) {
     }
 
     for (const order of nodes) {
-        const orderDigits = (order.phone || '').replace(/\D/g, '').slice(-10);
-        const customerDigits = (order.customer?.phone || '').replace(/\D/g, '').slice(-10);
-        if ((orderDigits === bare || customerDigits === bare) && isValidEmail(order.email)) {
+        const candidates = [
+            order.phone,
+            order.customer?.phone,
+            order.shippingAddress?.phone,
+            order.billingAddress?.phone
+        ];
+        const matched = candidates.some(p => (p || '').replace(/\D/g, '').slice(-10) === bare);
+        if (matched && isValidEmail(order.email)) {
             return order.email;
         }
     }
@@ -683,6 +688,77 @@ async function activateAccount(activationUrl, password) {
 }
 
 /**
+ * Attach guest orders placed with this phone (GoKwik / guest checkout)
+ * to the customer so they appear on the /account order history page.
+ * Only orders with NO customer attached are linked - orders already
+ * belonging to another customer record are left untouched.
+ * Best-effort: never throws.
+ */
+async function linkOrdersToCustomer(phone, customerId) {
+    const bare = phone.replace(/\D/g, '').slice(-10);
+
+    let nodes = [];
+    try {
+        const data = await shopifyAdmin('graphql.json', {
+            method: 'POST',
+            body: JSON.stringify({
+                query: `{ orders(first: 50, query: "phone:${phone}", sortKey: CREATED_AT, reverse: true) {
+                    nodes {
+                        id name phone
+                        customer { id }
+                        shippingAddress { phone }
+                        billingAddress { phone }
+                    } } }`
+            })
+        });
+        nodes = data?.data?.orders?.nodes || [];
+    } catch (err) {
+        console.warn('[OTP] Order-link lookup failed (non-fatal):', err.message);
+        return 0;
+    }
+
+    // The `phone:` qualifier is unreliable - validate every order ourselves
+    // (phone may live on the order, the customer, or either address)
+    const guestOrderIds = nodes
+        .filter(o => {
+            const candidates = [
+                o.phone,
+                o.customer?.phone,
+                o.shippingAddress?.phone,
+                o.billingAddress?.phone
+            ];
+            return candidates.some(p => (p || '').replace(/\D/g, '').slice(-10) === bare) && !o.customer;
+        })
+        .map(o => o.id);
+
+    if (!guestOrderIds.length) return 0;
+
+    try {
+        const data = await shopifyAdmin('graphql.json', {
+            method: 'POST',
+            body: JSON.stringify({
+                query: `mutation {
+                    customerAssociateOrders(
+                        customerId: "gid://shopify/Customer/${customerId}",
+                        orderIds: [${guestOrderIds.map(id => `"${id}"`).join(',')}]
+                    ) { userErrors { field message } }
+                }`
+            })
+        });
+        const userErrors = data?.data?.customerAssociateOrders?.userErrors || [];
+        if (userErrors.length) {
+            console.warn(`[OTP] Order-link userErrors for customer ${customerId}:`, JSON.stringify(userErrors));
+        } else {
+            console.log(`[OTP] Linked ${guestOrderIds.length} guest order(s) to customer ${customerId} (+${phone})`);
+        }
+        return guestOrderIds.length;
+    } catch (err) {
+        console.warn('[OTP] Order-link mutation failed (non-fatal):', err.message);
+        return 0;
+    }
+}
+
+/**
  * Full verify-otp backend flow: find/create customer, activate account,
  * return the storefront login credentials for the theme to submit.
  */
@@ -747,6 +823,10 @@ async function issueStorefrontLogin(phone) {
     const password = randomPassword();
     const activationUrl = await generateActivationUrl(customer.id);
     await activateAccount(activationUrl, password);
+
+    // Make guest orders placed with this phone visible in the account's
+    // order history (best-effort; never blocks the login)
+    await linkOrdersToCustomer(phone, customer.id);
 
     return {
         action: `https://${shop}/account/login`,
