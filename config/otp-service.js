@@ -467,22 +467,32 @@ function getSupabase() {
 
 // Search Shopify orders by the checkout phone (covers GoKwik + Shiprocket
 // shipments, since every shipped order originates from a Shopify order).
+// NOTE: the `phone:` search qualifier is unreliable (can behave like no
+// filter), so fetch recent orders and validate each one's phone ourselves.
 async function emailFromShopifyOrders(phone) {
     const bare = phone.replace(/\D/g, '').slice(-10);
-    const variants = [`+91${bare}`, bare];
-    for (const variant of variants) {
-        const query = {
-            query: `{ orders(first: 1, query: "phone:${variant}", sortKey: CREATED_AT, reverse: true) { nodes { email } } }`
-        };
-        try {
-            const data = await shopifyAdmin('graphql.json', {
-                method: 'POST',
-                body: JSON.stringify(query)
-            });
-            const email = data?.data?.orders?.nodes?.[0]?.email;
-            if (isValidEmail(email)) return email;
-        } catch (err) {
-            console.warn(`[OTP] Shopify order email lookup failed for variant ${variant}:`, err.message);
+    const query = {
+        query: `{ orders(first: 50, query: "phone:${phone}", sortKey: CREATED_AT, reverse: true) {
+            nodes { email phone customer { phone } } } }`
+    };
+
+    let nodes = [];
+    try {
+        const data = await shopifyAdmin('graphql.json', {
+            method: 'POST',
+            body: JSON.stringify(query)
+        });
+        nodes = data?.data?.orders?.nodes || [];
+    } catch (err) {
+        console.warn('[OTP] Shopify order email lookup failed:', err.message);
+        return null;
+    }
+
+    for (const order of nodes) {
+        const orderDigits = (order.phone || '').replace(/\D/g, '').slice(-10);
+        const customerDigits = (order.customer?.phone || '').replace(/\D/g, '').slice(-10);
+        if ((orderDigits === bare || customerDigits === bare) && isValidEmail(order.email)) {
+            return order.email;
         }
     }
     return null;
@@ -747,5 +757,6 @@ module.exports = {
     sendOtp,
     verifyOtp,
     issueStorefrontLogin,
+    resolveRealEmail,
     OtpError
 };
