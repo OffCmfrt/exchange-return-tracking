@@ -38,9 +38,9 @@
 //           normal /account/login form (same-origin -> Shopify issues the
 //           _secure_customer_session cookie directly in the browser)
 //
-// Note: already-activated accounts are taken over by disabling them and
-// re-activating with a fresh random password (their old password stops
-// working after an OTP login).
+// Note: already-activated accounts (state === 'enabled') keep their own
+// password - Shopify exposes no API to override it, so the theme shows
+// them the classic email login form instead (error code already_active).
 //
 // Env vars:
 //   SHOPIFY_STORE, SHOPIFY_ACCESS_TOKEN      (already present)
@@ -614,26 +614,8 @@ async function generateActivationUrl(customerId) {
 }
 
 /**
- * Generate an activation URL, retrying while Shopify reports the account
- * still enabled. Customer state changes (our disable-for-takeover PUT)
- * propagate asynchronously, so the first attempt can race the state flip.
+ * Generate an activation URL for invited/declined/disabled accounts.
  */
-async function generateActivationUrlWithRetry(customerId) {
-    let lastErr = null;
-    for (let attempt = 0; attempt < 4; attempt++) {
-        try {
-            return await generateActivationUrl(customerId);
-        } catch (err) {
-            lastErr = err;
-            const alreadyEnabled = err.message.includes('422') && /already enabled/i.test(err.message);
-            if (!alreadyEnabled || attempt === 3) throw err;
-            console.log(`[OTP] Activation URL attempt ${attempt + 1} raced the state flip ("account already enabled") - retrying`);
-            await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
-        }
-    }
-    throw lastErr;
-}
-
 // Extract hidden form inputs from a Shopify storefront page
 function parseHiddenInputs(html) {
     const hidden = {};
@@ -795,19 +777,13 @@ async function issueStorefrontLogin(phone) {
         console.log(`[OTP] Created Shopify customer ${customer.id} for +${phone} | email: ${resolved ? `real (${resolved.source})` : 'synthetic'}`);
     }
 
-    // Already-activated accounts: OTP takes over. Disable the account
-    // first so it can be re-activated with a fresh random password via the
-    // one-time activation URL (the only way to issue a classic-account
-    // session without knowing the customer's original password).
-    // Side effect: after an OTP login the old password no longer works -
-    // the customer keeps logging in via OTP (or uses email recovery).
+    // Already-activated accounts have a password that no public Shopify
+    // API can override (customer state is read-only; activation URLs only
+    // work for invited/declined accounts). Those users use email login -
+    // the theme auto-reveals the email form on this error code.
     if (customer.state === 'enabled') {
-        const data = await shopifyAdmin(`customers/${customer.id}.json`, {
-            method: 'PUT',
-            body: JSON.stringify({ customer: { id: customer.id, state: 'disabled' } })
-        });
-        customer = data.customer || { ...customer, state: 'disabled' };
-        console.log(`[OTP] Disabled enabled account ${customer.id} for OTP takeover (+${phone})`);
+        throw new OtpError('already_active',
+            'This number is linked to an account with a password. Please use "Login with email instead" below.', 409);
     }
 
     // Phone-only customers (common with GoKwik checkout) have no email,
@@ -842,7 +818,7 @@ async function issueStorefrontLogin(phone) {
     }
 
     const password = randomPassword();
-    const activationUrl = await generateActivationUrlWithRetry(customer.id);
+    const activationUrl = await generateActivationUrl(customer.id);
     await activateAccount(activationUrl, password);
 
     // Make guest orders placed with this phone visible in the account's
