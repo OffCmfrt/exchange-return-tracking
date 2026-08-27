@@ -13537,10 +13537,11 @@ app.get('/api/internal/ai-data', async (req, res) => {
 });
 
 // ==================== PHONE OTP LOGIN (STOREFRONT) ====================
-// Classic-account phone OTP login: Message Central VerifyNow sends/verifies
-// the OTP (no DLT needed), then the Shopify account is activated server-side
-// and the storefront JS submits a normal /account/login form to receive the
-// session cookie. See config/otp-service.js for the full flow and env vars.
+// Classic-account phone OTP login: Renflair (primary, if configured) or
+// Message Central VerifyNow sends the OTP (no DLT needed), then the Shopify
+// account is activated server-side and the storefront JS submits a normal
+// /account/login form to receive the session cookie.
+// See config/otp-service.js for the full flow and env vars.
 const otpService = require('./config/otp-service');
 
 // Strict limiter for OTP endpoints (on top of the general /api/ limiter)

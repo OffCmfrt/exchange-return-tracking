@@ -606,7 +606,9 @@ async function generateActivationUrl(customerId) {
     const data = await shopifyAdmin(`customers/${customerId}/account_activation_url.json`, {
         method: 'POST'
     });
-    const activationUrl = data.account_activation_url?.activation_url;
+    // Shopify returns the URL as a plain string under account_activation_url
+    const raw = data.account_activation_url;
+    const activationUrl = typeof raw === 'string' ? raw : raw?.activation_url;
     if (!activationUrl) {
         throw new OtpError('activation_url_failed', 'Could not generate an account activation link', 502);
     }
