@@ -1,0 +1,543 @@
+{% layout none %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manufacture Studio — OFFCOMFRT</title>
+{% comment %}
+  OFFCOMFRT — Manufacture Studio
+  Monochromatic B&W premium portal for the manufacturer to submit new designs
+  (name, style code, description, quantity, deadline). Admin reviews them at
+  /manufacture/admin on the returns server.
+  Deploy: save as templates/page.manufacture.liquid, then create a page in
+  Shopify admin and assign the "manufacture" template.
+{% endcomment %}
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+.mf-root {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #121212;
+  --border: #1f1f1f;
+  --border-hover: #3a3a3a;
+  --text: #ffffff;
+  --muted: #666666;
+  --faint: #9a9a9a;
+  --transition: 0.22s cubic-bezier(0.4,0,0.2,1);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+html, body { background: #000; }
+
+.mf-hidden { display: none !important; }
+
+/* ── Animations ── */
+@keyframes mfFadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes mfFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mfShimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+@keyframes mfPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes mfSpin { to { transform: rotate(360deg); } }
+
+.mf-fade-up { animation: mfFadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both; }
+.mf-fade-in { animation: mfFadeIn 0.5s ease both; }
+
+/* ── Login ── */
+.mf-login {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 2rem 1rem;
+  position: relative; overflow: hidden;
+}
+.mf-login::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(600px circle at 50% 20%, rgba(255,255,255,0.06), transparent 60%);
+  pointer-events: none;
+}
+.mf-login-card {
+  width: 100%; max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 3rem 2.5rem;
+  position: relative;
+  animation: mfFadeUp 0.7s cubic-bezier(0.16,1,0.3,1) both;
+}
+.mf-wordmark {
+  text-align: center; font-size: 1.6rem; font-weight: 800;
+  letter-spacing: 0.45em; text-indent: 0.45em; margin-bottom: 0.5rem;
+  background: linear-gradient(90deg, #ffffff 0%, #8a8a8a 40%, #ffffff 60%, #ffffff 100%);
+  background-size: 400px 100%;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: mfShimmer 4s linear infinite;
+}
+.mf-kicker {
+  text-align: center; font-size: 0.65rem; letter-spacing: 0.35em; text-indent: 0.35em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 2.25rem;
+}
+.mf-label {
+  display: block; font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 0.5rem;
+}
+.mf-input, .mf-textarea, .mf-select {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; color: var(--text); padding: 0.8rem 1rem;
+  font-size: 0.9rem; font-family: inherit; outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.mf-input:focus, .mf-textarea:focus, .mf-select:focus {
+  border-color: var(--border-hover);
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.05);
+}
+.mf-input::placeholder, .mf-textarea::placeholder { color: #3d3d3d; }
+.mf-textarea { resize: vertical; min-height: 90px; }
+.mf-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; cursor: pointer; }
+.mf-btn {
+  width: 100%; padding: 0.85rem 1.25rem; border-radius: 10px; border: none;
+  background: #ffffff; color: #000000; font-weight: 700; font-size: 0.8rem;
+  letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer;
+  transition: transform var(--transition), box-shadow var(--transition), opacity var(--transition);
+  font-family: inherit;
+}
+.mf-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(255,255,255,0.12); }
+.mf-btn:active { transform: translateY(0); }
+.mf-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+.mf-btn-ghost {
+  background: transparent; color: var(--text); border: 1px solid var(--border);
+  width: auto; padding: 0.55rem 1.1rem;
+}
+.mf-btn-ghost:hover { border-color: var(--border-hover); box-shadow: none; }
+.mf-error-msg {
+  margin-top: 1rem; font-size: 0.8rem; color: #ff6b6b; text-align: center;
+  animation: mfFadeIn 0.3s ease;
+}
+.mf-spinner {
+  width: 16px; height: 16px; border: 2px solid rgba(0,0,0,0.2);
+  border-top-color: #000; border-radius: 50%; display: inline-block;
+  animation: mfSpin 0.7s linear infinite; vertical-align: -3px; margin-left: 0.5rem;
+}
+
+/* ── App shell ── */
+.mf-app { max-width: 1100px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+.mf-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 2.5rem; flex-wrap: wrap; gap: 1rem;
+  animation: mfFadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both;
+}
+.mf-topbar h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.35em; text-transform: uppercase; }
+.mf-topbar .mf-sub { font-size: 0.62rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); margin-top: 0.3rem; }
+.mf-topbar-actions { display: flex; gap: 0.75rem; }
+
+/* Stats */
+.mf-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2.5rem; }
+.mf-stat {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 1.4rem 1.5rem; position: relative; overflow: hidden;
+  transition: transform var(--transition), border-color var(--transition);
+  animation: mfFadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both;
+}
+.mf-stat:hover { transform: translateY(-3px); border-color: var(--border-hover); }
+.mf-stat::after {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+}
+.mf-stat-label { font-size: 0.6rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.6rem; }
+.mf-stat-value { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
+
+/* Design list */
+.mf-list-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;
+}
+.mf-list-header h2 { font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--faint); }
+.mf-grid { display: grid; gap: 1rem; }
+.mf-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 1.5rem; transition: transform var(--transition), border-color var(--transition);
+  animation: mfFadeUp 0.55s cubic-bezier(0.16,1,0.3,1) both;
+}
+.mf-card:hover { transform: translateY(-2px); border-color: var(--border-hover); }
+.mf-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.mf-card-name { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.02em; }
+.mf-card-style { font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-top: 0.3rem; }
+.mf-card-desc { margin-top: 0.9rem; font-size: 0.85rem; color: var(--faint); line-height: 1.6; white-space: pre-wrap; }
+.mf-card-meta {
+  display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 1.1rem;
+  padding-top: 1.1rem; border-top: 1px solid var(--border);
+}
+.mf-meta-item .mf-label { font-size: 0.55rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.3rem; }
+.mf-meta-item .mf-val { font-size: 0.9rem; font-weight: 600; }
+.mf-card-actions { display: flex; gap: 0.5rem; margin-top: 1.1rem; }
+.mf-card-actions button {
+  background: transparent; border: 1px solid var(--border); color: var(--faint);
+  border-radius: 8px; padding: 0.4rem 0.9rem; font-size: 0.65rem; letter-spacing: 0.15em;
+  text-transform: uppercase; cursor: pointer; font-family: inherit;
+  transition: all var(--transition);
+}
+.mf-card-actions button:hover { color: var(--text); border-color: var(--border-hover); }
+.mf-card-actions .mf-del:hover { color: #ff6b6b; border-color: rgba(255,107,107,0.4); }
+
+/* Badges */
+.mf-badge {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  padding: 0.4rem 0.85rem; border-radius: 100px; border: 1px solid var(--border);
+  color: var(--faint); background: var(--surface-2);
+}
+.mf-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.mf-badge.mf-pending { color: #d4d4d4; }
+.mf-badge.mf-approved { color: #ffffff; background: rgba(255,255,255,0.1); }
+.mf-badge.mf-in_production { color: #bdbdbd; }
+.mf-badge.mf-in_production::before { animation: mfPulse 1.6s ease infinite; }
+.mf-badge.mf-completed { color: #8f8f8f; text-decoration: none; }
+.mf-badge.mf-rejected { color: #7a7a7a; }
+
+.mf-deadline-chip { font-size: 0.7rem; letter-spacing: 0.1em; color: var(--faint); }
+.mf-deadline-chip.mf-overdue { color: #ff6b6b; animation: mfPulse 2s ease infinite; }
+.mf-deadline-chip.mf-soon { color: #ffffff; }
+
+.mf-empty {
+  text-align: center; padding: 4rem 1rem; color: var(--muted);
+  border: 1px dashed var(--border); border-radius: 14px; font-size: 0.85rem;
+  letter-spacing: 0.05em; animation: mfFadeIn 0.5s ease both;
+}
+
+/* Modal */
+.mf-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 100;
+  animation: mfFadeIn 0.25s ease;
+}
+.mf-modal {
+  width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border-hover);
+  border-radius: 16px; padding: 2.25rem;
+  animation: mfFadeUp 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+.mf-modal h3 { font-size: 0.9rem; letter-spacing: 0.25em; text-transform: uppercase; margin-bottom: 1.75rem; }
+.mf-field { margin-bottom: 1.25rem; }
+.mf-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.mf-modal-actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
+.mf-modal-actions .mf-btn { flex: 1; }
+
+/* Toast */
+.mf-toast {
+  position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+  background: #ffffff; color: #000000; padding: 0.8rem 1.5rem; border-radius: 100px;
+  font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  box-shadow: 0 10px 40px rgba(255,255,255,0.15); z-index: 200;
+  animation: mfFadeUp 0.35s cubic-bezier(0.16,1,0.3,1);
+}
+.mf-toast.mf-toast-error { background: #1a1a1a; color: #ff6b6b; border: 1px solid rgba(255,107,107,0.3); }
+
+@media (max-width: 600px) {
+  .mf-field-row { grid-template-columns: 1fr; }
+  .mf-card-meta { gap: 1rem; }
+}
+</style>
+</head>
+<body>
+<div class="mf-root">
+
+  <!-- LOGIN -->
+  <div id="mfLogin" class="mf-login">
+    <div class="mf-login-card">
+      <div class="mf-wordmark">OFFCOMFRT</div>
+      <div class="mf-kicker">Manufacture Studio</div>
+      <form id="mfLoginForm">
+        <div class="mf-field">
+          <label class="mf-label" for="mfPassword">Access Password</label>
+          <input class="mf-input" type="password" id="mfPassword" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+        <button class="mf-btn" type="submit" id="mfLoginBtn">Enter Studio</button>
+        <div id="mfLoginErr" class="mf-error-msg mf-hidden"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="mfApp" class="mf-app mf-hidden">
+    <div class="mf-topbar">
+      <div>
+        <h1>Manufacture Studio</h1>
+        <div class="mf-sub">OFFCOMFRT — Design Production</div>
+      </div>
+      <div class="mf-topbar-actions">
+        <button class="mf-btn mf-btn-ghost" onclick="mfLogout()">Logout</button>
+        <button class="mf-btn mf-btn-ghost" style="background:#fff;color:#000;border-color:#fff;" onclick="mfOpenModal()">+ New Design</button>
+      </div>
+    </div>
+
+    <div class="mf-stats" id="mfStats"></div>
+
+    <div class="mf-list-header">
+      <h2>Design Submissions</h2>
+      <button class="mf-btn mf-btn-ghost" onclick="mfLoadDesigns()" id="mfRefreshBtn">Refresh</button>
+    </div>
+    <div class="mf-grid" id="mfGrid"></div>
+  </div>
+
+  <!-- MODAL -->
+  <div id="mfModalOverlay" class="mf-modal-overlay mf-hidden" onclick="if(event.target===this)mfCloseModal()">
+    <div class="mf-modal">
+      <h3 id="mfModalTitle">New Design</h3>
+      <form id="mfDesignForm">
+        <input type="hidden" id="mfDesignId">
+        <div class="mf-field">
+          <label class="mf-label" for="mfName">Design Name *</label>
+          <input class="mf-input" type="text" id="mfName" maxlength="120" placeholder="e.g. Oversized Tee — Wave Graphic" required>
+        </div>
+        <div class="mf-field">
+          <label class="mf-label" for="mfStyleCode">Style Code <span style="color:#3d3d3d;">(optional)</span></label>
+          <input class="mf-input" type="text" id="mfStyleCode" maxlength="60" placeholder="e.g. OC-SS26-014">
+        </div>
+        <div class="mf-field">
+          <label class="mf-label" for="mfDesc">Description</label>
+          <textarea class="mf-textarea" id="mfDesc" maxlength="2000" placeholder="Fabric, fit, print details, trims…"></textarea>
+        </div>
+        <div class="mf-field-row">
+          <div class="mf-field">
+            <label class="mf-label" for="mfQty">Quantity *</label>
+            <input class="mf-input" type="number" id="mfQty" min="1" max="1000000" placeholder="0" required>
+          </div>
+          <div class="mf-field">
+            <label class="mf-label" for="mfDeadline">Deadline *</label>
+            <input class="mf-input" type="date" id="mfDeadline" required>
+          </div>
+        </div>
+        <div class="mf-modal-actions">
+          <button class="mf-btn mf-btn-ghost" type="button" onclick="mfCloseModal()">Cancel</button>
+          <button class="mf-btn" type="submit" id="mfSaveBtn">Save Design</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const API = 'https://exchange-return-tracking.onrender.com/api/manufacture';
+  let authToken = null; // JWT kept in memory only
+  let designs = [];
+
+  // ── Helpers ──
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function mfApi(path, options = {}) {
+    return fetch(API + path, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: 'Bearer ' + authToken } : {}), ...(options.headers || {}) }
+    });
+  }
+
+  function mfToast(msg, isError) {
+    const el = document.createElement('div');
+    el.className = 'mf-toast' + (isError ? ' mf-toast-error' : '');
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.4s'; setTimeout(() => el.remove(), 400); }, 2600);
+  }
+
+  const STATUS_LABELS = { pending: 'Pending Review', approved: 'Approved', in_production: 'In Production', completed: 'Completed', rejected: 'Rejected' };
+
+  function fmtDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return '—';
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function deadlineChip(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return '<span class="mf-deadline-chip">—</span>';
+    const days = Math.ceil((d - new Date()) / 86400000);
+    let cls = '', label = fmtDate(iso);
+    if (days < 0) { cls = 'mf-overdue'; label = 'Overdue by ' + Math.abs(days) + 'd'; }
+    else if (days === 0) { cls = 'mf-soon'; label = 'Due today'; }
+    else if (days <= 7) { cls = 'mf-soon'; label = label + ' · ' + days + 'd left'; }
+    return '<span class="mf-deadline-chip ' + cls + '">' + esc(label) + '</span>';
+  }
+
+  function countUp(el, target) {
+    const dur = 700, start = performance.now();
+    function tick(now) {
+      const p = Math.min((now - start) / dur, 1);
+      el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // ── Auth ──
+  window.mfLogout = function () {
+    authToken = null; designs = [];
+    $('mfApp').classList.add('mf-hidden');
+    $('mfLogin').classList.remove('mf-hidden');
+    $('mfPassword').value = '';
+  };
+
+  $('mfLoginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('mfLoginBtn'), err = $('mfLoginErr');
+    const password = $('mfPassword').value.trim();
+    if (!password) return;
+    btn.disabled = true; btn.innerHTML = 'Verifying<span class="mf-spinner"></span>';
+    err.classList.add('mf-hidden');
+    try {
+      const res = await fetch(API + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        authToken = data.token;
+        $('mfLogin').classList.add('mf-hidden');
+        $('mfApp').classList.remove('mf-hidden');
+        await mfLoadDesigns();
+      } else {
+        err.textContent = data.error || 'Invalid password';
+        err.classList.remove('mf-hidden');
+      }
+    } catch (e2) {
+      err.textContent = 'Connection error. Try again.';
+      err.classList.remove('mf-hidden');
+    }
+    btn.disabled = false; btn.textContent = 'Enter Studio';
+  });
+
+  // ── Data ──
+  window.mfLoadDesigns = async function () {
+    try {
+      const res = await mfApi('/designs');
+      if (res.status === 401) { mfLogout(); return; }
+      const data = await res.json();
+      designs = data.designs || [];
+      mfRenderStats();
+      mfRenderGrid();
+    } catch (e) {
+      mfToast('Failed to load designs', true);
+    }
+  };
+
+  function mfRenderStats() {
+    const total = designs.length;
+    const inProd = designs.filter((d) => d.status === 'in_production').length;
+    const completed = designs.filter((d) => d.status === 'completed').length;
+    const upcoming = designs.filter((d) => new Date(d.deadline) > new Date() && d.status !== 'completed').map((d) => new Date(d.deadline));
+    const nextDeadline = upcoming.length ? Math.min.apply(null, upcoming) : null;
+    const daysLeft = nextDeadline ? Math.max(0, Math.ceil((nextDeadline - new Date()) / 86400000)) : null;
+
+    const stats = [
+      { label: 'Total Designs', value: total },
+      { label: 'In Production', value: inProd },
+      { label: 'Completed', value: completed },
+      { label: 'Next Deadline', value: daysLeft === null ? '—' : daysLeft + 'd', raw: daysLeft }
+    ];
+    $('mfStats').innerHTML = stats.map((s, i) =>
+      '<div class="mf-stat" style="animation-delay:' + (i * 0.07) + 's">' +
+        '<div class="mf-stat-label">' + esc(s.label) + '</div>' +
+        '<div class="mf-stat-value" data-v="' + (s.raw == null ? s.value : s.raw) + '">' + (typeof s.value === 'number' ? '0' : s.value) + '</div>' +
+      '</div>'
+    ).join('');
+    document.querySelectorAll('#mfStats .mf-stat-value').forEach((el) => {
+      const v = el.getAttribute('data-v');
+      if (v === '—' || v === '') { el.textContent = '—'; return; }
+      const n = parseInt(v, 10);
+      if (!isNaN(n)) countUp(el, n); else el.textContent = v;
+    });
+  }
+
+  function mfRenderGrid() {
+    const grid = $('mfGrid');
+    if (!designs.length) {
+      grid.innerHTML = '<div class="mf-empty">No designs yet. Click "+ New Design" to submit your first one.</div>';
+      return;
+    }
+    grid.innerHTML = designs.map((d, i) =>
+      '<div class="mf-card" style="animation-delay:' + Math.min(i * 0.06, 0.5) + 's">' +
+        '<div class="mf-card-top">' +
+          '<div>' +
+            '<div class="mf-card-name">' + esc(d.design_name) + '</div>' +
+            (d.style_code ? '<div class="mf-card-style">' + esc(d.style_code) + '</div>' : '') +
+          '</div>' +
+          '<span class="mf-badge mf-' + esc(d.status) + '">' + esc(STATUS_LABELS[d.status] || d.status) + '</span>' +
+        '</div>' +
+        (d.description ? '<div class="mf-card-desc">' + esc(d.description) + '</div>' : '') +
+        '<div class="mf-card-meta">' +
+          '<div class="mf-meta-item"><div class="mf-label">Quantity</div><div class="mf-val">' + Number(d.quantity).toLocaleString('en-IN') + ' pcs</div></div>' +
+          '<div class="mf-meta-item"><div class="mf-label">Deadline</div><div class="mf-val">' + deadlineChip(d.deadline) + '</div></div>' +
+          '<div class="mf-meta-item"><div class="mf-label">Submitted</div><div class="mf-val">' + fmtDate(d.created_at) + '</div></div>' +
+        '</div>' +
+        (d.admin_note ? '<div class="mf-card-desc" style="margin-top:0.9rem;border-left:2px solid #2a2a2a;padding-left:0.9rem;">Admin: ' + esc(d.admin_note) + '</div>' : '') +
+        '<div class="mf-card-actions">' +
+          '<button onclick="mfEditDesign(\'' + d.id + '\')">Edit</button>' +
+          '<button class="mf-del" onclick="mfDeleteDesign(\'' + d.id + '\')">Delete</button>' +
+        '</div>' +
+      '</div>'
+    ).join('');
+  }
+
+  // ── Modal / CRUD ──
+  window.mfOpenModal = function (design) {
+    $('mfModalTitle').textContent = design ? 'Edit Design' : 'New Design';
+    $('mfDesignId').value = design ? design.id : '';
+    $('mfName').value = design ? design.design_name : '';
+    $('mfStyleCode').value = design ? (design.style_code || '') : '';
+    $('mfDesc').value = design ? (design.description || '') : '';
+    $('mfQty').value = design ? design.quantity : '';
+    $('mfDeadline').value = design ? String(design.deadline).slice(0, 10) : '';
+    $('mfModalOverlay').classList.remove('mf-hidden');
+    setTimeout(() => $('mfName').focus(), 50);
+  };
+
+  window.mfCloseModal = function () { $('mfModalOverlay').classList.add('mf-hidden'); };
+
+  window.mfEditDesign = function (id) {
+    const d = designs.find((x) => x.id === id);
+    if (d) mfOpenModal(d);
+  };
+
+  window.mfDeleteDesign = async function (id) {
+    if (!confirm('Delete this design permanently?')) return;
+    try {
+      const res = await mfApi('/designs/' + id, { method: 'DELETE' });
+      if (res.status === 401) { mfLogout(); return; }
+      if (!res.ok) throw new Error();
+      mfToast('Design deleted');
+      await mfLoadDesigns();
+    } catch (e) { mfToast('Delete failed', true); }
+  };
+
+  $('mfDesignForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = $('mfDesignId').value;
+    const payload = {
+      design_name: $('mfName').value.trim(),
+      style_code: $('mfStyleCode').value.trim(),
+      description: $('mfDesc').value.trim(),
+      quantity: parseInt($('mfQty').value, 10),
+      deadline: $('mfDeadline').value
+    };
+    const btn = $('mfSaveBtn');
+    btn.disabled = true; btn.innerHTML = 'Saving<span class="mf-spinner"></span>';
+    try {
+      const res = await mfApi('/designs' + (id ? '/' + id : ''), { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+      if (res.status === 401) { mfLogout(); return; }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      mfToast(id ? 'Design updated' : 'Design submitted');
+      mfCloseModal();
+      await mfLoadDesigns();
+    } catch (e2) { mfToast(e2.message || 'Save failed', true); }
+    btn.disabled = false; btn.textContent = 'Save Design';
+  });
+
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') mfCloseModal(); });
+})();
+</script>
+</body>
+</html>

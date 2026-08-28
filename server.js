@@ -167,6 +167,13 @@ app.get('/admin/marketing', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin', 'marketing', 'index.html'));
 });
 
+// Manufacture Studio admin review page - same permissive CSP as admin dashboard
+// (the manufacturer-facing portal is a Shopify page template: public/page.manufacture.liquid)
+app.get('/manufacture/admin', (req, res) => {
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
+    res.sendFile(path.join(__dirname, 'public', 'manufacture', 'admin.html'));
+});
+
 // Security middleware - Helmet for security headers (applied AFTER admin routes)
 app.use(helmet({
     contentSecurityPolicy: {
@@ -13601,6 +13608,158 @@ app.post('/api/auth/otp/verify', otpLimiter, async (req, res) => {
         }
         console.error('[OTP] verify error:', err.message);
         res.status(500).json({ error: 'Login failed. Please try again.' });
+    }
+});
+
+// ==================== MANUFACTURE STUDIO ====================
+// Manufacturer portal (Shopify page: public/page.manufacture.liquid) submits new
+// designs; admin reviews them at /manufacture/admin. Separate logins:
+// manufacturer uses MANUFACTURE_PASSWORD, admin uses the existing admin JWT flow.
+const manufactureDB = require('./config/manufacture-db');
+
+// Manufacturer auth middleware (JWT with role 'manufacturer')
+function authenticateManufacturer(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const decoded = verifyToken(authHeader.substring(7));
+    if (!decoded || decoded.role !== 'manufacturer') {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    req.user = decoded;
+    next();
+}
+
+// Validate/normalize a design payload from the manufacturer
+function sanitizeDesignInput(body, { partial = false } = {}) {
+    const out = {};
+    const errors = [];
+
+    if (!partial || body.design_name !== undefined) {
+        const name = String(body.design_name || '').trim();
+        if (!name) errors.push('Design name is required');
+        else if (name.length > 120) errors.push('Design name must be under 120 characters');
+        else out.design_name = name;
+    }
+    if (body.style_code !== undefined) {
+        out.style_code = String(body.style_code || '').trim().slice(0, 60) || null;
+    }
+    if (body.description !== undefined) {
+        out.description = String(body.description || '').trim().slice(0, 2000) || null;
+    }
+    if (!partial || body.quantity !== undefined) {
+        const qty = parseInt(body.quantity, 10);
+        if (!Number.isFinite(qty) || qty < 1) errors.push('Quantity must be at least 1');
+        else if (qty > 1000000) errors.push('Quantity looks too large');
+        else out.quantity = qty;
+    }
+    if (!partial || body.deadline !== undefined) {
+        const deadline = new Date(body.deadline);
+        if (isNaN(deadline.getTime())) errors.push('A valid deadline date is required');
+        else out.deadline = deadline.toISOString();
+    }
+
+    return { out, errors };
+}
+
+// POST /api/manufacture/login - manufacturer password login (separate from admin)
+app.post('/api/manufacture/login', async (req, res) => {
+    const { password } = req.body || {};
+    if (!password) return res.status(400).json({ error: 'Password required' });
+
+    const expected = process.env.MANUFACTURE_PASSWORD;
+    if (!expected) {
+        return res.status(503).json({ error: 'Manufacture portal is not configured' });
+    }
+    if (password !== expected) {
+        trackSuspicious(req.ip, 'failed_manufacture_login');
+        return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    const token = generateToken({ role: 'manufacturer', timestamp: Date.now() });
+    res.json({ success: true, token, role: 'manufacturer' });
+});
+
+// GET /api/manufacture/designs - manufacturer sees their own submissions
+app.get('/api/manufacture/designs', authenticateManufacturer, async (req, res) => {
+    try {
+        const designs = await manufactureDB.listDesigns();
+        res.json({ success: true, designs });
+    } catch (error) {
+        console.error('[Manufacture] List error:', error.message);
+        res.status(500).json({ error: 'Failed to load designs' });
+    }
+});
+
+// POST /api/manufacture/designs - submit a new design
+app.post('/api/manufacture/designs', authenticateManufacturer, async (req, res) => {
+    try {
+        const { out, errors } = sanitizeDesignInput(req.body || {});
+        if (errors.length) return res.status(400).json({ error: errors[0] });
+
+        const design = await manufactureDB.createDesign(out);
+        res.status(201).json({ success: true, design });
+    } catch (error) {
+        console.error('[Manufacture] Create error:', error.message);
+        res.status(500).json({ error: 'Failed to create design' });
+    }
+});
+
+// PUT /api/manufacture/designs/:id - manufacturer edits content fields
+app.put('/api/manufacture/designs/:id', authenticateManufacturer, async (req, res) => {
+    try {
+        const { out, errors } = sanitizeDesignInput(req.body || {}, { partial: true });
+        if (errors.length) return res.status(400).json({ error: errors[0] });
+        if (!Object.keys(out).length) return res.status(400).json({ error: 'Nothing to update' });
+
+        const design = await manufactureDB.updateDesign(req.params.id, out);
+        if (!design) return res.status(404).json({ error: 'Design not found' });
+        res.json({ success: true, design });
+    } catch (error) {
+        console.error('[Manufacture] Update error:', error.message);
+        res.status(500).json({ error: 'Failed to update design' });
+    }
+});
+
+// DELETE /api/manufacture/designs/:id - manufacturer removes a submission
+app.delete('/api/manufacture/designs/:id', authenticateManufacturer, async (req, res) => {
+    try {
+        const existing = await manufactureDB.getDesignById(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Design not found' });
+
+        await manufactureDB.deleteDesign(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[Manufacture] Delete error:', error.message);
+        res.status(500).json({ error: 'Failed to delete design' });
+    }
+});
+
+// GET /api/manufacture/admin/designs - admin review (existing admin auth)
+app.get('/api/manufacture/admin/designs', authenticateAdmin, async (req, res) => {
+    try {
+        const designs = await manufactureDB.listDesigns(req.query || {});
+        res.json({ success: true, designs });
+    } catch (error) {
+        console.error('[Manufacture] Admin list error:', error.message);
+        res.status(500).json({ error: 'Failed to load designs' });
+    }
+});
+
+// PUT /api/manufacture/admin/designs/:id/status - admin updates status/note
+app.put('/api/manufacture/admin/designs/:id/status', authenticateAdmin, async (req, res) => {
+    try {
+        const { status, admin_note } = req.body || {};
+        if (!manufactureDB.VALID_STATUSES.includes(status)) {
+            return res.status(400).json({ error: `Status must be one of: ${manufactureDB.VALID_STATUSES.join(', ')}` });
+        }
+        const design = await manufactureDB.updateStatus(req.params.id, status, admin_note);
+        if (!design) return res.status(404).json({ error: 'Design not found' });
+        res.json({ success: true, design });
+    } catch (error) {
+        console.error('[Manufacture] Status update error:', error.message);
+        res.status(500).json({ error: 'Failed to update status' });
     }
 });
 
