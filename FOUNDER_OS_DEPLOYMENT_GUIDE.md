@@ -4,11 +4,14 @@ The Founder OS dashboard (`offcomfrt-founder-os.jsx`) is now a fully functional,
 cloud-synced app:
 
 - **Frontend** → Shopify page (`templates/page.founder-os.liquid`)
-- **App bundle** → Shopify theme asset (`assets/founder-os.js`, 149 KB)
+- **App bundle** → Shopify theme asset (`assets/founder-os.js`, 124 KB)
 - **Backend** → Render (`exchange-return-tracking.onrender.com`)
-- **Storage** → Supabase table `founder_os_state` (state syncs across devices,
-  with localStorage as an offline fallback)
-- **Auth** → login gate reusing the existing admin JWT login (ADMIN_PASSWORD)
+- **Storage** → Supabase table `founder_os_state` — the **only** data store.
+  Nothing is persisted in the browser (no localStorage); a fresh install
+  starts as an empty workspace with no sample data.
+- **Auth** → login gate reusing the existing admin JWT login (ADMIN_PASSWORD);
+  the token is kept in sessionStorage only (survives refresh, clears when the
+  tab closes)
 
 ---
 
@@ -87,13 +90,14 @@ from theme assets, then shows the login gate.
 1. Visiting the page shows a sign-in card (OFFCOMFRT / Founder OS).
 2. Sign in with the **admin password** (leave username empty for super admin,
    or use an operator username + password).
-3. The app loads state from Supabase; if nothing is stored yet it seeds the
-   sample workspace and saves it on the first change.
-4. Every change is saved locally instantly and pushed to Supabase
-   (debounced ~1.4 s), so all devices see the same data.
-5. If the backend is unreachable, the app keeps working from the
-   localStorage cache and resumes syncing when back online.
+3. The app loads state from Supabase. A fresh install starts **empty** —
+   no sample data; add your own departments, tasks, projects, etc.
+4. Every change is pushed to Supabase (debounced ~1.4 s), so all devices
+   always see the same data. Supabase is the single source of truth.
+5. If a save fails (e.g. Render cold-start), a console warning is logged and
+   the save retries on the next change.
 6. Expired sessions (JWT, 24 h) automatically return to the login gate.
+   Closing the tab also signs you out (token lives in sessionStorage).
 
 ---
 

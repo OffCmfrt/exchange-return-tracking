@@ -4,22 +4,27 @@ import FounderOS from "./src/FounderOS.jsx";
 
 /* ============================================================================
    Founder OS — Shopify/Render deployment entry
-   - window.storage shim: cloud-synced via the Render backend
-     (GET/PUT /api/founder-os/state) with localStorage as offline fallback
-   - Login gate: reuses the existing admin JWT login before any data loads
+   - Single source of truth: Supabase (via the Render backend's
+     GET/PUT /api/founder-os/state). Nothing is persisted in the browser.
+   - Auth token lives in sessionStorage only (survives refresh, clears when
+     the tab closes). No localStorage is used anywhere.
+   - Login gate reuses the existing admin JWT login before any data loads.
 ============================================================================ */
 
 const API_BASE = location.hostname === "localhost" || location.hostname === "127.0.0.1"
   ? "http://localhost:3000/api"
   : "https://exchange-return-tracking.onrender.com/api";
 const TOKEN_KEY = "fos_token";
-const USER_KEY = "fos_user";
 const LS_KEY = "offcomfrt-founder-os-v1";
 
 let saveTimer = null;
 
+const getToken = () => sessionStorage.getItem(TOKEN_KEY);
+const setToken = (t) => sessionStorage.setItem(TOKEN_KEY, t);
+const clearToken = () => sessionStorage.removeItem(TOKEN_KEY);
+
 async function api(path, options = {}) {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = getToken();
   const res = await fetch(API_BASE + path, {
     ...options,
     headers: {
@@ -28,8 +33,8 @@ async function api(path, options = {}) {
       ...(options.headers || {})
     }
   });
-  if (res.status === 401 && localStorage.getItem(TOKEN_KEY)) {
-    localStorage.removeItem(TOKEN_KEY); // expired token — force re-login on next load
+  if (res.status === 401 && getToken()) {
+    clearToken(); // expired token — force re-login on next load
     window.location.reload();
     throw new Error("Session expired");
   }
@@ -45,7 +50,9 @@ async function pushToCloud(json) {
       body: JSON.stringify({ state: parsed })
     });
     if (!res.ok) throw new Error("save failed");
-  } catch (e) { /* offline — local copy is already saved */ }
+  } catch (e) {
+    console.warn("[FounderOS] Cloud save failed — will retry on next change", e);
+  }
 }
 
 /* ------------------------------- LOGIN GATE ------------------------------- */
@@ -99,8 +106,7 @@ function showLoginGate() {
         if (!res.ok || !data.token) {
           throw new Error(data.error || "Sign-in failed");
         }
-        localStorage.setItem(TOKEN_KEY, data.token);
-        localStorage.setItem(USER_KEY, data.username || "founder");
+        setToken(data.token);
         root.remove();
         resolve();
       } catch (err) {
@@ -114,34 +120,21 @@ function showLoginGate() {
 }
 
 /* ------------------------------ STORAGE SHIM ------------------------------ */
+/* Supabase is the only data store. No browser persistence. */
 
 window.storage = window.storage || {
   async get(key) {
-    if (key !== LS_KEY) {
-      const v = localStorage.getItem(key);
-      return v == null ? undefined : { value: v };
-    }
-    if (!localStorage.getItem(TOKEN_KEY)) await showLoginGate();
-    try {
-      const res = await api("/founder-os/state");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.state) {
-          const json = JSON.stringify(data.state);
-          localStorage.setItem(LS_KEY, json); // offline cache
-          return { value: json };
-        }
-      }
-    } catch (e) { /* fall through to local copy */ }
-    const local = localStorage.getItem(LS_KEY);
-    return local == null ? undefined : { value: local };
+    if (key !== LS_KEY) return undefined;
+    if (!getToken()) await showLoginGate();
+    const res = await api("/founder-os/state");
+    if (!res.ok) throw new Error("Failed to load workspace from Supabase");
+    const data = await res.json();
+    return data.state ? { value: JSON.stringify(data.state) } : undefined;
   },
   async set(key, value) {
-    localStorage.setItem(key, value);
-    if (key === LS_KEY && localStorage.getItem(TOKEN_KEY)) {
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => pushToCloud(value), 900);
-    }
+    if (key !== LS_KEY) return true;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => pushToCloud(value), 900);
     return true;
   }
 };

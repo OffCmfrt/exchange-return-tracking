@@ -271,142 +271,12 @@ function recommendWorkload(timeAvailable, energy) {
    SEED DATA
 ============================================================================ */
 
-function buildSeed() {
-  const dep = (n) => DEPARTMENT_DEFS.find(d => d.name === n).name;
-
-  const projects = [
-    { id: "p1", code: "PRJ-01", name: "Website Redesign", department: dep("Website / E-commerce"), owner: "Sana", founderInvolvement: "High", objective: "Ship a faster, higher-converting storefront before Autumn launch.", startDate: relDate(-30), deadline: relDate(18), status: "At Risk", priority: "Critical", progress: 55, risks: "New PDP layout still awaiting founder approval.", budget: "₹6,50,000", notes: "" },
-    { id: "p2", code: "PRJ-02", name: "Women's Comfort Dept Launch", department: dep("Product & Design"), owner: "You", founderInvolvement: "High", objective: "Launch a dedicated women's comfortwear line.", startDate: relDate(-15), deadline: relDate(60), status: "On Track", priority: "Important", progress: 30, risks: "", budget: "₹18,00,000", notes: "" },
-    { id: "p3", code: "PRJ-03", name: "Tirupur Manufacturing Onboarding", department: dep("Manufacturing"), owner: "Dev", founderInvolvement: "High", objective: "Bring the second manufacturing unit to full production capacity.", startDate: relDate(-45), deadline: relDate(25), status: "At Risk", priority: "Critical", progress: 40, risks: "GSM mismatch on fleece batch unresolved for 3 weeks.", budget: "₹32,00,000", notes: "" },
-    { id: "p4", code: "PRJ-04", name: "Meta Ads Scaling — Q4", department: dep("Meta Ads / Performance Marketing"), owner: "Ishaan", founderInvolvement: "Medium", objective: "Scale monthly spend 2x while holding ROAS above 3.5x.", startDate: relDate(-20), deadline: relDate(40), status: "On Track", priority: "Important", progress: 65, risks: "", budget: "₹40,00,000/mo", notes: "" },
-    { id: "p5", code: "PRJ-05", name: "Hiring — Ops Manager & Support Lead", department: dep("HR / Hiring"), owner: "Neha", founderInvolvement: "High", objective: "Fill two leadership roles the founder is currently covering.", startDate: relDate(-25), deadline: relDate(14), status: "On Track", priority: "Important", progress: 50, risks: "", budget: "", notes: "" },
-    { id: "p6", code: "PRJ-06", name: "CAC/ROAS Analytics Dashboard", department: dep("Data / Analytics"), owner: "Rahul", founderInvolvement: "Low", objective: "One dashboard for CAC, ROAS and cohort retention — no more spreadsheet stitching.", startDate: relDate(-10), deadline: relDate(30), status: "On Track", priority: "Normal", progress: 35, risks: "", budget: "", notes: "" },
-    { id: "p7", code: "PRJ-07", name: "Autumn Collection Launch", department: dep("Product & Design"), owner: "You", founderInvolvement: "High", objective: "Launch the Autumn collection on time and profitably.", startDate: relDate(-40), deadline: relDate(12), status: "Off Track", priority: "Critical", progress: 45, risks: "Lookbook, PDP, and influencer approvals are all waiting on the founder at the same time.", budget: "₹55,00,000", notes: "" },
-  ];
-
-  const tasks = [
-    { id: "t1", code: "TSK-01", name: "Approve final tech pack — Cloud Joggers v2", description: "Confirm fit, fabric and stitch spec before cutting begins.", department: dep("Product & Design"), category: "Approval", owner: "You", priority: "Critical", status: "Today", createdDate: relDate(-3), startDate: relDate(-1), dueDate: relDate(0), estMinutes: 45, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p7", meetingId: null, goalId: "gw1", founderArea: "decisions", energyType: "deep_work", isMIT: true, mitRank: 1, pushedCount: 0, notes: "Sample is close — check inseam length against last batch.", link: "" },
-    { id: "t2", code: "TSK-02", name: "Review Meta Ads creative batch 4 — Autumn drop", description: "Approve or send back the new UGC-style ad creatives.", department: dep("Meta Ads / Performance Marketing"), category: "Review", owner: "You", priority: "Important", status: "Today", createdDate: relDate(-2), startDate: relDate(0), dueDate: relDate(0), estMinutes: 30, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p4", meetingId: null, goalId: null, founderArea: "execution", energyType: "execution", isMIT: true, mitRank: 2, pushedCount: 0, notes: "", link: "" },
-    { id: "t3", code: "TSK-03", name: "Call Tirupur mill re: GSM mismatch on fleece batch", description: "Third follow-up — need a resolution date, not another promise.", department: dep("Manufacturing"), category: "Follow-up", owner: "You", priority: "Critical", status: "Today", createdDate: relDate(-14), startDate: relDate(-14), dueDate: relDate(0), estMinutes: 20, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p3", meetingId: "m3", goalId: "gw3", founderArea: "followup", energyType: "execution", isMIT: true, mitRank: 3, pushedCount: 2, notes: "Ask for a signed correction plan, not a phone assurance.", link: "" },
-    { id: "t4", code: "TSK-04", name: "Draft Q4 brand positioning doc — first pass", description: "Where Offcomfrt sits vs. loungewear vs. performance comfort brands.", department: dep("Founder / Management"), category: "Strategy", owner: "You", priority: "Important", status: "Planned", createdDate: relDate(-1), startDate: relDate(2), dueDate: relDate(2), estMinutes: 120, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: null, meetingId: null, goalId: "ga2", founderArea: "strategy", energyType: "deep_work", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t5", code: "TSK-05", name: "Interview — Ops Manager candidate (2nd round)", description: "Final-round conversation with the strongest candidate so far.", department: dep("HR / Hiring"), category: "Meeting", owner: "You", priority: "Important", status: "Today", createdDate: relDate(-4), startDate: relDate(0), dueDate: relDate(0), estMinutes: 60, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p5", meetingId: "m2", goalId: "gq3", founderArea: "people", energyType: "people", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t6", code: "TSK-06", name: "Reconcile Razorpay settlements vs. Shopify orders — July", description: "", department: dep("Finance"), category: "Admin", owner: "Neha", priority: "Normal", status: "Waiting", createdDate: relDate(-6), startDate: relDate(-3), dueDate: relDate(1), estMinutes: 90, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: "followup", energyType: "admin", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t7", code: "TSK-07", name: "Confirm shotlist for Autumn content shoot", description: "", department: dep("Content"), category: "Creative", owner: "Ishaan", priority: "Important", status: "In Progress", createdDate: relDate(-5), startDate: relDate(-2), dueDate: relDate(1), estMinutes: 40, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p7", meetingId: null, goalId: null, founderArea: "followup", energyType: "admin", isMIT: false, mitRank: null, pushedCount: 1, notes: "", link: "" },
-    { id: "t8", code: "TSK-08", name: "Approve new PDP layout — website redesign", description: "Final sign-off before dev starts building it.", department: dep("Website / E-commerce"), category: "Approval", owner: "You", priority: "Critical", status: "Planned", createdDate: relDate(-2), startDate: relDate(1), dueDate: relDate(1), estMinutes: 30, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p1", meetingId: "m5", goalId: "gm2", founderArea: "decisions", energyType: "execution", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t9", code: "TSK-09", name: "QC report review — Batch 12 (Core Tee)", description: "", department: dep("Quality Control"), category: "Review", owner: "You", priority: "Important", status: "Blocked", createdDate: relDate(-7), startDate: relDate(-4), dueDate: relDate(-1), estMinutes: 30, actMinutes: null, recurring: false, recurrence: null, dependency: "Waiting on QC lab report", projectId: null, meetingId: null, goalId: null, founderArea: "decisions", energyType: "execution", isMIT: false, mitRank: null, pushedCount: 1, notes: "", link: "" },
-    { id: "t10", code: "TSK-10", name: "Set reorder point for Core Tee — S/M/L", description: "", department: dep("Inventory"), category: "Planning", owner: "Priya", priority: "Normal", status: "Waiting", createdDate: relDate(-3), startDate: relDate(-1), dueDate: relDate(3), estMinutes: 45, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: null, energyType: "admin", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t11", code: "TSK-11", name: "Approve influencer shortlist — Autumn campaign", description: "", department: dep("Marketing"), category: "Approval", owner: "You", priority: "Important", status: "Today", createdDate: relDate(-2), startDate: relDate(0), dueDate: relDate(0), estMinutes: 25, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p7", meetingId: "m4", goalId: "gw1", founderArea: "decisions", energyType: "execution", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t12", code: "TSK-12", name: "1:1 with Head of Operations", description: "", department: dep("Founder / Management"), category: "Meeting", owner: "You", priority: "Normal", status: "Today", createdDate: relDate(-1), startDate: relDate(0), dueDate: relDate(0), estMinutes: 30, actMinutes: null, recurring: true, recurrence: "Weekly", dependency: "", projectId: null, meetingId: "m1", goalId: null, founderArea: "people", energyType: "people", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t13", code: "TSK-13", name: "Follow up — 3PL quote for South region", description: "", department: dep("Operations"), category: "Follow-up", owner: "You", priority: "Important", status: "Waiting", createdDate: relDate(-8), startDate: relDate(-5), dueDate: relDate(2), estMinutes: 20, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: null, meetingId: null, goalId: "gw2", founderArea: "followup", energyType: "execution", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t14", code: "TSK-14", name: "Sign off packaging supplier PO", description: "", department: dep("Sourcing"), category: "Approval", owner: "You", priority: "Critical", status: "Planned", createdDate: relDate(-9), startDate: relDate(-9), dueDate: relDate(-2), estMinutes: 15, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: "decisions", energyType: "admin", isMIT: false, mitRank: null, pushedCount: 2, notes: "Kept bumping this — it's a 15 minute decision.", link: "" },
-    { id: "t15", code: "TSK-15", name: "Respond to escalated refund tickets (3+ days old)", description: "", department: dep("Customer Support"), category: "Support", owner: "Meher", priority: "Important", status: "Blocked", createdDate: relDate(-4), startDate: relDate(-3), dueDate: relDate(-1), estMinutes: 60, actMinutes: null, recurring: false, recurrence: null, dependency: "Waiting on finance for refund approvals over ₹2,000", projectId: null, meetingId: null, goalId: null, founderArea: null, energyType: "admin", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t16", code: "TSK-16", name: "Build CAC/ROAS dashboard — v1", description: "", department: dep("Data / Analytics"), category: "Build", owner: "Rahul", priority: "Normal", status: "In Progress", createdDate: relDate(-10), startDate: relDate(-8), dueDate: relDate(5), estMinutes: 300, actMinutes: 120, recurring: false, recurrence: null, dependency: "", projectId: "p6", meetingId: null, goalId: null, founderArea: "delegation", energyType: "admin", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t17", code: "TSK-17", name: "Draft offer letter — Ops Manager", description: "", department: dep("HR / Hiring"), category: "Admin", owner: "Neha", priority: "Important", status: "Waiting", createdDate: relDate(-1), startDate: relDate(0), dueDate: relDate(1), estMinutes: 20, actMinutes: null, recurring: false, recurrence: null, dependency: "Waiting on founder to confirm final compensation", projectId: "p5", meetingId: null, goalId: "gq3", founderArea: "followup", energyType: "admin", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t18", code: "TSK-18", name: "Reply to manufacturer's revised MOQ terms", description: "They dropped MOQ from 2,000 to 1,200 units per style — needs a decision.", department: dep("Manufacturing"), category: "Decision", owner: "You", priority: "Critical", status: "Planned", createdDate: relDate(-10), startDate: relDate(-10), dueDate: relDate(-3), estMinutes: 30, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p3", meetingId: null, goalId: "gw3", founderArea: "decisions", energyType: "deep_work", isMIT: false, mitRank: null, pushedCount: 3, notes: "This has been sitting for 10 days.", link: "" },
-    { id: "t19", code: "TSK-19", name: "Approve Autumn lookbook — final edit", description: "", department: dep("Content"), category: "Approval", owner: "You", priority: "Important", status: "Planned", createdDate: relDate(-3), startDate: relDate(2), dueDate: relDate(2), estMinutes: 25, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p7", meetingId: null, goalId: "gw1", founderArea: "decisions", energyType: "execution", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t20", code: "TSK-20", name: "Weekly Meta Ads spend & ROAS check", description: "", department: dep("Meta Ads / Performance Marketing"), category: "Review", owner: "You", priority: "Normal", status: "Today", createdDate: relDate(-7), startDate: relDate(0), dueDate: relDate(0), estMinutes: 20, actMinutes: null, recurring: true, recurrence: "Weekly", dependency: "", projectId: "p4", meetingId: null, goalId: null, founderArea: "execution", energyType: "execution", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t21", code: "TSK-21", name: "Gym session", description: "", department: "Personal", category: "Personal", owner: "You", priority: "Normal", status: "Today", createdDate: relDate(0), startDate: relDate(0), dueDate: relDate(0), estMinutes: 60, actMinutes: null, recurring: true, recurrence: "Daily", dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: null, energyType: null, isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t22", code: "TSK-22", name: "Read 20 pages — Shoe Dog", description: "", department: "Personal", category: "Personal", owner: "You", priority: "Low", status: "Today", createdDate: relDate(0), startDate: relDate(0), dueDate: relDate(0), estMinutes: 20, actMinutes: null, recurring: true, recurrence: "Daily", dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: null, energyType: null, isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t23", code: "TSK-23", name: "Draft Q4 hiring plan (2 roles)", description: "", department: dep("HR / Hiring"), category: "Strategy", owner: "You", priority: "Important", status: "Planned", createdDate: relDate(-2), startDate: relDate(6), dueDate: relDate(6), estMinutes: 90, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: null, meetingId: null, goalId: "gq3", founderArea: "strategy", energyType: "deep_work", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t24", code: "TSK-24", name: "Approve abandoned-cart email flow copy", description: "", department: dep("Website / E-commerce"), category: "Approval", owner: "Sana", priority: "Normal", status: "Waiting", createdDate: relDate(-4), startDate: relDate(-2), dueDate: relDate(4), estMinutes: 15, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: "p1", meetingId: null, goalId: null, founderArea: "delegation", energyType: "admin", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t25", code: "TSK-25", name: "Pick 3PL for South region — final decision", description: "", department: dep("Operations"), category: "Decision", owner: "You", priority: "Critical", status: "Planned", createdDate: relDate(-6), startDate: relDate(3), dueDate: relDate(3), estMinutes: 30, actMinutes: null, recurring: false, recurrence: null, dependency: "Waiting on t13 follow-up", projectId: null, meetingId: null, goalId: "gw2", founderArea: "decisions", energyType: "deep_work", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t26", code: "TSK-26", name: "Audit and cancel unused SaaS subscriptions", description: "", department: dep("Finance"), category: "Admin", owner: "You", priority: "Low", status: "Inbox", createdDate: relDate(0), startDate: null, dueDate: null, estMinutes: 30, actMinutes: null, recurring: false, recurrence: null, dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: "delegation", energyType: "admin", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t27", code: "TSK-27", name: "Review competitor comfort-wear pricing", description: "", department: dep("Marketing"), category: "Research", owner: "You", priority: "Normal", status: "Completed", createdDate: relDate(-6), startDate: relDate(-5), dueDate: relDate(-2), estMinutes: 45, actMinutes: 50, recurring: false, recurrence: null, dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: "execution", energyType: "execution", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "", completedDate: relDate(-3) },
-    { id: "t28", code: "TSK-28", name: "Approve final invoice — packaging supplier", description: "", department: dep("Finance"), category: "Approval", owner: "You", priority: "Important", status: "Completed", createdDate: relDate(-5), startDate: relDate(-4), dueDate: relDate(-3), estMinutes: 10, actMinutes: 10, recurring: false, recurrence: null, dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: "decisions", energyType: "admin", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "", completedDate: relDate(-3) },
-    { id: "t29", code: "TSK-29", name: "Team standup — Product & Design", description: "", department: dep("Product & Design"), category: "Meeting", owner: "You", priority: "Normal", status: "Today", createdDate: relDate(-1), startDate: relDate(0), dueDate: relDate(0), estMinutes: 15, actMinutes: null, recurring: true, recurrence: "Daily", dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: "people", energyType: "people", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-    { id: "t30", code: "TSK-30", name: "Weekly customer support ticket audit", description: "", department: dep("Customer Support"), category: "Review", owner: "Meher", priority: "Normal", status: "Planned", createdDate: relDate(-1), startDate: relDate(4), dueDate: relDate(4), estMinutes: 40, actMinutes: null, recurring: true, recurrence: "Weekly", dependency: "", projectId: null, meetingId: null, goalId: null, founderArea: "delegation", energyType: "admin", isMIT: false, mitRank: null, pushedCount: 0, notes: "", link: "" },
-  ];
-
-  const meetings = [
-    { id: "m1", code: "MTG-01", name: "Weekly Founder Sync", date: relDate(0), time: "10:00", durationMinutes: 45, participants: ["You", "Neha", "Priya"], department: dep("Founder / Management"), objective: "Align on this week's top priorities across departments.", agenda: ["Autumn launch blockers", "Hiring update", "Cash position"], notesText: "", decisions: [], actionItems: [], owner: "You", followUpDate: null, status: "upcoming" },
-    { id: "m2", code: "MTG-02", name: "Ops Manager — 2nd round interview", date: relDate(0), time: "14:00", durationMinutes: 60, participants: ["You", "Neha"], department: dep("HR / Hiring"), objective: "Final-round evaluation before an offer decision.", agenda: ["Case study walkthrough", "Team fit questions", "Compensation expectations"], notesText: "", decisions: [], actionItems: [], owner: "You", followUpDate: relDate(1), status: "upcoming" },
-    { id: "m3", code: "MTG-03", name: "Manufacturing follow-up call — Tirupur mill", date: relDate(0), time: "17:30", durationMinutes: 30, participants: ["You", "Dev"], department: dep("Manufacturing"), objective: "Get a firm resolution date for the fleece GSM mismatch.", agenda: ["GSM correction plan", "Revised MOQ terms", "Next batch timeline"], notesText: "", decisions: [], actionItems: [], owner: "You", followUpDate: null, status: "needs_prep" },
-    { id: "m4", code: "MTG-04", name: "Marketing — Autumn campaign review", date: relDate(2), time: "11:00", durationMinutes: 45, participants: ["You", "Ishaan"], department: dep("Marketing"), objective: "Review campaign readiness and lock the influencer shortlist.", agenda: ["Influencer shortlist", "Content calendar", "Budget check"], notesText: "", decisions: [], actionItems: [], owner: "Ishaan", followUpDate: null, status: "upcoming" },
-    {
-      id: "m5", code: "MTG-05", name: "Website redesign — design review", date: relDate(-2), time: "15:00", durationMinutes: 60,
-      participants: ["You", "Sana"], department: dep("Website / E-commerce"), objective: "Review the new PDP and checkout designs before dev handoff.",
-      agenda: ["PDP layout options", "Checkout flow", "Mobile nav"],
-      notesText: "Preferred option B for PDP — cleaner size chart. Checkout flow needs one fewer step.",
-      decisions: ["Went with PDP layout option B"],
-      actionItems: [
-        { id: "ai1", text: "Get founder sign-off on final PDP layout", owner: "You", due: relDate(1), done: false, taskId: "t8" },
-        { id: "ai2", text: "Cut checkout down to 2 steps", owner: "Sana", due: relDate(3), done: false, taskId: null },
-      ],
-      owner: "Sana", followUpDate: relDate(1), status: "completed",
-    },
-    { id: "m6", code: "MTG-06", name: "Monthly Finance Review", date: relDate(5), time: "16:00", durationMinutes: 45, participants: ["You", "Neha"], department: dep("Finance"), objective: "Review July close, runway, and August budget.", agenda: ["July P&L", "Runway update", "August budget"], notesText: "", decisions: [], actionItems: [], owner: "Neha", followUpDate: null, status: "upcoming" },
-  ];
-
-  const decisions = [
-    { id: "d1", code: "DEC-01", decision: "Choice of secondary manufacturer", date: relDate(-45), department: dep("Manufacturing"), context: "Single-mill dependency was a fulfillment risk heading into Autumn.", options: "Stay single-source; onboard Tirupur unit; onboard Ludhiana unit", decisionMade: "Selected the Tirupur unit as secondary manufacturer", why: "Best combination of capacity, quality history and lead time.", owner: "You", expectedOutcome: "20% of Autumn volume shifted to Tirupur by launch.", reviewDate: relDate(20), actualOutcome: "" },
-    { id: "d2", code: "DEC-02", decision: "Influencer budget for Autumn campaign", date: relDate(-15), department: dep("Marketing"), context: "Needed to decide how aggressively to spend on influencer seeding for the launch.", options: "₹2,00,000 conservative; ₹4,00,000 moderate; ₹7,00,000 aggressive", decisionMade: "Approved ₹4,00,000 influencer budget", why: "Moderate spend balances reach with an unproven creator list.", owner: "You", expectedOutcome: "15+ placements, 3x return on seeded content.", reviewDate: relDate(25), actualOutcome: "" },
-    { id: "d3", code: "DEC-03", decision: "3PL partner for pilot", date: relDate(-40), department: dep("Operations"), context: "Needed a logistics partner to pilot faster South-region delivery.", options: "Shiprocket; Delhivery; in-house pilot", decisionMade: "Picked Shiprocket for a 60-day pilot", why: "Fastest onboarding and lower minimum commitment.", owner: "You", expectedOutcome: "Dispatch-to-delivery under 3 days in the South region.", reviewDate: relDate(-2), actualOutcome: "" },
-    { id: "d4", code: "DEC-04", decision: "Packaging vendor quote", date: relDate(-8), department: dep("Sourcing"), context: "New vendor pitched a cheaper mailer box.", options: "Switch vendor; stay with current vendor; renegotiate MOQ", decisionMade: "Rejected the new vendor's quote", why: "MOQ was too high for current volume — would tie up working capital.", owner: "You", expectedOutcome: "Revisit once monthly order volume passes 15,000 units.", reviewDate: relDate(60), actualOutcome: "" },
-    { id: "d5", code: "DEC-05", decision: "Core Tee price change", date: relDate(-60), department: dep("Marketing"), context: "Input costs rose; considered a price increase.", options: "Hold price; raise ₹50; raise ₹100", decisionMade: "Held price, absorbed the cost increase", why: "Protect conversion rate through the festive season.", owner: "You", expectedOutcome: "Revisit after Autumn launch once margins are reviewed.", reviewDate: relDate(15), actualOutcome: "Held as planned — margin dipped 2pts, acceptable for the season." },
-  ];
-
-  const goals = [
-    { id: "ga1", level: "annual", title: "Cross ₹15 Cr in revenue and launch the Women's Comfort line", parentId: null, progress: 42, timeframe: "2026" },
-    { id: "ga2", level: "annual", title: "Build a leadership team the founder can actually delegate to", parentId: null, progress: 35, timeframe: "2026" },
-    { id: "gq1", level: "quarterly", title: "Launch the Autumn Collection profitably (ROAS > 3.5x)", parentId: "ga1", progress: 45, timeframe: "Q4" },
-    { id: "gq2", level: "quarterly", title: "Bring the Tirupur manufacturing unit to full production", parentId: "ga1", progress: 40, timeframe: "Q4" },
-    { id: "gq3", level: "quarterly", title: "Hire an Ops Manager and a Support Lead", parentId: "ga2", progress: 50, timeframe: "Q4" },
-    { id: "gm1", level: "monthly", title: "Ship the Autumn Collection to the warehouse", parentId: "gq1", progress: 55, timeframe: "This month" },
-    { id: "gm2", level: "monthly", title: "Finalize the website redesign — PDP and checkout", parentId: "gq1", progress: 55, timeframe: "This month" },
-    { id: "gw1", level: "weekly", title: "Approve every pending Autumn launch decision", parentId: "gm1", progress: 30, timeframe: "This week" },
-    { id: "gw2", level: "weekly", title: "Close the 3PL decision for the South region", parentId: "gq2", progress: 40, timeframe: "This week" },
-    { id: "gw3", level: "weekly", title: "Resolve the fleece GSM issue with the Tirupur mill", parentId: "gq2", progress: 20, timeframe: "This week" },
-  ];
-
-  const inbox = [
-    { id: "ib1", text: "Need to discuss new packaging with the sourcing team", createdDate: relDate(0), processed: false },
-    { id: "ib2", text: "Check if we should raise the Core Tee price by ₹50", createdDate: relDate(-1), processed: false },
-    { id: "ib3", text: "Ask Neha about GST filing status", createdDate: relDate(-1), processed: false },
-    { id: "ib4", text: "Bundle joggers + tee as a 'Comfort Set' — worth testing?", createdDate: relDate(-2), processed: false },
-    { id: "ib5", text: "Follow up with the photographer about the reshoot", createdDate: relDate(0), processed: false },
-  ];
-
-  const ideas = [
-    { id: "idea1", text: "Offcomfrt loyalty program — 'Comfort Points'", category: "Marketing", createdDate: relDate(-30), activated: false },
-    { id: "idea2", text: "Pop-up store in Bangalore for the Autumn launch", category: "Business", createdDate: relDate(-20), activated: false },
-    { id: "idea3", text: "Collab capsule with a sleep/wellness brand", category: "Product", createdDate: relDate(-25), activated: false },
-    { id: "idea4", text: "Subscription restock plan for core basics", category: "Business", createdDate: relDate(-18), activated: false },
-    { id: "idea5", text: "Founder vlog / behind-the-scenes content series", category: "Content", createdDate: relDate(-12), activated: false },
-    { id: "idea6", text: "Kids' comfort-wear line, further out", category: "Product", createdDate: relDate(-5), activated: false },
-  ];
-
-  const personalLog = [-6, -5, -4, -3, -2, -1, 0].map((n, i) => ({
-    date: relDate(n),
-    wakeUp: "06:45", sleepHours: [6.5, 7, 6, 7.5, 6.5, 8, 7][i],
-    exercise: [true, true, false, true, true, false, true][i],
-    workHours: [10, 9.5, 11, 9, 10.5, 3, 6][i],
-    deepWorkHours: [2, 1.5, 3, 1, 2.5, 0, 1][i],
-    screenTimeHours: [5, 6, 5.5, 6, 5, 3, 4][i],
-    reading: [true, false, true, false, true, true, false][i],
-    energy: [7, 6, 5, 7, 6, 8, 7][i],
-    oneThing: ["", "Evening walk with no phone", "", "Called an old friend", "", "Slept in, no alarm", ""][i],
-  }));
-
-  const weeklyReviews = [
-    {
-      id: "wr1", weekOf: relDate(-7),
-      company: { revenue: "₹1,08,40,000", orders: "3,420", aov: "₹3,170", cac: "₹640", roas: "3.6x", newCustomers: "2,180", repeatCustomers: "1,240", notes: "Steady week, Meta Ads stable, manufacturing slower than planned." },
-      wentWell: "Meta Ads creative refresh lifted ROAS from 3.2x to 3.6x.",
-      didntGoWell: "Fleece GSM issue still unresolved — cost a week of production time.",
-      avoided: "The MOQ decision with the manufacturer — kept telling myself I needed 'more information'.",
-      becomingProblem: "Too many approvals are stacking up on the website redesign at once.",
-      stopDoing: "Reviewing every piece of ad creative personally — Ishaan can own first-pass approval.",
-      delegate: "First-pass creative review to Ishaan; QC report triage to Dev.",
-      nextWeekTop3: ["Resolve the fleece GSM issue", "Approve all pending Autumn launch decisions", "Close the Ops Manager hire"],
-      score: 62,
-    },
-  ];
-
+function buildEmpty() {
+  // Fresh workspace — no sample data. All state lives in Supabase.
   return {
     founderName: "",
-    tasks, projects,
-    departments: DEPARTMENT_DEFS.map(d => ({ ...d })),
-    meetings, decisions, goals, inbox, ideas, personalLog, weeklyReviews,
+    tasks: [], projects: [], departments: [], meetings: [], decisions: [],
+    goals: [], inbox: [], ideas: [], personalLog: [], weeklyReviews: [],
     checkIn: null,
     checkout: null,
   };
@@ -1917,7 +1787,7 @@ function Sidebar({ activeView, setActiveView, counts, resetData }) {
         <button className="btn btn-ghost btn-sm" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => {
           if (confirmReset) { resetData(); setConfirmReset(false); } else { setConfirmReset(true); setTimeout(() => setConfirmReset(false), 3000); }
         }} type="button">
-          <RotateCcw size={12} />{confirmReset ? "Click again to confirm" : "Reset sample data"}
+          <RotateCcw size={12} />{confirmReset ? "Click again to confirm" : "Clear workspace"}
         </button>
       </div>
     </aside>
@@ -2291,7 +2161,7 @@ export default function FounderOS() {
       } catch (e) {
         loaded = null;
       }
-      setState(loaded || buildSeed());
+      setState(loaded || buildEmpty());
       hasLoaded.current = true;
     })();
   }, []);
@@ -2433,7 +2303,7 @@ export default function FounderOS() {
     setFounderName: (name) => setState(s => ({ ...s, founderName: name })),
   }), [state, showToast]);
 
-  const resetData = useCallback(() => { setState(buildSeed()); showToast("Sample data restored"); }, [showToast]);
+  const resetData = useCallback(() => { setState(buildEmpty()); showToast("Workspace cleared"); }, [showToast]);
 
   if (!state) return <LoadingScreen />;
 
