@@ -170,7 +170,7 @@ app.get('/admin/marketing', (req, res) => {
 // Manufacture Studio admin review page - same permissive CSP as admin dashboard
 // (the manufacturer-facing portal is a Shopify page template: public/page.manufacture.liquid)
 app.get('/manufacture/admin', (req, res) => {
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
     res.sendFile(path.join(__dirname, 'public', 'manufacture', 'admin.html'));
 });
 
@@ -13645,14 +13645,26 @@ app.post('/api/auth/otp/verify', otpLimiter, async (req, res) => {
     }
 });
 
-// ==================== MANUFACTURE STUDIO ====================
-// Manufacturer portal (Shopify page: public/page.manufacture.liquid) submits new
-// designs; admin reviews them at /manufacture/admin. Separate logins:
-// manufacturer uses MANUFACTURE_PASSWORD, admin uses the existing admin JWT flow.
+// ==================== MANUFACTURE STUDIO (CONTROL TOWER) ====================
+// Shared product-development workspace: admin manages everything at
+// /manufacture/admin (Dashboard / Samples / Production / Manufacturers /
+// Tech Packs); the manufacturer (Shopify page: public/page.manufacture.liquid)
+// sees and updates only the records assigned to their name. Separate logins:
+// manufacturer uses MANUFACTURE_PASSWORD; which manufacturer they are is set
+// from the admin dashboard ("Portal Access" flag on a Manufacturers-tab card,
+// stored as manufacturers.portal_access). Admin uses the existing admin JWT.
 const manufactureDB = require('./config/manufacture-db');
 
-// Manufacturer auth middleware (JWT with role 'manufacturer')
-function authenticateManufacturer(req, res, next) {
+const MFR_KINDS = { manufacturers: 'manufacturers', techpacks: 'techPacks', samples: 'samples', orders: 'orders' };
+
+// Fields the manufacturer may update on their own samples / orders
+const MFR_SAMPLE_FIELDS = ['status', 'stage', 'mfrUpdate', 'changesRequired', 'courierAwb', 'dateSent', 'dateReceived', 'targetDate', 'nextDue', 'qc', 'comms', 'files', 'revisions'];
+const MFR_ORDER_FIELDS = ['currentStage', 'trackingNumber', 'shippingMethod', 'actualDelivery', 'qc', 'comms', 'files'];
+
+// Manufacturer auth middleware (JWT with role 'manufacturer'). The linked
+// manufacturer is resolved from the DB (portal_access flag set in the admin
+// dashboard) on every request so changes there take effect immediately.
+async function authenticateManufacturer(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Unauthorized' });
@@ -13661,40 +13673,51 @@ function authenticateManufacturer(req, res, next) {
     if (!decoded || decoded.role !== 'manufacturer') {
         return res.status(401).json({ error: 'Invalid or expired token' });
     }
-    req.user = decoded;
-    next();
+    try {
+        const linked = await manufactureDB.getPortalManufacturer();
+        if (!linked || !linked.name) {
+            return res.status(503).json({ error: 'No manufacturer is linked to the portal yet. Link one from the Manufacturers tab in the admin dashboard.' });
+        }
+        req.user = decoded;
+        req.manufacturerName = linked.name;
+        next();
+    } catch (error) {
+        console.error('[Manufacture] Portal lookup error:', error.message);
+        res.status(500).json({ error: 'Failed to load portal configuration' });
+    }
 }
 
-// Validate/normalize a design payload from the manufacturer
-function sanitizeDesignInput(body, { partial = false } = {}) {
-    const out = {};
-    const errors = [];
-
-    if (!partial || body.design_name !== undefined) {
-        const name = String(body.design_name || '').trim();
-        if (!name) errors.push('Design name is required');
-        else if (name.length > 120) errors.push('Design name must be under 120 characters');
-        else out.design_name = name;
+// Merge a manufacturer-submitted list (qc/comms/files/revisions) into the
+// existing one: entries are add-only (deleting existing rows is rejected);
+// per-row edits are restricted to rowWhitelist when provided.
+function mergeMfrLists(existing, incoming, { rowWhitelist = null } = {}) {
+    if (!Array.isArray(incoming)) return null;
+    const pending = new Map((existing || []).map((r) => [String(r.id), r]));
+    const merged = [];
+    let seq = 0;
+    for (const row of incoming) {
+        if (!row || typeof row !== 'object') continue;
+        const id = row.id != null ? String(row.id) : null;
+        if (id && pending.has(id)) {
+            const base = pending.get(id);
+            if (rowWhitelist) {
+                const next = { ...base };
+                for (const k of rowWhitelist) if (row[k] !== undefined) next[k] = row[k];
+                merged.push(next);
+            } else {
+                merged.push({ ...base, ...row, id: base.id });
+            }
+            pending.delete(id);
+        } else {
+            merged.push({ ...row, id: id || `MFR-${Date.now().toString(36).toUpperCase()}${++seq}` });
+        }
     }
-    if (body.style_code !== undefined) {
-        out.style_code = String(body.style_code || '').trim().slice(0, 60) || null;
+    if (pending.size > 0) {
+        const err = new Error('Removing existing entries is not allowed');
+        err.statusCode = 400;
+        throw err;
     }
-    if (body.description !== undefined) {
-        out.description = String(body.description || '').trim().slice(0, 2000) || null;
-    }
-    if (!partial || body.quantity !== undefined) {
-        const qty = parseInt(body.quantity, 10);
-        if (!Number.isFinite(qty) || qty < 1) errors.push('Quantity must be at least 1');
-        else if (qty > 1000000) errors.push('Quantity looks too large');
-        else out.quantity = qty;
-    }
-    if (!partial || body.deadline !== undefined) {
-        const deadline = new Date(body.deadline);
-        if (isNaN(deadline.getTime())) errors.push('A valid deadline date is required');
-        else out.deadline = deadline.toISOString();
-    }
-
-    return { out, errors };
+    return merged;
 }
 
 // POST /api/manufacture/login - manufacturer password login (separate from admin)
@@ -13711,89 +13734,184 @@ app.post('/api/manufacture/login', async (req, res) => {
         return res.status(401).json({ error: 'Invalid password' });
     }
 
+    let manufacturerName = null;
+    try {
+        const linked = await manufactureDB.getPortalManufacturer();
+        manufacturerName = linked ? linked.name : null;
+    } catch (error) {
+        console.error('[Manufacture] Login portal lookup error:', error.message);
+    }
+
     const token = generateToken({ role: 'manufacturer', timestamp: Date.now() });
-    res.json({ success: true, token, role: 'manufacturer' });
+    res.json({ success: true, token, role: 'manufacturer', manufacturer_name: manufacturerName });
 });
 
-// GET /api/manufacture/designs - manufacturer sees their own submissions
-app.get('/api/manufacture/designs', authenticateManufacturer, async (req, res) => {
+// ---------- Manufacturer (scoped to the portal-linked manufacturer) ----------
+
+// GET /api/manufacture/workspace - the manufacturer's slice of the workspace
+app.get('/api/manufacture/workspace', authenticateManufacturer, async (req, res) => {
     try {
-        const designs = await manufactureDB.listDesigns();
-        res.json({ success: true, designs });
+        const workspace = await manufactureDB.getManufacturerWorkspace(req.manufacturerName);
+        res.json({ success: true, workspace });
     } catch (error) {
-        console.error('[Manufacture] List error:', error.message);
-        res.status(500).json({ error: 'Failed to load designs' });
+        console.error('[Manufacture] Workspace error:', error.message);
+        res.status(500).json({ error: 'Failed to load workspace' });
     }
 });
 
-// POST /api/manufacture/designs - submit a new design
-app.post('/api/manufacture/designs', authenticateManufacturer, async (req, res) => {
+// PUT /api/manufacture/samples/:id - manufacturer updates whitelisted fields
+app.put('/api/manufacture/samples/:id', authenticateManufacturer, async (req, res) => {
     try {
-        const { out, errors } = sanitizeDesignInput(req.body || {});
-        if (errors.length) return res.status(400).json({ error: errors[0] });
+        const existing = await manufactureDB.getById('samples', req.params.id,
+            { eq: { column: 'manufacturer', value: req.manufacturerName } });
+        if (!existing) return res.status(404).json({ error: 'Sample not found' });
 
-        const design = await manufactureDB.createDesign(out);
-        res.status(201).json({ success: true, design });
+        const body = req.body || {};
+        const patch = {};
+        for (const key of MFR_SAMPLE_FIELDS) {
+            if (body[key] === undefined) continue;
+            if (key === 'qc') patch.qc = mergeMfrLists(existing.qc, body.qc, { rowWhitelist: ['actual', 'mfrComment'] });
+            else if (key === 'comms') patch.comms = mergeMfrLists(existing.comms, body.comms);
+            else if (key === 'files') patch.files = mergeMfrLists(existing.files, body.files);
+            else if (key === 'revisions') patch.revisions = mergeMfrLists(existing.revisions, body.revisions, { rowWhitelist: ['mfrResponse', 'status', 'expectedCompletion', 'completedDate'] });
+            else patch[key] = body[key];
+        }
+        if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+        const row = manufactureDB.toDb('samples', patch, { partial: true });
+        const saved = await manufactureDB.upsert('samples', existing.id, row);
+        res.json({ success: true, record: saved });
     } catch (error) {
-        console.error('[Manufacture] Create error:', error.message);
-        res.status(500).json({ error: 'Failed to create design' });
+        if (error.statusCode === 400) return res.status(400).json({ error: error.message });
+        console.error('[Manufacture] Sample update error:', error.message);
+        res.status(500).json({ error: 'Failed to update sample' });
     }
 });
 
-// PUT /api/manufacture/designs/:id - manufacturer edits content fields
-app.put('/api/manufacture/designs/:id', authenticateManufacturer, async (req, res) => {
+// PUT /api/manufacture/orders/:id - manufacturer updates whitelisted fields
+app.put('/api/manufacture/orders/:id', authenticateManufacturer, async (req, res) => {
     try {
-        const { out, errors } = sanitizeDesignInput(req.body || {}, { partial: true });
-        if (errors.length) return res.status(400).json({ error: errors[0] });
-        if (!Object.keys(out).length) return res.status(400).json({ error: 'Nothing to update' });
+        const existing = await manufactureDB.getById('orders', req.params.id,
+            { eq: { column: 'manufacturer', value: req.manufacturerName } });
+        if (!existing) return res.status(404).json({ error: 'Order not found' });
 
-        const design = await manufactureDB.updateDesign(req.params.id, out);
-        if (!design) return res.status(404).json({ error: 'Design not found' });
-        res.json({ success: true, design });
+        const body = req.body || {};
+        const patch = {};
+        for (const key of MFR_ORDER_FIELDS) {
+            if (body[key] === undefined) continue;
+            if (key === 'qc') patch.qc = mergeMfrLists(existing.qc, body.qc);
+            else if (key === 'comms') patch.comms = mergeMfrLists(existing.comms, body.comms);
+            else if (key === 'files') patch.files = mergeMfrLists(existing.files, body.files);
+            else patch[key] = body[key];
+        }
+        if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+        const row = manufactureDB.toDb('orders', patch, { partial: true });
+        const saved = await manufactureDB.upsert('orders', existing.id, row);
+        res.json({ success: true, record: saved });
     } catch (error) {
-        console.error('[Manufacture] Update error:', error.message);
-        res.status(500).json({ error: 'Failed to update design' });
+        if (error.statusCode === 400) return res.status(400).json({ error: error.message });
+        console.error('[Manufacture] Order update error:', error.message);
+        res.status(500).json({ error: 'Failed to update order' });
     }
 });
 
-// DELETE /api/manufacture/designs/:id - manufacturer removes a submission
-app.delete('/api/manufacture/designs/:id', authenticateManufacturer, async (req, res) => {
+// PUT /api/manufacture/techpacks/:id - manufacturer raises/updates questions
+app.put('/api/manufacture/techpacks/:id', authenticateManufacturer, async (req, res) => {
     try {
-        const existing = await manufactureDB.getDesignById(req.params.id);
-        if (!existing) return res.status(404).json({ error: 'Design not found' });
+        const existing = await manufactureDB.getById('techPacks', req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Tech pack not found' });
 
-        await manufactureDB.deleteDesign(req.params.id);
+        const { manufacturerQuestions } = req.body || {};
+        if (manufacturerQuestions === undefined) return res.status(400).json({ error: 'Nothing to update' });
+
+        const saved = await manufactureDB.upsert('techPacks', existing.id, {
+            manufacturer_questions: String(manufacturerQuestions || '').trim() || null
+        });
+        res.json({ success: true, record: saved });
+    } catch (error) {
+        console.error('[Manufacture] Tech pack question error:', error.message);
+        res.status(500).json({ error: 'Failed to save questions' });
+    }
+});
+
+// ---------- Admin (full control tower) ----------
+
+// GET /api/manufacture/admin/workspace - entire workspace
+app.get('/api/manufacture/admin/workspace', authenticateAdmin, async (req, res) => {
+    try {
+        const workspace = await manufactureDB.getWorkspace();
+        res.json({ success: true, workspace });
+    } catch (error) {
+        console.error('[Manufacture] Admin workspace error:', error.message);
+        res.status(500).json({ error: 'Failed to load workspace' });
+    }
+});
+
+// POST /api/manufacture/admin/:kind - create a record (kind: manufacturers | techpacks | samples | orders)
+app.post('/api/manufacture/admin/:kind', authenticateAdmin, async (req, res) => {
+    const kind = MFR_KINDS[req.params.kind];
+    if (!kind) return res.status(404).json({ error: 'Unknown resource' });
+    try {
+        const record = req.body || {};
+        if (kind === 'manufacturers') {
+            if (!String(record.name || '').trim()) return res.status(400).json({ error: 'Manufacturer name is required' });
+        } else {
+            const id = String(record.id || '').trim();
+            if (!id) return res.status(400).json({ error: 'ID is required' });
+            const dup = await manufactureDB.getById(kind, id);
+            if (dup) return res.status(409).json({ error: `An entry with ID "${id}" already exists` });
+        }
+        // Portal link: linking a manufacturer unlinks any previously linked one
+        if (kind === 'manufacturers' && !!record.portalAccess) {
+            await manufactureDB.clearPortalAccess();
+        }
+        const created = await manufactureDB.insert(kind, record);
+        res.status(201).json({ success: true, record: created });
+    } catch (error) {
+        if (error.code === '23505') return res.status(409).json({ error: 'An entry with that ID/name already exists' });
+        console.error('[Manufacture] Admin create error:', error.message);
+        res.status(500).json({ error: 'Failed to create record' });
+    }
+});
+
+// PUT /api/manufacture/admin/:kind - upsert a record on its id
+app.put('/api/manufacture/admin/:kind', authenticateAdmin, async (req, res) => {
+    const kind = MFR_KINDS[req.params.kind];
+    if (!kind) return res.status(404).json({ error: 'Unknown resource' });
+    try {
+        const record = req.body || {};
+        const id = String(record.id || '').trim();
+        if (!id) return res.status(400).json({ error: 'ID is required' });
+        if (kind === 'manufacturers' && !String(record.name || '').trim()) {
+            return res.status(400).json({ error: 'Manufacturer name is required' });
+        }
+        // Portal link: linking a manufacturer unlinks any previously linked one
+        if (kind === 'manufacturers' && !!record.portalAccess) {
+            await manufactureDB.clearPortalAccess(id);
+        }
+        const row = manufactureDB.toDb(kind, record, { partial: true });
+        const saved = await manufactureDB.upsert(kind, id, row);
+        res.json({ success: true, record: saved });
+    } catch (error) {
+        if (error.code === '23505') return res.status(409).json({ error: 'An entry with that name already exists' });
+        console.error('[Manufacture] Admin update error:', error.message);
+        res.status(500).json({ error: 'Failed to update record' });
+    }
+});
+
+// DELETE /api/manufacture/admin/:kind?id=... - remove a record
+app.delete('/api/manufacture/admin/:kind', authenticateAdmin, async (req, res) => {
+    const kind = MFR_KINDS[req.params.kind];
+    if (!kind) return res.status(404).json({ error: 'Unknown resource' });
+    try {
+        const id = String(req.query.id || '').trim();
+        if (!id) return res.status(400).json({ error: 'ID is required' });
+        await manufactureDB.remove(kind, id);
         res.json({ success: true });
     } catch (error) {
-        console.error('[Manufacture] Delete error:', error.message);
-        res.status(500).json({ error: 'Failed to delete design' });
-    }
-});
-
-// GET /api/manufacture/admin/designs - admin review (existing admin auth)
-app.get('/api/manufacture/admin/designs', authenticateAdmin, async (req, res) => {
-    try {
-        const designs = await manufactureDB.listDesigns(req.query || {});
-        res.json({ success: true, designs });
-    } catch (error) {
-        console.error('[Manufacture] Admin list error:', error.message);
-        res.status(500).json({ error: 'Failed to load designs' });
-    }
-});
-
-// PUT /api/manufacture/admin/designs/:id/status - admin updates status/note
-app.put('/api/manufacture/admin/designs/:id/status', authenticateAdmin, async (req, res) => {
-    try {
-        const { status, admin_note } = req.body || {};
-        if (!manufactureDB.VALID_STATUSES.includes(status)) {
-            return res.status(400).json({ error: `Status must be one of: ${manufactureDB.VALID_STATUSES.join(', ')}` });
-        }
-        const design = await manufactureDB.updateStatus(req.params.id, status, admin_note);
-        if (!design) return res.status(404).json({ error: 'Design not found' });
-        res.json({ success: true, design });
-    } catch (error) {
-        console.error('[Manufacture] Status update error:', error.message);
-        res.status(500).json({ error: 'Failed to update status' });
+        console.error('[Manufacture] Admin delete error:', error.message);
+        res.status(500).json({ error: 'Failed to delete record' });
     }
 });
 

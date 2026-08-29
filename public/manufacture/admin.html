@@ -3,379 +3,1487 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Manufacture Studio — Admin Review</title>
+<title>OFFCOMFRT — Product Development Control Tower</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg: #000000;
-  --surface: #0a0a0a;
-  --surface-2: #121212;
-  --border: #1f1f1f;
-  --border-hover: #3a3a3a;
-  --text: #ffffff;
-  --muted: #666666;
-  --faint: #9a9a9a;
-  --transition: 0.22s cubic-bezier(0.4,0,0.2,1);
-}
-
-body, html {
-  background: var(--bg); color: var(--text);
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-
-.hidden { display: none !important; }
-
-@keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── Login ── */
-.login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem 1rem; position: relative; overflow: hidden; }
-.login::before { content: ""; position: absolute; inset: 0; background: radial-gradient(600px circle at 50% 20%, rgba(255,255,255,0.06), transparent 60%); pointer-events: none; }
-.login-card { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 3rem 2.5rem; animation: fadeUp 0.7s cubic-bezier(0.16,1,0.3,1) both; }
-.wordmark {
-  text-align: center; font-size: 1.6rem; font-weight: 800; letter-spacing: 0.45em; text-indent: 0.45em; margin-bottom: 0.5rem;
-  background: linear-gradient(90deg, #ffffff 0%, #8a8a8a 40%, #ffffff 60%, #ffffff 100%);
-  background-size: 400px 100%;
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  animation: shimmer 4s linear infinite;
-}
-.kicker { text-align: center; font-size: 0.65rem; letter-spacing: 0.35em; text-indent: 0.35em; text-transform: uppercase; color: var(--muted); margin-bottom: 2.25rem; }
-
-.label { display: block; font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--faint); margin-bottom: 0.5rem; }
-.input, .textarea, .select {
-  width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
-  color: var(--text); padding: 0.8rem 1rem; font-size: 0.9rem; font-family: inherit; outline: none;
-  transition: border-color var(--transition), box-shadow var(--transition);
-}
-.input:focus, .textarea:focus, .select:focus { border-color: var(--border-hover); box-shadow: 0 0 0 3px rgba(255,255,255,0.05); }
-.textarea { resize: vertical; min-height: 60px; }
-.btn {
-  padding: 0.85rem 1.25rem; border-radius: 10px; border: none; background: #fff; color: #000;
-  font-weight: 700; font-size: 0.8rem; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer;
-  transition: transform var(--transition), box-shadow var(--transition), opacity var(--transition);
-  font-family: inherit; width: 100%;
-}
-.btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(255,255,255,0.12); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-.btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); width: auto; padding: 0.55rem 1.1rem; }
-.btn-ghost:hover { border-color: var(--border-hover); box-shadow: none; }
-.error-msg { margin-top: 1rem; font-size: 0.8rem; color: #ff6b6b; text-align: center; animation: fadeIn 0.3s ease; }
-.spinner { width: 16px; height: 16px; border: 2px solid rgba(0,0,0,0.2); border-top-color: #000; border-radius: 50%; display: inline-block; animation: spin 0.7s linear infinite; vertical-align: -3px; margin-left: 0.5rem; }
-
-/* ── App shell ── */
-.app { max-width: 1200px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
-.topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2.5rem; flex-wrap: wrap; gap: 1rem; animation: fadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both; }
-.topbar h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.35em; text-transform: uppercase; }
-.topbar .sub { font-size: 0.62rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); margin-top: 0.3rem; }
-.topbar-actions { display: flex; gap: 0.75rem; }
-
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-.stat {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-  padding: 1.4rem 1.5rem; position: relative; overflow: hidden;
-  transition: transform var(--transition), border-color var(--transition);
-  animation: fadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both;
-}
-.stat:hover { transform: translateY(-3px); border-color: var(--border-hover); }
-.stat::after { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent); }
-.stat-label { font-size: 0.6rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.6rem; }
-.stat-value { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
-
-/* Filter tabs */
-.tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; animation: fadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both; }
-.tab {
-  background: transparent; border: 1px solid var(--border); color: var(--faint);
-  border-radius: 100px; padding: 0.5rem 1.15rem; font-size: 0.65rem; letter-spacing: 0.18em;
-  text-transform: uppercase; cursor: pointer; font-family: inherit; transition: all var(--transition);
-}
-.tab:hover { border-color: var(--border-hover); color: var(--text); }
-.tab.active { background: #fff; color: #000; border-color: #fff; }
-
-/* Table */
-.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; animation: fadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both; }
-table { width: 100%; border-collapse: collapse; }
-th {
-  text-align: left; font-size: 0.58rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted);
-  padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); background: var(--surface-2);
-}
-td { padding: 1.1rem 1.25rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; vertical-align: top; }
-tr:last-child td { border-bottom: none; }
-tr { animation: fadeIn 0.4s ease both; transition: background var(--transition); }
-tbody tr:hover { background: rgba(255,255,255,0.02); }
-.d-name { font-weight: 700; font-size: 0.9rem; }
-.d-style { font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-top: 0.25rem; }
-.d-desc { font-size: 0.78rem; color: var(--faint); margin-top: 0.5rem; line-height: 1.55; max-width: 320px; white-space: pre-wrap; }
-.d-date { color: var(--faint); font-size: 0.78rem; white-space: nowrap; }
-
-.badge {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
-  padding: 0.35rem 0.75rem; border-radius: 100px; border: 1px solid var(--border);
-  color: var(--faint); background: var(--surface-2); white-space: nowrap;
-}
-.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.badge.pending { color: #d4d4d4; }
-.badge.approved { color: #ffffff; background: rgba(255,255,255,0.1); }
-.badge.in_production { color: #bdbdbd; }
-.badge.in_production::before { animation: pulse 1.6s ease infinite; }
-.badge.completed { color: #8f8f8f; }
-.badge.rejected { color: #7a7a7a; }
-
-.overdue { color: #ff6b6b; animation: pulse 2s ease infinite; }
-
-.status-cell { min-width: 190px; }
-.status-cell .select { padding: 0.5rem 0.7rem; font-size: 0.78rem; margin-bottom: 0.5rem; }
-.status-cell .textarea { font-size: 0.75rem; padding: 0.5rem 0.7rem; min-height: 44px; margin-bottom: 0.5rem; }
-.save-btn {
-  background: #fff; color: #000; border: none; border-radius: 8px; padding: 0.45rem 1rem;
-  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
-  cursor: pointer; font-family: inherit; transition: all var(--transition); width: 100%;
-}
-.save-btn:hover { box-shadow: 0 4px 16px rgba(255,255,255,0.15); }
-.save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.empty { text-align: center; padding: 4rem 1rem; color: var(--muted); font-size: 0.85rem; letter-spacing: 0.05em; animation: fadeIn 0.5s ease both; }
-
-.toast {
-  position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
-  background: #ffffff; color: #000; padding: 0.8rem 1.5rem; border-radius: 100px;
-  font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-  box-shadow: 0 10px 40px rgba(255,255,255,0.15); z-index: 200; animation: fadeUp 0.35s cubic-bezier(0.16,1,0.3,1);
-}
-.toast.error { background: #1a1a1a; color: #ff6b6b; border: 1px solid rgba(255,107,107,0.3); }
-
-@media (max-width: 900px) {
-  .table-wrap { overflow-x: auto; }
-  table { min-width: 900px; }
-}
+  body { font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .font-mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .spin { animation: mfspin 1s linear infinite; } @keyframes mfspin { to { transform: rotate(360deg); } }
+  input[type="date"]::-webkit-calendar-picker-indicator { opacity: .45; }
 </style>
 </head>
-<body>
-
-<!-- LOGIN -->
-<div id="loginSection" class="login">
-  <div class="login-card">
-    <div class="wordmark">OFFCOMFRT</div>
-    <div class="kicker">Manufacture Studio — Admin</div>
-    <form id="loginForm">
-      <div style="margin-bottom:1.25rem;">
-        <label class="label" for="adminPassword">Admin Password</label>
-        <input class="input" type="password" id="adminPassword" autocomplete="current-password" required>
-      </div>
-      <button class="btn" type="submit" id="loginBtn">Review Designs</button>
-      <div id="loginErr" class="error-msg hidden"></div>
-    </form>
-  </div>
-</div>
-
-<!-- APP -->
-<div id="appSection" class="app hidden">
-  <div class="topbar">
-    <div>
-      <h1>Design Review</h1>
-      <div class="sub">OFFCOMFRT — Manufacture Studio · Admin</div>
-    </div>
-    <div class="topbar-actions">
-      <button class="btn btn-ghost" onclick="loadDesigns()">Refresh</button>
-      <button class="btn btn-ghost" onclick="logout()">Logout</button>
-    </div>
-  </div>
-
-  <div class="stats" id="stats"></div>
-  <div class="tabs" id="tabs"></div>
-  <div class="table-wrap">
-    <div id="tableContainer"></div>
-  </div>
-</div>
+<body class="bg-stone-50">
+<div id="app"></div>
 
 <script>
-(function () {
-  const API = ''; // same-origin (served from the returns server)
-  let authToken = null; // JWT kept in memory only
-  let designs = [];
-  let activeFilter = 'all';
+/* ============================== CONSTANTS ============================== */
+const CATEGORY_OPTIONS = ["T-Shirt", "Polo", "Henley", "Knitwear", "Sweatshirt", "Shorts", "Other"];
+const TYPE_OPTIONS = ["Fit Sample", "Proto Sample", "Revision Sample", "Pre-Production Sample", "Photo Sample", "Counter Sample", "Size Set Sample"];
+const STATUS_OPTIONS = ["Not Started", "Requested", "In Progress", "In Transit", "Received", "Under Review", "Revision Required", "Awaiting Manufacturer", "Awaiting Offcomfrt", "Approved", "Rejected", "Cancelled", "Closed"];
+const STAGE_OPTIONS = ["Request", "Tech Pack", "Sampling", "Courier", "Fit Review", "Revision", "Approval", "Pre-Production", "Closed"];
+const OWNER_OPTIONS = ["Offcomfrt Product", "Offcomfrt Founder", "Offcomfrt QC", "Offcomfrt Purchase", "Manufacturer", "Manufacturer Sampling", "Manufacturer Production"];
+const WAITING_OPTIONS = ["Offcomfrt", "Manufacturer", "Courier", "Fabric Supplier", "Other"];
+const APPROVAL_OPTIONS = ["Pending", "Approved", "Not Approved"];
+const FIT_OPTIONS = ["Oversized", "Relaxed", "Regular", "Slim", "Boxy"];
+const SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "XXL"];
+const PAID_BY_OPTIONS = ["Offcomfrt", "Manufacturer", "Shared"];
+const PAYMENT_STATUS_OPTIONS = ["Paid", "Partially Paid", "Pending", "Not Invoiced"];
+const FILE_TYPE_OPTIONS = ["Tech Pack", "Front Photo", "Back Photo", "Detail Photo", "Fit Photo", "QC Photo", "Fabric Photo", "Reference Image", "Invoice", "Courier", "Other"];
+const COMM_STATUS_OPTIONS = ["Open", "Waiting for Manufacturer", "Waiting for Offcomfrt", "Done", "Escalated"];
+const REVISION_STATUS_OPTIONS = ["Not Started", "In Progress", "Completed", "Overdue"];
+const TP_STATUS_OPTIONS = ["Draft", "Sent to Manufacturer", "Manufacturer Reviewing", "Questions Raised", "Revision Required", "Approved", "Archived"];
+const PROD_STAGE_OPTIONS = ["PO Placed", "Fabric Sourcing", "Cutting", "Stitching", "Washing & Finishing", "Quality Check", "Packing", "Shipped", "Delivered"];
+const PROD_PAYMENT_OPTIONS = ["Pending", "Advance Paid", "Partially Paid", "Fully Paid"];
+const PROD_FILE_TYPE_OPTIONS = ["Purchase Order", "Invoice", "Packing List", "Shipping Bill", "Inspection Report", "Photo", "Other"];
+const PROD_QC_RESULT_OPTIONS = ["Pending", "Pass", "Fail", "Hold"];
+const PROD_QC_CHECKPOINTS = ["Inline Inspection", "Pre-Final Inspection", "Final Random Inspection (AQL 2.5)", "Other"];
 
-  const $ = (id) => document.getElementById(id);
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const TOKEN_KEY = "mf_admin_token";
+let TOKEN = sessionStorage.getItem(TOKEN_KEY);
+let WS = null;      // workspace: { samples, manufacturers, techPacks, productionOrders }
+let TAB = "dashboard";
+let savingFlag = false;
 
-  const STATUS_LABELS = { pending: 'Pending Review', approved: 'Approved', in_production: 'In Production', completed: 'Completed', rejected: 'Rejected' };
-  const STATUSES = ['pending', 'approved', 'in_production', 'completed', 'rejected'];
+/* ============================== ICONS (lucide-style inline svg) ============================== */
+const ICONS = {
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  package: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 8.7 5 8.7-5"/>',
+  factory: '<path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a1 1 0 0 0-1.6-.8L14 12V8a1 1 0 0 0-1.6-.8L6 12V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M17 18h1"/><path d="M12 18h1"/><path d="M7 18h1"/>',
+  clipboard: '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+  message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  ruler: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+  paperclip: '<path d="m16 6-8.414 8.414a2 2 0 0 0 2.828 2.828L18.828 8.828a4 4 0 0 0-5.656-5.656L4.757 11.586a6 6 0 0 0 8.486 8.486L21 12.343"/>',
+  dashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+  pencil: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>',
+  external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  files: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/>',
+  truck: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
+  loader: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>'
+};
+function icon(name, size = 14, cls = "") {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="${cls}">${ICONS[name]}</svg>`;
+}
 
-  function api(path, options = {}) {
-    return fetch(API + path, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: 'Bearer ' + authToken } : {}), ...(options.headers || {}) }
+/* ============================== HELPERS ============================== */
+const DAY = 86400000;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function todayISO() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString().slice(0, 10); }
+function daysDiff(iso) { if (!iso) return null; const d = new Date(iso + "T00:00:00"); const t = new Date(todayISO() + "T00:00:00"); return Math.round((d - t) / DAY); }
+function fmtDate(iso) { if (!iso) return "—"; const d = new Date(iso + "T00:00:00"); return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" }); }
+function fmtINR(n) { if (n == null || isNaN(n)) return "₹0"; return "₹" + Math.round(n).toLocaleString("en-IN"); }
+function uid(prefix) { return prefix + "-" + Math.random().toString(36).slice(2, 9).toUpperCase(); }
+
+function statusLight(s) {
+  if (s.stage === "Closed") return "grey";
+  const due = s.nextDue || s.targetDate;
+  const dr = daysDiff(due);
+  if (dr == null) return "grey";
+  if (dr < 0) return "red";
+  if (dr <= 2) return "yellow";
+  return "green";
+}
+function daysOpen(s) {
+  if (!s.requestDate) return null;
+  const end = (s.stage === "Closed" && s.dateReceived) ? s.dateReceived : todayISO();
+  return Math.round((new Date(end + "T00:00:00") - new Date(s.requestDate + "T00:00:00")) / DAY);
+}
+function daysRemaining(s) { return daysDiff(s.nextDue || s.targetDate); }
+function daysOverdue(s) {
+  const dr = daysRemaining(s);
+  if (dr == null || s.stage === "Closed") return 0;
+  return dr < 0 ? -dr : 0;
+}
+function costTotal(c) {
+  if (!c) return 0;
+  return ["fabricCost", "trims", "cmt", "wash", "labels", "packaging", "courier", "other"]
+    .reduce((sum, k) => sum + (Number(c[k]) || 0), 0);
+}
+function orderQty(o) { return (o.breakdown || []).reduce((sum, r) => sum + (Number(r.qty) || 0), 0); }
+function orderValue(o) { return orderQty(o) * (Number(o.unitPrice) || 0); }
+function orderBalance(o) { return orderValue(o) - (Number(o.advancePaid) || 0); }
+function productionLight(o) {
+  if (o.currentStage === "Delivered") return "grey";
+  const dr = daysDiff(o.expectedDelivery);
+  if (dr == null) return "grey";
+  if (dr < 0) return "red";
+  if (dr <= 5) return "yellow";
+  return "green";
+}
+const LIGHT_DOT = { green: "bg-emerald-500", yellow: "bg-amber-500", red: "bg-rose-500", grey: "bg-neutral-300" };
+const LIGHT_TEXT = { green: "text-emerald-700", yellow: "text-amber-700", red: "text-rose-700", grey: "text-neutral-500" };
+const LIGHT_BG = { green: "bg-emerald-50", yellow: "bg-amber-50", red: "bg-rose-50", grey: "bg-neutral-100" };
+const LIGHT_LABEL = { green: "On track", yellow: "Due soon", red: "Overdue", grey: "Closed" };
+const LIGHT_ORDER = { red: 0, yellow: 1, green: 2, grey: 3 };
+
+/* ============================== API ============================== */
+async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  if (TOKEN) headers.Authorization = "Bearer " + TOKEN;
+  const res = await fetch(path, { ...opts, headers });
+  let body = {}; try { body = await res.json(); } catch (e) { /* non-json */ }
+  if (!res.ok) { const err = new Error(body.error || ("Request failed (" + res.status + ")")); err.status = res.status; throw err; }
+  return body;
+}
+
+/* ============================== SMALL PRIMITIVES ============================== */
+function dot(light) { return `<span class="inline-block w-2 h-2 rounded-full ${LIGHT_DOT[light]}"></span>`; }
+function statusPill(light) {
+  return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium rounded-sm ${LIGHT_BG[light]} ${LIGHT_TEXT[light]}">${dot(light)} ${LIGHT_LABEL[light]}</span>`;
+}
+function kpi(label, value, mono = true, accent = "") {
+  return `<div class="px-4 py-3 border-r border-neutral-200 last:border-r-0">
+    <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400 mb-1">${esc(label)}</div>
+    <div class="text-2xl font-black ${mono ? "font-mono tabular-nums" : ""} ${accent || "text-neutral-900"}">${value}</div>
+  </div>`;
+}
+function bar(label, count, max) {
+  const pct = max > 0 ? Math.max(3, Math.round((count / max) * 100)) : 0;
+  return `<div class="flex items-center gap-3 py-1.5">
+    <div class="w-28 text-xs text-neutral-600 shrink-0">${esc(label)}</div>
+    <div class="flex-1 h-4 bg-neutral-100 rounded-sm overflow-hidden"><div class="h-full bg-neutral-800 rounded-sm transition-all" style="width:${pct}%"></div></div>
+    <div class="w-6 text-xs font-mono text-neutral-700 text-right shrink-0">${count}</div>
+  </div>`;
+}
+function sectionHeading(index, title, action = "") {
+  return `<div class="flex items-center justify-between mb-3 mt-8 first:mt-0">
+    <h2 class="text-[13px] font-bold tracking-wide text-neutral-900 flex items-baseline gap-2">
+      <span class="text-neutral-300 font-mono">${esc(index)}</span><span class="uppercase">${esc(title)}</span>
+    </h2>${action}</div>`;
+}
+function emptyState(iconName, title, hint, action = "") {
+  return `<div class="flex flex-col items-center justify-center text-center py-14 border border-dashed border-neutral-300 rounded-sm bg-neutral-50">
+    ${icon(iconName, 22, "text-neutral-300 mb-3")}
+    <p class="text-sm font-medium text-neutral-600">${esc(title)}</p>
+    ${hint ? `<p class="text-xs text-neutral-400 mt-1 max-w-xs">${esc(hint)}</p>` : ""}${action}</div>`;
+}
+function field(label, inner, span = false) {
+  return `<label class="flex flex-col gap-1 ${span ? "col-span-2" : ""}">
+    <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400">${esc(label)}</span>${inner}</label>`;
+}
+const INPUT_CLS = 'w-full border border-neutral-300 rounded-sm px-2.5 py-1.5 text-sm text-neutral-900 bg-white focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-900';
+function textInput(f, value, extra = "", attrs = "") {
+  return `<input data-f="${f}" value="${esc(value ?? "")}" class="${INPUT_CLS} ${extra}" ${attrs}>`;
+}
+function dateInput(f, value, extra = "") {
+  return `<input type="date" data-f="${f}" value="${esc(value ?? "")}" class="${INPUT_CLS} ${extra}">`;
+}
+function selectInput(f, value, options, allowEmpty = false, extra = "") {
+  let opts = allowEmpty ? `<option value="">—</option>` : "";
+  for (const o of options) opts += `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc(o)}</option>`;
+  return `<div class="relative"><select data-f="${f}" class="${INPUT_CLS} appearance-none pr-7 ${extra}">${opts}</select>
+    <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400">${icon("chevron", 13)}</span></div>`;
+}
+function textArea(f, value, extra = "") {
+  return `<textarea data-f="${f}" class="${INPUT_CLS} min-h-[52px] resize-y ${extra}">${esc(value ?? "")}</textarea>`;
+}
+function rowInput(field2, value, cls, type = "text", ph = "") {
+  return `<input data-field="${field2}" type="${type}" placeholder="${esc(ph)}" value="${esc(value ?? "")}" class="${INPUT_CLS} ${cls}">`;
+}
+function rowSelect(field2, value, options, cls) {
+  let opts = "";
+  for (const o of options) opts += `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc(o)}</option>`;
+  return `<div class="relative ${cls}"><select data-field="${field2}" class="${INPUT_CLS} appearance-none pr-7">${opts}</select>
+    <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400">${icon("chevron", 13)}</span></div>`;
+}
+
+/* Toast + confirm */
+function toast(msg, kind = "ok") {
+  const el = document.createElement("div");
+  el.className = "fixed bottom-5 right-5 z-[100] bg-neutral-900 text-white text-sm px-4 py-2.5 rounded-sm shadow-lg flex items-center gap-2";
+  el.innerHTML = icon(kind === "error" ? "alert" : "check", 14, kind === "error" ? "text-rose-400" : "text-emerald-400") + esc(msg);
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+function confirmDialog(title, message, onConfirm) {
+  const el = document.createElement("div");
+  el.className = "fixed inset-0 z-[90] bg-black/40 flex items-center justify-center p-4";
+  el.innerHTML = `<div class="bg-white rounded-sm w-full max-w-sm p-5 border border-neutral-200">
+    <p class="text-sm font-semibold text-neutral-900 mb-1">${esc(title)}</p>
+    <p class="text-sm text-neutral-500 mb-4">${esc(message)}</p>
+    <div class="flex justify-end gap-2">
+      <button data-a="cancel" class="px-3 py-1.5 text-sm rounded-sm border border-neutral-300 hover:bg-neutral-50">Cancel</button>
+      <button data-a="ok" class="px-3 py-1.5 text-sm rounded-sm bg-rose-600 text-white hover:bg-rose-700">Delete</button>
+    </div></div>`;
+  el.querySelector('[data-a="cancel"]').onclick = () => el.remove();
+  el.querySelector('[data-a="ok"]').onclick = () => { el.remove(); onConfirm(); };
+  document.body.appendChild(el);
+}
+function setSaving(v) {
+  savingFlag = v;
+  const el = document.getElementById("saveState");
+  if (el) el.innerHTML = v ? icon("loader", 11, "spin") + " Saving…" : "Shared workspace · live for everyone with this link";
+}
+
+/* Merge form values onto the original draft. data-f supports dot paths
+   (e.g. cost.fabricCost); list rows start from their serialized base object
+   (data-base) so fields without inputs are preserved — same as the JSX state. */
+function mergeForm(base, root) {
+  const d = JSON.parse(JSON.stringify(base || {}));
+  root.querySelectorAll("[data-f]").forEach((el) => {
+    const f = el.dataset.f;
+    const v = el.type === "checkbox" ? el.checked : el.value;
+    const parts = f.split(".");
+    if (parts.length === 2) { d[parts[0]] = d[parts[0]] || {}; d[parts[0]][parts[1]] = v; }
+    else d[f] = v;
+  });
+  root.querySelectorAll("[data-list]").forEach((container) => {
+    d[container.dataset.list] = [...container.querySelectorAll(":scope > [data-row]")].map((rowEl) => {
+      const baseEl = rowEl.querySelector("[data-base]");
+      const o = baseEl ? JSON.parse(baseEl.value || "{}") : {};
+      rowEl.querySelectorAll("[data-field]").forEach((inp) => { o[inp.dataset.field] = inp.type === "checkbox" ? inp.checked : inp.value; });
+      return o;
     });
-  }
+  });
+  return d;
+}
 
-  function toast(msg, isError) {
-    const el = document.createElement('div');
-    el.className = 'toast' + (isError ? ' error' : '');
-    el.textContent = msg;
-    document.body.appendChild(el);
-    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.4s'; setTimeout(() => el.remove(), 400); }, 2600);
-  }
-
-  function fmtDate(iso) {
-    const d = new Date(iso);
-    if (isNaN(d)) return '—';
-    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  }
-
-  function deadlineCell(iso) {
-    const d = new Date(iso);
-    if (isNaN(d)) return '<span class="d-date">—</span>';
-    const days = Math.ceil((d - new Date()) / 86400000);
-    let label = fmtDate(iso);
-    if (days < 0) return '<span class="d-date overdue">' + esc(label) + ' · overdue ' + Math.abs(days) + 'd</span>';
-    if (days === 0) return '<span class="d-date" style="color:#fff;">' + esc(label) + ' · today</span>';
-    if (days <= 7) return '<span class="d-date" style="color:#fff;">' + esc(label) + ' · ' + days + 'd</span>';
-    return '<span class="d-date">' + esc(label) + '</span>';
-  }
-
-  function countUp(el, target) {
-    const dur = 700, start = performance.now();
-    function tick(now) {
-      const p = Math.min((now - start) / dur, 1);
-      el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
-      if (p < 1) requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-  }
-
-  // ── Auth ──
-  window.logout = function () {
-    authToken = null; designs = [];
-    $('appSection').classList.add('hidden');
-    $('loginSection').classList.remove('hidden');
-    $('adminPassword').value = '';
-  };
-
-  $('loginForm').addEventListener('submit', async (e) => {
+/* ============================== LOGIN ============================== */
+function renderLogin() {
+  document.getElementById("app").innerHTML = `
+  <div class="min-h-screen flex items-center justify-center bg-neutral-950">
+    <div class="w-full max-w-sm px-6">
+      <div class="text-center mb-8">
+        <div class="text-3xl font-black tracking-tight text-white">OFFCOMFRT</div>
+        <div class="text-[11px] font-semibold tracking-[0.15em] text-neutral-500 uppercase mt-1">Product Development Control Tower</div>
+      </div>
+      <form id="loginForm" class="bg-neutral-900 border border-neutral-800 rounded-sm p-6 space-y-4">
+        <label class="block">
+          <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-500">Admin Password</span>
+          <input id="loginPw" type="password" autocomplete="current-password" required
+            class="mt-1 w-full bg-neutral-950 border border-neutral-700 rounded-sm px-3 py-2 text-sm text-white focus:outline-none focus:border-neutral-400">
+        </label>
+        <div id="loginErr" class="text-xs text-rose-400 hidden"></div>
+        <button type="submit" class="w-full bg-white text-neutral-950 text-sm font-bold py-2.5 rounded-sm hover:bg-neutral-200 transition-colors">Enter Control Tower</button>
+      </form>
+    </div>
+  </div>`;
+  document.getElementById("loginForm").onsubmit = async (e) => {
     e.preventDefault();
-    const btn = $('loginBtn'), err = $('loginErr');
-    const password = $('adminPassword').value.trim();
-    if (!password) return;
-    btn.disabled = true; btn.innerHTML = 'Verifying<span class="spinner"></span>';
-    err.classList.add('hidden');
+    const errEl = document.getElementById("loginErr");
+    errEl.classList.add("hidden");
     try {
-      const res = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-      const data = await res.json();
-      if (res.ok && data.token) {
-        authToken = data.token;
-        $('loginSection').classList.add('hidden');
-        $('appSection').classList.remove('hidden');
-        await loadDesigns();
-      } else {
-        err.textContent = data.error || 'Invalid password';
-        err.classList.remove('hidden');
-      }
-    } catch (e2) {
-      err.textContent = 'Connection error. Try again.';
-      err.classList.remove('hidden');
+      const body = await api("/api/admin/login", { method: "POST", body: JSON.stringify({ password: document.getElementById("loginPw").value }) });
+      TOKEN = body.token;
+      sessionStorage.setItem(TOKEN_KEY, TOKEN);
+      await boot();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.remove("hidden");
     }
-    btn.disabled = false; btn.textContent = 'Review Designs';
+  };
+}
+
+/* ============================== SHELL ============================== */
+const NAV = [
+  { key: "dashboard", label: "Dashboard", icon: "dashboard" },
+  { key: "samples", label: "Samples", icon: "package" },
+  { key: "production", label: "Production", icon: "truck" },
+  { key: "manufacturers", label: "Manufacturers", icon: "factory" },
+  { key: "techpacks", label: "Tech Packs", icon: "files" }
+];
+
+function renderShell() {
+  document.getElementById("app").innerHTML = `
+  <div class="min-h-screen bg-stone-50 text-neutral-900">
+    <div class="bg-neutral-900 text-white">
+      <div class="max-w-[1400px] mx-auto px-6 pt-6 pb-4">
+        <div class="flex items-baseline justify-between">
+          <div>
+            <div class="text-2xl font-black tracking-tight">OFFCOMFRT</div>
+            <div class="text-[11px] font-semibold tracking-[0.15em] text-neutral-400 uppercase mt-0.5">Product Development Control Tower</div>
+          </div>
+          <div class="flex items-center gap-4">
+            <div id="saveState" class="text-[10px] text-neutral-500 flex items-center gap-1.5">Shared workspace · live for everyone with this link</div>
+            <button id="logoutBtn" class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-400 rounded-sm px-2 py-1">Sign out</button>
+          </div>
+        </div>
+      </div>
+      <div class="max-w-[1400px] mx-auto px-6 flex gap-1" id="navBar"></div>
+    </div>
+    <main class="max-w-[1400px] mx-auto px-6 py-6" id="main"></main>
+  </div>`;
+  document.getElementById("logoutBtn").onclick = () => { sessionStorage.removeItem(TOKEN_KEY); TOKEN = null; WS = null; renderLogin(); };
+  renderNav();
+  renderMain();
+}
+
+function renderNav() {
+  document.getElementById("navBar").innerHTML = NAV.map((n) =>
+    `<button data-nav="${n.key}" class="flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold border-b-2 -mb-px transition-colors ${TAB === n.key ? "border-white text-white" : "border-transparent text-neutral-400 hover:text-neutral-200"}">${icon(n.icon, 13)} ${n.label}</button>`
+  ).join("");
+  document.querySelectorAll("[data-nav]").forEach((b) => b.onclick = () => { TAB = b.dataset.nav; renderNav(); renderMain(); });
+}
+
+function renderMain() {
+  const main = document.getElementById("main");
+  if (TAB === "dashboard") renderDashboard(main);
+  if (TAB === "samples") renderSamples(main);
+  if (TAB === "production") renderProduction(main);
+  if (TAB === "manufacturers") renderManufacturers(main);
+  if (TAB === "techpacks") renderTechPacks(main);
+}
+
+/* ============================== DASHBOARD ============================== */
+let dashFilters = { mfr: "All", cat: "All" };
+
+function renderDashboard(main) {
+  const { samples, manufacturers, productionOrders } = WS;
+  const fMfr = dashFilters.mfr, fCat = dashFilters.cat;
+  const scoped = samples.filter((s) =>
+    (fMfr === "All" || s.manufacturer === fMfr) && (fCat === "All" || s.category === fCat));
+
+  const active = scoped.filter((s) => s.stage !== "Closed");
+  const overdue = scoped.filter((s) => statusLight(s) === "red");
+  const dueThisWeek = active.filter((s) => { const d = daysRemaining(s); return d != null && d >= 0 && d <= 7; });
+  const closed = scoped.filter((s) => s.stage === "Closed");
+  const kpis = [
+    { label: "Total Active Samples", value: active.length },
+    { label: "Due This Week", value: dueThisWeek.length },
+    { label: "Overdue", value: overdue.length, accent: overdue.length ? "text-rose-600" : "" },
+    { label: "Awaiting Manufacturer", value: scoped.filter((s) => s.status === "Awaiting Manufacturer").length },
+    { label: "Awaiting Offcomfrt", value: scoped.filter((s) => s.status === "Awaiting Offcomfrt").length },
+    { label: "Under Review", value: scoped.filter((s) => s.status === "Under Review").length },
+    { label: "Approved", value: scoped.filter((s) => s.approvalStatus === "Approved").length },
+    { label: "Requiring Revision", value: scoped.filter((s) => s.status === "Revision Required").length },
+    { label: "Avg Turnaround (days)", value: closed.length ? Math.round(closed.reduce((a, s) => a + (daysOpen(s) || 0), 0) / closed.length) : "—" },
+    { label: "Total Sample Dev Cost", value: fmtINR(scoped.reduce((a, s) => a + costTotal(s.cost), 0)) }
+  ];
+
+  const stageCounts = STAGE_OPTIONS.map((st) => ({ label: st, count: samples.filter((s) => s.stage === st).length }));
+  const maxStage = Math.max(1, ...stageCounts.map((s) => s.count));
+
+  const statusBuckets = [
+    { label: "On Track", count: samples.filter((s) => statusLight(s) === "green").length, color: "bg-emerald-500" },
+    { label: "Due Soon", count: samples.filter((s) => statusLight(s) === "yellow").length, color: "bg-amber-500" },
+    { label: "Overdue", count: samples.filter((s) => statusLight(s) === "red").length, color: "bg-rose-500" },
+    { label: "Blocked", count: samples.filter((s) => s.status === "Revision Required" || s.status === "Rejected").length, color: "bg-neutral-700" },
+    { label: "Approved", count: samples.filter((s) => s.approvalStatus === "Approved").length, color: "bg-neutral-400" }
+  ];
+
+  const upcoming = samples
+    .filter((s) => s.stage !== "Closed" && daysRemaining(s) != null && daysRemaining(s) >= 0)
+    .sort((a, b) => daysRemaining(a) - daysRemaining(b)).slice(0, 10);
+  const overdueList = samples.filter((s) => statusLight(s) === "red")
+    .sort((a, b) => daysOverdue(b) - daysOverdue(a)).slice(0, 10);
+
+  const mfrPerf = manufacturers.map((m) => {
+    const ms = samples.filter((s) => s.manufacturer === m.name);
+    const completed = ms.filter((s) => s.stage === "Closed");
+    const avgT = completed.length ? Math.round(completed.reduce((a, s) => a + (daysOpen(s) || 0), 0) / completed.length) : null;
+    const onTime = completed.length ? Math.round((completed.filter((s) => daysOverdue(s) === 0).length / completed.length) * 100) : null;
+    const revRate = ms.length ? Math.round((ms.filter((s) => s.status === "Revision Required").length / ms.length) * 100) : 0;
+    return { name: m.name, active: ms.filter((s) => s.stage !== "Closed").length, completed: completed.length, avgT, onTime, revRate, approved: ms.filter((s) => s.approvalStatus === "Approved").length };
   });
 
-  // ── Data ──
-  window.loadDesigns = async function () {
-    try {
-      const res = await api('/api/manufacture/admin/designs');
-      if (res.status === 401) { logout(); return; }
-      const data = await res.json();
-      designs = data.designs || [];
-      renderStats();
-      renderTabs();
-      renderTable();
-    } catch (e) {
-      toast('Failed to load designs', true);
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+    const label = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const inRange = (iso) => { if (!iso) return false; const dd = new Date(iso + "T00:00:00"); return dd >= start && dd < end; };
+    months.push({
+      label,
+      requested: samples.filter((s) => inRange(s.requestDate)).length,
+      received: samples.filter((s) => inRange(s.dateReceived)).length,
+      approved: samples.filter((s) => inRange(s.approvalDate)).length
+    });
+  }
+  const maxMonth = Math.max(1, ...months.flatMap((m) => [m.requested, m.received, m.approved]));
+  const costTotalAll = samples.reduce((a, s) => a + costTotal(s.cost), 0);
+  const costByPaidBy = (who) => samples.filter((s) => (s.cost || {}).paidBy === who).reduce((a, s) => a + costTotal(s.cost), 0);
+
+  const mfrOpts = ["All", ...manufacturers.map((m) => m.name)].map((o) => `<option ${o === fMfr ? "selected" : ""}>${esc(o)}</option>`).join("");
+  const catOpts = ["All", ...CATEGORY_OPTIONS].map((o) => `<option ${o === fCat ? "selected" : ""}>${esc(o)}</option>`).join("");
+
+  main.innerHTML = `
+  <div class="flex items-center gap-3 mb-5 text-xs">
+    <span class="font-semibold tracking-wider uppercase text-neutral-400">Filters</span>
+    <select id="dFmfr" class="border border-neutral-300 rounded-sm px-2 py-1 bg-white">${mfrOpts}</select>
+    <select id="dFcat" class="border border-neutral-300 rounded-sm px-2 py-1 bg-white">${catOpts}</select>
+    <span class="text-neutral-400">applies to Key Metrics only</span>
+  </div>
+
+  ${sectionHeading("—", "Key Metrics")}
+  <div class="grid grid-cols-5 border border-neutral-200 rounded-sm bg-white divide-y divide-neutral-200">
+    <div class="col-span-5 grid grid-cols-5">${kpis.slice(0, 5).map((k) => kpi(k.label, k.value, true, k.accent)).join("")}</div>
+    <div class="col-span-5 grid grid-cols-5 border-t border-neutral-200">${kpis.slice(5, 10).map((k) => kpi(k.label, k.value, true, k.accent)).join("")}</div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-6 mt-8">
+    <div>
+      ${sectionHeading("A", "Sample Pipeline")}
+      <div class="border border-neutral-200 rounded-sm bg-white p-4">${stageCounts.map((s) => bar(s.label, s.count, maxStage)).join("")}</div>
+    </div>
+    <div>
+      ${sectionHeading("B", "Sample Status")}
+      <div class="border border-neutral-200 rounded-sm bg-white p-4 grid grid-cols-2 gap-3">
+        ${statusBuckets.map((b) => `<div class="flex items-center gap-2.5 px-2 py-2">
+          <span class="w-2.5 h-2.5 rounded-full ${b.color}"></span>
+          <span class="text-xs text-neutral-600 flex-1">${esc(b.label)}</span>
+          <span class="text-sm font-mono font-bold text-neutral-900">${b.count}</span></div>`).join("")}
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-6">
+    <div>
+      ${sectionHeading("C", "Upcoming Deadlines — Next 10")}
+      ${upcoming.length === 0 ? emptyState("clock", "Nothing due", "No open samples have an upcoming due date.") :
+        `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden">${upcoming.map((s) =>
+          `<button data-open-sample="${esc(s.id)}" class="w-full flex items-center gap-3 px-3 py-2 text-left border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50">
+            ${dot(statusLight(s))}
+            <span class="font-mono text-[11px] text-neutral-500 w-32 truncate">${esc(s.id)}</span>
+            <span class="text-xs text-neutral-800 flex-1 truncate">${esc(s.product)} · ${esc(s.version || "")}</span>
+            <span class="text-[11px] text-neutral-500 w-20 truncate">${esc(s.actionOwner || "—")}</span>
+            <span class="text-xs font-mono text-neutral-700 w-16 text-right">${daysRemaining(s)}d</span>
+          </button>`).join("")}</div>`}
+    </div>
+    <div>
+      ${sectionHeading("D", "Overdue Samples")}
+      ${overdueList.length === 0 ? emptyState("check", "Nothing overdue", "Every open sample is within its due date.") :
+        `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden">${overdueList.map((s) =>
+          `<button data-open-sample="${esc(s.id)}" class="w-full flex items-center gap-3 px-3 py-2 text-left border-b last:border-b-0 border-neutral-100 hover:bg-rose-50/50">
+            <span class="font-mono text-[11px] text-neutral-500 w-32 truncate">${esc(s.id)}</span>
+            <span class="text-xs text-neutral-800 flex-1 truncate">${esc(s.product)}</span>
+            <span class="text-[11px] text-neutral-500 w-28 truncate">${esc(s.manufacturer)}</span>
+            <span class="text-xs font-mono text-rose-600 font-bold w-16 text-right">${daysOverdue(s)}d</span>
+          </button>`).join("")}</div>`}
+    </div>
+  </div>
+
+  ${sectionHeading("E", "Manufacturer Performance")}
+  <div class="border border-neutral-200 rounded-sm bg-white overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead><tr class="bg-neutral-900 text-white text-[10px] uppercase tracking-wide">
+        <th class="text-left font-semibold px-3 py-2">Manufacturer</th>
+        <th class="text-right font-semibold px-3 py-2">Active</th>
+        <th class="text-right font-semibold px-3 py-2">Completed</th>
+        <th class="text-right font-semibold px-3 py-2">Avg Turnaround</th>
+        <th class="text-right font-semibold px-3 py-2">On-Time %</th>
+        <th class="text-right font-semibold px-3 py-2">Revision Rate</th>
+        <th class="text-right font-semibold px-3 py-2">Approved</th>
+      </tr></thead>
+      <tbody>${mfrPerf.map((m, i) => `<tr class="${i % 2 ? "bg-neutral-50" : ""}">
+        <td class="px-3 py-2 font-medium text-neutral-800">${esc(m.name)}</td>
+        <td class="px-3 py-2 text-right font-mono">${m.active}</td>
+        <td class="px-3 py-2 text-right font-mono">${m.completed}</td>
+        <td class="px-3 py-2 text-right font-mono">${m.avgT ?? "—"}</td>
+        <td class="px-3 py-2 text-right font-mono">${m.onTime != null ? m.onTime + "%" : "—"}</td>
+        <td class="px-3 py-2 text-right font-mono">${m.revRate}%</td>
+        <td class="px-3 py-2 text-right font-mono">${m.approved}</td>
+      </tr>`).join("")}</tbody>
+    </table>
+  </div>
+
+  <div class="grid grid-cols-2 gap-6">
+    <div>
+      ${sectionHeading("F", "Velocity — Last 6 Months")}
+      <div class="border border-neutral-200 rounded-sm bg-white p-4">
+        <div class="flex items-end gap-4 h-32">
+          ${months.map((m) => `<div class="flex-1 flex flex-col items-center gap-1">
+            <div class="flex items-end gap-0.5 h-24">
+              <div class="w-2 bg-neutral-800 rounded-t-sm" style="height:${(m.requested / maxMonth) * 100}%" title="Requested: ${m.requested}"></div>
+              <div class="w-2 bg-neutral-400 rounded-t-sm" style="height:${(m.received / maxMonth) * 100}%" title="Received: ${m.received}"></div>
+              <div class="w-2 bg-emerald-400 rounded-t-sm" style="height:${(m.approved / maxMonth) * 100}%" title="Approved: ${m.approved}"></div>
+            </div>
+            <div class="text-[10px] text-neutral-400">${esc(m.label)}</div>
+          </div>`).join("")}
+        </div>
+        <div class="flex gap-4 mt-3 text-[10px] text-neutral-500">
+          <span class="flex items-center gap-1"><span class="w-2 h-2 bg-neutral-800 rounded-sm"></span> Requested</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 bg-neutral-400 rounded-sm"></span> Received</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 bg-emerald-400 rounded-sm"></span> Approved</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      ${sectionHeading("G", "Cost Summary")}
+      <div class="border border-neutral-200 rounded-sm bg-white grid grid-cols-2 divide-x divide-y divide-neutral-200">
+        ${kpi("Total Sample Cost", fmtINR(costTotalAll))}
+        ${kpi("Avg Cost / Sample", fmtINR(samples.length ? costTotalAll / samples.length : 0))}
+        ${kpi("Manufacturer-Paid", fmtINR(costByPaidBy("Manufacturer")))}
+        ${kpi("Offcomfrt-Paid", fmtINR(costByPaidBy("Offcomfrt")))}
+      </div>
+    </div>
+  </div>
+
+  ${sectionHeading("H", "Production Snapshot")}
+  ${productionOrders.length === 0 ? emptyState("truck", "No production orders yet", "Approve a sample and place your first bulk order from the Production tab.") :
+    `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden">
+      ${productionOrders.slice().sort((a, b) => LIGHT_ORDER[productionLight(a)] - LIGHT_ORDER[productionLight(b)]).map((o) =>
+        `<button data-open-order="${esc(o.id)}" class="w-full flex items-center gap-4 px-4 py-2.5 text-left border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50">
+          ${dot(productionLight(o))}
+          <span class="font-mono text-[11px] text-neutral-500 w-36 truncate">${esc(o.id)}</span>
+          <span class="text-xs text-neutral-800 flex-1 truncate">${esc(o.product)} · ${orderQty(o).toLocaleString("en-IN")} pcs</span>
+          <span class="text-[11px] text-neutral-500 w-40 truncate">${esc(o.manufacturer)}</span>
+          <span class="text-xs text-neutral-600 w-32">${esc(o.currentStage || "")}</span>
+          <span class="text-xs font-mono text-neutral-500 w-24 text-right">${fmtDate(o.expectedDelivery)}</span>
+          <span class="text-xs font-mono text-neutral-700 w-24 text-right">${fmtINR(orderValue(o))}</span>
+        </button>`).join("")}
+    </div>`}`;
+
+  document.getElementById("dFmfr").onchange = (e) => { dashFilters.mfr = e.target.value; renderDashboard(main); };
+  document.getElementById("dFcat").onchange = (e) => { dashFilters.cat = e.target.value; renderDashboard(main); };
+  main.querySelectorAll("[data-open-sample]").forEach((b) => b.onclick = () => openSampleDrawer(WS.samples.find((s) => s.id === b.dataset.openSample), false));
+  main.querySelectorAll("[data-open-order]").forEach((b) => b.onclick = () => openProductionDrawer(WS.productionOrders.find((o) => o.id === b.dataset.openOrder), false));
+}
+/* ============================== SAMPLES ============================== */
+let sampleFilters = { q: "", mfr: "All", cat: "All", status: "All" };
+
+function emptySample() {
+  return {
+    id: "", sku: "", product: "", category: "T-Shirt", version: "S1", type: "Fit Sample",
+    requestDate: todayISO(), targetDate: "", manufacturer: "", manufacturerContact: "",
+    fabric: "", gsm: "", composition: "", color: "", size: "M", fit: "Regular",
+    techPackId: "", refLink: "",
+    cost: { fabricCost: 0, trims: 0, cmt: 0, wash: 0, labels: 0, packaging: 0, courier: 0, other: 0, paidBy: "Offcomfrt", paymentStatus: "Pending", invoiceLink: "" },
+    courierAwb: "", dateSent: "", dateReceived: "",
+    status: "Requested", stage: "Request",
+    mfrUpdate: "", feedback: "", changesRequired: "", nextAction: "", actionOwner: "Offcomfrt Product", waitingOn: "Offcomfrt", nextDue: "",
+    approvalStatus: "Pending", approvedBy: "", approvalDate: "", finalDecision: "", notes: "",
+    qc: [], revisions: [], comms: [], files: []
+  };
+}
+
+function filteredSamples() {
+  const f = sampleFilters;
+  return WS.samples.filter((s) => {
+    if (f.mfr !== "All" && s.manufacturer !== f.mfr) return false;
+    if (f.cat !== "All" && s.category !== f.cat) return false;
+    if (f.status !== "All" && s.status !== f.status) return false;
+    if (f.q && !(`${s.id} ${s.product} ${s.sku || ""}`.toLowerCase().includes(f.q.toLowerCase()))) return false;
+    return true;
+  }).sort((a, b) => LIGHT_ORDER[statusLight(a)] - LIGHT_ORDER[statusLight(b)]);
+}
+
+function renderSamples(main) {
+  const f = sampleFilters;
+  main.innerHTML = `
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+    <div class="relative">
+      <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400">${icon("search", 13)}</span>
+      <input id="sQ" value="${esc(f.q)}" placeholder="Search sample, product, SKU…"
+        class="pl-8 pr-3 py-1.5 text-sm border border-neutral-300 rounded-sm w-64 focus:outline-none focus:ring-1 focus:ring-neutral-900 bg-white">
+    </div>
+    <select id="sMfr" class="border border-neutral-300 rounded-sm px-2 py-1.5 text-xs bg-white">
+      ${["All", ...WS.manufacturers.map((m) => m.name)].map((o) => `<option ${o === f.mfr ? "selected" : ""}>${esc(o)}</option>`).join("")}
+    </select>
+    <select id="sCat" class="border border-neutral-300 rounded-sm px-2 py-1.5 text-xs bg-white">
+      ${["All", ...CATEGORY_OPTIONS].map((o) => `<option ${o === f.cat ? "selected" : ""}>${esc(o)}</option>`).join("")}
+    </select>
+    <select id="sStatus" class="border border-neutral-300 rounded-sm px-2 py-1.5 text-xs bg-white">
+      ${["All", ...STATUS_OPTIONS].map((o) => `<option ${o === f.status ? "selected" : ""}>${esc(o)}</option>`).join("")}
+    </select>
+    <button id="sNew" class="ml-auto flex items-center gap-1.5 bg-neutral-900 text-white text-sm px-3 py-1.5 rounded-sm hover:bg-neutral-800">${icon("plus", 14)} New Sample</button>
+  </div>
+  <div id="sList"></div>`;
+
+  const rerenderList = () => renderSamplesList(document.getElementById("sList"));
+  document.getElementById("sQ").oninput = (e) => { sampleFilters.q = e.target.value; rerenderList(); };
+  document.getElementById("sMfr").onchange = (e) => { sampleFilters.mfr = e.target.value; rerenderList(); };
+  document.getElementById("sCat").onchange = (e) => { sampleFilters.cat = e.target.value; rerenderList(); };
+  document.getElementById("sStatus").onchange = (e) => { sampleFilters.status = e.target.value; rerenderList(); };
+  document.getElementById("sNew").onclick = () => openSampleDrawer(emptySample(), true);
+  rerenderList();
+}
+
+function renderSamplesList(container) {
+  const filtered = filteredSamples();
+  if (filtered.length === 0) {
+    container.innerHTML = emptyState("package", "No samples match", "Try clearing filters, or add your first sample.",
+      `<button data-new-sample class="mt-3 text-xs font-semibold text-neutral-900 underline">+ New sample</button>`);
+    const b = container.querySelector("[data-new-sample]");
+    if (b) b.onclick = () => openSampleDrawer(emptySample(), true);
+    return;
+  }
+  container.innerHTML = `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden">
+    ${filtered.map((s) => {
+      const light = statusLight(s);
+      return `<div class="flex items-stretch border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50 group">
+        <div class="w-1 ${LIGHT_DOT[light]} shrink-0"></div>
+        <button data-open="${esc(s.id)}" class="flex-1 flex items-center gap-4 px-4 py-3 text-left min-w-0">
+          <div class="w-40 shrink-0"><div class="font-mono text-[11px] text-neutral-500 truncate">${esc(s.id)}</div></div>
+          <div class="w-52 shrink-0 min-w-0">
+            <div class="text-sm text-neutral-900 truncate">${esc(s.product)}</div>
+            <div class="text-[11px] text-neutral-400">${esc(s.version || "")} · ${esc(s.category || "")}</div>
+          </div>
+          <div class="w-40 shrink-0 text-xs text-neutral-600 truncate">${esc(s.manufacturer)}</div>
+          <div class="w-28 shrink-0 text-xs text-neutral-600">${esc(s.stage || "")}</div>
+          <div class="w-36 shrink-0 text-xs text-neutral-600 truncate">${esc(s.status || "")}</div>
+          <div class="w-24 shrink-0 text-xs font-mono text-neutral-500">${fmtDate(s.nextDue || s.targetDate)}</div>
+          <div class="w-24 shrink-0">${statusPill(light)}</div>
+        </button>
+        <button data-del="${esc(s.id)}" class="px-3 opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-rose-600 transition-opacity">${icon("trash", 14)}</button>
+      </div>`;
+    }).join("")}
+  </div>`;
+  container.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openSampleDrawer(WS.samples.find((s) => s.id === b.dataset.open), false));
+  container.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => {
+    const s = WS.samples.find((x) => x.id === b.dataset.del);
+    confirmDialog("Delete this sample?", `${s.id} — ${s.product} will be permanently removed.`, async () => {
+      try {
+        setSaving(true);
+        await api("/api/manufacture/admin/samples?id=" + encodeURIComponent(s.id), { method: "DELETE" });
+        WS.samples = WS.samples.filter((x) => x.id !== s.id);
+        toast("Deleted");
+        renderSamplesList(container);
+      } catch (err) { toast(err.message, "error"); } finally { setSaving(false); }
+    });
+  });
+}
+
+/* ============================== PRODUCTION ============================== */
+let prodFilters = { mfr: "All", stage: "All" };
+
+function emptyProductionOrder() {
+  return {
+    id: "", sampleId: "", sku: "", product: "", category: "T-Shirt", manufacturer: "", manufacturerContact: "",
+    poDate: todayISO(), expectedDelivery: "", actualDelivery: "",
+    breakdown: [], unitPrice: 0, advancePaid: 0, paymentStatus: "Pending",
+    currentStage: "PO Placed", actionOwner: "Offcomfrt Purchase", waitingOn: "Manufacturer",
+    nextAction: "", nextActionDue: "", shippingMethod: "", trackingNumber: "", notes: "",
+    qc: [], comms: [], files: []
+  };
+}
+
+function renderProduction(main) {
+  const { productionOrders: orders, manufacturers } = WS;
+  const f = prodFilters;
+  const filtered = orders.filter((o) =>
+    (f.mfr === "All" || o.manufacturer === f.mfr) && (f.stage === "All" || o.currentStage === f.stage)
+  ).sort((a, b) => LIGHT_ORDER[productionLight(a)] - LIGHT_ORDER[productionLight(b)]);
+
+  const totalValue = orders.reduce((a, o) => a + orderValue(o), 0);
+  const totalBalance = orders.reduce((a, o) => a + orderBalance(o), 0);
+  const inProduction = orders.filter((o) => o.currentStage !== "Delivered").length;
+  const delayed = orders.filter((o) => productionLight(o) === "red").length;
+
+  main.innerHTML = `
+  <div class="grid grid-cols-5 border border-neutral-200 rounded-sm bg-white divide-x divide-neutral-200 mb-5">
+    ${kpi("Total Orders", orders.length)}
+    ${kpi("In Production", inProduction)}
+    ${kpi("Delayed", delayed, true, delayed ? "text-rose-600" : "")}
+    ${kpi("Total Order Value", fmtINR(totalValue))}
+    ${kpi("Balance Due", fmtINR(totalBalance))}
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+    <select id="pMfr" class="border border-neutral-300 rounded-sm px-2 py-1.5 text-xs bg-white">
+      ${["All", ...manufacturers.map((m) => m.name)].map((o) => `<option ${o === f.mfr ? "selected" : ""}>${esc(o)}</option>`).join("")}
+    </select>
+    <select id="pStage" class="border border-neutral-300 rounded-sm px-2 py-1.5 text-xs bg-white">
+      ${["All", ...PROD_STAGE_OPTIONS].map((o) => `<option ${o === f.stage ? "selected" : ""}>${esc(o)}</option>`).join("")}
+    </select>
+    <button id="pNew" class="ml-auto flex items-center gap-1.5 bg-neutral-900 text-white text-sm px-3 py-1.5 rounded-sm hover:bg-neutral-800">${icon("plus", 14)} New Production Order</button>
+  </div>
+
+  <div id="pList">${filtered.length === 0
+    ? emptyState("truck", "No production orders yet", "Approve a sample, then place your first bulk order — or add one directly here.",
+        `<button data-new-order class="mt-3 text-xs font-semibold text-neutral-900 underline">+ New production order</button>`)
+    : `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden">
+        ${filtered.map((o) => {
+          const light = productionLight(o);
+          return `<div class="flex items-stretch border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50 group">
+            <div class="w-1 ${LIGHT_DOT[light]} shrink-0"></div>
+            <button data-open="${esc(o.id)}" class="flex-1 flex items-center gap-4 px-4 py-3 text-left min-w-0">
+              <div class="w-36 shrink-0 font-mono text-[11px] text-neutral-500 truncate">${esc(o.id)}</div>
+              <div class="w-52 shrink-0 min-w-0">
+                <div class="text-sm text-neutral-900 truncate">${esc(o.product)}</div>
+                <div class="text-[11px] text-neutral-400">${orderQty(o).toLocaleString("en-IN")} pcs</div>
+              </div>
+              <div class="w-40 shrink-0 text-xs text-neutral-600 truncate">${esc(o.manufacturer)}</div>
+              <div class="w-32 shrink-0 text-xs text-neutral-600">${esc(o.currentStage || "")}</div>
+              <div class="w-24 shrink-0 text-xs font-mono text-neutral-500">${fmtDate(o.expectedDelivery)}</div>
+              <div class="w-24 shrink-0 text-xs font-mono text-neutral-700">${fmtINR(orderValue(o))}</div>
+              <div class="w-24 shrink-0">${statusPill(light)}</div>
+            </button>
+            <button data-del="${esc(o.id)}" class="px-3 opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-rose-600 transition-opacity">${icon("trash", 14)}</button>
+          </div>`;
+        }).join("")}
+      </div>`}
+  </div>`;
+
+  document.getElementById("pMfr").onchange = (e) => { prodFilters.mfr = e.target.value; renderProduction(main); };
+  document.getElementById("pStage").onchange = (e) => { prodFilters.stage = e.target.value; renderProduction(main); };
+  document.getElementById("pNew").onclick = () => openProductionDrawer(emptyProductionOrder(), true);
+  const nb = main.querySelector("[data-new-order]");
+  if (nb) nb.onclick = () => openProductionDrawer(emptyProductionOrder(), true);
+  main.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openProductionDrawer(orders.find((o) => o.id === b.dataset.open), false));
+  main.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => {
+    const o = orders.find((x) => x.id === b.dataset.del);
+    confirmDialog("Delete this production order?", `${o.id} — ${o.product} will be permanently removed.`, async () => {
+      try {
+        setSaving(true);
+        await api("/api/manufacture/admin/orders?id=" + encodeURIComponent(o.id), { method: "DELETE" });
+        WS.productionOrders = WS.productionOrders.filter((x) => x.id !== o.id);
+        toast("Deleted");
+        renderProduction(main);
+      } catch (err) { toast(err.message, "error"); } finally { setSaving(false); }
+    });
+  });
+}
+
+/* ============================== MANUFACTURERS ============================== */
+function renderManufacturers(main) {
+  const { manufacturers, samples } = WS;
+  main.innerHTML = `
+  <div class="flex justify-end mb-4">
+    <button id="mNew" class="flex items-center gap-1.5 bg-neutral-900 text-white text-sm px-3 py-1.5 rounded-sm hover:bg-neutral-800">${icon("plus", 14)} New Manufacturer</button>
+  </div>
+  ${manufacturers.length === 0
+    ? emptyState("factory", "No manufacturers yet", "Add your first manufacturer to start assigning samples.")
+    : `<div class="grid grid-cols-2 gap-4">
+        ${manufacturers.map((m) => {
+          const ms = samples.filter((s) => s.manufacturer === m.name);
+          const completed = ms.filter((s) => s.stage === "Closed");
+          const activeN = ms.length - completed.length;
+          return `<div class="border border-neutral-200 rounded-sm bg-white p-4">
+            <div class="flex justify-between items-start mb-2">
+              <div>
+                <div class="font-semibold text-sm text-neutral-900 flex items-center gap-1.5">${esc(m.name)}${m.portalAccess ? `<span class="text-[8px] font-bold tracking-wider uppercase bg-neutral-900 text-white px-1.5 py-0.5 rounded-sm">Portal</span>` : ""}</div>
+                <div class="text-xs text-neutral-400">${esc(m.location || "")}</div>
+              </div>
+              <div class="flex gap-1">
+                <button data-edit="${esc(m.id)}" class="p-1 text-neutral-400 hover:text-neutral-800">${icon("pencil", 13)}</button>
+                <button data-del="${esc(m.id)}" class="p-1 text-neutral-400 hover:text-rose-600">${icon("trash", 13)}</button>
+              </div>
+            </div>
+            <div class="text-xs text-neutral-500 mb-3">${esc(m.contact || "")} · ${esc(m.phone || "")}</div>
+            <div class="grid grid-cols-4 gap-2 text-center border-t border-neutral-100 pt-3">
+              <div><div class="text-lg font-mono font-bold">${activeN}</div><div class="text-[9px] uppercase text-neutral-400">Active</div></div>
+              <div><div class="text-lg font-mono font-bold">${completed.length}</div><div class="text-[9px] uppercase text-neutral-400">Completed</div></div>
+              <div><div class="text-lg font-mono font-bold">${m.qualityRating || "—"}</div><div class="text-[9px] uppercase text-neutral-400">Quality</div></div>
+              <div><div class="text-lg font-mono font-bold">${m.communicationRating || "—"}</div><div class="text-[9px] uppercase text-neutral-400">Comms</div></div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>`}`;
+
+  document.getElementById("mNew").onclick = () => openManufacturerModal({
+    id: "", name: "", location: "", contact: "", phone: "", email: "", categories: "",
+    fabricCapabilities: "", moq: "", sampleLeadTime: "", bulkLeadTime: "",
+    qualityRating: "", communicationRating: "", notes: "", portalAccess: false
+  });
+  main.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => openManufacturerModal(manufacturers.find((m) => m.id === b.dataset.edit)));
+  main.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => {
+    const m = manufacturers.find((x) => x.id === b.dataset.del);
+    confirmDialog("Delete this manufacturer?", `${m.name} will be removed. Samples already assigned to them will keep the name as text.`, async () => {
+      try {
+        setSaving(true);
+        await api("/api/manufacture/admin/manufacturers?id=" + encodeURIComponent(m.id), { method: "DELETE" });
+        WS.manufacturers = WS.manufacturers.filter((x) => x.id !== m.id);
+        toast("Deleted");
+        renderManufacturers(main);
+      } catch (err) { toast(err.message, "error"); } finally { setSaving(false); }
+    });
+  });
+}
+
+/* ============================== TECH PACKS ============================== */
+function renderTechPacks(main) {
+  const { techPacks } = WS;
+  // Active = latest version per SKU (by createdDate)
+  const bySku = {};
+  techPacks.forEach((t) => { (bySku[t.sku] = bySku[t.sku] || []).push(t); });
+  Object.values(bySku).forEach((arr) => arr.sort((a, b) => (b.createdDate || "").localeCompare(a.createdDate || "")));
+  const activeIds = new Set(Object.values(bySku).map((arr) => arr[0] && arr[0].id));
+  const withActive = techPacks.map((t) => ({ ...t, isActive: activeIds.has(t.id) }));
+
+  main.innerHTML = `
+  <div class="flex justify-end mb-4">
+    <button id="tNew" class="flex items-center gap-1.5 bg-neutral-900 text-white text-sm px-3 py-1.5 rounded-sm hover:bg-neutral-800">${icon("plus", 14)} New Tech Pack Version</button>
+  </div>
+  ${techPacks.length === 0
+    ? emptyState("files", "No tech packs yet", "Add a tech pack version to link it from samples.")
+    : `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden">
+        ${withActive.map((t) => `<div class="flex items-center gap-4 px-4 py-3 border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50">
+          <div class="font-mono text-xs text-neutral-500 w-44 truncate">${esc(t.id)}</div>
+          <div class="w-56 text-sm text-neutral-800 truncate">${esc(t.product || "")}</div>
+          <div class="w-36 text-xs text-neutral-600">${esc(t.status || "")}</div>
+          <div class="w-24 font-mono text-xs text-neutral-500">${fmtDate(t.createdDate)}</div>
+          <div class="w-24">${t.isActive
+            ? `<span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-sm">● ACTIVE</span>`
+            : `<span class="text-[10px] text-neutral-400">Superseded</span>`}</div>
+          <a href="${esc(t.link || "#")}" target="_blank" rel="noreferrer" class="text-neutral-400 hover:text-neutral-800">${icon("external", 13)}</a>
+          <div class="flex-1"></div>
+          <button data-edit="${esc(t.id)}" class="p-1 text-neutral-400 hover:text-neutral-800">${icon("pencil", 13)}</button>
+          <button data-del="${esc(t.id)}" class="p-1 text-neutral-400 hover:text-rose-600">${icon("trash", 13)}</button>
+        </div>`).join("")}
+      </div>`}`;
+
+  document.getElementById("tNew").onclick = () => openTechPackModal({
+    __isNew: true, id: "", sku: "", product: "", version: "V1", status: "Draft", link: "",
+    createdBy: "Offcomfrt Product", createdDate: todayISO(), sentToManufacturer: false,
+    manufacturerAcknowledged: false, manufacturerQuestions: "", revisionRequired: false,
+    finalApproved: false, approvedDate: "", notes: ""
+  });
+  main.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => openTechPackModal(techPacks.find((t) => t.id === b.dataset.edit)));
+  main.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => {
+    const t = techPacks.find((x) => x.id === b.dataset.del);
+    confirmDialog("Delete this tech pack version?", `${t.id} will be permanently removed.`, async () => {
+      try {
+        setSaving(true);
+        await api("/api/manufacture/admin/techpacks?id=" + encodeURIComponent(t.id), { method: "DELETE" });
+        WS.techPacks = WS.techPacks.filter((x) => x.id !== t.id);
+        toast("Deleted");
+        renderTechPacks(main);
+      } catch (err) { toast(err.message, "error"); } finally { setSaving(false); }
+    });
+  });
+}
+
+/* ============================== DRAWER / MODAL SHARED BITS ============================== */
+function drawerTabBtn(tab, iconName, label, count) {
+  return `<button data-tab="${tab}" class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px whitespace-nowrap border-transparent text-neutral-400 hover:text-neutral-600">
+    ${icon(iconName, 13)} ${label}${count != null && count > 0 ? `<span class="ml-0.5 text-[10px] text-neutral-400">(${count})</span>` : ""}</button>`;
+}
+function setDrawerTab(overlay, tab) {
+  overlay.querySelectorAll("[data-tab]").forEach((b) => {
+    const on = b.dataset.tab === tab;
+    b.className = `flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px whitespace-nowrap ${on ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"}`;
+  });
+  overlay.querySelectorAll("[data-pane]").forEach((p) => p.classList.toggle("hidden", p.dataset.pane !== tab));
+}
+function baseInput(row) { return `<input type="hidden" data-base value="${esc(JSON.stringify(row || {}))}">`; }
+function qcBadge() { return `<span class="text-[10px] text-neutral-400">manual</span>`; }
+
+function updateQcBadges(listEl) {
+  listEl.querySelectorAll(":scope > [data-row]").forEach((row) => {
+    const get = (f) => { const i = row.querySelector(`[data-field="${f}"]`); return i ? i.value : ""; };
+    const spec = get("spec"), tol = get("tolerance"), act = get("actual");
+    const badge = row.querySelector("[data-pass]");
+    if (!badge) return;
+    if (spec === "" || tol === "" || act === "") { badge.innerHTML = qcBadge(); return; }
+    const pass = Math.abs(Number(act) - Number(spec)) <= Number(tol);
+    badge.innerHTML = pass ? `<span class="text-[11px] font-semibold text-emerald-600">Pass</span>` : `<span class="text-[11px] font-semibold text-rose-600">Fail</span>`;
+  });
+}
+
+/* Row templates */
+function qcRowHtml(row) {
+  return `<div data-row class="border border-neutral-200 rounded-sm p-3 grid grid-cols-12 gap-2 items-center">
+    ${rowInput("point", row.point, "col-span-3", "text", "Measurement point")}
+    ${rowInput("spec", row.spec ?? "", "col-span-2", "number", "Spec")}
+    ${rowInput("tolerance", row.tolerance ?? "", "col-span-2", "number", "Tolerance")}
+    ${rowInput("actual", row.actual ?? "", "col-span-2", "number", "Actual")}
+    <div class="col-span-2 flex justify-center" data-pass>${qcBadge()}</div>
+    <button data-del-row class="col-span-1 text-neutral-300 hover:text-rose-600 flex justify-end">${icon("x", 15)}</button>
+    ${rowInput("mfrComment", row.mfrComment, "col-span-6", "text", "Manufacturer comment")}
+    ${rowInput("ofcComment", row.ofcComment, "col-span-6", "text", "Offcomfrt comment")}
+    ${baseInput(row)}
+  </div>`;
+}
+function revisionRowHtml(r) {
+  return `<div data-row class="border border-neutral-200 rounded-sm p-3 space-y-2">
+    <div class="flex justify-between">
+      <div class="grid grid-cols-4 gap-2 flex-1">
+        ${rowInput("prevVersion", r.prevVersion, "", "text", "Prev version")}
+        ${rowInput("newVersion", r.newVersion, "", "text", "New version")}
+        ${rowInput("date", r.date || "", "", "date")}
+        ${rowSelect("status", r.status || "Not Started", REVISION_STATUS_OPTIONS, "")}
+      </div>
+      <button data-del-row class="ml-2 text-neutral-300 hover:text-rose-600">${icon("x", 15)}</button>
+    </div>
+    ${rowInput("issue", r.issue, "w-full", "text", "Issue")}
+    ${rowInput("rootCause", r.rootCause, "w-full", "text", "Root cause")}
+    ${rowInput("changeRequired", r.changeRequired, "w-full", "text", "Change required")}
+    ${rowInput("mfrResponse", r.mfrResponse, "w-full", "text", "Manufacturer response")}
+    ${baseInput(r)}
+  </div>`;
+}
+function commRowHtml(c) {
+  return `<div data-row class="border border-neutral-200 rounded-sm p-3 space-y-2">
+    <div class="flex justify-between gap-2">
+      <div class="grid grid-cols-4 gap-2 flex-1">
+        ${rowInput("date", c.date || "", "", "date")}
+        ${rowInput("from", c.from, "", "text", "From")}
+        ${rowInput("to", c.to, "", "text", "To")}
+        ${rowSelect("status", c.status || "Open", COMM_STATUS_OPTIONS, "")}
+      </div>
+      <button data-del-row class="text-neutral-300 hover:text-rose-600">${icon("x", 15)}</button>
+    </div>
+    ${rowInput("message", c.message, "w-full", "text", "Message / question")}
+    ${rowInput("response", c.response, "w-full", "text", "Response")}
+    ${rowInput("decision", c.decision, "w-full", "text", "Decision / agreement")}
+    ${baseInput(c)}
+  </div>`;
+}
+function fileRowHtml(f, typeOptions) {
+  return `<div data-row class="border border-neutral-200 rounded-sm p-3 grid grid-cols-12 gap-2 items-center">
+    <div class="col-span-3">${rowSelect("type", f.type || typeOptions[0], typeOptions, "")}</div>
+    ${rowInput("description", f.description, "col-span-3", "text", "Description")}
+    ${rowInput("link", f.link, "col-span-4", "text", "Google Drive link")}
+    ${rowInput("date", f.date || "", "col-span-1", "date")}
+    <button data-del-row class="col-span-1 flex justify-end text-neutral-300 hover:text-rose-600">${icon("x", 15)}</button>
+    ${baseInput(f)}
+  </div>`;
+}
+function breakdownRowHtml(r) {
+  return `<div data-row class="grid grid-cols-12 gap-2 items-center">
+    <div class="col-span-4">${rowSelect("size", r.size || "M", SIZE_OPTIONS, "")}</div>
+    ${rowInput("color", r.color, "col-span-4", "text", "Colour")}
+    ${rowInput("qty", r.qty ?? 0, "col-span-3", "number", "Qty")}
+    <button data-del-row class="col-span-1 flex justify-end text-neutral-300 hover:text-rose-600">${icon("x", 15)}</button>
+    ${baseInput(r)}
+  </div>`;
+}
+function prodQcRowHtml(row) {
+  return `<div data-row class="border border-neutral-200 rounded-sm p-3 space-y-2">
+    <div class="grid grid-cols-4 gap-2">
+      ${rowSelect("checkpoint", row.checkpoint || "Inline Inspection", PROD_QC_CHECKPOINTS, "")}
+      ${rowInput("date", row.date || "", "", "date")}
+      ${rowInput("inspector", row.inspector, "", "text", "Inspector")}
+      ${rowSelect("result", row.result || "Pending", PROD_QC_RESULT_OPTIONS, "")}
+    </div>
+    <div class="flex gap-2 items-start">
+      ${rowInput("defectRate", row.defectRate ?? "", "w-32", "number", "Defect %")}
+      ${rowInput("comments", row.comments, "flex-1", "text", "Comments")}
+      <button data-del-row class="text-neutral-300 hover:text-rose-600 mt-1.5">${icon("x", 15)}</button>
+    </div>
+    ${baseInput(row)}
+  </div>`;
+}
+
+/* Generic list wiring inside a drawer: add/remove rows */
+function wireLists(overlay, templates) {
+  overlay.addEventListener("click", (e) => {
+    const del = e.target.closest("[data-del-row]");
+    if (del) { del.closest("[data-row]").remove(); return; }
+    const add = e.target.closest("[data-add]");
+    if (add) {
+      const key = add.dataset.add;
+      const list = overlay.querySelector(`[data-list="${key}"]`);
+      list.insertAdjacentHTML("beforeend", templates[key]());
+      if (key === "qc") updateQcBadges(list);
     }
+  });
+}
+function upsertIn(list, record) {
+  const i = list.findIndex((x) => x.id === record.id);
+  if (i >= 0) list[i] = record; else list.push(record);
+}
+
+/* ============================== SAMPLE DRAWER ============================== */
+function openSampleDrawer(initial, isNew) {
+  const base = JSON.parse(JSON.stringify(initial));
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-[80] bg-black/40 flex justify-end";
+  const mfrOpts = WS.manufacturers.map((m) => m.name);
+  const tpOpts = WS.techPacks.map((t) => t.id);
+  const cost = base.cost || {};
+
+  overlay.innerHTML = `
+  <div class="bg-white w-full max-w-3xl h-full flex flex-col shadow-2xl">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
+      <div>
+        <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400">${isNew ? "New Sample" : "Edit Sample"}</div>
+        <div class="font-mono text-sm text-neutral-900">${esc(base.id || "—")}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        ${statusPill(statusLight(base))}
+        <button data-close class="p-1.5 text-neutral-400 hover:text-neutral-700">${icon("x", 18)}</button>
+      </div>
+    </div>
+
+    <div class="flex px-5 border-b border-neutral-200 shrink-0 overflow-x-auto">
+      ${drawerTabBtn("overview", "clipboard", "Overview")}
+      ${drawerTabBtn("qc", "ruler", "Measurements", base.qc.length)}
+      ${drawerTabBtn("revisions", "files", "Revisions", base.revisions.length)}
+      ${drawerTabBtn("comms", "message", "Communication", base.comms.length)}
+      ${drawerTabBtn("files", "paperclip", "Files", base.files.length)}
+    </div>
+
+    <div class="flex-1 overflow-y-auto px-5 py-5" data-form>
+      <div data-pane="overview" class="space-y-6">
+        <div class="grid grid-cols-3 gap-3">
+          ${field("Sample ID", textInput("id", base.id, isNew ? "" : "bg-neutral-100 text-neutral-500", isNew ? 'placeholder="OFC-SKU-S1"' : "disabled"))}
+          ${field("SKU", textInput("sku", base.sku))}
+          ${field("Version", textInput("version", base.version))}
+          ${field("Product Name", textInput("product", base.product), true)}
+          ${field("Category", selectInput("category", base.category, CATEGORY_OPTIONS))}
+          ${field("Sample Type", selectInput("type", base.type, TYPE_OPTIONS))}
+          ${field("Manufacturer", selectInput("manufacturer", base.manufacturer, mfrOpts, true))}
+          ${field("Manufacturer Contact", textInput("manufacturerContact", base.manufacturerContact), true)}
+          ${field("Request Date", dateInput("requestDate", base.requestDate))}
+          ${field("Target Date", dateInput("targetDate", base.targetDate))}
+          ${field("Next Action Due", dateInput("nextDue", base.nextDue))}
+        </div>
+
+        <div class="grid grid-cols-3 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Fabric / Material", textInput("fabric", base.fabric), true)}
+          ${field("GSM", textInput("gsm", base.gsm ?? "", "", 'type="number"'))}
+          ${field("Composition", textInput("composition", base.composition))}
+          ${field("Color", textInput("color", base.color))}
+          ${field("Size", selectInput("size", base.size, SIZE_OPTIONS))}
+          ${field("Fit", selectInput("fit", base.fit, FIT_OPTIONS))}
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Tech Pack", selectInput("techPackId", base.techPackId, tpOpts, true))}
+          ${field("Reference / Inspiration Link", textInput("refLink", base.refLink, "", 'placeholder="https://drive.google.com/…"'))}
+          ${field("Courier / AWB", textInput("courierAwb", base.courierAwb))}
+          ${field("Date Sent", dateInput("dateSent", base.dateSent))}
+          ${field("Date Received", dateInput("dateReceived", base.dateReceived))}
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Current Status", selectInput("status", base.status, STATUS_OPTIONS))}
+          ${field("Current Stage", selectInput("stage", base.stage, STAGE_OPTIONS))}
+          ${field("Action Owner", selectInput("actionOwner", base.actionOwner, OWNER_OPTIONS))}
+          ${field("Waiting On", selectInput("waitingOn", base.waitingOn, WAITING_OPTIONS))}
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Manufacturer Update", textArea("mfrUpdate", base.mfrUpdate))}
+          ${field("Offcomfrt Feedback", textArea("feedback", base.feedback))}
+          ${field("Changes Required", textArea("changesRequired", base.changesRequired))}
+          ${field("Next Action", textArea("nextAction", base.nextAction))}
+        </div>
+
+        <div class="grid grid-cols-3 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Approval Status", selectInput("approvalStatus", base.approvalStatus, APPROVAL_OPTIONS))}
+          ${field("Approved By", textInput("approvedBy", base.approvedBy))}
+          ${field("Approval Date", dateInput("approvalDate", base.approvalDate))}
+          ${field("Final Decision", textInput("finalDecision", base.finalDecision), true)}
+          ${field("Notes", textArea("notes", base.notes), true)}
+        </div>
+
+        <div data-place-banner class="pt-4 border-t border-neutral-100 items-center justify-between bg-emerald-50 -mx-5 px-5 py-3 ${base.approvalStatus === "Approved" ? "flex" : "hidden"}">
+          <div class="text-xs text-emerald-800">This sample is approved. Ready to place a bulk production order with ${esc(base.manufacturer || "the manufacturer")}?</div>
+          <button data-place-order class="shrink-0 flex items-center gap-1.5 bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-sm hover:bg-emerald-800">${icon("truck", 13)} Place Production Order</button>
+        </div>
+
+        <div class="pt-4 border-t border-neutral-100">
+          <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400 mb-2">Cost Breakdown</div>
+          <div class="grid grid-cols-4 gap-3">
+            ${[["fabricCost", "FabricCost"], ["trims", "Trims"], ["cmt", "CMT / Sampling"], ["wash", "Washing / Finish"], ["labels", "Labels"], ["packaging", "Packaging"], ["courier", "Courier"], ["other", "Other"]].map(([k, label]) =>
+              field(label, `<input data-f="cost.${k}" type="number" value="${esc(cost[k] ?? 0)}" class="${INPUT_CLS}">`)).join("")}
+            ${field("Paid By", selectInput("cost.paidBy", cost.paidBy, PAID_BY_OPTIONS))}
+            ${field("Payment Status", selectInput("cost.paymentStatus", cost.paymentStatus, PAYMENT_STATUS_OPTIONS))}
+            ${field("Invoice / Quote Link", textInput("cost.invoiceLink", cost.invoiceLink), true)}
+          </div>
+          <div class="mt-3 text-sm">Total: <span class="font-mono font-bold" data-cost-total>${fmtINR(costTotal(cost))}</span></div>
+        </div>
+      </div>
+
+      <div data-pane="qc" class="hidden">
+        <div class="text-xs text-neutral-400 mb-3">Pass / Fail is calculated automatically from spec vs. tolerance vs. actual measurement.</div>
+        <div class="space-y-2" data-list="qc">${base.qc.map(qcRowHtml).join("")}</div>
+        <button data-add="qc" class="mt-3 flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Add measurement point</button>
+      </div>
+
+      <div data-pane="revisions" class="hidden">
+        <div class="space-y-3" data-list="revisions">${base.revisions.map(revisionRowHtml).join("")}</div>
+        <button data-add="revisions" class="flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Add revision entry</button>
+      </div>
+
+      <div data-pane="comms" class="hidden">
+        <div class="space-y-3" data-list="comms">${base.comms.map(commRowHtml).join("")}</div>
+        <button data-add="comms" class="flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Log a message</button>
+      </div>
+
+      <div data-pane="files" class="hidden">
+        <div class="space-y-2" data-list="files">${base.files.map((f) => fileRowHtml(f, FILE_TYPE_OPTIONS)).join("")}</div>
+        <button data-add="files" class="flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Attach a file link</button>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-5 py-4 border-t border-neutral-200 shrink-0">
+      <div class="text-xs text-rose-500" data-err></div>
+      <div class="flex gap-2">
+        <button data-close class="px-4 py-2 text-sm rounded-sm border border-neutral-300 hover:bg-neutral-50">Cancel</button>
+        <button data-save class="px-4 py-2 text-sm rounded-sm bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed">Save Sample</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  wireLists(overlay, {
+    qc: () => qcRowHtml({ id: uid("QC"), point: "", spec: "", tolerance: "", actual: "", mfrComment: "", ofcComment: "" }),
+    revisions: () => revisionRowHtml({ id: uid("REV"), prevVersion: "", newVersion: "", date: todayISO(), issue: "", rootCause: "", changeRequired: "", requestedBy: "", mfrResponse: "", expectedCompletion: "", completedDate: "", status: "Not Started" }),
+    comms: () => commRowHtml({ id: uid("COM"), date: todayISO(), from: "", to: "", message: "", response: "", decision: "", actionOwner: "", dueDate: "", status: "Open" }),
+    files: () => fileRowHtml({ id: uid("FL"), type: "Reference Image", description: "", link: "", uploadedBy: "", date: todayISO() }, FILE_TYPE_OPTIONS)
+  });
+
+  const form = overlay.querySelector("[data-form]");
+  overlay.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => setDrawerTab(overlay, b.dataset.tab));
+  overlay.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => overlay.remove());
+  updateQcBadges(form.querySelector('[data-list="qc"]'));
+
+  // Live bits: approval banner, QC pass/fail, cost total
+  form.addEventListener("input", (e) => {
+    const qcList = e.target.closest('[data-list="qc"]');
+    if (qcList) updateQcBadges(qcList);
+    if (e.target.dataset.f && e.target.dataset.f.startsWith("cost.")) {
+      const draft = mergeForm(base, form);
+      form.querySelector("[data-cost-total]").textContent = fmtINR(costTotal(draft.cost));
+    }
+  });
+  form.addEventListener("change", (e) => {
+    if (e.target.dataset.f === "approvalStatus") {
+      overlay.querySelector("[data-place-banner]").classList.toggle("hidden", e.target.value !== "Approved");
+      overlay.querySelector("[data-place-banner]").classList.toggle("flex", e.target.value === "Approved");
+    }
+  });
+
+  overlay.querySelector("[data-place-order]").onclick = () => {
+    const draft = mergeForm(base, form);
+    const blank = emptyProductionOrder();
+    const skuSlug = (draft.sku || draft.id).replace(/[^A-Z0-9]/gi, "").toUpperCase();
+    const existingNums = WS.productionOrders
+      .filter((o) => o.id.startsWith(`PO-${skuSlug}-B`))
+      .map((o) => parseInt(o.id.split("-B").pop(), 10))
+      .filter((n) => !isNaN(n));
+    const nextNum = existingNums.length ? Math.max(...existingNums) + 1 : 1;
+    overlay.remove();
+    TAB = "production"; renderNav(); renderMain();
+    openProductionDrawer({
+      ...blank,
+      id: `PO-${skuSlug}-B${nextNum}`,
+      sampleId: draft.id, sku: draft.sku, product: draft.product, category: draft.category,
+      manufacturer: draft.manufacturer, manufacturerContact: draft.manufacturerContact
+    }, true);
   };
 
-  function renderStats() {
-    const count = (s) => designs.filter((d) => d.status === s).length;
-    const items = [
-      { label: 'Total', value: designs.length },
-      { label: 'Pending', value: count('pending') },
-      { label: 'Approved', value: count('approved') },
-      { label: 'In Production', value: count('in_production') },
-      { label: 'Completed', value: count('completed') }
-    ];
-    $('stats').innerHTML = items.map((s, i) =>
-      '<div class="stat" style="animation-delay:' + (i * 0.06) + 's">' +
-        '<div class="stat-label">' + esc(s.label) + '</div>' +
-        '<div class="stat-value" data-v="' + s.value + '">0</div>' +
-      '</div>'
-    ).join('');
-    document.querySelectorAll('#stats .stat-value').forEach((el) => countUp(el, parseInt(el.getAttribute('data-v'), 10) || 0));
-  }
-
-  function renderTabs() {
-    const filters = ['all'].concat(STATUSES);
-    $('tabs').innerHTML = filters.map((f) => {
-      const n = f === 'all' ? designs.length : designs.filter((d) => d.status === f).length;
-      return '<button class="tab' + (activeFilter === f ? ' active' : '') + '" onclick="setFilter(\'' + f + '\')">' + (f === 'all' ? 'All' : STATUS_LABELS[f]) + ' · ' + n + '</button>';
-    }).join('');
-  }
-
-  window.setFilter = function (f) { activeFilter = f; renderTabs(); renderTable(); };
-
-  function renderTable() {
-    const list = activeFilter === 'all' ? designs : designs.filter((d) => d.status === activeFilter);
-    if (!list.length) {
-      $('tableContainer').innerHTML = '<div class="empty">No designs ' + (activeFilter === 'all' ? 'submitted yet' : 'with status "' + STATUS_LABELS[activeFilter] + '"') + '.</div>';
-      return;
+  overlay.querySelector("[data-save]").onclick = async () => {
+    const draft = mergeForm(base, form);
+    const errEl = overlay.querySelector("[data-err]");
+    const idTaken = isNew && WS.samples.some((s) => s.id === draft.id.trim());
+    if (idTaken) { errEl.textContent = `An entry with ID "${draft.id.trim()}" already exists — use a different ID`; return; }
+    if (!draft.id.trim() || !draft.product.trim() || !draft.manufacturer.trim()) {
+      errEl.textContent = "Sample ID, product and manufacturer are required"; return;
     }
-    $('tableContainer').innerHTML =
-      '<table><thead><tr>' +
-        '<th>Design</th><th>Qty</th><th>Deadline</th><th>Submitted</th><th>Status</th><th>Update</th>' +
-      '</tr></thead><tbody>' +
-      list.map((d, i) =>
-        '<tr style="animation-delay:' + Math.min(i * 0.04, 0.4) + 's">' +
-          '<td>' +
-            '<div class="d-name">' + esc(d.design_name) + '</div>' +
-            (d.style_code ? '<div class="d-style">' + esc(d.style_code) + '</div>' : '') +
-            (d.description ? '<div class="d-desc">' + esc(d.description) + '</div>' : '') +
-          '</td>' +
-          '<td style="white-space:nowrap;font-weight:600;">' + Number(d.quantity).toLocaleString('en-IN') + '</td>' +
-          '<td>' + deadlineCell(d.deadline) + '</td>' +
-          '<td class="d-date">' + fmtDate(d.created_at) + '</td>' +
-          '<td><span class="badge ' + esc(d.status) + '">' + esc(STATUS_LABELS[d.status] || d.status) + '</span></td>' +
-          '<td class="status-cell">' +
-            '<select class="select" id="st-' + d.id + '">' +
-              STATUSES.map((s) => '<option value="' + s + '"' + (d.status === s ? ' selected' : '') + '>' + STATUS_LABELS[s] + '</option>').join('') +
-            '</select>' +
-            '<textarea class="textarea" id="nt-' + d.id + '" placeholder="Admin note (optional)">' + esc(d.admin_note || '') + '</textarea>' +
-            '<button class="save-btn" id="sb-' + d.id + '" onclick="saveStatus(\'' + d.id + '\')">Save</button>' +
-          '</td>' +
-        '</tr>'
-      ).join('') +
-      '</tbody></table>';
-  }
-
-  window.saveStatus = async function (id) {
-    const btn = $('sb-' + id);
-    const status = $('st-' + id).value;
-    const admin_note = $('nt-' + id).value.trim();
-    btn.disabled = true; btn.innerHTML = 'Saving<span class="spinner"></span>';
+    draft.id = draft.id.trim();
     try {
-      const res = await api('/api/manufacture/admin/designs/' + id + '/status', { method: 'PUT', body: JSON.stringify({ status, admin_note }) });
-      if (res.status === 401) { logout(); return; }
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Update failed');
-      toast('Status updated');
-      await loadDesigns();
-    } catch (e) {
-      toast(e.message || 'Update failed', true);
-      btn.disabled = false; btn.textContent = 'Save';
-    }
+      setSaving(true);
+      const body = await api("/api/manufacture/admin/samples", {
+        method: isNew ? "POST" : "PUT", body: JSON.stringify(draft)
+      });
+      upsertIn(WS.samples, body.record);
+      toast(isNew ? "Sample added" : "Sample updated");
+      overlay.remove();
+      renderMain();
+    } catch (err) {
+      errEl.textContent = err.message;
+    } finally { setSaving(false); }
   };
-})();
+  setDrawerTab(overlay, "overview");
+}
+
+/* ============================== PRODUCTION DRAWER ============================== */
+function stageStepper(stage) {
+  const idx = PROD_STAGE_OPTIONS.indexOf(stage);
+  return `<div class="flex items-center overflow-x-auto pb-1">${PROD_STAGE_OPTIONS.map((s, i) =>
+    `<div class="flex items-center shrink-0">
+      <div class="flex flex-col items-center gap-1">
+        <div class="w-2.5 h-2.5 rounded-full ${i < idx ? "bg-neutral-900" : i === idx ? "bg-emerald-500" : "bg-neutral-200"}"></div>
+        <div class="text-[9px] whitespace-nowrap ${i === idx ? "font-bold text-neutral-900" : "text-neutral-400"}">${esc(s)}</div>
+      </div>
+      ${i < PROD_STAGE_OPTIONS.length - 1 ? `<div class="w-8 h-px mb-4 ${i < idx ? "bg-neutral-900" : "bg-neutral-200"}"></div>` : ""}
+    </div>`).join("")}</div>`;
+}
+
+function openProductionDrawer(initial, isNew) {
+  const base = JSON.parse(JSON.stringify(initial));
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-[80] bg-black/40 flex justify-end";
+  const mfrOpts = WS.manufacturers.map((m) => m.name);
+  const approvedSamples = WS.samples.filter((s) => s.approvalStatus === "Approved");
+
+  overlay.innerHTML = `
+  <div class="bg-white w-full max-w-3xl h-full flex flex-col shadow-2xl">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
+      <div>
+        <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400">${isNew ? "New Production Order" : "Edit Production Order"}</div>
+        <div class="font-mono text-sm text-neutral-900">${esc(base.id || "—")}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        ${statusPill(productionLight(base))}
+        <button data-close class="p-1.5 text-neutral-400 hover:text-neutral-700">${icon("x", 18)}</button>
+      </div>
+    </div>
+
+    <div class="px-5 py-3 border-b border-neutral-200 bg-neutral-50" data-stepper>${stageStepper(base.currentStage)}</div>
+
+    <div class="flex px-5 border-b border-neutral-200 shrink-0 overflow-x-auto">
+      ${drawerTabBtn("overview", "clipboard", "Overview")}
+      ${drawerTabBtn("qc", "ruler", "QC Checkpoints", base.qc.length)}
+      ${drawerTabBtn("comms", "message", "Communication", base.comms.length)}
+      ${drawerTabBtn("files", "paperclip", "Files", base.files.length)}
+    </div>
+
+    <div class="flex-1 overflow-y-auto px-5 py-5" data-form>
+      <div data-pane="overview" class="space-y-6">
+        <div class="grid grid-cols-3 gap-3">
+          ${field("Order ID", textInput("id", base.id, isNew ? "" : "bg-neutral-100 text-neutral-500", isNew ? 'placeholder="PO-SKU-B1"' : "disabled"))}
+          ${field("Linked Sample", selectInput("sampleId", base.sampleId, approvedSamples.map((s) => s.id), true))}
+          ${field("SKU", textInput("sku", base.sku))}
+          ${field("Product Name", textInput("product", base.product), true)}
+          ${field("Category", selectInput("category", base.category, CATEGORY_OPTIONS))}
+          ${field("Manufacturer", selectInput("manufacturer", base.manufacturer, mfrOpts, true))}
+          ${field("Manufacturer Contact", textInput("manufacturerContact", base.manufacturerContact), true)}
+          ${field("PO Date", dateInput("poDate", base.poDate))}
+          ${field("Expected Delivery", dateInput("expectedDelivery", base.expectedDelivery))}
+          ${field("Actual Delivery", dateInput("actualDelivery", base.actualDelivery))}
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Current Stage", selectInput("currentStage", base.currentStage, PROD_STAGE_OPTIONS))}
+          ${field("Action Owner", selectInput("actionOwner", base.actionOwner, OWNER_OPTIONS))}
+          ${field("Waiting On", selectInput("waitingOn", base.waitingOn, WAITING_OPTIONS))}
+          ${field("Next Action Due", dateInput("nextActionDue", base.nextActionDue))}
+          ${field("Next Action", textArea("nextAction", base.nextAction), true)}
+        </div>
+
+        <div class="pt-4 border-t border-neutral-100">
+          <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400 mb-2">Quantity Breakdown</div>
+          <div class="space-y-2" data-list="breakdown">${base.breakdown.map(breakdownRowHtml).join("")}</div>
+          <button data-add="breakdown" class="mt-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Add size/colour row</button>
+          <div class="mt-3 text-sm">Total Quantity: <span class="font-mono font-bold" data-total-qty>${orderQty(base).toLocaleString("en-IN")}</span> pcs</div>
+        </div>
+
+        <div class="pt-4 border-t border-neutral-100">
+          <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400 mb-2">Pricing & Payment</div>
+          <div class="grid grid-cols-3 gap-3">
+            ${field("Unit Price", textInput("unitPrice", base.unitPrice ?? 0, "", 'type="number"'))}
+            ${field("Advance Paid", textInput("advancePaid", base.advancePaid ?? 0, "", 'type="number"'))}
+            ${field("Payment Status", selectInput("paymentStatus", base.paymentStatus, PROD_PAYMENT_OPTIONS))}
+          </div>
+          <div class="mt-3 flex gap-6 text-sm">
+            <div>Order Value: <span class="font-mono font-bold" data-order-value>${fmtINR(orderValue(base))}</span></div>
+            <div>Balance Due: <span class="font-mono font-bold" data-order-balance>${fmtINR(orderBalance(base))}</span></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Shipping Method", textInput("shippingMethod", base.shippingMethod))}
+          ${field("Tracking Number", textInput("trackingNumber", base.trackingNumber))}
+          ${field("Notes", textArea("notes", base.notes), true)}
+        </div>
+      </div>
+
+      <div data-pane="qc" class="hidden">
+        <div class="text-xs text-neutral-400 mb-3">Log inline, pre-final, and final random inspections for this order.</div>
+        <div class="space-y-3" data-list="qc">${base.qc.map(prodQcRowHtml).join("")}</div>
+        <button data-add="qc" class="mt-3 flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Log an inspection</button>
+      </div>
+
+      <div data-pane="comms" class="hidden">
+        <div class="space-y-3" data-list="comms">${base.comms.map(commRowHtml).join("")}</div>
+        <button data-add="comms" class="flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Log a message</button>
+      </div>
+
+      <div data-pane="files" class="hidden">
+        <div class="space-y-2" data-list="files">${base.files.map((f) => fileRowHtml(f, PROD_FILE_TYPE_OPTIONS)).join("")}</div>
+        <button data-add="files" class="flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Attach a file link</button>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-5 py-4 border-t border-neutral-200 shrink-0">
+      <div class="text-xs text-rose-500" data-err></div>
+      <div class="flex gap-2">
+        <button data-close class="px-4 py-2 text-sm rounded-sm border border-neutral-300 hover:bg-neutral-50">Cancel</button>
+        <button data-save class="px-4 py-2 text-sm rounded-sm bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed">Save Order</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  wireLists(overlay, {
+    breakdown: () => breakdownRowHtml({ id: uid("QTY"), size: "M", color: "", qty: 0 }),
+    qc: () => prodQcRowHtml({ id: uid("PQC"), checkpoint: "Inline Inspection", date: todayISO(), inspector: "", result: "Pending", defectRate: "", comments: "" }),
+    comms: () => commRowHtml({ id: uid("COM"), date: todayISO(), from: "", to: "", message: "", response: "", decision: "", actionOwner: "", dueDate: "", status: "Open" }),
+    files: () => fileRowHtml({ id: uid("FL"), type: "Purchase Order", description: "", link: "", uploadedBy: "", date: todayISO() }, PROD_FILE_TYPE_OPTIONS)
+  });
+
+  const form = overlay.querySelector("[data-form]");
+  overlay.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => setDrawerTab(overlay, b.dataset.tab));
+  overlay.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => overlay.remove());
+
+  const recalcTotals = () => {
+    const draft = mergeForm(base, form);
+    overlay.querySelector("[data-total-qty]").textContent = orderQty(draft).toLocaleString("en-IN");
+    overlay.querySelector("[data-order-value]").textContent = fmtINR(orderValue(draft));
+    overlay.querySelector("[data-order-balance]").textContent = fmtINR(orderBalance(draft));
+  };
+  form.addEventListener("input", recalcTotals);
+  form.addEventListener("change", (e) => {
+    const f = e.target.dataset.f;
+    if (f === "currentStage") overlay.querySelector("[data-stepper]").innerHTML = stageStepper(e.target.value);
+    if (f === "sampleId") {
+      const s = WS.samples.find((x) => x.id === e.target.value);
+      if (!s) return;
+      const fill = { product: s.product, sku: s.sku, category: s.category, manufacturer: s.manufacturer, manufacturerContact: s.manufacturerContact };
+      for (const [k, v] of Object.entries(fill)) {
+        const inp = form.querySelector(`[data-f="${k}"]`);
+        if (inp) inp.value = v || "";
+      }
+      base.sampleId = s.id; // keep link in the base draft
+    }
+    recalcTotals();
+  });
+
+  overlay.querySelector("[data-save]").onclick = async () => {
+    const draft = mergeForm(base, form);
+    const errEl = overlay.querySelector("[data-err]");
+    const idTaken = isNew && WS.productionOrders.some((o) => o.id === draft.id.trim());
+    if (idTaken) { errEl.textContent = `An order with ID "${draft.id.trim()}" already exists — use a different ID`; return; }
+    if (!draft.id.trim() || !draft.product.trim() || !draft.manufacturer.trim()) {
+      errEl.textContent = "Order ID, product and manufacturer are required"; return;
+    }
+    draft.id = draft.id.trim();
+    try {
+      setSaving(true);
+      const body = await api("/api/manufacture/admin/orders", {
+        method: isNew ? "POST" : "PUT", body: JSON.stringify(draft)
+      });
+      upsertIn(WS.productionOrders, body.record);
+      toast(isNew ? "Production order placed" : "Production order updated");
+      overlay.remove();
+      renderMain();
+    } catch (err) {
+      errEl.textContent = err.message;
+    } finally { setSaving(false); }
+  };
+  setDrawerTab(overlay, "overview");
+}
+
+/* ============================== MANUFACTURER MODAL ============================== */
+function openManufacturerModal(initial) {
+  const base = JSON.parse(JSON.stringify(initial));
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4";
+  overlay.innerHTML = `
+  <div class="bg-white w-full max-w-lg rounded-sm border border-neutral-200 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
+      <div class="text-sm font-semibold">${base.name ? "Edit Manufacturer" : "New Manufacturer"}</div>
+      <button data-close class="text-neutral-400 hover:text-neutral-700">${icon("x", 18)}</button>
+    </div>
+    <div class="p-5 grid grid-cols-2 gap-3" data-form>
+      ${field("Manufacturer Name", textInput("name", base.name), true)}
+      ${field("Location", textInput("location", base.location))}
+      ${field("Contact Person", textInput("contact", base.contact))}
+      ${field("Phone", textInput("phone", base.phone))}
+      ${field("Email", textInput("email", base.email))}
+      ${field("Product Categories", textInput("categories", base.categories), true)}
+      ${field("Fabric Capabilities", textInput("fabricCapabilities", base.fabricCapabilities), true)}
+      ${field("MOQ", textInput("moq", base.moq))}
+      ${field("Sample Lead Time", textInput("sampleLeadTime", base.sampleLeadTime))}
+      ${field("Bulk Lead Time", textInput("bulkLeadTime", base.bulkLeadTime))}
+      ${field("Quality Rating (1-5)", `<input data-f="qualityRating" type="number" min="1" max="5" value="${esc(base.qualityRating ?? "")}" class="${INPUT_CLS}">`)}
+      ${field("Communication Rating (1-5)", `<input data-f="communicationRating" type="number" min="1" max="5" value="${esc(base.communicationRating ?? "")}" class="${INPUT_CLS}">`)}
+      ${field("Notes", textArea("notes", base.notes), true)}
+      ${field("Portal Access", `<label class="flex items-start gap-2 text-xs text-neutral-600 cursor-pointer leading-relaxed"><input data-f="portalAccess" type="checkbox" ${base.portalAccess ? "checked" : ""} class="mt-0.5 accent-neutral-900"> Linked to the manufacturer portal — the Shopify-page login sees and edits only this manufacturer's samples and orders. Only one manufacturer can be linked; linking this one unlinks any other.</label>`, true)}
+    </div>
+    <div class="flex justify-end gap-2 px-5 py-4 border-t border-neutral-200">
+      <div class="flex-1 text-xs text-rose-500" data-err></div>
+      <button data-close class="px-4 py-2 text-sm rounded-sm border border-neutral-300 hover:bg-neutral-50">Cancel</button>
+      <button data-save class="px-4 py-2 text-sm rounded-sm bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-30">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const form = overlay.querySelector("[data-form]");
+  overlay.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => overlay.remove());
+  overlay.querySelector("[data-save]").onclick = async () => {
+    const draft = mergeForm(base, form);
+    const errEl = overlay.querySelector("[data-err]");
+    if (!draft.name.trim()) { errEl.textContent = "Manufacturer name is required"; return; }
+    try {
+      setSaving(true);
+      const isNew = !base.id;
+      const body = await api("/api/manufacture/admin/manufacturers", {
+        method: isNew ? "POST" : "PUT", body: JSON.stringify(draft)
+      });
+      upsertIn(WS.manufacturers, body.record);
+      toast(isNew ? "Manufacturer added" : "Manufacturer updated");
+      overlay.remove();
+      renderMain();
+    } catch (err) {
+      errEl.textContent = err.message;
+    } finally { setSaving(false); }
+  };
+}
+
+/* ============================== TECH PACK MODAL ============================== */
+function openTechPackModal(initial) {
+  const base = JSON.parse(JSON.stringify(initial));
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4";
+  overlay.innerHTML = `
+  <div class="bg-white w-full max-w-lg rounded-sm border border-neutral-200 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
+      <div class="text-sm font-semibold">${base.__isNew ? "New Tech Pack Version" : "Edit Tech Pack"}</div>
+      <button data-close class="text-neutral-400 hover:text-neutral-700">${icon("x", 18)}</button>
+    </div>
+    <div class="p-5 grid grid-cols-2 gap-3" data-form>
+      ${field("Tech Pack ID", textInput("id", base.id, base.__isNew ? "" : "bg-neutral-100 text-neutral-500", base.__isNew ? 'placeholder="TP-SKU-V1"' : "disabled"))}
+      ${field("SKU", textInput("sku", base.sku))}
+      ${field("Product", textInput("product", base.product), true)}
+      ${field("Version", textInput("version", base.version))}
+      ${field("Status", selectInput("status", base.status, TP_STATUS_OPTIONS))}
+      ${field("Link", textInput("link", base.link), true)}
+      ${field("Created By", textInput("createdBy", base.createdBy))}
+      ${field("Created Date", dateInput("createdDate", base.createdDate))}
+      ${field("Manufacturer Questions", textArea("manufacturerQuestions", base.manufacturerQuestions), true)}
+      ${field("Notes", textArea("notes", base.notes), true)}
+    </div>
+    <div class="flex justify-end gap-2 px-5 py-4 border-t border-neutral-200">
+      <div class="flex-1 text-xs text-rose-500" data-err></div>
+      <button data-close class="px-4 py-2 text-sm rounded-sm border border-neutral-300 hover:bg-neutral-50">Cancel</button>
+      <button data-save class="px-4 py-2 text-sm rounded-sm bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-30">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const form = overlay.querySelector("[data-form]");
+  overlay.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => overlay.remove());
+  overlay.querySelector("[data-save]").onclick = async () => {
+    const draft = mergeForm(base, form);
+    const errEl = overlay.querySelector("[data-err]");
+    if (!draft.id.trim()) { errEl.textContent = "Tech pack ID is required"; return; }
+    draft.id = draft.id.trim();
+    try {
+      setSaving(true);
+      const isNew = !!base.__isNew;
+      const body = await api("/api/manufacture/admin/techpacks", {
+        method: isNew ? "POST" : "PUT", body: JSON.stringify(draft)
+      });
+      upsertIn(WS.techPacks, body.record);
+      toast(isNew ? "Tech pack added" : "Tech pack updated");
+      overlay.remove();
+      renderMain();
+    } catch (err) {
+      errEl.textContent = err.message;
+    } finally { setSaving(false); }
+  };
+}
+
+/* ============================== BOOT ============================== */
+async function boot() {
+  try {
+    setSaving(true);
+    const body = await api("/api/manufacture/admin/workspace");
+    WS = body.workspace;
+    WS.samples = WS.samples || []; WS.manufacturers = WS.manufacturers || [];
+    WS.techPacks = WS.techPacks || []; WS.productionOrders = WS.productionOrders || [];
+    renderShell();
+  } catch (err) {
+    if (err.status === 401) { TOKEN = null; sessionStorage.removeItem(TOKEN_KEY); renderLogin(); }
+    else {
+      document.getElementById("app").innerHTML = `<div class="min-h-screen flex items-center justify-center"><div class="text-sm text-neutral-500">${esc(err.message)}</div></div>`;
+    }
+  } finally { setSaving(false); }
+}
+if (TOKEN) boot(); else renderLogin();
 </script>
 </body>
 </html>

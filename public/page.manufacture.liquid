@@ -2,542 +2,885 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Manufacture Studio — OFFCOMFRT</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manufacture Studio — OFFCOMFRT</title>
 {% comment %}
-  OFFCOMFRT — Manufacture Studio
-  Monochromatic B&W premium portal for the manufacturer to submit new designs
-  (name, style code, description, quantity, deadline). Admin reviews them at
-  /manufacture/admin on the returns server.
-  Deploy: save as templates/page.manufacture.liquid, then create a page in
-  Shopify admin and assign the "manufacture" template.
+  OFFCOMFRT — Manufacture Studio (Control Tower, manufacturer side)
+  Monochromatic B&W portal scoped to this manufacturer's samples and
+  production orders. Talks to the Render backend. Deploy: save as
+  templates/page.manufacture.liquid, then assign the template to a page.
 {% endcomment %}
-
+<script src="https://cdn.tailwindcss.com"></script>
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-.mf-root {
-  --bg: #000000;
-  --surface: #0a0a0a;
-  --surface-2: #121212;
-  --border: #1f1f1f;
-  --border-hover: #3a3a3a;
-  --text: #ffffff;
-  --muted: #666666;
-  --faint: #9a9a9a;
-  --transition: 0.22s cubic-bezier(0.4,0,0.2,1);
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-}
-
-html, body { background: #000; }
-
-.mf-hidden { display: none !important; }
-
-/* ── Animations ── */
-@keyframes mfFadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes mfFadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes mfShimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
-@keyframes mfPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
-@keyframes mfSpin { to { transform: rotate(360deg); } }
-
-.mf-fade-up { animation: mfFadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both; }
-.mf-fade-in { animation: mfFadeIn 0.5s ease both; }
-
-/* ── Login ── */
-.mf-login {
-  min-height: 100vh;
-  display: flex; align-items: center; justify-content: center;
-  padding: 2rem 1rem;
-  position: relative; overflow: hidden;
-}
-.mf-login::before {
-  content: ""; position: absolute; inset: 0;
-  background: radial-gradient(600px circle at 50% 20%, rgba(255,255,255,0.06), transparent 60%);
-  pointer-events: none;
-}
-.mf-login-card {
-  width: 100%; max-width: 420px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 3rem 2.5rem;
-  position: relative;
-  animation: mfFadeUp 0.7s cubic-bezier(0.16,1,0.3,1) both;
-}
-.mf-wordmark {
-  text-align: center; font-size: 1.6rem; font-weight: 800;
-  letter-spacing: 0.45em; text-indent: 0.45em; margin-bottom: 0.5rem;
-  background: linear-gradient(90deg, #ffffff 0%, #8a8a8a 40%, #ffffff 60%, #ffffff 100%);
-  background-size: 400px 100%;
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: mfShimmer 4s linear infinite;
-}
-.mf-kicker {
-  text-align: center; font-size: 0.65rem; letter-spacing: 0.35em; text-indent: 0.35em;
-  text-transform: uppercase; color: var(--muted); margin-bottom: 2.25rem;
-}
-.mf-label {
-  display: block; font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--faint); margin-bottom: 0.5rem;
-}
-.mf-input, .mf-textarea, .mf-select {
-  width: 100%; background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: 10px; color: var(--text); padding: 0.8rem 1rem;
-  font-size: 0.9rem; font-family: inherit; outline: none;
-  transition: border-color var(--transition), box-shadow var(--transition);
-}
-.mf-input:focus, .mf-textarea:focus, .mf-select:focus {
-  border-color: var(--border-hover);
-  box-shadow: 0 0 0 3px rgba(255,255,255,0.05);
-}
-.mf-input::placeholder, .mf-textarea::placeholder { color: #3d3d3d; }
-.mf-textarea { resize: vertical; min-height: 90px; }
-.mf-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; cursor: pointer; }
-.mf-btn {
-  width: 100%; padding: 0.85rem 1.25rem; border-radius: 10px; border: none;
-  background: #ffffff; color: #000000; font-weight: 700; font-size: 0.8rem;
-  letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer;
-  transition: transform var(--transition), box-shadow var(--transition), opacity var(--transition);
-  font-family: inherit;
-}
-.mf-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(255,255,255,0.12); }
-.mf-btn:active { transform: translateY(0); }
-.mf-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-.mf-btn-ghost {
-  background: transparent; color: var(--text); border: 1px solid var(--border);
-  width: auto; padding: 0.55rem 1.1rem;
-}
-.mf-btn-ghost:hover { border-color: var(--border-hover); box-shadow: none; }
-.mf-error-msg {
-  margin-top: 1rem; font-size: 0.8rem; color: #ff6b6b; text-align: center;
-  animation: mfFadeIn 0.3s ease;
-}
-.mf-spinner {
-  width: 16px; height: 16px; border: 2px solid rgba(0,0,0,0.2);
-  border-top-color: #000; border-radius: 50%; display: inline-block;
-  animation: mfSpin 0.7s linear infinite; vertical-align: -3px; margin-left: 0.5rem;
-}
-
-/* ── App shell ── */
-.mf-app { max-width: 1100px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
-.mf-topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 2.5rem; flex-wrap: wrap; gap: 1rem;
-  animation: mfFadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both;
-}
-.mf-topbar h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.35em; text-transform: uppercase; }
-.mf-topbar .mf-sub { font-size: 0.62rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); margin-top: 0.3rem; }
-.mf-topbar-actions { display: flex; gap: 0.75rem; }
-
-/* Stats */
-.mf-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2.5rem; }
-.mf-stat {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-  padding: 1.4rem 1.5rem; position: relative; overflow: hidden;
-  transition: transform var(--transition), border-color var(--transition);
-  animation: mfFadeUp 0.6s cubic-bezier(0.16,1,0.3,1) both;
-}
-.mf-stat:hover { transform: translateY(-3px); border-color: var(--border-hover); }
-.mf-stat::after {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
-}
-.mf-stat-label { font-size: 0.6rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.6rem; }
-.mf-stat-value { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
-
-/* Design list */
-.mf-list-header {
-  display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;
-}
-.mf-list-header h2 { font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--faint); }
-.mf-grid { display: grid; gap: 1rem; }
-.mf-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-  padding: 1.5rem; transition: transform var(--transition), border-color var(--transition);
-  animation: mfFadeUp 0.55s cubic-bezier(0.16,1,0.3,1) both;
-}
-.mf-card:hover { transform: translateY(-2px); border-color: var(--border-hover); }
-.mf-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.mf-card-name { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.02em; }
-.mf-card-style { font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-top: 0.3rem; }
-.mf-card-desc { margin-top: 0.9rem; font-size: 0.85rem; color: var(--faint); line-height: 1.6; white-space: pre-wrap; }
-.mf-card-meta {
-  display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 1.1rem;
-  padding-top: 1.1rem; border-top: 1px solid var(--border);
-}
-.mf-meta-item .mf-label { font-size: 0.55rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.3rem; }
-.mf-meta-item .mf-val { font-size: 0.9rem; font-weight: 600; }
-.mf-card-actions { display: flex; gap: 0.5rem; margin-top: 1.1rem; }
-.mf-card-actions button {
-  background: transparent; border: 1px solid var(--border); color: var(--faint);
-  border-radius: 8px; padding: 0.4rem 0.9rem; font-size: 0.65rem; letter-spacing: 0.15em;
-  text-transform: uppercase; cursor: pointer; font-family: inherit;
-  transition: all var(--transition);
-}
-.mf-card-actions button:hover { color: var(--text); border-color: var(--border-hover); }
-.mf-card-actions .mf-del:hover { color: #ff6b6b; border-color: rgba(255,107,107,0.4); }
-
-/* Badges */
-.mf-badge {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
-  padding: 0.4rem 0.85rem; border-radius: 100px; border: 1px solid var(--border);
-  color: var(--faint); background: var(--surface-2);
-}
-.mf-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.mf-badge.mf-pending { color: #d4d4d4; }
-.mf-badge.mf-approved { color: #ffffff; background: rgba(255,255,255,0.1); }
-.mf-badge.mf-in_production { color: #bdbdbd; }
-.mf-badge.mf-in_production::before { animation: mfPulse 1.6s ease infinite; }
-.mf-badge.mf-completed { color: #8f8f8f; text-decoration: none; }
-.mf-badge.mf-rejected { color: #7a7a7a; }
-
-.mf-deadline-chip { font-size: 0.7rem; letter-spacing: 0.1em; color: var(--faint); }
-.mf-deadline-chip.mf-overdue { color: #ff6b6b; animation: mfPulse 2s ease infinite; }
-.mf-deadline-chip.mf-soon { color: #ffffff; }
-
-.mf-empty {
-  text-align: center; padding: 4rem 1rem; color: var(--muted);
-  border: 1px dashed var(--border); border-radius: 14px; font-size: 0.85rem;
-  letter-spacing: 0.05em; animation: mfFadeIn 0.5s ease both;
-}
-
-/* Modal */
-.mf-modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(6px);
-  display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 100;
-  animation: mfFadeIn 0.25s ease;
-}
-.mf-modal {
-  width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto;
-  background: var(--surface); border: 1px solid var(--border-hover);
-  border-radius: 16px; padding: 2.25rem;
-  animation: mfFadeUp 0.4s cubic-bezier(0.16,1,0.3,1);
-}
-.mf-modal h3 { font-size: 0.9rem; letter-spacing: 0.25em; text-transform: uppercase; margin-bottom: 1.75rem; }
-.mf-field { margin-bottom: 1.25rem; }
-.mf-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.mf-modal-actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
-.mf-modal-actions .mf-btn { flex: 1; }
-
-/* Toast */
-.mf-toast {
-  position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
-  background: #ffffff; color: #000000; padding: 0.8rem 1.5rem; border-radius: 100px;
-  font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-  box-shadow: 0 10px 40px rgba(255,255,255,0.15); z-index: 200;
-  animation: mfFadeUp 0.35s cubic-bezier(0.16,1,0.3,1);
-}
-.mf-toast.mf-toast-error { background: #1a1a1a; color: #ff6b6b; border: 1px solid rgba(255,107,107,0.3); }
-
-@media (max-width: 600px) {
-  .mf-field-row { grid-template-columns: 1fr; }
-  .mf-card-meta { gap: 1rem; }
-}
+  body, html { background: #fafaf9; }
+  body { font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .font-mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace; }
+  .spin { animation: mfspin 1s linear infinite; } @keyframes mfspin { to { transform: rotate(360deg); } }
+  .mf-fade { animation: mffade .4s cubic-bezier(0.4,0,0.2,1) both; }
+  @keyframes mffade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  input[type="date"]::-webkit-calendar-picker-indicator { opacity: .45; }
 </style>
 </head>
 <body>
-<div class="mf-root">
-
-  <!-- LOGIN -->
-  <div id="mfLogin" class="mf-login">
-    <div class="mf-login-card">
-      <div class="mf-wordmark">OFFCOMFRT</div>
-      <div class="mf-kicker">Manufacture Studio</div>
-      <form id="mfLoginForm">
-        <div class="mf-field">
-          <label class="mf-label" for="mfPassword">Access Password</label>
-          <input class="mf-input" type="password" id="mfPassword" placeholder="••••••••" autocomplete="current-password" required>
-        </div>
-        <button class="mf-btn" type="submit" id="mfLoginBtn">Enter Studio</button>
-        <div id="mfLoginErr" class="mf-error-msg mf-hidden"></div>
-      </form>
-    </div>
-  </div>
-
-  <!-- APP -->
-  <div id="mfApp" class="mf-app mf-hidden">
-    <div class="mf-topbar">
-      <div>
-        <h1>Manufacture Studio</h1>
-        <div class="mf-sub">OFFCOMFRT — Design Production</div>
-      </div>
-      <div class="mf-topbar-actions">
-        <button class="mf-btn mf-btn-ghost" onclick="mfLogout()">Logout</button>
-        <button class="mf-btn mf-btn-ghost" style="background:#fff;color:#000;border-color:#fff;" onclick="mfOpenModal()">+ New Design</button>
-      </div>
-    </div>
-
-    <div class="mf-stats" id="mfStats"></div>
-
-    <div class="mf-list-header">
-      <h2>Design Submissions</h2>
-      <button class="mf-btn mf-btn-ghost" onclick="mfLoadDesigns()" id="mfRefreshBtn">Refresh</button>
-    </div>
-    <div class="mf-grid" id="mfGrid"></div>
-  </div>
-
-  <!-- MODAL -->
-  <div id="mfModalOverlay" class="mf-modal-overlay mf-hidden" onclick="if(event.target===this)mfCloseModal()">
-    <div class="mf-modal">
-      <h3 id="mfModalTitle">New Design</h3>
-      <form id="mfDesignForm">
-        <input type="hidden" id="mfDesignId">
-        <div class="mf-field">
-          <label class="mf-label" for="mfName">Design Name *</label>
-          <input class="mf-input" type="text" id="mfName" maxlength="120" placeholder="e.g. Oversized Tee — Wave Graphic" required>
-        </div>
-        <div class="mf-field">
-          <label class="mf-label" for="mfStyleCode">Style Code <span style="color:#3d3d3d;">(optional)</span></label>
-          <input class="mf-input" type="text" id="mfStyleCode" maxlength="60" placeholder="e.g. OC-SS26-014">
-        </div>
-        <div class="mf-field">
-          <label class="mf-label" for="mfDesc">Description</label>
-          <textarea class="mf-textarea" id="mfDesc" maxlength="2000" placeholder="Fabric, fit, print details, trims…"></textarea>
-        </div>
-        <div class="mf-field-row">
-          <div class="mf-field">
-            <label class="mf-label" for="mfQty">Quantity *</label>
-            <input class="mf-input" type="number" id="mfQty" min="1" max="1000000" placeholder="0" required>
-          </div>
-          <div class="mf-field">
-            <label class="mf-label" for="mfDeadline">Deadline *</label>
-            <input class="mf-input" type="date" id="mfDeadline" required>
-          </div>
-        </div>
-        <div class="mf-modal-actions">
-          <button class="mf-btn mf-btn-ghost" type="button" onclick="mfCloseModal()">Cancel</button>
-          <button class="mf-btn" type="submit" id="mfSaveBtn">Save Design</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-</div>
+<div id="app"></div>
 
 <script>
-(function () {
-  const API = 'https://exchange-return-tracking.onrender.com/api/manufacture';
-  let authToken = null; // JWT kept in memory only
-  let designs = [];
+/* ============================== CONSTANTS ============================== */
+const API_BASE = "https://exchange-return-tracking.onrender.com/api/manufacture";
+const STATUS_OPTIONS = ["Not Started", "Requested", "In Progress", "In Transit", "Received", "Under Review", "Revision Required", "Awaiting Manufacturer", "Awaiting Offcomfrt", "Approved", "Rejected", "Cancelled", "Closed"];
+const STAGE_OPTIONS = ["Request", "Tech Pack", "Sampling", "Courier", "Fit Review", "Revision", "Approval", "Pre-Production", "Closed"];
+const COMM_STATUS_OPTIONS = ["Open", "Waiting for Manufacturer", "Waiting for Offcomfrt", "Done", "Escalated"];
+const REVISION_STATUS_OPTIONS = ["Not Started", "In Progress", "Completed", "Overdue"];
+const PROD_STAGE_OPTIONS = ["PO Placed", "Fabric Sourcing", "Cutting", "Stitching", "Washing & Finishing", "Quality Check", "Packing", "Shipped", "Delivered"];
+const FILE_TYPE_OPTIONS = ["Tech Pack", "Front Photo", "Back Photo", "Detail Photo", "Fit Photo", "QC Photo", "Fabric Photo", "Reference Image", "Invoice", "Courier", "Other"];
+const PROD_FILE_TYPE_OPTIONS = ["Purchase Order", "Invoice", "Packing List", "Shipping Bill", "Inspection Report", "Photo", "Other"];
+const PROD_QC_RESULT_OPTIONS = ["Pending", "Pass", "Fail", "Hold"];
+const PROD_QC_CHECKPOINTS = ["Inline Inspection", "Pre-Final Inspection", "Final Random Inspection (AQL 2.5)", "Other"];
 
-  // ── Helpers ──
-  const $ = (id) => document.getElementById(id);
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const TOKEN_KEY = "mf_mfr_token";
+let TOKEN = localStorage.getItem(TOKEN_KEY);
+let WS = null;      // { samples, productionOrders, techPacks, manufacturer, manufacturerName }
+let TAB = "dashboard";
 
-  function mfApi(path, options = {}) {
-    return fetch(API + path, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: 'Bearer ' + authToken } : {}), ...(options.headers || {}) }
+/* ============================== ICONS ============================== */
+const ICONS = {
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  package: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 8.7 5 8.7-5"/>',
+  clipboard: '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+  message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  ruler: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+  paperclip: '<path d="m16 6-8.414 8.414a2 2 0 0 0 2.828 2.828L18.828 8.828a4 4 0 0 0-5.656-5.656L4.757 11.586a6 6 0 0 0 8.486 8.486L21 12.343"/>',
+  dashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  files: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/>',
+  truck: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  loader: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>'
+};
+function icon(name, size = 14, cls = "") {
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="' + cls + '">' + ICONS[name] + '</svg>';
+}
+
+/* ============================== HELPERS ============================== */
+const DAY = 86400000;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function todayISO() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString().slice(0, 10); }
+function daysDiff(iso) { if (!iso) return null; const d = new Date(iso + "T00:00:00"); const t = new Date(todayISO() + "T00:00:00"); return Math.round((d - t) / DAY); }
+function fmtDate(iso) { if (!iso) return "—"; const d = new Date(iso + "T00:00:00"); return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" }); }
+function uid(prefix) { return prefix + "-" + Math.random().toString(36).slice(2, 9).toUpperCase(); }
+
+function statusLight(s) {
+  if (s.stage === "Closed") return "grey";
+  const due = s.nextDue || s.targetDate;
+  const dr = daysDiff(due);
+  if (dr == null) return "grey";
+  if (dr < 0) return "red";
+  if (dr <= 2) return "yellow";
+  return "green";
+}
+function daysRemaining(s) { return daysDiff(s.nextDue || s.targetDate); }
+function daysOverdue(s) {
+  const dr = daysRemaining(s);
+  if (dr == null || s.stage === "Closed") return 0;
+  return dr < 0 ? -dr : 0;
+}
+function orderQty(o) { return (o.breakdown || []).reduce((sum, r) => sum + (Number(r.qty) || 0), 0); }
+function productionLight(o) {
+  if (o.currentStage === "Delivered") return "grey";
+  const dr = daysDiff(o.expectedDelivery);
+  if (dr == null) return "grey";
+  if (dr < 0) return "red";
+  if (dr <= 5) return "yellow";
+  return "green";
+}
+const LIGHT_DOT = { green: "bg-emerald-500", yellow: "bg-amber-500", red: "bg-rose-500", grey: "bg-neutral-300" };
+const LIGHT_TEXT = { green: "text-emerald-700", yellow: "text-amber-700", red: "text-rose-700", grey: "text-neutral-500" };
+const LIGHT_BG = { green: "bg-emerald-50", yellow: "bg-amber-50", red: "bg-rose-50", grey: "bg-neutral-100" };
+const LIGHT_LABEL = { green: "On track", yellow: "Due soon", red: "Overdue", grey: "Closed" };
+const LIGHT_ORDER = { red: 0, yellow: 1, green: 2, grey: 3 };
+
+/* ============================== PRIMITIVES ============================== */
+function dot(light) { return `<span class="inline-block w-2 h-2 rounded-full ${LIGHT_DOT[light]}"></span>`; }
+function statusPill(light) {
+  return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium rounded-sm ${LIGHT_BG[light]} ${LIGHT_TEXT[light]}">${dot(light)} ${LIGHT_LABEL[light]}</span>`;
+}
+function kpi(label, value, accent = "") {
+  return `<div class="px-4 py-3 border-r border-neutral-200 last:border-r-0">
+    <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400 mb-1">${esc(label)}</div>
+    <div class="text-2xl font-black font-mono tabular-nums ${accent || "text-neutral-900"}">${value}</div>
+  </div>`;
+}
+function bar(label, count, max) {
+  const pct = max > 0 ? Math.max(3, Math.round((count / max) * 100)) : 0;
+  return `<div class="flex items-center gap-3 py-1.5">
+    <div class="w-28 text-xs text-neutral-600 shrink-0">${esc(label)}</div>
+    <div class="flex-1 h-4 bg-neutral-100 rounded-sm overflow-hidden"><div class="h-full bg-neutral-800 rounded-sm transition-all" style="width:${pct}%"></div></div>
+    <div class="w-6 text-xs font-mono text-neutral-700 text-right shrink-0">${count}</div>
+  </div>`;
+}
+function sectionHeading(index, title) {
+  return `<div class="flex items-center justify-between mb-3 mt-8 first:mt-0">
+    <h2 class="text-[13px] font-bold tracking-wide text-neutral-900 flex items-baseline gap-2">
+      <span class="text-neutral-300 font-mono">${esc(index)}</span><span class="uppercase">${esc(title)}</span>
+    </h2></div>`;
+}
+function emptyState(iconName, title, hint) {
+  return `<div class="flex flex-col items-center justify-center text-center py-14 border border-dashed border-neutral-300 rounded-sm bg-neutral-50 mf-fade">
+    ${icon(iconName, 22, "text-neutral-300 mb-3")}
+    <p class="text-sm font-medium text-neutral-600">${esc(title)}</p>
+    ${hint ? `<p class="text-xs text-neutral-400 mt-1 max-w-xs">${esc(hint)}</p>` : ""}</div>`;
+}
+function field(label, inner, span = false) {
+  return `<label class="flex flex-col gap-1 ${span ? "col-span-2" : ""}">
+    <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400">${esc(label)}</span>${inner}</label>`;
+}
+function readField(label, value, span = false) {
+  return `<div class="flex flex-col gap-1 ${span ? "col-span-2" : ""}">
+    <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400">${esc(label)}</span>
+    <div class="w-full border border-neutral-200 bg-neutral-50 rounded-sm px-2.5 py-1.5 text-sm text-neutral-600 min-h-[33px] whitespace-pre-wrap">${esc(value ?? "") || "—"}</div>
+  </div>`;
+}
+const INPUT_CLS = 'w-full border border-neutral-300 rounded-sm px-2.5 py-1.5 text-sm text-neutral-900 bg-white focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-900';
+function textInput(f, value, extra = "", attrs = "") {
+  return `<input data-f="${f}" value="${esc(value ?? "")}" class="${INPUT_CLS} ${extra}" ${attrs}>`;
+}
+function dateInput(f, value) {
+  return `<input type="date" data-f="${f}" value="${esc(value ?? "")}" class="${INPUT_CLS}">`;
+}
+function selectInput(f, value, options, allowEmpty = false) {
+  let opts = allowEmpty ? `<option value="">—</option>` : "";
+  for (const o of options) opts += `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc(o)}</option>`;
+  return `<div class="relative"><select data-f="${f}" class="${INPUT_CLS} appearance-none pr-7">${opts}</select>
+    <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400">${icon("chevron", 13)}</span></div>`;
+}
+function rowInput(field2, value, cls, type = "text", ph = "") {
+  return `<input data-field="${field2}" type="${type}" placeholder="${esc(ph)}" value="${esc(value ?? "")}" class="${INPUT_CLS} ${cls}">`;
+}
+function rowSelect(field2, value, options, cls) {
+  let opts = "";
+  for (const o of options) opts += `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc(o)}</option>`;
+  return `<div class="relative ${cls}"><select data-field="${field2}" class="${INPUT_CLS} appearance-none pr-7">${opts}</select></div>`;
+}
+function baseInput(row) { return `<input type="hidden" data-base value="${esc(JSON.stringify(row || {}))}">`; }
+
+function toast(msg, kind = "ok") {
+  const el = document.createElement("div");
+  el.className = "fixed bottom-5 right-5 z-[100] bg-neutral-900 text-white text-sm px-4 py-2.5 rounded-sm shadow-lg flex items-center gap-2";
+  el.innerHTML = icon(kind === "error" ? "alert" : "check", 14, kind === "error" ? "text-rose-400" : "text-emerald-400") + esc(msg);
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+/* Merge form values onto the original draft (preserves fields without inputs) */
+function mergeForm(base, root) {
+  const d = JSON.parse(JSON.stringify(base || {}));
+  root.querySelectorAll("[data-f]").forEach((el) => { d[el.dataset.f] = el.type === "checkbox" ? el.checked : el.value; });
+  root.querySelectorAll("[data-list]").forEach((container) => {
+    d[container.dataset.list] = [...container.querySelectorAll(":scope > [data-row]")].map((rowEl) => {
+      const baseEl = rowEl.querySelector("[data-base]");
+      const o = baseEl ? JSON.parse(baseEl.value || "{}") : {};
+      rowEl.querySelectorAll("[data-field]").forEach((inp) => { o[inp.dataset.field] = inp.type === "checkbox" ? inp.checked : inp.value; });
+      return o;
     });
-  }
+  });
+  return d;
+}
 
-  function mfToast(msg, isError) {
-    const el = document.createElement('div');
-    el.className = 'mf-toast' + (isError ? ' mf-toast-error' : '');
-    el.textContent = msg;
-    document.body.appendChild(el);
-    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.4s'; setTimeout(() => el.remove(), 400); }, 2600);
-  }
+/* ============================== API ============================== */
+async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  if (TOKEN) headers.Authorization = "Bearer " + TOKEN;
+  const res = await fetch(API_BASE + path, { ...opts, headers });
+  let body = {}; try { body = await res.json(); } catch (e) { /* non-json */ }
+  if (!res.ok) { const err = new Error(body.error || ("Request failed (" + res.status + ")")); err.status = res.status; throw err; }
+  return body;
+}
 
-  const STATUS_LABELS = { pending: 'Pending Review', approved: 'Approved', in_production: 'In Production', completed: 'Completed', rejected: 'Rejected' };
-
-  function fmtDate(iso) {
-    const d = new Date(iso);
-    if (isNaN(d)) return '—';
-    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  }
-
-  function deadlineChip(iso) {
-    const d = new Date(iso);
-    if (isNaN(d)) return '<span class="mf-deadline-chip">—</span>';
-    const days = Math.ceil((d - new Date()) / 86400000);
-    let cls = '', label = fmtDate(iso);
-    if (days < 0) { cls = 'mf-overdue'; label = 'Overdue by ' + Math.abs(days) + 'd'; }
-    else if (days === 0) { cls = 'mf-soon'; label = 'Due today'; }
-    else if (days <= 7) { cls = 'mf-soon'; label = label + ' · ' + days + 'd left'; }
-    return '<span class="mf-deadline-chip ' + cls + '">' + esc(label) + '</span>';
-  }
-
-  function countUp(el, target) {
-    const dur = 700, start = performance.now();
-    function tick(now) {
-      const p = Math.min((now - start) / dur, 1);
-      el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
-      if (p < 1) requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-  }
-
-  // ── Auth ──
-  window.mfLogout = function () {
-    authToken = null; designs = [];
-    $('mfApp').classList.add('mf-hidden');
-    $('mfLogin').classList.remove('mf-hidden');
-    $('mfPassword').value = '';
-  };
-
-  $('mfLoginForm').addEventListener('submit', async (e) => {
+/* ============================== LOGIN ============================== */
+function renderLogin() {
+  document.getElementById("app").innerHTML = `
+  <div class="min-h-screen flex items-center justify-center bg-neutral-950">
+    <div class="w-full max-w-sm px-6 mf-fade">
+      <div class="text-center mb-8">
+        <div class="text-3xl font-black tracking-tight text-white">OFFCOMFRT</div>
+        <div class="text-[11px] font-semibold tracking-[0.15em] text-neutral-500 uppercase mt-1">Manufacture Studio</div>
+      </div>
+      <form id="loginForm" class="bg-neutral-900 border border-neutral-800 rounded-sm p-6 space-y-4">
+        <label class="block">
+          <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-500">Manufacturer Password</span>
+          <input id="loginPw" type="password" autocomplete="current-password" required
+            class="mt-1 w-full bg-neutral-950 border border-neutral-700 rounded-sm px-3 py-2 text-sm text-white focus:outline-none focus:border-neutral-400">
+        </label>
+        <div id="loginErr" class="text-xs text-rose-400 hidden"></div>
+        <button type="submit" class="w-full bg-white text-neutral-950 text-sm font-bold py-2.5 rounded-sm hover:bg-neutral-200 transition-colors">Enter Studio</button>
+      </form>
+    </div>
+  </div>`;
+  document.getElementById("loginForm").onsubmit = async (e) => {
     e.preventDefault();
-    const btn = $('mfLoginBtn'), err = $('mfLoginErr');
-    const password = $('mfPassword').value.trim();
-    if (!password) return;
-    btn.disabled = true; btn.innerHTML = 'Verifying<span class="mf-spinner"></span>';
-    err.classList.add('mf-hidden');
+    const errEl = document.getElementById("loginErr");
+    errEl.classList.add("hidden");
     try {
-      const res = await fetch(API + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-      const data = await res.json();
-      if (res.ok && data.token) {
-        authToken = data.token;
-        $('mfLogin').classList.add('mf-hidden');
-        $('mfApp').classList.remove('mf-hidden');
-        await mfLoadDesigns();
-      } else {
-        err.textContent = data.error || 'Invalid password';
-        err.classList.remove('mf-hidden');
-      }
-    } catch (e2) {
-      err.textContent = 'Connection error. Try again.';
-      err.classList.remove('mf-hidden');
+      const body = await api("/login", { method: "POST", body: JSON.stringify({ password: document.getElementById("loginPw").value }) });
+      TOKEN = body.token;
+      localStorage.setItem(TOKEN_KEY, TOKEN);
+      await boot();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.remove("hidden");
     }
-    btn.disabled = false; btn.textContent = 'Enter Studio';
+  };
+}
+
+/* ============================== SHELL ============================== */
+const NAV = [
+  { key: "dashboard", label: "Dashboard", icon: "dashboard" },
+  { key: "samples", label: "My Samples", icon: "package" },
+  { key: "orders", label: "My Orders", icon: "truck" },
+  { key: "techpacks", label: "Tech Packs", icon: "files" }
+];
+
+function renderShell() {
+  document.getElementById("app").innerHTML = `
+  <div class="min-h-screen bg-stone-50 text-neutral-900">
+    <div class="bg-neutral-900 text-white">
+      <div class="max-w-[1400px] mx-auto px-6 pt-6 pb-4">
+        <div class="flex items-baseline justify-between">
+          <div>
+            <div class="text-2xl font-black tracking-tight">OFFCOMFRT</div>
+            <div class="text-[11px] font-semibold tracking-[0.15em] text-neutral-400 uppercase mt-0.5">Manufacture Studio · ${esc(WS.manufacturerName || "")}</div>
+          </div>
+          <button id="logoutBtn" class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-400 rounded-sm px-2 py-1">Sign out</button>
+        </div>
+      </div>
+      <div class="max-w-[1400px] mx-auto px-6 flex gap-1" id="navBar"></div>
+    </div>
+    <main class="max-w-[1400px] mx-auto px-6 py-6" id="main"></main>
+  </div>`;
+  document.getElementById("logoutBtn").onclick = () => { localStorage.removeItem(TOKEN_KEY); TOKEN = null; WS = null; renderLogin(); };
+  renderNav();
+  renderMain();
+}
+
+function renderNav() {
+  document.getElementById("navBar").innerHTML = NAV.map((n) =>
+    `<button data-nav="${n.key}" class="flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold border-b-2 -mb-px transition-colors ${TAB === n.key ? "border-white text-white" : "border-transparent text-neutral-400 hover:text-neutral-200"}">${icon(n.icon, 13)} ${n.label}</button>`
+  ).join("");
+  document.querySelectorAll("[data-nav]").forEach((b) => b.onclick = () => { TAB = b.dataset.nav; renderNav(); renderMain(); });
+}
+
+function renderMain() {
+  const main = document.getElementById("main");
+  if (TAB === "dashboard") renderDashboard(main);
+  if (TAB === "samples") renderSamples(main);
+  if (TAB === "orders") renderOrders(main);
+  if (TAB === "techpacks") renderTechPacks(main);
+}
+
+/* ============================== DASHBOARD ============================== */
+function renderDashboard(main) {
+  const samples = WS.samples || [];
+  const orders = WS.productionOrders || [];
+
+  const active = samples.filter((s) => s.stage !== "Closed");
+  const overdue = active.filter((s) => statusLight(s) === "red");
+  const dueSoon = active.filter((s) => { const d = daysRemaining(s); return d != null && d >= 0 && d <= 7; });
+  const awaitingMfr = samples.filter((s) => s.waitingOn === "Manufacturer" && s.stage !== "Closed");
+
+  const stageCounts = STAGE_OPTIONS.map((st) => ({ label: st, count: samples.filter((s) => s.stage === st).length }))
+    .filter((s) => s.count > 0);
+  const maxStage = Math.max(1, ...stageCounts.map((s) => s.count));
+
+  const upcoming = active
+    .filter((s) => daysRemaining(s) != null && daysRemaining(s) >= 0)
+    .sort((a, b) => daysRemaining(a) - daysRemaining(b)).slice(0, 10);
+  const overdueList = overdue.sort((a, b) => daysOverdue(b) - daysOverdue(a)).slice(0, 10);
+
+  const prodActive = orders.filter((o) => o.currentStage !== "Delivered");
+
+  main.innerHTML = `<div class="mf-fade">
+  ${sectionHeading("—", "Your Workspace")}
+  <div class="grid grid-cols-5 border border-neutral-200 rounded-sm bg-white divide-x divide-neutral-200">
+    ${kpi("Active Samples", active.length)}
+    ${kpi("Due Within 7 Days", dueSoon.length)}
+    ${kpi("Overdue", overdue.length, overdue.length ? "text-rose-600" : "")}
+    ${kpi("Waiting On You", awaitingMfr.length, awaitingMfr.length ? "text-amber-600" : "")}
+    ${kpi("Orders In Production", prodActive.length)}
+  </div>
+
+  ${stageCounts.length ? `
+  ${sectionHeading("A", "Sample Pipeline")}
+  <div class="border border-neutral-200 rounded-sm bg-white p-4">${stageCounts.map((s) => bar(s.label, s.count, maxStage)).join("")}</div>` : ""}
+
+  <div class="grid grid-cols-2 gap-6">
+    <div>
+      ${sectionHeading("B", "Upcoming Deadlines")}
+      ${upcoming.length === 0 ? emptyState("clock", "Nothing due", "No open samples have an upcoming due date.") :
+        `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden">${upcoming.map((s) =>
+          `<button data-open-sample="${esc(s.id)}" class="w-full flex items-center gap-3 px-3 py-2 text-left border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50">
+            ${dot(statusLight(s))}
+            <span class="font-mono text-[11px] text-neutral-500 w-32 truncate">${esc(s.id)}</span>
+            <span class="text-xs text-neutral-800 flex-1 truncate">${esc(s.product)} · ${esc(s.version || "")}</span>
+            <span class="text-xs font-mono text-neutral-700 w-16 text-right">${daysRemaining(s)}d</span>
+          </button>`).join("")}</div>`}
+    </div>
+    <div>
+      ${sectionHeading("C", "Overdue")}
+      ${overdueList.length === 0 ? emptyState("check", "Nothing overdue", "Every open sample is within its due date.") :
+        `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden">${overdueList.map((s) =>
+          `<button data-open-sample="${esc(s.id)}" class="w-full flex items-center gap-3 px-3 py-2 text-left border-b last:border-b-0 border-neutral-100 hover:bg-rose-50/50">
+            <span class="font-mono text-[11px] text-neutral-500 w-32 truncate">${esc(s.id)}</span>
+            <span class="text-xs text-neutral-800 flex-1 truncate">${esc(s.product)}</span>
+            <span class="text-xs font-mono text-rose-600 font-bold w-16 text-right">${daysOverdue(s)}d</span>
+          </button>`).join("")}</div>`}
+    </div>
+  </div>
+
+  ${sectionHeading("D", "Production Orders")}
+  ${orders.length === 0 ? emptyState("truck", "No production orders yet", "Bulk orders assigned to you will appear here.") :
+    `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden">
+      ${orders.slice().sort((a, b) => LIGHT_ORDER[productionLight(a)] - LIGHT_ORDER[productionLight(b)]).map((o) =>
+        `<button data-open-order="${esc(o.id)}" class="w-full flex items-center gap-4 px-4 py-2.5 text-left border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50">
+          ${dot(productionLight(o))}
+          <span class="font-mono text-[11px] text-neutral-500 w-36 truncate">${esc(o.id)}</span>
+          <span class="text-xs text-neutral-800 flex-1 truncate">${esc(o.product)} · ${orderQty(o).toLocaleString("en-IN")} pcs</span>
+          <span class="text-xs text-neutral-600 w-40">${esc(o.currentStage || "")}</span>
+          <span class="text-xs font-mono text-neutral-500 w-24 text-right">${fmtDate(o.expectedDelivery)}</span>
+        </button>`).join("")}
+    </div>`}
+  </div>`;
+
+  main.querySelectorAll("[data-open-sample]").forEach((b) => b.onclick = () => openSampleDrawer(samples.find((s) => s.id === b.dataset.openSample)));
+  main.querySelectorAll("[data-open-order]").forEach((b) => b.onclick = () => openOrderDrawer(orders.find((o) => o.id === b.dataset.openOrder)));
+}
+
+/* ============================== MY SAMPLES ============================== */
+function renderSamples(main) {
+  const samples = WS.samples || [];
+  const sorted = samples.slice().sort((a, b) => LIGHT_ORDER[statusLight(a)] - LIGHT_ORDER[statusLight(b)]);
+  main.innerHTML = `
+  ${sorted.length === 0 ? emptyState("package", "No samples assigned", "Samples assigned to you by Offcomfrt will appear here.") :
+    `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden mf-fade">
+      ${sorted.map((s) => {
+        const light = statusLight(s);
+        return `<div class="flex items-stretch border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50">
+          <div class="w-1 ${LIGHT_DOT[light]} shrink-0"></div>
+          <button data-open="${esc(s.id)}" class="flex-1 flex items-center gap-4 px-4 py-3 text-left min-w-0">
+            <div class="w-40 shrink-0"><div class="font-mono text-[11px] text-neutral-500 truncate">${esc(s.id)}</div></div>
+            <div class="w-52 shrink-0 min-w-0">
+              <div class="text-sm text-neutral-900 truncate">${esc(s.product)}</div>
+              <div class="text-[11px] text-neutral-400">${esc(s.version || "")} · ${esc(s.category || "")}</div>
+            </div>
+            <div class="w-28 shrink-0 text-xs text-neutral-600">${esc(s.stage || "")}</div>
+            <div class="w-36 shrink-0 text-xs text-neutral-600 truncate">${esc(s.status || "")}</div>
+            <div class="w-24 shrink-0 text-xs font-mono text-neutral-500">${fmtDate(s.nextDue || s.targetDate)}</div>
+            <div class="w-24 shrink-0">${statusPill(light)}</div>
+          </button>
+        </div>`;
+      }).join("")}
+    </div>`}`;
+  main.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openSampleDrawer(samples.find((s) => s.id === b.dataset.open)));
+}
+
+/* ============================== MY ORDERS ============================== */
+function renderOrders(main) {
+  const orders = WS.productionOrders || [];
+  const sorted = orders.slice().sort((a, b) => LIGHT_ORDER[productionLight(a)] - LIGHT_ORDER[productionLight(b)]);
+  main.innerHTML = `
+  ${sorted.length === 0 ? emptyState("truck", "No production orders yet", "Bulk orders assigned to you will appear here.") :
+    `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden mf-fade">
+      ${sorted.map((o) => {
+        const light = productionLight(o);
+        return `<div class="flex items-stretch border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50">
+          <div class="w-1 ${LIGHT_DOT[light]} shrink-0"></div>
+          <button data-open="${esc(o.id)}" class="flex-1 flex items-center gap-4 px-4 py-3 text-left min-w-0">
+            <div class="w-36 shrink-0 font-mono text-[11px] text-neutral-500 truncate">${esc(o.id)}</div>
+            <div class="w-52 shrink-0 min-w-0">
+              <div class="text-sm text-neutral-900 truncate">${esc(o.product)}</div>
+              <div class="text-[11px] text-neutral-400">${orderQty(o).toLocaleString("en-IN")} pcs</div>
+            </div>
+            <div class="w-32 shrink-0 text-xs text-neutral-600">${esc(o.currentStage || "")}</div>
+            <div class="w-24 shrink-0 text-xs font-mono text-neutral-500">${fmtDate(o.expectedDelivery)}</div>
+            <div class="w-24 shrink-0">${statusPill(light)}</div>
+          </button>
+        </div>`;
+      }).join("")}
+    </div>`}`;
+  main.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => openOrderDrawer(orders.find((o) => o.id === b.dataset.open)));
+}
+
+/* ============================== TECH PACKS ============================== */
+function renderTechPacks(main) {
+  const techPacks = WS.techPacks || [];
+  main.innerHTML = `
+  ${techPacks.length === 0 ? emptyState("files", "No tech packs shared", "Tech packs shared by Offcomfrt will appear here.") :
+    `<div class="border border-neutral-200 rounded-sm bg-white overflow-hidden mf-fade">
+      ${techPacks.map((t) => `<div class="flex items-center gap-4 px-4 py-3 border-b last:border-b-0 border-neutral-100 hover:bg-neutral-50">
+        <div class="font-mono text-xs text-neutral-500 w-44 truncate">${esc(t.id)}</div>
+        <div class="w-56 text-sm text-neutral-800 truncate">${esc(t.product || "")}</div>
+        <div class="w-40 text-xs text-neutral-600">${esc(t.status || "")}</div>
+        <div class="w-24 font-mono text-xs text-neutral-500">${fmtDate(t.createdDate)}</div>
+        ${t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noreferrer" class="text-neutral-400 hover:text-neutral-800">${icon("paperclip", 13)}</a>` : ""}
+        <div class="flex-1"></div>
+        <button data-q="${esc(t.id)}" class="text-[11px] font-semibold text-neutral-600 border border-neutral-300 rounded-sm px-2 py-1 hover:bg-neutral-50">${t.manufacturerQuestions ? "Edit Questions" : "Ask a Question"}</button>
+      </div>`).join("")}
+    </div>`}`;
+  main.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => openQuestionsModal(techPacks.find((t) => t.id === b.dataset.q)));
+}
+/* ============================== DRAWER SHARED BITS ============================== */
+function drawerTabBtn(tab, iconName, label, count) {
+  return `<button data-tab="${tab}" class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px whitespace-nowrap border-transparent text-neutral-400 hover:text-neutral-600">
+    ${icon(iconName, 13)} ${label}${count != null && count > 0 ? `<span class="ml-0.5 text-[10px] text-neutral-400">(${count})</span>` : ""}</button>`;
+}
+function setDrawerTab(overlay, tab) {
+  overlay.querySelectorAll("[data-tab]").forEach((b) => {
+    const on = b.dataset.tab === tab;
+    b.className = `flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px whitespace-nowrap ${on ? "border-neutral-900 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"}`;
+  });
+  overlay.querySelectorAll("[data-pane]").forEach((p) => p.classList.toggle("hidden", p.dataset.pane !== tab));
+}
+function updateQcBadges(listEl) {
+  listEl.querySelectorAll(":scope > [data-row]").forEach((row) => {
+    const get = (f) => { const i = row.querySelector(`[data-field="${f}"]`); return i ? i.value : ""; };
+    const spec = get("spec"), tol = get("tolerance"), act = get("actual");
+    const badge = row.querySelector("[data-pass]");
+    if (!badge) return;
+    if (spec === "" || spec == null || tol === "" || tol == null || act === "") { badge.innerHTML = '<span class="text-[10px] text-neutral-400">manual</span>'; return; }
+    const pass = Math.abs(Number(act) - Number(spec)) <= Number(tol);
+    badge.innerHTML = pass ? '<span class="text-[11px] font-semibold text-emerald-600">Pass</span>' : '<span class="text-[11px] font-semibold text-rose-600">Fail</span>';
+  });
+}
+function commRowHtml(c) {
+  return `<div data-row class="border border-neutral-200 rounded-sm p-3 space-y-2">
+    <div class="flex justify-between gap-2">
+      <div class="grid grid-cols-4 gap-2 flex-1">
+        ${rowInput("date", c.date || "", "", "date")}
+        ${rowInput("from", c.from, "", "text", "From")}
+        ${rowInput("to", c.to, "", "text", "To")}
+        ${rowSelect("status", c.status || "Open", COMM_STATUS_OPTIONS, "")}
+      </div>
+    </div>
+    ${rowInput("message", c.message, "w-full", "text", "Message / question")}
+    ${rowInput("response", c.response, "w-full", "text", "Response")}
+    ${rowInput("decision", c.decision, "w-full", "text", "Decision / agreement")}
+    ${baseInput(c)}
+  </div>`;
+}
+function fileRowHtml(f, typeOptions) {
+  return `<div data-row class="border border-neutral-200 rounded-sm p-3 grid grid-cols-12 gap-2 items-center">
+    <div class="col-span-3">${rowSelect("type", f.type || typeOptions[0], typeOptions, "")}</div>
+    ${rowInput("description", f.description, "col-span-3", "text", "Description")}
+    ${rowInput("link", f.link, "col-span-4", "text", "Google Drive link")}
+    ${rowInput("date", f.date || "", "col-span-1", "date")}
+    ${baseInput(f)}
+  </div>`;
+}
+function wireAdds(overlay, templates) {
+  overlay.addEventListener("click", (e) => {
+    const add = e.target.closest("[data-add]");
+    if (add) {
+      const key = add.dataset.add;
+      overlay.querySelector(`[data-list="${key}"]`).insertAdjacentHTML("beforeend", templates[key]());
+    }
+  });
+}
+
+/* ============================== SAMPLE DRAWER (MFR) ============================== */
+function openSampleDrawer(initial) {
+  const base = JSON.parse(JSON.stringify(initial));
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-[80] bg-black/40 flex justify-end";
+
+  const qcRows = (base.qc || []).map((row) => `
+    <div data-row class="border border-neutral-200 rounded-sm p-3 grid grid-cols-12 gap-2 items-center">
+      <div class="col-span-3 text-sm text-neutral-800 px-1 truncate" title="${esc(row.point)}">${esc(row.point || "—")}</div>
+      <div class="col-span-2 text-xs font-mono text-neutral-500 text-center">${row.spec ?? "—"} ±${row.tolerance ?? "—"}</div>
+      ${rowInput("actual", row.actual ?? "", "col-span-2", "number", "Actual")}
+      <div class="col-span-2 flex justify-center" data-pass></div>
+      ${rowInput("mfrComment", row.mfrComment, "col-span-3", "text", "Your comment")}
+      ${baseInput(row)}
+    </div>`).join("");
+
+  const revRows = (base.revisions || []).map((r) => `
+    <div data-row class="border border-neutral-200 rounded-sm p-3 space-y-2">
+      <div class="grid grid-cols-4 gap-2 text-xs text-neutral-500">
+        <div><span class="font-semibold text-neutral-700">${esc(r.prevVersion || "—")} → ${esc(r.newVersion || "—")}</span></div>
+        <div class="font-mono">${fmtDate(r.date)}</div>
+        <div class="col-span-2">${rowSelect("status", r.status || "Not Started", REVISION_STATUS_OPTIONS, "max-w-[180px] ml-auto")}</div>
+      </div>
+      <div class="text-xs text-neutral-600"><span class="font-semibold uppercase text-neutral-400">Issue:</span> ${esc(r.issue || "—")}</div>
+      <div class="text-xs text-neutral-600"><span class="font-semibold uppercase text-neutral-400">Change required:</span> ${esc(r.changeRequired || "—")}</div>
+      ${rowInput("mfrResponse", r.mfrResponse, "w-full", "text", "Your response")}
+      ${baseInput(r)}
+    </div>`).join("");
+
+  overlay.innerHTML = `
+  <div class="bg-white w-full max-w-3xl h-full flex flex-col shadow-2xl mf-fade">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
+      <div>
+        <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400">Sample</div>
+        <div class="font-mono text-sm text-neutral-900">${esc(base.id)}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        ${statusPill(statusLight(base))}
+        <button data-close class="p-1.5 text-neutral-400 hover:text-neutral-700">${icon("x", 18)}</button>
+      </div>
+    </div>
+
+    <div class="flex px-5 border-b border-neutral-200 shrink-0 overflow-x-auto">
+      ${drawerTabBtn("overview", "clipboard", "Overview")}
+      ${drawerTabBtn("qc", "ruler", "Measurements", base.qc.length)}
+      ${drawerTabBtn("revisions", "files", "Revisions", base.revisions.length)}
+      ${drawerTabBtn("comms", "message", "Communication", base.comms.length)}
+      ${drawerTabBtn("files", "paperclip", "Files", base.files.length)}
+    </div>
+
+    <div class="flex-1 overflow-y-auto px-5 py-5" data-form>
+      <div data-pane="overview" class="space-y-6">
+        <div class="grid grid-cols-3 gap-3">
+          ${readField("Product Name", base.product, true)}
+          ${readField("Category", base.category)}
+          ${readField("SKU", base.sku)}
+          ${readField("Version", base.version)}
+          ${readField("Sample Type", base.type)}
+          ${readField("Fabric / Material", base.fabric, true)}
+          ${readField("GSM", base.gsm)}
+          ${readField("Composition", base.composition)}
+          ${readField("Color", base.color)}
+          ${readField("Size", base.size)}
+          ${readField("Fit", base.fit)}
+          ${readField("Request Date", fmtDate(base.requestDate))}
+          ${readField("Tech Pack", base.techPackId)}
+          ${base.refLink ? readField("Reference Link", base.refLink) : ""}
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Current Status", selectInput("status", base.status, STATUS_OPTIONS))}
+          ${field("Current Stage", selectInput("stage", base.stage, STAGE_OPTIONS))}
+          ${field("Target Date", dateInput("targetDate", base.targetDate))}
+          ${field("Next Action Due", dateInput("nextDue", base.nextDue))}
+          ${field("Courier / AWB", textInput("courierAwb", base.courierAwb))}
+          <div class="grid grid-cols-2 gap-3">
+            ${field("Date Sent", dateInput("dateSent", base.dateSent))}
+            ${field("Date Received", dateInput("dateReceived", base.dateReceived))}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Your Update", `<textarea data-f="mfrUpdate" class="${INPUT_CLS} min-h-[52px] resize-y">${esc(base.mfrUpdate || "")}</textarea>`)}
+          ${readField("Offcomfrt Feedback", base.feedback)}
+          ${field("Changes Required / Acknowledged", `<textarea data-f="changesRequired" class="${INPUT_CLS} min-h-[52px] resize-y">${esc(base.changesRequired || "")}</textarea>`)}
+          ${readField("Next Action (Offcomfrt)", base.nextAction)}
+          ${readField("Action Owner", base.actionOwner)}
+        </div>
+
+        <div class="grid grid-cols-3 gap-3 pt-4 border-t border-neutral-100">
+          ${readField("Approval Status", base.approvalStatus)}
+          ${readField("Approved By", base.approvedBy)}
+          ${readField("Approval Date", fmtDate(base.approvalDate))}
+          ${readField("Final Decision", base.finalDecision, true)}
+          ${readField("Notes", base.notes, true)}
+        </div>
+      </div>
+
+      <div data-pane="qc" class="hidden">
+        <div class="text-xs text-neutral-400 mb-3">Enter your actual measurements — Pass / Fail is calculated automatically against the spec.</div>
+        <div class="space-y-2" data-list="qc">${qcRows || emptyState("ruler", "No measurement points", "Offcomfrt will add measurement points to this sample.")}</div>
+      </div>
+
+      <div data-pane="revisions" class="hidden">
+        <div class="space-y-3" data-list="revisions">${revRows || emptyState("files", "No revisions", "Revision requests from Offcomfrt will appear here.")}</div>
+      </div>
+
+      <div data-pane="comms" class="hidden">
+        <div class="space-y-3" data-list="comms">${base.comms.map(commRowHtml).join("")}</div>
+        <button data-add="comms" class="mt-3 flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Log a message</button>
+      </div>
+
+      <div data-pane="files" class="hidden">
+        <div class="space-y-2" data-list="files">${base.files.map((f) => fileRowHtml(f, FILE_TYPE_OPTIONS)).join("")}</div>
+        <button data-add="files" class="mt-3 flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Attach a file link</button>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-5 py-4 border-t border-neutral-200 shrink-0">
+      <div class="text-xs text-rose-500" data-err></div>
+      <div class="flex gap-2">
+        <button data-close class="px-4 py-2 text-sm rounded-sm border border-neutral-300 hover:bg-neutral-50">Cancel</button>
+        <button data-save class="px-4 py-2 text-sm rounded-sm bg-neutral-900 text-white hover:bg-neutral-800">Save Changes</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  wireAdds(overlay, {
+    comms: () => commRowHtml({ id: uid("COM"), date: todayISO(), from: WS.manufacturerName, to: "Offcomfrt", message: "", response: "", decision: "", actionOwner: "", dueDate: "", status: "Open" }),
+    files: () => fileRowHtml({ id: uid("FL"), type: "Front Photo", description: "", link: "", uploadedBy: WS.manufacturerName, date: todayISO() }, FILE_TYPE_OPTIONS)
   });
 
-  // ── Data ──
-  window.mfLoadDesigns = async function () {
-    try {
-      const res = await mfApi('/designs');
-      if (res.status === 401) { mfLogout(); return; }
-      const data = await res.json();
-      designs = data.designs || [];
-      mfRenderStats();
-      mfRenderGrid();
-    } catch (e) {
-      mfToast('Failed to load designs', true);
-    }
-  };
+  const form = overlay.querySelector("[data-form]");
+  overlay.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => setDrawerTab(overlay, b.dataset.tab));
+  overlay.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => overlay.remove());
+  updateQcBadges(form.querySelector('[data-list="qc"]'));
+  form.addEventListener("input", (e) => {
+    const qcList = e.target.closest('[data-list="qc"]');
+    if (qcList) updateQcBadges(qcList);
+  });
 
-  function mfRenderStats() {
-    const total = designs.length;
-    const inProd = designs.filter((d) => d.status === 'in_production').length;
-    const completed = designs.filter((d) => d.status === 'completed').length;
-    const upcoming = designs.filter((d) => new Date(d.deadline) > new Date() && d.status !== 'completed').map((d) => new Date(d.deadline));
-    const nextDeadline = upcoming.length ? Math.min.apply(null, upcoming) : null;
-    const daysLeft = nextDeadline ? Math.max(0, Math.ceil((nextDeadline - new Date()) / 86400000)) : null;
-
-    const stats = [
-      { label: 'Total Designs', value: total },
-      { label: 'In Production', value: inProd },
-      { label: 'Completed', value: completed },
-      { label: 'Next Deadline', value: daysLeft === null ? '—' : daysLeft + 'd', raw: daysLeft }
-    ];
-    $('mfStats').innerHTML = stats.map((s, i) =>
-      '<div class="mf-stat" style="animation-delay:' + (i * 0.07) + 's">' +
-        '<div class="mf-stat-label">' + esc(s.label) + '</div>' +
-        '<div class="mf-stat-value" data-v="' + (s.raw == null ? s.value : s.raw) + '">' + (typeof s.value === 'number' ? '0' : s.value) + '</div>' +
-      '</div>'
-    ).join('');
-    document.querySelectorAll('#mfStats .mf-stat-value').forEach((el) => {
-      const v = el.getAttribute('data-v');
-      if (v === '—' || v === '') { el.textContent = '—'; return; }
-      const n = parseInt(v, 10);
-      if (!isNaN(n)) countUp(el, n); else el.textContent = v;
-    });
-  }
-
-  function mfRenderGrid() {
-    const grid = $('mfGrid');
-    if (!designs.length) {
-      grid.innerHTML = '<div class="mf-empty">No designs yet. Click "+ New Design" to submit your first one.</div>';
-      return;
-    }
-    grid.innerHTML = designs.map((d, i) =>
-      '<div class="mf-card" style="animation-delay:' + Math.min(i * 0.06, 0.5) + 's">' +
-        '<div class="mf-card-top">' +
-          '<div>' +
-            '<div class="mf-card-name">' + esc(d.design_name) + '</div>' +
-            (d.style_code ? '<div class="mf-card-style">' + esc(d.style_code) + '</div>' : '') +
-          '</div>' +
-          '<span class="mf-badge mf-' + esc(d.status) + '">' + esc(STATUS_LABELS[d.status] || d.status) + '</span>' +
-        '</div>' +
-        (d.description ? '<div class="mf-card-desc">' + esc(d.description) + '</div>' : '') +
-        '<div class="mf-card-meta">' +
-          '<div class="mf-meta-item"><div class="mf-label">Quantity</div><div class="mf-val">' + Number(d.quantity).toLocaleString('en-IN') + ' pcs</div></div>' +
-          '<div class="mf-meta-item"><div class="mf-label">Deadline</div><div class="mf-val">' + deadlineChip(d.deadline) + '</div></div>' +
-          '<div class="mf-meta-item"><div class="mf-label">Submitted</div><div class="mf-val">' + fmtDate(d.created_at) + '</div></div>' +
-        '</div>' +
-        (d.admin_note ? '<div class="mf-card-desc" style="margin-top:0.9rem;border-left:2px solid #2a2a2a;padding-left:0.9rem;">Admin: ' + esc(d.admin_note) + '</div>' : '') +
-        '<div class="mf-card-actions">' +
-          '<button onclick="mfEditDesign(\'' + d.id + '\')">Edit</button>' +
-          '<button class="mf-del" onclick="mfDeleteDesign(\'' + d.id + '\')">Delete</button>' +
-        '</div>' +
-      '</div>'
-    ).join('');
-  }
-
-  // ── Modal / CRUD ──
-  window.mfOpenModal = function (design) {
-    $('mfModalTitle').textContent = design ? 'Edit Design' : 'New Design';
-    $('mfDesignId').value = design ? design.id : '';
-    $('mfName').value = design ? design.design_name : '';
-    $('mfStyleCode').value = design ? (design.style_code || '') : '';
-    $('mfDesc').value = design ? (design.description || '') : '';
-    $('mfQty').value = design ? design.quantity : '';
-    $('mfDeadline').value = design ? String(design.deadline).slice(0, 10) : '';
-    $('mfModalOverlay').classList.remove('mf-hidden');
-    setTimeout(() => $('mfName').focus(), 50);
-  };
-
-  window.mfCloseModal = function () { $('mfModalOverlay').classList.add('mf-hidden'); };
-
-  window.mfEditDesign = function (id) {
-    const d = designs.find((x) => x.id === id);
-    if (d) mfOpenModal(d);
-  };
-
-  window.mfDeleteDesign = async function (id) {
-    if (!confirm('Delete this design permanently?')) return;
-    try {
-      const res = await mfApi('/designs/' + id, { method: 'DELETE' });
-      if (res.status === 401) { mfLogout(); return; }
-      if (!res.ok) throw new Error();
-      mfToast('Design deleted');
-      await mfLoadDesigns();
-    } catch (e) { mfToast('Delete failed', true); }
-  };
-
-  $('mfDesignForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const id = $('mfDesignId').value;
-    const payload = {
-      design_name: $('mfName').value.trim(),
-      style_code: $('mfStyleCode').value.trim(),
-      description: $('mfDesc').value.trim(),
-      quantity: parseInt($('mfQty').value, 10),
-      deadline: $('mfDeadline').value
+  overlay.querySelector("[data-save]").onclick = async () => {
+    const draft = mergeForm(base, form);
+    const errEl = overlay.querySelector("[data-err]");
+    // Only whitelisted fields are sent — the server enforces this too
+    const patch = {
+      status: draft.status, stage: draft.stage, targetDate: draft.targetDate, nextDue: draft.nextDue,
+      courierAwb: draft.courierAwb, dateSent: draft.dateSent, dateReceived: draft.dateReceived,
+      mfrUpdate: draft.mfrUpdate, changesRequired: draft.changesRequired,
+      qc: draft.qc, comms: draft.comms, files: draft.files, revisions: draft.revisions
     };
-    const btn = $('mfSaveBtn');
-    btn.disabled = true; btn.innerHTML = 'Saving<span class="mf-spinner"></span>';
     try {
-      const res = await mfApi('/designs' + (id ? '/' + id : ''), { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
-      if (res.status === 401) { mfLogout(); return; }
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Save failed');
-      mfToast(id ? 'Design updated' : 'Design submitted');
-      mfCloseModal();
-      await mfLoadDesigns();
-    } catch (e2) { mfToast(e2.message || 'Save failed', true); }
-    btn.disabled = false; btn.textContent = 'Save Design';
+      const body = await api("/samples/" + encodeURIComponent(base.id), { method: "PUT", body: JSON.stringify(patch) });
+      const i = WS.samples.findIndex((s) => s.id === base.id);
+      if (i >= 0) WS.samples[i] = body.record;
+      toast("Sample updated");
+      overlay.remove();
+      renderMain();
+    } catch (err) { errEl.textContent = err.message; }
+  };
+  setDrawerTab(overlay, "overview");
+}
+
+/* ============================== ORDER DRAWER (MFR) ============================== */
+function stageStepper(stage) {
+  const idx = PROD_STAGE_OPTIONS.indexOf(stage);
+  return `<div class="flex items-center overflow-x-auto pb-1">${PROD_STAGE_OPTIONS.map((s, i) =>
+    `<div class="flex items-center shrink-0">
+      <div class="flex flex-col items-center gap-1">
+        <div class="w-2.5 h-2.5 rounded-full ${i < idx ? "bg-neutral-900" : i === idx ? "bg-emerald-500" : "bg-neutral-200"}"></div>
+        <div class="text-[9px] whitespace-nowrap ${i === idx ? "font-bold text-neutral-900" : "text-neutral-400"}">${esc(s)}</div>
+      </div>
+      ${i < PROD_STAGE_OPTIONS.length - 1 ? `<div class="w-8 h-px mb-4 ${i < idx ? "bg-neutral-900" : "bg-neutral-200"}"></div>` : ""}
+    </div>`).join("")}</div>`;
+}
+
+function openOrderDrawer(initial) {
+  const base = JSON.parse(JSON.stringify(initial));
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-[80] bg-black/40 flex justify-end";
+
+  overlay.innerHTML = `
+  <div class="bg-white w-full max-w-3xl h-full flex flex-col shadow-2xl mf-fade">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
+      <div>
+        <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400">Production Order</div>
+        <div class="font-mono text-sm text-neutral-900">${esc(base.id)}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        ${statusPill(productionLight(base))}
+        <button data-close class="p-1.5 text-neutral-400 hover:text-neutral-700">${icon("x", 18)}</button>
+      </div>
+    </div>
+
+    <div class="px-5 py-3 border-b border-neutral-200 bg-neutral-50" data-stepper>${stageStepper(base.currentStage)}</div>
+
+    <div class="flex px-5 border-b border-neutral-200 shrink-0 overflow-x-auto">
+      ${drawerTabBtn("overview", "clipboard", "Overview")}
+      ${drawerTabBtn("qc", "ruler", "QC Checkpoints", base.qc.length)}
+      ${drawerTabBtn("comms", "message", "Communication", base.comms.length)}
+      ${drawerTabBtn("files", "paperclip", "Files", base.files.length)}
+    </div>
+
+    <div class="flex-1 overflow-y-auto px-5 py-5" data-form>
+      <div data-pane="overview" class="space-y-6">
+        <div class="grid grid-cols-3 gap-3">
+          ${readField("Product Name", base.product, true)}
+          ${readField("Category", base.category)}
+          ${readField("SKU", base.sku)}
+          ${readField("Linked Sample", base.sampleId)}
+          ${readField("PO Date", fmtDate(base.poDate))}
+          ${readField("Expected Delivery", fmtDate(base.expectedDelivery))}
+          ${field("Actual Delivery", dateInput("actualDelivery", base.actualDelivery))}
+        </div>
+
+        <div class="pt-4 border-t border-neutral-100">
+          <div class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400 mb-2">Quantity Breakdown</div>
+          ${(base.breakdown || []).length === 0 ? '<div class="text-xs text-neutral-400">No size/colour breakdown provided.</div>' :
+            `<table class="w-full text-xs border border-neutral-200 rounded-sm">
+              <thead><tr class="bg-neutral-50 text-[10px] uppercase tracking-wide text-neutral-400">
+                <th class="text-left font-semibold px-3 py-2">Size</th>
+                <th class="text-left font-semibold px-3 py-2">Colour</th>
+                <th class="text-right font-semibold px-3 py-2">Qty</th>
+              </tr></thead>
+              <tbody>${base.breakdown.map((r) => `<tr class="border-t border-neutral-100">
+                <td class="px-3 py-1.5 font-mono">${esc(r.size || "")}</td>
+                <td class="px-3 py-1.5">${esc(r.color || "")}</td>
+                <td class="px-3 py-1.5 text-right font-mono">${Number(r.qty || 0).toLocaleString("en-IN")}</td>
+              </tr>`).join("")}
+              <tr class="border-t border-neutral-200 font-bold">
+                <td class="px-3 py-1.5" colspan="2">Total</td>
+                <td class="px-3 py-1.5 text-right font-mono">${orderQty(base).toLocaleString("en-IN")} pcs</td>
+              </tr></tbody>
+            </table>`}
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100">
+          ${field("Current Stage", selectInput("currentStage", base.currentStage, PROD_STAGE_OPTIONS))}
+          ${readField("Next Action (Offcomfrt)", base.nextAction)}
+          ${field("Shipping Method", textInput("shippingMethod", base.shippingMethod))}
+          ${field("Tracking Number", textInput("trackingNumber", base.trackingNumber))}
+          ${readField("Notes", base.notes, true)}
+        </div>
+      </div>
+
+      <div data-pane="qc" class="hidden">
+        <div class="text-xs text-neutral-400 mb-3">Log inline, pre-final, and final random inspections for this order.</div>
+        <div class="space-y-3" data-list="qc">${base.qc.map((row) => `
+          <div data-row class="border border-neutral-200 rounded-sm p-3 space-y-2">
+            <div class="grid grid-cols-4 gap-2">
+              ${rowSelect("checkpoint", row.checkpoint || "Inline Inspection", PROD_QC_CHECKPOINTS, "")}
+              ${rowInput("date", row.date || "", "", "date")}
+              ${rowInput("inspector", row.inspector, "", "text", "Inspector")}
+              ${rowSelect("result", row.result || "Pending", PROD_QC_RESULT_OPTIONS, "")}
+            </div>
+            <div class="flex gap-2 items-start">
+              ${rowInput("defectRate", row.defectRate ?? "", "w-32", "number", "Defect %")}
+              ${rowInput("comments", row.comments, "flex-1", "text", "Comments")}
+            </div>
+            ${baseInput(row)}
+          </div>`).join("")}</div>
+        <button data-add="qc" class="mt-3 flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Log an inspection</button>
+      </div>
+
+      <div data-pane="comms" class="hidden">
+        <div class="space-y-3" data-list="comms">${base.comms.map(commRowHtml).join("")}</div>
+        <button data-add="comms" class="flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Log a message</button>
+      </div>
+
+      <div data-pane="files" class="hidden">
+        <div class="space-y-2" data-list="files">${base.files.map((f) => fileRowHtml(f, PROD_FILE_TYPE_OPTIONS)).join("")}</div>
+        <button data-add="files" class="flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900">${icon("plus", 14)} Attach a file link</button>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-5 py-4 border-t border-neutral-200 shrink-0">
+      <div class="text-xs text-rose-500" data-err></div>
+      <div class="flex gap-2">
+        <button data-close class="px-4 py-2 text-sm rounded-sm border border-neutral-300 hover:bg-neutral-50">Cancel</button>
+        <button data-save class="px-4 py-2 text-sm rounded-sm bg-neutral-900 text-white hover:bg-neutral-800">Save Changes</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  wireAdds(overlay, {
+    qc: () => `<div data-row class="border border-neutral-200 rounded-sm p-3 space-y-2">
+      <div class="grid grid-cols-4 gap-2">
+        ${rowSelect("checkpoint", "Inline Inspection", PROD_QC_CHECKPOINTS, "")}
+        ${rowInput("date", todayISO(), "", "date")}
+        ${rowInput("inspector", "", "", "text", "Inspector")}
+        ${rowSelect("result", "Pending", PROD_QC_RESULT_OPTIONS, "")}
+      </div>
+      <div class="flex gap-2 items-start">
+        ${rowInput("defectRate", "", "w-32", "number", "Defect %")}
+        ${rowInput("comments", "", "flex-1", "text", "Comments")}
+      </div>
+      ${baseInput({})}
+    </div>`,
+    comms: () => commRowHtml({ id: uid("COM"), date: todayISO(), from: WS.manufacturerName, to: "Offcomfrt", message: "", response: "", decision: "", actionOwner: "", dueDate: "", status: "Open" }),
+    files: () => fileRowHtml({ id: uid("FL"), type: "Photo", description: "", link: "", uploadedBy: WS.manufacturerName, date: todayISO() }, PROD_FILE_TYPE_OPTIONS)
   });
 
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') mfCloseModal(); });
-})();
+  const form = overlay.querySelector("[data-form]");
+  overlay.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => setDrawerTab(overlay, b.dataset.tab));
+  overlay.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => overlay.remove());
+  form.addEventListener("change", (e) => {
+    if (e.target.dataset.f === "currentStage") overlay.querySelector("[data-stepper]").innerHTML = stageStepper(e.target.value);
+  });
+
+  overlay.querySelector("[data-save]").onclick = async () => {
+    const draft = mergeForm(base, form);
+    const errEl = overlay.querySelector("[data-err]");
+    const patch = {
+      currentStage: draft.currentStage, trackingNumber: draft.trackingNumber,
+      shippingMethod: draft.shippingMethod, actualDelivery: draft.actualDelivery,
+      qc: draft.qc, comms: draft.comms, files: draft.files
+    };
+    try {
+      const body = await api("/orders/" + encodeURIComponent(base.id), { method: "PUT", body: JSON.stringify(patch) });
+      const i = WS.productionOrders.findIndex((o) => o.id === base.id);
+      if (i >= 0) WS.productionOrders[i] = body.record;
+      toast("Order updated");
+      overlay.remove();
+      renderMain();
+    } catch (err) { errEl.textContent = err.message; }
+  };
+  setDrawerTab(overlay, "overview");
+}
+
+/* ============================== TECH PACK QUESTIONS MODAL ============================== */
+function openQuestionsModal(tp) {
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4";
+  overlay.innerHTML = `
+  <div class="bg-white w-full max-w-lg rounded-sm border border-neutral-200 mf-fade">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
+      <div>
+        <div class="text-sm font-semibold">Questions for ${esc(tp.id)}</div>
+        <div class="text-[11px] text-neutral-400">${esc(tp.product || "")} · ${esc(tp.status || "")}</div>
+      </div>
+      <button data-close class="text-neutral-400 hover:text-neutral-700">${icon("x", 18)}</button>
+    </div>
+    <div class="p-5">
+      ${tp.link ? `<a href="${esc(tp.link)}" target="_blank" rel="noreferrer" class="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-700 border border-neutral-300 rounded-sm px-2.5 py-1.5 hover:bg-neutral-50 mb-3">${icon("paperclip", 13)} Open tech pack</a>` : ""}
+      <label class="flex flex-col gap-1">
+        <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-400">Your Questions</span>
+        <textarea id="tpQuestions" class="${INPUT_CLS} min-h-[120px] resize-y">${esc(tp.manufacturerQuestions || "")}</textarea>
+      </label>
+    </div>
+    <div class="flex items-center justify-between px-5 py-4 border-t border-neutral-200">
+      <div class="text-xs text-rose-500" data-err></div>
+      <div class="flex gap-2">
+        <button data-close class="px-4 py-2 text-sm rounded-sm border border-neutral-300 hover:bg-neutral-50">Cancel</button>
+        <button data-save class="px-4 py-2 text-sm rounded-sm bg-neutral-900 text-white hover:bg-neutral-800">Save Questions</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => overlay.remove());
+  overlay.querySelector("[data-save]").onclick = async () => {
+    try {
+      const body = await api("/techpacks/" + encodeURIComponent(tp.id), {
+        method: "PUT",
+        body: JSON.stringify({ manufacturerQuestions: document.getElementById("tpQuestions").value })
+      });
+      const i = WS.techPacks.findIndex((t) => t.id === tp.id);
+      if (i >= 0) WS.techPacks[i] = body.record;
+      toast("Questions saved");
+      overlay.remove();
+      renderMain();
+    } catch (err) { overlay.querySelector("[data-err]").textContent = err.message; }
+  };
+}
+
+/* ============================== BOOT ============================== */
+async function boot() {
+  try {
+    const body = await api("/workspace");
+    WS = body.workspace;
+    WS.samples = WS.samples || []; WS.productionOrders = WS.productionOrders || [];
+    WS.techPacks = WS.techPacks || [];
+    renderShell();
+  } catch (err) {
+    if (err.status === 401 || err.status === 503) { TOKEN = null; localStorage.removeItem(TOKEN_KEY); renderLogin(); }
+    else {
+      document.getElementById("app").innerHTML = `<div class="min-h-screen flex items-center justify-center"><div class="text-sm text-neutral-500">${esc(err.message)}</div></div>`;
+    }
+  }
+}
+if (TOKEN) boot(); else renderLogin();
 </script>
 </body>
 </html>
