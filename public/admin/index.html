@@ -2702,7 +2702,7 @@
                 <td>
                     ${carrierBadge(req)}
                 </td>
-                <td><span class="badge badge-${req.status.replace(/_/g, '-')}">${getStatusLabel(req.status)}</span>${refundBadge}</td>
+                <td><span class="badge badge-${req.status.replace(/_/g, '-')}" ${req.status === 'rejected' && req.adminNotes ? `title="Rejection reason: ${escapeHtml(req.adminNotes)}"` : ''}>${getStatusLabel(req.status)}</span>${refundBadge}</td>
                 <td>
                     <button onclick="viewDetails('${req.requestId}')" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
                         View
@@ -2808,6 +2808,14 @@
             <div id="trackingPipeline" class="tracking-pipeline hidden">
                 ${buildTrackingPipeline(data)}
             </div>
+
+            ${data.status === 'rejected' ? `
+            <div style="background: #fee2e2; border-left: 4px solid #dc2626; padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
+                <p style="font-weight: 600; color: #991b1b; margin-bottom: 0.5rem;">✗ Rejection Reason</p>
+                <p style="font-size: 0.9rem; color: #7f1d1d; white-space: pre-wrap; margin: 0;">${escapeHtml(data.adminNotes || 'No reason recorded.')}</p>
+                ${data.rejectedAt ? `<p style="font-size: 0.8rem; color: #b91c1c; margin: 0.5rem 0 0 0;">Rejected on ${formatDateIST(data.rejectedAt)}</p>` : ''}
+            </div>
+            ` : ''}
 
             <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
                 <p style="font-weight: 500; margin-bottom: 0.5rem;">Customer Information</p>
@@ -4095,34 +4103,78 @@
         }
     }
 
-    async function rejectRequest() {
-        const notes = prompt('Please provide a reason for rejection:');
-        if (!notes) return;
+    function rejectRequest() {
+        openRejectionReasonModal(currentRequest);
+    }
 
-        try {
-            const endpoint = currentRequest.type === 'return' ? 'reject-return' : 'reject-exchange';
-            const response = await fetch(`${API_URL}/admin/${endpoint}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
-                },
-                body: JSON.stringify({
-                    requestId: currentRequest.requestId,
-                    notes
-                })
-            });
+    // Ask the admin for a mandatory rejection reason; the reason is stored on the
+    // request (adminNotes) and displayed on the request details for future reference.
+    function openRejectionReasonModal(request) {
+        const existing = document.getElementById('rejectReasonModal');
+        if (existing) existing.remove();
 
-            if (response.ok) {
-                alert('Request rejected');
-                closeModal();
-                loadRequests();
-            } else {
-                alert('Failed to reject request');
+        const overlay = document.createElement('div');
+        overlay.id = 'rejectReasonModal';
+        overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+        overlay.innerHTML = `
+            <div style="background: white; border-radius: 12px; padding: 1.5rem; width: 90%; max-width: 440px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+                <h3 style="margin: 0 0 0.25rem 0; font-size: 1.05rem;">Reject ${escapeHtml(request.requestId)}?</h3>
+                <p style="font-size: 0.8rem; color: #6b7280; margin: 0 0 0.75rem 0;">The reason is saved on the request and shown to admins for future reference.</p>
+                <textarea id="rejectReasonInput" rows="3" placeholder="e.g. Product shows signs of use, tags removed, outside return window…"
+                    style="width: 100%; padding: 0.75rem; border: 1px solid var(--gray-medium); border-radius: 8px; min-height: 80px; resize: vertical; font: inherit; box-sizing: border-box;"></textarea>
+                <p id="rejectReasonError" style="display: none; color: #dc2626; font-size: 0.8rem; margin: 0.5rem 0 0 0;">Please enter a rejection reason before continuing.</p>
+                <div style="display: flex; gap: 0.75rem; margin-top: 1rem; justify-content: flex-end;">
+                    <button id="rejectReasonCancel" class="btn btn-secondary" style="padding: 0.6rem 1.2rem;">Cancel</button>
+                    <button id="rejectReasonConfirm" style="padding: 0.6rem 1.2rem; background: #dc2626; border: none; color: white; border-radius: 8px; cursor: pointer; font-weight: 600;">Reject Request</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const close = () => overlay.remove();
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        document.getElementById('rejectReasonCancel').onclick = close;
+
+        const confirmBtn = document.getElementById('rejectReasonConfirm');
+        confirmBtn.onclick = async () => {
+            const reason = document.getElementById('rejectReasonInput').value.trim();
+            if (!reason) {
+                document.getElementById('rejectReasonError').style.display = 'block';
+                return;
             }
-        } catch (error) {
-            alert('Failed to reject request');
-        }
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Rejecting…';
+            try {
+                const endpoint = request.type === 'return' ? 'reject-return' : 'reject-exchange';
+                const response = await fetch(`${API_URL}/admin/${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        requestId: request.requestId,
+                        notes: reason
+                    })
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (response.ok) {
+                    close();
+                    alert('Request rejected');
+                    closeModal();
+                    loadRequests();
+                } else {
+                    alert(data.error || 'Failed to reject request');
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Reject Request';
+                }
+            } catch (error) {
+                alert('Failed to reject request');
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Reject Request';
+            }
+        };
+        document.getElementById('rejectReasonInput').focus();
     }
 
     async function undoRejection() {

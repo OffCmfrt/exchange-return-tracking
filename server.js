@@ -7927,9 +7927,16 @@ app.post(['/api/admin/reject', '/api/admin/reject-return', '/api/admin/reject-ex
     try {
         const { requestId, notes } = req.body;
 
+        // A rejection reason is mandatory — it stays on the request so admins
+        // can see why it was rejected when reviewing it later.
+        const rejectionReason = (notes || '').toString().trim();
+        if (!rejectionReason) {
+            return res.status(400).json({ error: 'A rejection reason is required' });
+        }
+
         const request = await updateRequestStatus(requestId, {
             status: 'rejected',
-            adminNotes: notes
+            adminNotes: rejectionReason
         });
 
         if (!request) {
