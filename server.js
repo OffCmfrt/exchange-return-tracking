@@ -13648,11 +13648,12 @@ app.post('/api/auth/otp/verify', otpLimiter, async (req, res) => {
 // ==================== MANUFACTURE STUDIO (CONTROL TOWER) ====================
 // Shared product-development workspace: admin manages everything at
 // /manufacture/admin (Dashboard / Samples / Production / Manufacturers /
-// Tech Packs); the manufacturer (Shopify page: public/page.manufacture.liquid)
-// sees and updates only the records assigned to their name. Separate logins:
-// manufacturer uses MANUFACTURE_PASSWORD; which manufacturer they are is set
-// from the admin dashboard ("Portal Access" flag on a Manufacturers-tab card,
-// stored as manufacturers.portal_access). Admin uses the existing admin JWT.
+// Tech Packs); manufacturers (Shopify page: public/page.manufacture.liquid)
+// see and update only the records assigned to their name. Multiple
+// manufacturers are supported, same pattern as influencer portals: the admin
+// enables "Portal Access" on a manufacturer, which mints a private link
+// (?token=...) stored in manufacturers.link_token. The token exchanges for a
+// JWT carrying the manufacturer's name; all portal routes are scoped by it.
 const manufactureDB = require('./config/manufacture-db');
 
 const MFR_KINDS = { manufacturers: 'manufacturers', techpacks: 'techPacks', samples: 'samples', orders: 'orders' };
@@ -13661,30 +13662,20 @@ const MFR_KINDS = { manufacturers: 'manufacturers', techpacks: 'techPacks', samp
 const MFR_SAMPLE_FIELDS = ['status', 'stage', 'mfrUpdate', 'changesRequired', 'courierAwb', 'dateSent', 'dateReceived', 'targetDate', 'nextDue', 'qc', 'comms', 'files', 'revisions'];
 const MFR_ORDER_FIELDS = ['currentStage', 'trackingNumber', 'shippingMethod', 'actualDelivery', 'qc', 'comms', 'files'];
 
-// Manufacturer auth middleware (JWT with role 'manufacturer'). The linked
-// manufacturer is resolved from the DB (portal_access flag set in the admin
-// dashboard) on every request so changes there take effect immediately.
-async function authenticateManufacturer(req, res, next) {
+// Manufacturer auth middleware (JWT with role 'manufacturer'; the JWT payload
+// carries the manufacturer's name, set when their link token was exchanged)
+function authenticateManufacturer(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     const decoded = verifyToken(authHeader.substring(7));
-    if (!decoded || decoded.role !== 'manufacturer') {
-        return res.status(401).json({ error: 'Invalid or expired token' });
+    if (!decoded || decoded.role !== 'manufacturer' || !decoded.manufacturerName) {
+        return res.status(401).json({ error: 'Invalid or expired link. Ask Offcomfrt for your portal link.' });
     }
-    try {
-        const linked = await manufactureDB.getPortalManufacturer();
-        if (!linked || !linked.name) {
-            return res.status(503).json({ error: 'No manufacturer is linked to the portal yet. Link one from the Manufacturers tab in the admin dashboard.' });
-        }
-        req.user = decoded;
-        req.manufacturerName = linked.name;
-        next();
-    } catch (error) {
-        console.error('[Manufacture] Portal lookup error:', error.message);
-        res.status(500).json({ error: 'Failed to load portal configuration' });
-    }
+    req.user = decoded;
+    req.manufacturerName = decoded.manufacturerName;
+    next();
 }
 
 // Merge a manufacturer-submitted list (qc/comms/files/revisions) into the
@@ -13720,33 +13711,28 @@ function mergeMfrLists(existing, incoming, { rowWhitelist = null } = {}) {
     return merged;
 }
 
-// POST /api/manufacture/login - manufacturer password login (separate from admin)
+// POST /api/manufacture/login - exchange a portal link token (?token=...)
+// plus the manufacturer's portal password for a session JWT. Each manufacturer
+// with Portal Access has their own link + password pair.
 app.post('/api/manufacture/login', async (req, res) => {
-    const { password } = req.body || {};
-    if (!password) return res.status(400).json({ error: 'Password required' });
+    const { token, password } = req.body || {};
+    if (!token || !password) return res.status(400).json({ error: 'Portal link and password are required' });
 
-    const expected = process.env.MANUFACTURE_PASSWORD;
-    if (!expected) {
-        return res.status(503).json({ error: 'Manufacture portal is not configured' });
-    }
-    if (password !== expected) {
-        trackSuspicious(req.ip, 'failed_manufacture_login');
-        return res.status(401).json({ error: 'Invalid password' });
-    }
-
-    let manufacturerName = null;
     try {
-        const linked = await manufactureDB.getPortalManufacturer();
-        manufacturerName = linked ? linked.name : null;
+        const manufacturer = await manufactureDB.getByLinkToken(String(token).trim());
+        if (!manufacturer || !manufacturer.portalPassword || String(password) !== manufacturer.portalPassword) {
+            trackSuspicious(req.ip, 'failed_manufacture_login');
+            return res.status(401).json({ error: 'Invalid link or password' });
+        }
+        const sessionToken = generateToken({ role: 'manufacturer', manufacturerName: manufacturer.name, timestamp: Date.now() });
+        res.json({ success: true, token: sessionToken, role: 'manufacturer', manufacturer_name: manufacturer.name });
     } catch (error) {
-        console.error('[Manufacture] Login portal lookup error:', error.message);
+        console.error('[Manufacture] Login error:', error.message);
+        res.status(500).json({ error: 'Login failed. Please try again.' });
     }
-
-    const token = generateToken({ role: 'manufacturer', timestamp: Date.now() });
-    res.json({ success: true, token, role: 'manufacturer', manufacturer_name: manufacturerName });
 });
 
-// ---------- Manufacturer (scoped to the portal-linked manufacturer) ----------
+// ---------- Manufacturers (scoped by the JWT's manufacturer name) ----------
 
 // GET /api/manufacture/workspace - the manufacturer's slice of the workspace
 app.get('/api/manufacture/workspace', authenticateManufacturer, async (req, res) => {
@@ -13848,6 +13834,18 @@ app.get('/api/manufacture/admin/workspace', authenticateAdmin, async (req, res) 
     }
 });
 
+// When Portal Access is enabled: require a portal password and mint a private
+// link token if there isn't one (toggling off/on reuses the same link)
+function validatePortalAccess(kind, record) {
+    if (kind !== 'manufacturers' || !record.portalAccess) return;
+    if (!String(record.portalPassword || '').trim()) {
+        const err = new Error('Portal password is required when Portal Access is enabled');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!String(record.linkToken || '').trim()) record.linkToken = crypto.randomBytes(16).toString('hex');
+}
+
 // POST /api/manufacture/admin/:kind - create a record (kind: manufacturers | techpacks | samples | orders)
 app.post('/api/manufacture/admin/:kind', authenticateAdmin, async (req, res) => {
     const kind = MFR_KINDS[req.params.kind];
@@ -13862,13 +13860,11 @@ app.post('/api/manufacture/admin/:kind', authenticateAdmin, async (req, res) => 
             const dup = await manufactureDB.getById(kind, id);
             if (dup) return res.status(409).json({ error: `An entry with ID "${id}" already exists` });
         }
-        // Portal link: linking a manufacturer unlinks any previously linked one
-        if (kind === 'manufacturers' && !!record.portalAccess) {
-            await manufactureDB.clearPortalAccess();
-        }
+        validatePortalAccess(kind, record);
         const created = await manufactureDB.insert(kind, record);
         res.status(201).json({ success: true, record: created });
     } catch (error) {
+        if (error.statusCode === 400) return res.status(400).json({ error: error.message });
         if (error.code === '23505') return res.status(409).json({ error: 'An entry with that ID/name already exists' });
         console.error('[Manufacture] Admin create error:', error.message);
         res.status(500).json({ error: 'Failed to create record' });
@@ -13886,14 +13882,12 @@ app.put('/api/manufacture/admin/:kind', authenticateAdmin, async (req, res) => {
         if (kind === 'manufacturers' && !String(record.name || '').trim()) {
             return res.status(400).json({ error: 'Manufacturer name is required' });
         }
-        // Portal link: linking a manufacturer unlinks any previously linked one
-        if (kind === 'manufacturers' && !!record.portalAccess) {
-            await manufactureDB.clearPortalAccess(id);
-        }
+        validatePortalAccess(kind, record);
         const row = manufactureDB.toDb(kind, record, { partial: true });
         const saved = await manufactureDB.upsert(kind, id, row);
         res.json({ success: true, record: saved });
     } catch (error) {
+        if (error.statusCode === 400) return res.status(400).json({ error: error.message });
         if (error.code === '23505') return res.status(409).json({ error: 'An entry with that name already exists' });
         console.error('[Manufacture] Admin update error:', error.message);
         res.status(500).json({ error: 'Failed to update record' });
@@ -13912,6 +13906,22 @@ app.delete('/api/manufacture/admin/:kind', authenticateAdmin, async (req, res) =
     } catch (error) {
         console.error('[Manufacture] Admin delete error:', error.message);
         res.status(500).json({ error: 'Failed to delete record' });
+    }
+});
+
+// POST /api/manufacture/admin/manufacturers/:id/regenerate-link - mint a fresh
+// portal link token (the previous link stops working immediately)
+app.post('/api/manufacture/admin/manufacturers/:id/regenerate-link', authenticateAdmin, async (req, res) => {
+    try {
+        const existing = await manufactureDB.getById('manufacturers', req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Manufacturer not found' });
+        const saved = await manufactureDB.upsert('manufacturers', existing.id, {
+            link_token: crypto.randomBytes(16).toString('hex')
+        });
+        res.json({ success: true, record: saved });
+    } catch (error) {
+        console.error('[Manufacture] Admin regenerate link error:', error.message);
+        res.status(500).json({ error: 'Failed to regenerate portal link' });
     }
 });
 

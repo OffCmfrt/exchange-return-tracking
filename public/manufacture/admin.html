@@ -60,6 +60,7 @@ const ICONS = {
   message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
   ruler: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
   paperclip: '<path d="m16 6-8.414 8.414a2 2 0 0 0 2.828 2.828L18.828 8.828a4 4 0 0 0-5.656-5.656L4.757 11.586a6 6 0 0 0 8.486 8.486L21 12.343"/>',
+  link: '<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>',
   dashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
   pencil: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>',
@@ -202,6 +203,16 @@ function toast(msg, kind = "ok") {
   el.innerHTML = icon(kind === "error" ? "alert" : "check", 14, kind === "error" ? "text-rose-400" : "text-emerald-400") + esc(msg);
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2600);
+}
+/* Copy a manufacturer's portal link (?token=...). It gets appended to the
+   Shopify portal page URL — each manufacturer has their own private link. */
+function copyPortalLink(m) {
+  if (!m || !m.linkToken) { toast("No portal link yet — enable Portal Access and save", "error"); return; }
+  const suffix = "?token=" + m.linkToken;
+  const fallback = () => { window.prompt("Append this to your manufacturer portal page URL:", suffix); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(suffix).then(() => toast("Portal link copied — paste it after your portal page URL")).catch(fallback);
+  } else fallback();
 }
 function confirmDialog(title, message, onConfirm) {
   const el = document.createElement("div");
@@ -754,6 +765,7 @@ function renderManufacturers(main) {
                 <div class="text-xs text-neutral-400">${esc(m.location || "")}</div>
               </div>
               <div class="flex gap-1">
+                ${m.portalAccess && m.linkToken ? `<button data-link="${esc(m.id)}" title="Copy portal link" class="p-1 text-neutral-400 hover:text-neutral-800">${icon("link", 13)}</button>` : ""}
                 <button data-edit="${esc(m.id)}" class="p-1 text-neutral-400 hover:text-neutral-800">${icon("pencil", 13)}</button>
                 <button data-del="${esc(m.id)}" class="p-1 text-neutral-400 hover:text-rose-600">${icon("trash", 13)}</button>
               </div>
@@ -772,9 +784,13 @@ function renderManufacturers(main) {
   document.getElementById("mNew").onclick = () => openManufacturerModal({
     id: "", name: "", location: "", contact: "", phone: "", email: "", categories: "",
     fabricCapabilities: "", moq: "", sampleLeadTime: "", bulkLeadTime: "",
-    qualityRating: "", communicationRating: "", notes: "", portalAccess: false
+    qualityRating: "", communicationRating: "", notes: "", portalAccess: false, portalPassword: ""
   });
   main.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => openManufacturerModal(manufacturers.find((m) => m.id === b.dataset.edit)));
+  main.querySelectorAll("[data-link]").forEach((b) => b.onclick = () => {
+    const m = manufacturers.find((x) => x.id === b.dataset.link);
+    copyPortalLink(m);
+  });
   main.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => {
     const m = manufacturers.find((x) => x.id === b.dataset.del);
     confirmDialog("Delete this manufacturer?", `${m.name} will be removed. Samples already assigned to them will keep the name as text.`, async () => {
@@ -1383,7 +1399,22 @@ function openManufacturerModal(initial) {
       ${field("Quality Rating (1-5)", `<input data-f="qualityRating" type="number" min="1" max="5" value="${esc(base.qualityRating ?? "")}" class="${INPUT_CLS}">`)}
       ${field("Communication Rating (1-5)", `<input data-f="communicationRating" type="number" min="1" max="5" value="${esc(base.communicationRating ?? "")}" class="${INPUT_CLS}">`)}
       ${field("Notes", textArea("notes", base.notes), true)}
-      ${field("Portal Access", `<label class="flex items-start gap-2 text-xs text-neutral-600 cursor-pointer leading-relaxed"><input data-f="portalAccess" type="checkbox" ${base.portalAccess ? "checked" : ""} class="mt-0.5 accent-neutral-900"> Linked to the manufacturer portal — the Shopify-page login sees and edits only this manufacturer's samples and orders. Only one manufacturer can be linked; linking this one unlinks any other.</label>`, true)}
+      ${field("Portal Access", `<label class="flex items-start gap-2 text-xs text-neutral-600 cursor-pointer leading-relaxed"><input data-f="portalAccess" type="checkbox" ${base.portalAccess ? "checked" : ""} class="mt-0.5 accent-neutral-900"> Portal login enabled — this manufacturer gets a private portal link (like influencers) and sees/edits only the samples and orders assigned to their name. Any number of manufacturers can have portal access.</label>`, true)}
+      <div data-portal-panel class="col-span-2 border border-neutral-200 rounded-sm bg-neutral-50 p-3 ${base.portalAccess ? "" : "hidden"}">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-500">Portal Link</span>
+          <div class="flex gap-1.5">
+            <button type="button" data-copy-link class="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider border border-neutral-300 rounded-sm px-2 py-1 hover:bg-neutral-100">${icon("link", 11)} Copy Link</button>
+            ${base.id ? `<button type="button" data-regen class="text-[10px] font-semibold uppercase tracking-wider border border-neutral-300 rounded-sm px-2 py-1 hover:bg-neutral-100">Regenerate</button>` : ""}
+          </div>
+        </div>
+        <div data-token class="font-mono text-[11px] text-neutral-700 break-all">${base.linkToken ? "?token=" + esc(base.linkToken) : "Generated on first save"}</div>
+        <label class="block mt-2">
+          <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-500">Portal Password</span>
+          <input data-f="portalPassword" type="text" value="${esc(base.portalPassword ?? "")}" placeholder="Their login password" autocomplete="new-password" class="${INPUT_CLS} mt-1 font-mono">
+        </label>
+        <div class="text-[10px] text-neutral-400 mt-1.5">They sign in with their private link + this password. Regenerating the link invalidates the old one immediately.</div>
+      </div>
     </div>
     <div class="flex justify-end gap-2 px-5 py-4 border-t border-neutral-200">
       <div class="flex-1 text-xs text-rose-500" data-err></div>
@@ -1394,10 +1425,26 @@ function openManufacturerModal(initial) {
   document.body.appendChild(overlay);
   const form = overlay.querySelector("[data-form]");
   overlay.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => overlay.remove());
+  // Portal link panel: visibility follows the checkbox; copy/regenerate actions
+  const panel = overlay.querySelector("[data-portal-panel]");
+  form.querySelector('[data-f="portalAccess"]').onchange = (e) => panel.classList.toggle("hidden", !e.target.checked);
+  overlay.querySelector("[data-copy-link]").onclick = () => copyPortalLink({ linkToken: base.linkToken });
+  const regenBtn = overlay.querySelector("[data-regen]");
+  if (regenBtn) regenBtn.onclick = async () => {
+    try {
+      setSaving(true);
+      const body = await api("/api/manufacture/admin/manufacturers/" + encodeURIComponent(base.id) + "/regenerate-link", { method: "POST" });
+      base.linkToken = body.record.linkToken;
+      upsertIn(WS.manufacturers, body.record);
+      overlay.querySelector("[data-token]").textContent = "?token=" + base.linkToken;
+      toast("New portal link generated — old link stopped working");
+    } catch (err) { toast(err.message, "error"); } finally { setSaving(false); }
+  };
   overlay.querySelector("[data-save]").onclick = async () => {
     const draft = mergeForm(base, form);
     const errEl = overlay.querySelector("[data-err]");
     if (!draft.name.trim()) { errEl.textContent = "Manufacturer name is required"; return; }
+    if (draft.portalAccess && !String(draft.portalPassword || "").trim()) { errEl.textContent = "Portal password is required when Portal Access is enabled"; return; }
     try {
       setSaving(true);
       const isNew = !base.id;

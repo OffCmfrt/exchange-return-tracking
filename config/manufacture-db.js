@@ -24,7 +24,7 @@ const TABLES = {
             categories: 'text', fabric_capabilities: 'text', moq: 'text',
             sample_lead_time: 'text', bulk_lead_time: 'text',
             quality_rating: 'int', communication_rating: 'int', notes: 'text',
-            portal_access: 'bool'
+            portal_access: 'bool', link_token: 'text', portal_password: 'text'
         }
     },
     techPacks: {
@@ -166,30 +166,24 @@ async function remove(kind, id) {
 }
 
 // ---------------------------------------------------------------------------
-// Portal link (admin dashboard picks which manufacturer owns the portal login)
+// Portal links (each manufacturer with portal_access gets a private
+// ?token=... link, same pattern as influencer portals)
 // ---------------------------------------------------------------------------
 
-// The single manufacturer flagged as linked to the manufacturer portal
-async function getPortalManufacturer() {
+// Manufacturer owning a portal link token (only active links resolve)
+async function getByLinkToken(token) {
+    if (!token) return null;
     const { data, error } = await supabase
         .from('manufacturers')
         .select('*')
+        .eq('link_token', token)
         .eq('portal_access', true)
-        .limit(1)
         .maybeSingle();
-    if (error) throw error;
+    if (error) {
+        if (error.code === 'PGRST116') return null;
+        throw error;
+    }
     return toUi(data, 'manufacturers');
-}
-
-// Remove the portal flag from every manufacturer except keepId (used when
-// the admin links a different manufacturer — only one portal account exists)
-async function clearPortalAccess(keepId = null) {
-    let query = supabase.from('manufacturers')
-        .update({ portal_access: false })
-        .eq('portal_access', true);
-    if (keepId) query = query.neq('id', keepId);
-    const { error } = await query;
-    if (error) throw error;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +204,7 @@ async function getManufacturerWorkspace(manufacturerName) {
         list('samples', { eq }), list('orders', { eq }), list('techPacks'), list('manufacturers')
     ]);
     const self = allMfrs.find((m) => m.name === manufacturerName) || null;
+    if (self) { delete self.linkToken; delete self.portalPassword; }
     return { samples, productionOrders, techPacks, manufacturer: self, manufacturerName };
 }
 
@@ -222,8 +217,7 @@ module.exports = {
     insert,
     upsert,
     remove,
-    getPortalManufacturer,
-    clearPortalAccess,
+    getByLinkToken,
     getWorkspace,
     getManufacturerWorkspace
 };

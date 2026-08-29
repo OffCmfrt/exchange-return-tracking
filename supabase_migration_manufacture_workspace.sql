@@ -28,11 +28,25 @@ create table if not exists manufacturers (
   quality_rating integer,
   communication_rating integer,
   notes text,
-  -- Set from the admin dashboard: exactly one manufacturer is linked to the
-  -- manufacturer portal (Shopify page); that login sees only their records.
+  -- Portal access (managed from the admin dashboard, Manufacturers tab):
+  -- portal_access    = portal login enabled for this manufacturer;
+  -- link_token       = their private portal link (?token=...), like influencers;
+  -- portal_password  = set by the admin, required on top of the link.
+  -- Multiple manufacturers can have portal access at the same time.
   portal_access boolean not null default false,
+  link_token text unique,
+  portal_password text,
   created_at timestamptz not null default now()
 );
+
+-- Idempotent: adds portal columns if the table was created by an earlier
+-- version of this migration (create table if not exists won't alter it)
+alter table manufacturers
+  add column if not exists portal_access boolean not null default false;
+alter table manufacturers
+  add column if not exists link_token text unique;
+alter table manufacturers
+  add column if not exists portal_password text;
 
 -- Tech pack versions (user-typed ids like TP-SKU-V1)
 create table if not exists mfr_tech_packs (

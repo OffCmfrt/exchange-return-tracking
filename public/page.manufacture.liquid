@@ -201,7 +201,9 @@ async function api(path, opts = {}) {
 }
 
 /* ============================== LOGIN ============================== */
-function renderLogin() {
+/* Portal access works like the influencer portals: each manufacturer has a
+   private link (?token=...). Opening it exchanges the token for a session. */
+function renderLogin(message) {
   document.getElementById("app").innerHTML = `
   <div class="min-h-screen flex items-center justify-center bg-neutral-950">
     <div class="w-full max-w-sm px-6 mf-fade">
@@ -209,31 +211,13 @@ function renderLogin() {
         <div class="text-3xl font-black tracking-tight text-white">OFFCOMFRT</div>
         <div class="text-[11px] font-semibold tracking-[0.15em] text-neutral-500 uppercase mt-1">Manufacture Studio</div>
       </div>
-      <form id="loginForm" class="bg-neutral-900 border border-neutral-800 rounded-sm p-6 space-y-4">
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-500">Manufacturer Password</span>
-          <input id="loginPw" type="password" autocomplete="current-password" required
-            class="mt-1 w-full bg-neutral-950 border border-neutral-700 rounded-sm px-3 py-2 text-sm text-white focus:outline-none focus:border-neutral-400">
-        </label>
-        <div id="loginErr" class="text-xs text-rose-400 hidden"></div>
-        <button type="submit" class="w-full bg-white text-neutral-950 text-sm font-bold py-2.5 rounded-sm hover:bg-neutral-200 transition-colors">Enter Studio</button>
-      </form>
+      <div class="bg-neutral-900 border border-neutral-800 rounded-sm p-6 text-center">
+        <p class="text-sm text-neutral-200 leading-relaxed">This studio is private.</p>
+        <p class="text-xs text-neutral-500 mt-2 leading-relaxed">Open the portal link Offcomfrt shared with you — it ends in <span class="font-mono text-neutral-300">?token=…</span> — and you will be signed in automatically.</p>
+        ${message ? `<div class="text-xs text-rose-400 mt-4">${esc(message)}</div>` : ""}
+      </div>
     </div>
   </div>`;
-  document.getElementById("loginForm").onsubmit = async (e) => {
-    e.preventDefault();
-    const errEl = document.getElementById("loginErr");
-    errEl.classList.add("hidden");
-    try {
-      const body = await api("/login", { method: "POST", body: JSON.stringify({ password: document.getElementById("loginPw").value }) });
-      TOKEN = body.token;
-      localStorage.setItem(TOKEN_KEY, TOKEN);
-      await boot();
-    } catch (err) {
-      errEl.textContent = err.message;
-      errEl.classList.remove("hidden");
-    }
-  };
 }
 
 /* ============================== SHELL ============================== */
@@ -866,7 +850,50 @@ function openQuestionsModal(tp) {
 }
 
 /* ============================== BOOT ============================== */
-async function boot() {
+const LINK_TOKEN = (new URLSearchParams(window.location.search).get("token") || "").trim();
+
+/* Password gate: a private link brought them here; they still enter the
+   password Offcomfrt set for them before the studio opens. */
+function renderPasswordGate(message) {
+  document.getElementById("app").innerHTML = `
+  <div class="min-h-screen flex items-center justify-center bg-neutral-950">
+    <div class="w-full max-w-sm px-6 mf-fade">
+      <div class="text-center mb-8">
+        <div class="text-3xl font-black tracking-tight text-white">OFFCOMFRT</div>
+        <div class="text-[11px] font-semibold tracking-[0.15em] text-neutral-500 uppercase mt-1">Manufacture Studio</div>
+      </div>
+      <form id="gateForm" class="bg-neutral-900 border border-neutral-800 rounded-sm p-6 space-y-4">
+        <label class="block">
+          <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-500">Portal Password</span>
+          <input id="gatePw" type="password" autocomplete="current-password" required
+            class="mt-1 w-full bg-neutral-950 border border-neutral-700 rounded-sm px-3 py-2 text-sm text-white focus:outline-none focus:border-neutral-400">
+        </label>
+        <div id="gateErr" class="text-xs text-rose-400 ${message ? "" : "hidden"}">${esc(message || "")}</div>
+        <button type="submit" class="w-full bg-white text-neutral-950 text-sm font-bold py-2.5 rounded-sm hover:bg-neutral-200 transition-colors">Enter Studio</button>
+      </form>
+    </div>
+  </div>`;
+  document.getElementById("gateForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById("gateErr");
+    errEl.classList.add("hidden");
+    try {
+      const login = await api("/login", {
+        method: "POST",
+        body: JSON.stringify({ token: LINK_TOKEN, password: document.getElementById("gatePw").value })
+      });
+      TOKEN = login.token;
+      localStorage.setItem(TOKEN_KEY, TOKEN);
+      window.history.replaceState({}, "", window.location.pathname); // strip ?token=
+      await loadWorkspace();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.remove("hidden");
+    }
+  };
+}
+
+async function loadWorkspace() {
   try {
     const body = await api("/workspace");
     WS = body.workspace;
@@ -874,13 +901,21 @@ async function boot() {
     WS.techPacks = WS.techPacks || [];
     renderShell();
   } catch (err) {
-    if (err.status === 401 || err.status === 503) { TOKEN = null; localStorage.removeItem(TOKEN_KEY); renderLogin(); }
-    else {
-      document.getElementById("app").innerHTML = `<div class="min-h-screen flex items-center justify-center"><div class="text-sm text-neutral-500">${esc(err.message)}</div></div>`;
+    if (err.status === 401) {
+      TOKEN = null; localStorage.removeItem(TOKEN_KEY);
+      renderLogin("Your session has expired — please open your portal link again.");
+      return;
     }
+    document.getElementById("app").innerHTML = `<div class="min-h-screen flex items-center justify-center"><div class="text-sm text-neutral-500">${esc(err.message)}</div></div>`;
   }
 }
-if (TOKEN) boot(); else renderLogin();
+
+function boot() {
+  if (LINK_TOKEN) { renderPasswordGate(); return; }
+  if (!TOKEN) { renderLogin(); return; }
+  loadWorkspace();
+}
+boot();
 </script>
 </body>
 </html>
