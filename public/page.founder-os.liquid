@@ -1,0 +1,36 @@
+{% layout none %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Founder OS — OFFCOMFRT</title>
+{% comment %}
+  OFFCOMFRT — Founder OS
+  Full founder operating dashboard (tasks, projects, departments, meetings,
+  decisions, delegation, goals, weekly reviews, personal log).
+  Frontend: this Shopify page. Data: Supabase via the Render backend
+  (GET/PUT /api/founder-os/state), with a login gate using the admin password.
+  Deploy: save as templates/page.founder-os.liquid, upload founder-os.js to
+  theme assets, then assign the template to a page. See
+  FOUNDER_OS_DEPLOYMENT_GUIDE.md in the repo.
+{% endcomment %}
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+<style>
+  html, body { background: #fafaf9; margin: 0; }
+  #fos-boot {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #a8a29e;
+  }
+</style>
+</head>
+<body>
+<div id="app"><div id="fos-boot">Loading Founder OS…</div></div>
+<script src="{{ 'founder-os.js' | asset_url }}" defer></script>
+</body>
+</html>

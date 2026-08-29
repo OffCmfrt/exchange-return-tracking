@@ -398,6 +398,7 @@ async function generateUniqueRequestId() {
 
 // Body parsing middleware
 app.use(express.json({
+    limit: '2mb', // Founder OS workspace state can exceed the default 100kb
     verify: (req, res, buf) => {
         req.rawBody = buf.toString();
     }
@@ -13929,6 +13930,47 @@ app.post('/api/manufacture/admin/manufacturers/:id/regenerate-link', authenticat
     } catch (error) {
         console.error('[Manufacture] Admin regenerate link error:', error.message);
         res.status(500).json({ error: 'Failed to regenerate portal link' });
+    }
+});
+
+// ==================== FOUNDER OS (cloud-synced workspace state) ====================
+
+// GET /api/founder-os/state - load the founder's workspace state
+app.get('/api/founder-os/state', authenticateAdmin, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('founder_os_state')
+            .select('state, updated_at')
+            .eq('key', 'main')
+            .maybeSingle();
+        if (error) throw error;
+        res.json({ success: true, state: data ? data.state : null, updatedAt: data ? data.updated_at : null });
+    } catch (error) {
+        console.error('[FounderOS] Load state error:', error.message);
+        res.status(500).json({ error: 'Failed to load Founder OS state' });
+    }
+});
+
+// PUT /api/founder-os/state - save (upsert) the founder's workspace state
+app.put('/api/founder-os/state', authenticateAdmin, async (req, res) => {
+    try {
+        const { state } = req.body || {};
+        if (!state || typeof state !== 'object' || Array.isArray(state)) {
+            return res.status(400).json({ error: 'state object is required' });
+        }
+        const { error } = await supabase
+            .from('founder_os_state')
+            .upsert({
+                key: 'main',
+                state,
+                updated_by: (req.user && (req.user.username || req.user.role)) || 'admin',
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'key' });
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[FounderOS] Save state error:', error.message);
+        res.status(500).json({ error: 'Failed to save Founder OS state' });
     }
 });
 
