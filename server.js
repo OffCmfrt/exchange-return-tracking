@@ -2552,6 +2552,19 @@ async function delhiveryAPI(endpoint, options = {}, retries = 2) {
 }
 
 /**
+ * Check if an error message indicates an unserviceable pincode/location.
+ * Used to distinguish between "area not serviceable" (→ self-ship) and
+ * other failures like "insufficient balance" (→ admin intervention).
+ */
+function isUnserviceableError(message) {
+    if (!message) return false;
+    const lower = message.toLowerCase();
+    return lower.includes('unserviceable') ||
+           lower.includes('not serviceable') ||
+           lower.includes('serviceability');
+}
+
+/**
  * Create return pickup order via Delhivery
  */
 async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
@@ -2801,6 +2814,12 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
             } else if (pkg.status && pkg.status !== 'Success') {
                 console.error(`❌ Delhivery package status: ${pkg.status}`);
                 const errorMsg = pkg.remarks && pkg.remarks.length > 0 ? pkg.remarks.join(', ') : pkg.status;
+                // Tag unserviceable errors so upstream can distinguish from other failures
+                if (isUnserviceableError(errorMsg)) {
+                    const err = new Error(`UNSERVICEABLE_PINCODE: Delhivery package error: ${errorMsg}`);
+                    err.isUnserviceable = true;
+                    throw err;
+                }
                 throw new Error(`Delhivery package error: ${errorMsg}`);
             }
         }
@@ -2838,6 +2857,13 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
             throw new Error(`Delhivery unexpected response: ${JSON.stringify(data).substring(0, 200)}`);
         }
     } catch (error) {
+        // Re-throw unserviceable errors so upstream can handle them differently
+        if (error.isUnserviceable || isUnserviceableError(error.message)) {
+            console.error('❌ Delhivery unserviceable pincode error:', error.message);
+            const err = new Error(error.message);
+            err.isUnserviceable = true;
+            throw err;
+        }
         console.error('❌ Failed to create Delhivery return:', error);
         return null;
     }
@@ -4682,7 +4708,7 @@ async function issuePickupFeeRefund(requestId, paymentId, paymentAmount) {
 
     try {
         console.log(`[${requestId}] 💰 Issuing Razorpay refund of ₹${paymentAmount} for payment ${paymentId}`);
-        const refund = await razorpay.refunds.create(paymentId, {
+        const refund = await razorpay.payments.refund(paymentId, {
             amount: refundAmountPaise,
             speed: 'optimum',
             notes: {
@@ -4764,6 +4790,7 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
         let shipmentId = null;
         let pickupDate = null;
         let primaryCarrierFailed = false;
+        let allCarriersUnserviceable = false;
 
         if (!isFeeWaived) {
             // Get carrier mode from settings
@@ -4788,11 +4815,24 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                     booking = await returnBookingAttempt(carrierResolution.primary, requestData, null);
                 } catch (primaryError) {
                     primaryCarrierFailed = true;
+                    if (primaryError.isUnserviceable || isUnserviceableError(primaryError.message)) {
+                        allCarriersUnserviceable = true;
+                    } else {
+                        allCarriersUnserviceable = false;
+                    }
                     if (!carrierResolution.useFallback) throw primaryError;
                     const fallbackCarrier = getFallbackCarrier(carrierResolution.primary);
                     fallbackReason = `${carrierResolution.primary} failed: ${primaryError.message}`;
                     console.warn(`[${requestId}] ⚠️ ${carrierResolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
-                    booking = await returnBookingAttempt(fallbackCarrier, requestData, null);
+                    try {
+                        booking = await returnBookingAttempt(fallbackCarrier, requestData, null);
+                    } catch (fallbackError) {
+                        // Both carriers failed – only unserviceable if BOTH were unserviceable
+                        if (!(fallbackError.isUnserviceable || isUnserviceableError(fallbackError.message))) {
+                            allCarriersUnserviceable = false;
+                        }
+                        throw fallbackError;
+                    }
                 }
 
                 carrierUsed = booking.carrierUsed;
@@ -4861,10 +4901,10 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                 }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
             }
         } else if (primaryCarrierFailed && !isFeeWaived) {
-            // All carriers failed for a paid request – refund pickup fee + send self-ship WhatsApp
-            console.log(`[${requestId}] 📦 All carriers failed – refunding pickup fee + sending self-ship WhatsApp to ${request.customerPhone}`);
+            // All carriers failed for a paid request
+            const isUnserviceable = allCarriersUnserviceable;
 
-            // Issue Razorpay refund (no carrier booked)
+            // Always issue Razorpay refund (pickup fee should be returned regardless of failure reason)
             if (paymentId && paymentAmount > 0) {
                 issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
                     if (refundResult.success) {
@@ -4878,25 +4918,30 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                 }).catch(err => console.error(`[${requestId}] Pickup fee refund error:`, err.message));
             }
 
-            // Send self-ship WhatsApp
-            resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
-                return sendSelfShipRequiredWhatsApp({
-                    phone: request.customerPhone,
-                    requestId,
-                    orderNumber: request.orderNumber,
-                    type: request.type,
-                    warehouseAddress: address,
-                    warehousePhone: whPhone
-                });
-            }).then(waResult => {
-                if (waResult?.success) {
-                    updateRequestStatus(requestId, {
-                        whatsappSent: true,
-                        whatsappMessageId: waResult.messageId || null,
-                        whatsappSentAt: new Date().toISOString()
-                    }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
-                }
-            }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
+            // Only send self-ship WhatsApp when failure is due to unserviceable pincode
+            if (isUnserviceable) {
+                console.log(`[${requestId}] 📦 All carriers failed (unserviceable pincode) – sending self-ship WhatsApp to ${request.customerPhone}`);
+                resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
+                    return sendSelfShipRequiredWhatsApp({
+                        phone: request.customerPhone,
+                        requestId,
+                        orderNumber: request.orderNumber,
+                        type: request.type,
+                        warehouseAddress: address,
+                        warehousePhone: whPhone
+                    });
+                }).then(waResult => {
+                    if (waResult?.success) {
+                        updateRequestStatus(requestId, {
+                            whatsappSent: true,
+                            whatsappMessageId: waResult.messageId || null,
+                            whatsappSentAt: new Date().toISOString()
+                        }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
+                    }
+                }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
+            } else {
+                console.log(`[${requestId}] 📦 All carriers failed (non-serviceability error) – refund issued, skipping self-ship WhatsApp. Admin intervention needed.`);
+            }
         } else {
             // Fee-waived / still pending — send generic payment confirmation
             const customerName = request.customerName || 'Customer';
@@ -5044,6 +5089,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
         let carrierUsed = null;
         let fallbackReason = null;
         let primaryCarrierFailed = false;
+        let allCarriersUnserviceable = false;
 
         if (!isFeeWaived && !needsPayment) {
             // Get carrier mode from settings
@@ -5066,11 +5112,23 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                     booking = await returnBookingAttempt(resolution.primary, requestData, shopifyOrder);
                 } catch (primaryError) {
                     primaryCarrierFailed = true;
+                    if (primaryError.isUnserviceable || isUnserviceableError(primaryError.message)) {
+                        allCarriersUnserviceable = true;
+                    } else {
+                        allCarriersUnserviceable = false;
+                    }
                     if (!resolution.useFallback) throw primaryError;
                     const fallbackCarrier = getFallbackCarrier(resolution.primary);
                     fallbackReason = `${resolution.primary} failed: ${primaryError.message}`;
                     console.warn(`[${requestId}] ⚠️ ${resolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
-                    booking = await returnBookingAttempt(fallbackCarrier, requestData, shopifyOrder);
+                    try {
+                        booking = await returnBookingAttempt(fallbackCarrier, requestData, shopifyOrder);
+                    } catch (fallbackError) {
+                        if (!(fallbackError.isUnserviceable || isUnserviceableError(fallbackError.message))) {
+                            allCarriersUnserviceable = false;
+                        }
+                        throw fallbackError;
+                    }
                 }
 
                 carrierUsed = booking.carrierUsed;
@@ -5136,10 +5194,8 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
 
-        // If selected carrier failed for a paid request, send self-ship WhatsApp
+        // If selected carrier failed for a paid request, send self-ship WhatsApp (only if unserviceable)
         if (!isFeeWaived && !needsPayment && primaryCarrierFailed) {
-            console.log(`[${requestId}] 📦 Selected carrier failed – sending self-ship WhatsApp to ${customerPhone}`);
-
             // Issue Razorpay refund ONLY if no carrier was actually booked (all failed)
             const paymentId = req.body.paymentId || null;
             const paymentAmount = parseFloat(req.body.paymentAmount) || 0;
@@ -5159,25 +5215,30 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 console.log(`[${requestId}] ℹ️ Fallback carrier succeeded (AWB: ${awbNumber}) – skipping refund`);
             }
 
-            // Send self-ship WhatsApp
-            resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
-                return sendSelfShipRequiredWhatsApp({
-                    phone: customerPhone,
-                    requestId,
-                    orderNumber: req.body.orderNumber,
-                    type: 'exchange',
-                    warehouseAddress: address,
-                    warehousePhone: whPhone
-                });
-            }).then(waResult => {
-                if (waResult?.success) {
-                    updateRequestStatus(requestId, {
-                        whatsappSent: true,
-                        whatsappMessageId: waResult.messageId || null,
-                        whatsappSentAt: new Date().toISOString()
-                    }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
-                }
-            }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
+            // Only send self-ship WhatsApp when failure is due to unserviceable pincode
+            if (allCarriersUnserviceable) {
+                console.log(`[${requestId}] 📦 All carriers failed (unserviceable pincode) – sending self-ship WhatsApp to ${customerPhone}`);
+                resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
+                    return sendSelfShipRequiredWhatsApp({
+                        phone: customerPhone,
+                        requestId,
+                        orderNumber: req.body.orderNumber,
+                        type: 'exchange',
+                        warehouseAddress: address,
+                        warehousePhone: whPhone
+                    });
+                }).then(waResult => {
+                    if (waResult?.success) {
+                        updateRequestStatus(requestId, {
+                            whatsappSent: true,
+                            whatsappMessageId: waResult.messageId || null,
+                            whatsappSentAt: new Date().toISOString()
+                        }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
+                    }
+                }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
+            } else {
+                console.log(`[${requestId}] 📦 Carrier failed (non-serviceability error) – refund issued, skipping self-ship WhatsApp. Admin intervention needed.`);
+            }
         }
 
         res.json({
@@ -5313,6 +5374,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         let carrierUsed = null;
         let fallbackReason = null;
         let primaryCarrierFailed = false;
+        let allCarriersUnserviceable = false;
 
         if (!isFeeWaivedReturn && !needsPayment) {
             // Get carrier mode from settings
@@ -5335,11 +5397,23 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                     booking = await returnBookingAttempt(resolution.primary, requestData, shopifyOrder);
                 } catch (primaryError) {
                     primaryCarrierFailed = true;
+                    if (primaryError.isUnserviceable || isUnserviceableError(primaryError.message)) {
+                        allCarriersUnserviceable = true;
+                    } else {
+                        allCarriersUnserviceable = false;
+                    }
                     if (!resolution.useFallback) throw primaryError;
                     const fallbackCarrier = getFallbackCarrier(resolution.primary);
                     fallbackReason = `${resolution.primary} failed: ${primaryError.message}`;
                     console.warn(`[${requestId}] ⚠️ ${resolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
-                    booking = await returnBookingAttempt(fallbackCarrier, requestData, shopifyOrder);
+                    try {
+                        booking = await returnBookingAttempt(fallbackCarrier, requestData, shopifyOrder);
+                    } catch (fallbackError) {
+                        if (!(fallbackError.isUnserviceable || isUnserviceableError(fallbackError.message))) {
+                            allCarriersUnserviceable = false;
+                        }
+                        throw fallbackError;
+                    }
                 }
 
                 carrierUsed = booking.carrierUsed;
@@ -5405,10 +5479,8 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         console.log(`[${requestId}] ✅ Return Request Submitted Successfully`);
 
-        // If selected carrier failed for a paid request, send self-ship WhatsApp
+        // If selected carrier failed for a paid request, send self-ship WhatsApp (only if unserviceable)
         if (!isFeeWaivedReturn && !needsPayment && primaryCarrierFailed) {
-            console.log(`[${requestId}] 📦 Selected carrier failed – sending self-ship WhatsApp to ${customerPhone}`);
-
             // Issue Razorpay refund ONLY if no carrier was actually booked (all failed)
             const paymentId = req.body.paymentId || null;
             const paymentAmount = parseFloat(req.body.paymentAmount) || 0;
@@ -5428,25 +5500,30 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 console.log(`[${requestId}] ℹ️ Fallback carrier succeeded (AWB: ${awbNumber}) – skipping refund`);
             }
 
-            // Send self-ship WhatsApp
-            resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
-                return sendSelfShipRequiredWhatsApp({
-                    phone: customerPhone,
-                    requestId,
-                    orderNumber: req.body.orderNumber,
-                    type: 'return',
-                    warehouseAddress: address,
-                    warehousePhone: whPhone
-                });
-            }).then(waResult => {
-                if (waResult?.success) {
-                    updateRequestStatus(requestId, {
-                        whatsappSent: true,
-                        whatsappMessageId: waResult.messageId || null,
-                        whatsappSentAt: new Date().toISOString()
-                    }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
-                }
-            }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
+            // Only send self-ship WhatsApp when failure is due to unserviceable pincode
+            if (allCarriersUnserviceable) {
+                console.log(`[${requestId}] 📦 All carriers failed (unserviceable pincode) – sending self-ship WhatsApp to ${customerPhone}`);
+                resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
+                    return sendSelfShipRequiredWhatsApp({
+                        phone: customerPhone,
+                        requestId,
+                        orderNumber: req.body.orderNumber,
+                        type: 'return',
+                        warehouseAddress: address,
+                        warehousePhone: whPhone
+                    });
+                }).then(waResult => {
+                    if (waResult?.success) {
+                        updateRequestStatus(requestId, {
+                            whatsappSent: true,
+                            whatsappMessageId: waResult.messageId || null,
+                            whatsappSentAt: new Date().toISOString()
+                        }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
+                    }
+                }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
+            } else {
+                console.log(`[${requestId}] 📦 Carrier failed (non-serviceability error) – refund issued, skipping self-ship WhatsApp. Admin intervention needed.`);
+            }
         }
 
         res.json({
@@ -5538,17 +5615,11 @@ app.get('/api/track-request/:identifier', async (req, res) => {
     // Normalize carrier tracking activities into a unified { status, location, date } shape
     // so the frontend checkpoint renderer works identically for Delhivery, Shiprocket, and Ekart.
     //
-    // Delhivery ScanDetail : { Scan, Location, Date } (or lowercase variants)
+    // Delhivery ScanDetail : { Scan, ScannedLocation, ScanDateTime, ScanType, StatusCode, StatusDateTime, Instructions }
     // Shiprocket track item  : { 'sr-status-label', activity, location, date }
     // Ekart event            : { status, desc, location, datetime }
     function normalizeActivities(raw, carrier) {
         if (!Array.isArray(raw) || raw.length === 0) return [];
-        
-        // Debug: log first activity to understand actual field names (always log for now)
-        if (raw.length > 0) {
-            console.log(`[NormalizeActivities] ${carrier} - First raw activity keys:`, Object.keys(raw[0]));
-            console.log(`[NormalizeActivities] ${carrier} - First raw activity:`, JSON.stringify(raw[0]).substring(0, 500));
-        }
         
         return raw.map(act => {
             // Status / label - try all possible field names
@@ -5565,8 +5636,9 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                 act.event ||
                 'Update';
             
-            // Location - try all possible field names
+            // Location - try all possible field names (Delhivery uses ScannedLocation)
             const location =
+                act.ScannedLocation ||
                 act.Location ||
                 act.location ||
                 act.ScanLocation ||
@@ -5577,8 +5649,10 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                 act.warehouse ||
                 'Hub';
             
-            // Date — try all possible field names and formats
+            // Date — try all possible field names and formats (Delhivery uses ScanDateTime)
             const rawDate = 
+                act.ScanDateTime ||
+                act.StatusDateTime ||
                 act.Date || 
                 act.date || 
                 act.datetime || 
