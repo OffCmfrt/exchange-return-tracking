@@ -620,11 +620,18 @@
         let currentIndex = statuses.findIndex(s => s.key === data.status);
         if (data.status === 'rejected') currentIndex = -1;
 
+        // If forward shipment exists and is active, the return item was received and replacement dispatched
+        const forwardActive = data.forwardShipment && data.forwardShipment.awbNumber && 
+            !['pending', 'scheduled'].includes(data.forwardStatus || 'scheduled');
+
         timeline.innerHTML = statuses.map((status, index) => {
-            // A step is completed if: it's before the current index, OR it has a real timestamp
             const hasTimestamp = !!status.date;
-            const isCompleted = (index < currentIndex && currentIndex !== -1) || (hasTimestamp && index <= currentIndex);
-            const isActive = index === currentIndex && !hasTimestamp;
+            const isBeforeCurrent = index < currentIndex && currentIndex !== -1;
+            const hasTimestampAtOrBefore = hasTimestamp && index <= currentIndex;
+            // If forward shipment is active, steps 6 (delivered) and 7 (approved) are logically complete
+            const forwardImpliesComplete = forwardActive && index >= 6;
+            const isCompleted = isBeforeCurrent || hasTimestampAtOrBefore || forwardImpliesComplete;
+            const isActive = index === currentIndex && !hasTimestamp && !forwardImpliesComplete;
 
             return `
                 <div class="timeline-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}">
