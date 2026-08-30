@@ -5544,9 +5544,10 @@ app.get('/api/track-request/:identifier', async (req, res) => {
     function normalizeActivities(raw, carrier) {
         if (!Array.isArray(raw) || raw.length === 0) return [];
         
-        // Debug: log first activity to understand actual field names
-        if (raw.length > 0 && process.env.NODE_ENV !== 'production') {
-            console.log(`[NormalizeActivities] ${carrier} - First raw activity:`, JSON.stringify(raw[0]));
+        // Debug: log first activity to understand actual field names (always log for now)
+        if (raw.length > 0) {
+            console.log(`[NormalizeActivities] ${carrier} - First raw activity keys:`, Object.keys(raw[0]));
+            console.log(`[NormalizeActivities] ${carrier} - First raw activity:`, JSON.stringify(raw[0]).substring(0, 500));
         }
         
         return raw.map(act => {
