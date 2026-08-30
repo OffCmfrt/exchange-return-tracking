@@ -114,40 +114,59 @@
                 </div>
             </div>
 
-            <h3 class="tr-section-header">Status Timeline</h3>
-            <div class="timeline" id="timeline">
-                <!-- Timeline will be populated here -->
+            <div class="tr-collapse-section">
+                <button class="tr-collapse-header" onclick="toggleCollapse('timelineBody', this)" type="button">
+                    <span>Status Timeline</span>
+                    <svg class="tr-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 5.25L7 8.75L10.5 5.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="tr-collapse-body" id="timelineBody">
+                    <div class="timeline" id="timeline">
+                        <!-- Timeline will be populated here -->
+                    </div>
+                </div>
             </div>
 
             <div id="forwardJourney" class="hidden tr-fwd-section">
-                <h3 class="tr-section-header" style="color: var(--primary-color, #0b0c0f);">Replacement Journey</h3>
-                <div id="forwardShipmentDetails" class="hidden tr-fwd-card">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.85rem;">
-                        <div>
-                            <p class="tr-field-label">AWB Number</p>
-                            <p id="fwdAwbNumber" class="tr-field-value mono">-</p>
+                <div class="tr-collapse-section">
+                    <button class="tr-collapse-header" onclick="toggleCollapse('fwdTimelineBody', this)" type="button">
+                        <span>Replacement Journey</span>
+                        <svg class="tr-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 5.25L7 8.75L10.5 5.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <div class="tr-collapse-body" id="fwdTimelineBody">
+                        <div id="forwardShipmentDetails" class="hidden tr-fwd-card">
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.85rem;">
+                                <div>
+                                    <p class="tr-field-label">AWB Number</p>
+                                    <p id="fwdAwbNumber" class="tr-field-value mono">-</p>
+                                </div>
+                                <div>
+                                    <p class="tr-field-label">Courier</p>
+                                    <p id="fwdCarrierName" class="tr-field-value">-</p>
+                                </div>
+                                <div>
+                                    <p class="tr-field-label">Status</p>
+                                    <p id="fwdStatus" class="tr-field-value">-</p>
+                                </div>
+                                <div>
+                                    <p class="tr-field-label">Exp. Delivery</p>
+                                    <p id="fwdEdd" class="tr-field-value highlight">-</p>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <p class="tr-field-label">Courier</p>
-                            <p id="fwdCarrierName" class="tr-field-value">-</p>
-                        </div>
-                        <div>
-                            <p class="tr-field-label">Status</p>
-                            <p id="fwdStatus" class="tr-field-value">-</p>
-                        </div>
-                        <div>
-                            <p class="tr-field-label">Exp. Delivery</p>
-                            <p id="fwdEdd" class="tr-field-value highlight">-</p>
-                        </div>
+                        <div class="timeline" id="forwardTimeline"></div>
                     </div>
                 </div>
-                <div class="timeline" id="forwardTimeline"></div>
             </div>
 
-            <div id="activityHistory" class="hidden" style="margin-top: 2rem; padding-top: 1.75rem; border-top: 1px solid var(--gray-medium);">
-                <h3 class="tr-section-header">Live Tracking Checkpoints</h3>
-                <div id="scanLog" class="tr-checkpoint-log">
-                    <!-- Scan history list -->
+            <div id="activityHistory" class="hidden tr-collapse-section" style="margin-top: 2rem;">
+                <button class="tr-collapse-header" onclick="toggleCollapse('checkpointBody', this)" type="button">
+                    <span>Live Tracking Checkpoints</span>
+                    <svg class="tr-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 5.25L7 8.75L10.5 5.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="tr-collapse-body" id="checkpointBody">
+                    <div id="scanLog" class="tr-checkpoint-log">
+                        <!-- Scan history list -->
+                    </div>
                 </div>
             </div>
 
@@ -251,6 +270,50 @@
     margin-bottom: 1rem;
     padding-bottom: 0.6rem;
     border-bottom: 1px solid var(--gray-medium, #e4e6eb);
+}
+
+/* ─ Collapsible Sections ── */
+.tr-collapse-section {
+    margin-bottom: 1.5rem;
+}
+.tr-collapse-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--gray-medium, #e4e6eb);
+    padding: 0 0 0.6rem 0;
+    margin-bottom: 0;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--gray-dark, #6b7280);
+    transition: color 0.2s ease;
+    font-family: inherit;
+}
+.tr-collapse-header:hover {
+    color: var(--primary-color, #0b0c0f);
+}
+.tr-collapse-header .tr-chevron {
+    flex-shrink: 0;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    color: var(--gray-dark, #6b7280);
+}
+.tr-collapse-header.is-open .tr-chevron {
+    transform: rotate(180deg);
+}
+.tr-collapse-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    opacity: 0;
+}
+.tr-collapse-body.is-expanded {
+    opacity: 1;
 }
 
 /* ── Shipment Details Card ── */
@@ -685,8 +748,8 @@
             if (data.forwardShipment && data.forwardShipment.activities && data.forwardShipment.activities.length > 0) {
                 const activities = data.forwardShipment.activities;
                 activities.forEach(act => {
-                    const actStatus = (act['sr-status-label'] || act.status || act.Status || '').toLowerCase();
-                    const actDate = act.date || act.Date || null;
+                    const actStatus = (act.status || '').toLowerCase();
+                    const actDate = act.date || null;
                     if (actStatus.includes('pickup') || actStatus.includes('picked')) {
                         fwdStatuses[1].date = fwdStatuses[1].date || actDate;
                     }
@@ -717,6 +780,36 @@
             `).join('');
         } else {
             document.getElementById('forwardJourney').classList.add('hidden');
+        }
+    }
+
+    // ── Collapsible Section Toggle ──
+    function toggleCollapse(bodyId, headerBtn) {
+        const body = document.getElementById(bodyId);
+        if (!body) return;
+        const isOpen = body.classList.contains('is-expanded');
+
+        if (isOpen) {
+            // Collapse: set max-height to current scrollHeight first, then to 0
+            body.style.maxHeight = body.scrollHeight + 'px';
+            // Force reflow so the browser registers the starting height
+            body.offsetHeight; // eslint-disable-line no-unused-expressions
+            body.style.maxHeight = '0';
+            body.classList.remove('is-expanded');
+            headerBtn.classList.remove('is-open');
+        } else {
+            // Expand: measure content, then animate to it
+            body.classList.add('is-expanded');
+            headerBtn.classList.add('is-open');
+            body.style.maxHeight = body.scrollHeight + 'px';
+            // After transition ends, set to 'none' so future content changes don't clip
+            const onEnd = () => {
+                if (body.classList.contains('is-expanded')) {
+                    body.style.maxHeight = 'none';
+                }
+                body.removeEventListener('transitionend', onEnd);
+            };
+            body.addEventListener('transitionend', onEnd);
         }
     }
 
