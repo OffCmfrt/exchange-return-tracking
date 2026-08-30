@@ -2016,6 +2016,10 @@
         <!-- Activity Pane -->
         <div id="teamActivityPane" class="team-pane hidden">
             <div class="activity-filters">
+                <div style="position:relative;flex:1;min-width:200px;max-width:320px;">
+                    <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:#9ca3af;" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="activitySearchInput" class="filter-date" placeholder="Search REQ-ID, Order, AWB, operator…" onkeydown="if(event.key==='Enter'){activityPage=1;loadActivityLogs();}" style="padding-left:32px;cursor:text;width:100%;">
+                </div>
                 <select id="activityOperatorFilter" class="filter-select" onchange="activityPage = 1; loadActivityLogs();" style="max-width: 200px;">
                     <option value="">All Operators</option>
                 </select>
@@ -2029,7 +2033,10 @@
                     <option value="Update Settings">Settings Changes</option>
                     <option value="Delete Requests">Deletions</option>
                 </select>
-                <input type="date" id="activityFromFilter" class="filter-date" onchange="activityPage = 1; loadActivityLogs();" style="width: auto;">
+                <div style="position:relative;display:inline-flex;align-items:center;">
+                    <input type="date" id="activityFromFilter" class="filter-date" onchange="activityPage = 1; loadActivityLogs();" style="width: auto;">
+                    <button onclick="document.getElementById('activityFromFilter').value='';activityPage=1;loadActivityLogs();" title="Clear date filter" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#9ca3af;font-size:14px;line-height:1;padding:2px;display:none;" id="activityDateClearBtn">&times;</button>
+                </div>
                 <button class="admin-btn" onclick="activityPage = 1; loadActivityLogs();" style="background: white; border-color: #d1d5db; color: #374151;">Refresh</button>
             </div>
             <div id="activityTableWrap">
@@ -6618,11 +6625,17 @@
 
     async function loadActivityLogs() {
         const wrap = document.getElementById('activityTableWrap');
+        const searchQuery = (document.getElementById('activitySearchInput')?.value || '').trim();
         const operatorFilter = document.getElementById('activityOperatorFilter').value;
         const actionFilter = document.getElementById('activityActionFilter').value;
         const fromDate = document.getElementById('activityFromFilter').value;
 
+        // Toggle date-clear button visibility
+        const clearBtn = document.getElementById('activityDateClearBtn');
+        if (clearBtn) clearBtn.style.display = fromDate ? 'block' : 'none';
+
         const params = new URLSearchParams({ page: activityPage, limit: ACTIVITY_LIMIT });
+        if (searchQuery) params.set('search', searchQuery);
         if (operatorFilter === 'super') params.set('username', 'super-admin');
         else if (operatorFilter) params.set('operatorId', operatorFilter);
         if (actionFilter) params.set('action', actionFilter);

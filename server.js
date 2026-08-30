@@ -804,6 +804,7 @@ async function syncSingleRequest(req) {
         let currentStatus = null;
         let currentStatusType = null;
         let newAwb = null;
+        let edd = null;
         
         // Fetch tracking based on carrier
         if (req.awbNumber) {
@@ -817,6 +818,7 @@ async function syncSingleRequest(req) {
                         currentStatus = shipment.status || shipment.delivered_status;
                         currentStatusType = shipment.status_type || null;
                         newAwb = shipment.waybill_code || req.awbNumber;
+                        edd = shipment.eta || null;
                     }
                 } else if (carrier === 'ekart') {
                     console.log(`[${req.requestId}] Fetching Ekart tracking for AWB: ${req.awbNumber}`);
@@ -827,6 +829,7 @@ async function syncSingleRequest(req) {
                         currentStatus = shipment.status || shipment.delivered_status;
                         currentStatusType = shipment.status_type || null;
                         newAwb = shipment.waybill_code || req.awbNumber;
+                        edd = shipment.edd || shipment.eta || null;
                     }
                 } else {
                     // Shiprocket
@@ -836,6 +839,7 @@ async function syncSingleRequest(req) {
                         const tracking = trackingData.tracking_data;
                         currentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
                         newAwb = tracking.shipment_track?.[0]?.awb_code || tracking.awb_code;
+                        edd = tracking.edd || tracking.etd || null;
                     }
                 }
             } catch (e) {
@@ -900,27 +904,31 @@ async function syncSingleRequest(req) {
                 if (newStatus !== req.status &&
                     (statusMapping.terminal || isForwardProgress(req.status, newStatus))) {
                     // Build update object
-                    const updates = { status: newStatus };
+                    const updates = { status: newStatus, lastSyncedAt: new Date().toISOString() };
                     if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
                     if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
                     if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
+                    if (newStatus === 'out_for_delivery') updates.outForDeliveryAt = new Date().toISOString();
                     if (newAwb && newAwb !== req.awbNumber) updates.awbNumber = newAwb;
+                    // Persist EDD and carrier name from carrier API
+                    if (edd) updates.expectedDeliveryDate = edd;
+                    updates.carrierName = carrier.charAt(0).toUpperCase() + carrier.slice(1);
 
                     await updateRequestStatus(req.requestId, updates);
                     changed = true;
-                    console.log(`[${req.requestId}] Status updated: ${req.status} → ${newStatus} (${carrier})`);
-
-                    // out_for_delivery_at is optional; write it separately so a
-                    // missing column can never fail the core status update.
-                    if (newStatus === 'out_for_delivery') {
-                        try {
-                            await updateRequestStatus(req.requestId, { outForDeliveryAt: new Date().toISOString() });
-                        } catch (e) { /* column may not exist yet */ }
-                    }
+                    console.log(`[${req.requestId}] Status updated: ${req.status} → ${newStatus} (${carrier})${edd ? ' EDD=' + edd : ''}`);
                 } else if (newAwb && newAwb !== req.awbNumber) {
                     // Status unchanged but AWB refreshed
-                    await updateRequestStatus(req.requestId, { awbNumber: newAwb });
+                    const updates = { awbNumber: newAwb, lastSyncedAt: new Date().toISOString() };
+                    if (edd) updates.expectedDeliveryDate = edd;
+                    await updateRequestStatus(req.requestId, updates);
+                } else if (edd && edd !== req.expectedDeliveryDate) {
+                    // EDD updated even if status unchanged
+                    await updateRequestStatus(req.requestId, { expectedDeliveryDate: edd, lastSyncedAt: new Date().toISOString() });
                 }
+            } else if (edd && edd !== req.expectedDeliveryDate) {
+                // No status mapping but EDD available — persist it
+                await updateRequestStatus(req.requestId, { expectedDeliveryDate: edd, lastSyncedAt: new Date().toISOString() });
             }
             
             // Add admin note for exception statuses
@@ -933,6 +941,9 @@ async function syncSingleRequest(req) {
                     console.log(`[${req.requestId}] Exception note added: ${currentStatus}`);
                 }
             }
+        } else if (edd && edd !== req.expectedDeliveryDate) {
+            // No current status but EDD available
+            await updateRequestStatus(req.requestId, { expectedDeliveryDate: edd, lastSyncedAt: new Date().toISOString() });
         }
     }
     
@@ -948,6 +959,7 @@ async function syncSingleRequest(req) {
             let forwardTrack = null;
             let forwardCurrentStatus = null;
             let forwardStatusType = null;
+            let forwardEdd = null;
             
             if (forwardCarrier === 'delhivery') {
                 console.log(`[${req.requestId}] Fetching Delhivery forward tracking for AWB: ${req.forwardAwbNumber}`);
@@ -957,6 +969,7 @@ async function syncSingleRequest(req) {
                     const shipment = forwardTrack.shipments[0];
                     forwardCurrentStatus = shipment.status || shipment.delivered_status;
                     forwardStatusType = shipment.status_type || null;
+                    forwardEdd = shipment.eta || null;
                 }
             } else if (forwardCarrier === 'ekart') {
                 console.log(`[${req.requestId}] Fetching Ekart forward tracking for AWB: ${req.forwardAwbNumber}`);
@@ -966,6 +979,7 @@ async function syncSingleRequest(req) {
                     const shipment = forwardTrack.shipments[0];
                     forwardCurrentStatus = shipment.status || shipment.delivered_status;
                     forwardStatusType = shipment.status_type || null;
+                    forwardEdd = shipment.edd || shipment.eta || null;
                 }
             } else {
                 // Shiprocket
@@ -974,6 +988,7 @@ async function syncSingleRequest(req) {
                 if (forwardTrack && forwardTrack.tracking_data) {
                     const tracking = forwardTrack.tracking_data;
                     forwardCurrentStatus = tracking.shipment_track?.[0]?.current_status || tracking.current_status;
+                    forwardEdd = tracking.edd || tracking.etd || null;
                 }
             }
             
@@ -990,9 +1005,17 @@ async function syncSingleRequest(req) {
                         (forwardStatusMapping.terminal ||
                          isForwardProgress(req.forwardStatus, newForwardStatus))) {
                         console.log(`[${req.requestId}] Updating Forward Status: ${req.forwardStatus} → ${newForwardStatus} (${forwardCarrier})`);
-                        await updateRequestStatus(req.requestId, { forwardStatus: newForwardStatus });
+                        const fwdUpdates = { forwardStatus: newForwardStatus, lastSyncedAt: new Date().toISOString() };
+                        if (forwardEdd) fwdUpdates.forwardExpectedDeliveryDate = forwardEdd;
+                        fwdUpdates.forwardCarrierName = forwardCarrier.charAt(0).toUpperCase() + forwardCarrier.slice(1);
+                        await updateRequestStatus(req.requestId, fwdUpdates);
                         changed = true;
                     }
+                }
+                
+                // Persist forward EDD even if status unchanged
+                if (forwardEdd && forwardEdd !== req.forwardExpectedDeliveryDate) {
+                    await updateRequestStatus(req.requestId, { forwardExpectedDeliveryDate: forwardEdd, lastSyncedAt: new Date().toISOString() });
                 }
                 
                 // Add note for forward exceptions
@@ -1004,6 +1027,9 @@ async function syncSingleRequest(req) {
                         });
                     }
                 }
+            } else if (forwardEdd && forwardEdd !== req.forwardExpectedDeliveryDate) {
+                // No status but EDD available
+                await updateRequestStatus(req.requestId, { forwardExpectedDeliveryDate: forwardEdd, lastSyncedAt: new Date().toISOString() });
             }
         } catch (e) {
             console.error(`[${req.requestId}] Forward Sync Failed:`, e.message);
@@ -5508,9 +5534,13 @@ app.get('/api/track-request/:identifier', async (req, res) => {
     }
 
     // Helper to enrich a request with live tracking data (supports both Shiprocket and Delhivery)
+    // Also persists EDD and status updates to DB so data is always fresh
     async function enrichWithTracking(request) {
         // Build complete workflow history from timestamps
         request.workflowHistory = buildWorkflowHistory(request);
+        
+        // Track what needs persisting (fire-and-forget after response)
+        const persistUpdates = {};
         
         // Return shipment tracking
         if (request.awbNumber) {
@@ -5522,28 +5552,59 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                     const trackingData = await getDelhiveryTracking(request.awbNumber);
                     if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
                         const shipment = trackingData.shipments[0];
+                        const edd = shipment.eta || null;
+                        const carrierStatus = shipment.status || shipment.delivered_status;
+                        const statusType = shipment.status_type || null;
                         request.shipment = {
                             origin: trackingData.pickup_location?.name || null,
                             destination: trackingData.return_address?.name || null,
-                            status: shipment.status || 'Pending',
-                            edd: shipment.eta || null,
+                            status: carrierStatus || 'Pending',
+                            edd: edd,
                             activities: shipment.tracking_data || [],
                             carrier: 'delhivery'
                         };
+                        // Queue EDD + carrier name for persistence
+                        if (edd) persistUpdates.expectedDeliveryDate = edd;
+                        persistUpdates.carrierName = 'Delhivery';
+                        // Check if status should advance
+                        if (carrierStatus) {
+                            const mapping = mapCarrierStatus(carrierStatus, 'delhivery', statusType);
+                            if (mapping && mapping.shouldUpdate && mapping.status && mapping.status !== request.status && isForwardProgress(request.status, mapping.status)) {
+                                persistUpdates.status = mapping.status;
+                                if (mapping.status === 'picked_up') persistUpdates.pickedUpAt = new Date().toISOString();
+                                if (mapping.status === 'in_transit') persistUpdates.inTransitAt = new Date().toISOString();
+                                if (mapping.status === 'out_for_delivery') persistUpdates.outForDeliveryAt = new Date().toISOString();
+                                if (mapping.status === 'delivered') persistUpdates.deliveredAt = new Date().toISOString();
+                            }
+                        }
                     }
                 } else {
                     // Try Shiprocket tracking
                     const trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`);
                     if (trackingData && trackingData.tracking_data) {
                         const tracking = trackingData.tracking_data;
+                        const edd = tracking.edd || tracking.etd || null;
+                        const carrierStatus = tracking.current_status;
                         request.shipment = {
                             origin: tracking.shipment_track?.[0]?.origin || tracking.origin || null,
                             destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
-                            status: tracking.current_status || 'Pending',
-                            edd: tracking.edd || tracking.etd || null,
+                            status: carrierStatus || 'Pending',
+                            edd: edd,
                             activities: tracking.shipment_track || [],
                             carrier: 'shiprocket'
                         };
+                        if (edd) persistUpdates.expectedDeliveryDate = edd;
+                        persistUpdates.carrierName = 'Shiprocket';
+                        if (carrierStatus) {
+                            const mapping = mapCarrierStatus(carrierStatus, 'shiprocket');
+                            if (mapping && mapping.shouldUpdate && mapping.status && mapping.status !== request.status && isForwardProgress(request.status, mapping.status)) {
+                                persistUpdates.status = mapping.status;
+                                if (mapping.status === 'picked_up') persistUpdates.pickedUpAt = new Date().toISOString();
+                                if (mapping.status === 'in_transit') persistUpdates.inTransitAt = new Date().toISOString();
+                                if (mapping.status === 'out_for_delivery') persistUpdates.outForDeliveryAt = new Date().toISOString();
+                                if (mapping.status === 'delivered') persistUpdates.deliveredAt = new Date().toISOString();
+                            }
+                        }
                     }
                 }
             } catch (err) {
@@ -5570,10 +5631,13 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                     if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
                         const shipment = trackingData.shipments[0];
                         const activities = shipment.tracking_data || shipment.scans || [];
+                        const fwdEdd = shipment.eta || null;
+                        const fwdStatus = shipment.status || shipment.delivered_status;
+                        const fwdStatusType = shipment.status_type || null;
                         request.forwardShipment = {
                             awb: request.forwardAwbNumber,
-                            status: shipment.status || shipment.delivered_status || 'Scheduled',
-                            edd: shipment.eta || null,
+                            status: fwdStatus || 'Scheduled',
+                            edd: fwdEdd,
                             activities: activities,
                             courierName: 'Delhivery',
                             deliveredDate: shipment.delivered_date || null,
@@ -5585,12 +5649,23 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                             packageCount: trackingData.shipments.length || null,
                             carrier: 'delhivery'
                         };
+                        if (fwdEdd) persistUpdates.forwardExpectedDeliveryDate = fwdEdd;
+                        persistUpdates.forwardCarrierName = 'Delhivery';
+                        // Check forward status advancement
+                        if (fwdStatus && request.forwardStatus !== 'delivered') {
+                            const fwdMapping = mapCarrierStatus(fwdStatus, 'delhivery', fwdStatusType);
+                            if (fwdMapping && fwdMapping.shouldUpdate && fwdMapping.status && fwdMapping.status !== request.forwardStatus && isForwardProgress(request.forwardStatus || 'scheduled', fwdMapping.status)) {
+                                persistUpdates.forwardStatus = fwdMapping.status;
+                            }
+                        }
                     }
                 } else if (process.env.SHIPROCKET_EMAIL) {
                     const trackingData = await shiprocketAPI(`/courier/track/awb/${request.forwardAwbNumber}`);
                     if (trackingData && trackingData.tracking_data) {
                         const tracking = trackingData.tracking_data;
                         const activities = tracking.shipment_track || [];
+                        const fwdEdd = tracking.edd || tracking.etd || null;
+                        const fwdStatus = tracking.current_status;
                         
                         // DEBUG: Log first activity structure to understand Shiprocket response
                         if (activities.length > 0) {
@@ -5599,8 +5674,8 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                         
                         request.forwardShipment = {
                             awb: request.forwardAwbNumber,
-                            status: tracking.current_status || 'Scheduled',
-                            edd: tracking.edd || tracking.etd || null,
+                            status: fwdStatus || 'Scheduled',
+                            edd: fwdEdd,
                             activities: activities,
                             courierName: tracking.courier_name || null,
                             deliveredDate: tracking.delivered_date || null,
@@ -5612,6 +5687,14 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                             packageCount: tracking.packages ? tracking.packages.length : null,
                             carrier: 'shiprocket'
                         };
+                        if (fwdEdd) persistUpdates.forwardExpectedDeliveryDate = fwdEdd;
+                        persistUpdates.forwardCarrierName = tracking.courier_name || 'Shiprocket';
+                        if (fwdStatus && request.forwardStatus !== 'delivered') {
+                            const fwdMapping = mapCarrierStatus(fwdStatus, 'shiprocket');
+                            if (fwdMapping && fwdMapping.shouldUpdate && fwdMapping.status && fwdMapping.status !== request.forwardStatus && isForwardProgress(request.forwardStatus || 'scheduled', fwdMapping.status)) {
+                                persistUpdates.forwardStatus = fwdMapping.status;
+                            }
+                        }
                     }
                 }
             } catch (err) {
@@ -5623,6 +5706,15 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                 }
             }
         }
+        
+        // Persist any updates to DB (fire-and-forget, don't block response)
+        if (Object.keys(persistUpdates).length > 0) {
+            persistUpdates.lastSyncedAt = new Date().toISOString();
+            updateRequestStatus(request.requestId, persistUpdates)
+                .then(() => console.log(`[Track-View Sync] ${request.requestId} persisted:`, Object.keys(persistUpdates).join(', ')))
+                .catch(e => console.warn(`[Track-View Sync] ${request.requestId} persist failed:`, e.message));
+        }
+        
         return request;
     }
 
@@ -6285,6 +6377,7 @@ app.delete('/api/admin/operators/:id', authenticateAdmin, requireSuperAdmin, asy
 app.get('/api/admin/operators/activity', authenticateAdmin, requireSuperAdmin, async (req, res) => {
     try {
         const filters = {};
+        if (req.query.search) filters.search = String(req.query.search).trim();
         if (req.query.operatorId) filters.operatorId = parseInt(req.query.operatorId, 10);
         if (req.query.username) filters.username = String(req.query.username);
         if (req.query.action) filters.action = String(req.query.action);

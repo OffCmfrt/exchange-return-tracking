@@ -366,6 +366,13 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.whatsappSentAt !== undefined) updateData.whatsapp_sent_at = updates.whatsappSentAt;
     if (updates.whatsappError !== undefined) updateData.whatsapp_error = updates.whatsappError;
 
+    // EDD (Expected Delivery Date) - persisted from carrier sync
+    if (updates.expectedDeliveryDate !== undefined) updateData.expected_delivery_date = updates.expectedDeliveryDate;
+    if (updates.forwardExpectedDeliveryDate !== undefined) updateData.forward_expected_delivery_date = updates.forwardExpectedDeliveryDate;
+    if (updates.carrierName !== undefined) updateData.carrier_name = updates.carrierName;
+    if (updates.forwardCarrierName !== undefined) updateData.forward_carrier_name = updates.forwardCarrierName;
+    if (updates.lastSyncedAt !== undefined) updateData.last_synced_at = updates.lastSyncedAt;
+
     // Video Evidence (pickup handover & warehouse unboxing)
     if (updates.pickupVideoUrl !== undefined) updateData.pickup_video_url = updates.pickupVideoUrl;
     if (updates.pickupVideoSubmittedAt !== undefined) updateData.pickup_video_submitted_at = updates.pickupVideoSubmittedAt;
@@ -439,6 +446,11 @@ function convertFromSnakeCase(data) {
         carrierShipmentId: data.carrier_shipment_id,
         carrierAwb: data.carrier_awb,
         carrierFallbackReason: data.carrier_fallback_reason,
+        expectedDeliveryDate: data.expected_delivery_date || null,
+        forwardExpectedDeliveryDate: data.forward_expected_delivery_date || null,
+        carrierName: data.carrier_name || null,
+        forwardCarrierName: data.forward_carrier_name || null,
+        lastSyncedAt: data.last_synced_at || null,
         discountCode: data.discount_code || null,
         discountValue: data.discount_value || null,
         discountType: data.discount_type || null,
@@ -1620,13 +1632,110 @@ async function getOperatorActivityLogs(filters = {}) {
         .from('operator_activity_logs')
         .select('*', { count: 'exact' });
 
+    // ── Free-text cross-table search ──
+    let searchAscending = false;
+    if (filters.search) {
+        const term = filters.search;
+        // Collect all identifiers to match against the target column
+        const targetValues = new Set();
+
+        // Always match the raw term against target (handles operator handles, partial REQ-XXXXX, etc.)
+        targetValues.add(term);
+
+        // Normalise: if user types "REQ-12345" or just "12345", resolve to the canonical REQ-XXXXX form
+        const bareNumeric = term.replace(/^REQ-/i, '').trim();
+        if (/^\d{4,}$/.test(bareNumeric)) {
+            targetValues.add(`REQ-${bareNumeric}`);
+        }
+
+        // Cross-reference the requests table for order_id, AWBs linked to this REQ-ID
+        const reqIdMatch = term.match(/^REQ-(\d+)$/i) || (/^\d{4,}$/.test(bareNumeric) ? [null, bareNumeric] : null);
+        if (reqIdMatch) {
+            const canonicalId = `REQ-${reqIdMatch[1]}`;
+            try {
+                const { data: reqRows } = await supabase
+                    .from('requests')
+                    .select('request_id, order_id, awb_number, forward_awb_number, carrier_awb')
+                    .eq('request_id', canonicalId);
+                if (reqRows && reqRows.length) {
+                    for (const r of reqRows) {
+                        if (r.request_id) targetValues.add(r.request_id);
+                        if (r.order_id) targetValues.add(String(r.order_id));
+                        if (r.awb_number) targetValues.add(String(r.awb_number));
+                        if (r.forward_awb_number) targetValues.add(String(r.forward_awb_number));
+                        if (r.carrier_awb) targetValues.add(String(r.carrier_awb));
+                    }
+                }
+            } catch (e) {
+                console.warn('[ActivitySearch] requests cross-ref failed:', e.message);
+            }
+        }
+
+        // Also search by order number pattern (e.g. #12345 or plain numeric that could be an order id)
+        const orderCandidate = term.replace(/^#/, '').trim();
+        if (/^\d{3,}$/.test(orderCandidate)) {
+            try {
+                const { data: orderRows } = await supabase
+                    .from('requests')
+                    .select('request_id, order_id, awb_number, forward_awb_number, carrier_awb')
+                    .eq('order_id', orderCandidate);
+                if (orderRows && orderRows.length) {
+                    for (const r of orderRows) {
+                        if (r.request_id) targetValues.add(r.request_id);
+                        if (r.order_id) targetValues.add(String(r.order_id));
+                        if (r.awb_number) targetValues.add(String(r.awb_number));
+                        if (r.forward_awb_number) targetValues.add(String(r.forward_awb_number));
+                        if (r.carrier_awb) targetValues.add(String(r.carrier_awb));
+                    }
+                }
+            } catch (e) {
+                console.warn('[ActivitySearch] order cross-ref failed:', e.message);
+            }
+        }
+
+        // Also search by AWB (typically a numeric string of 10+ digits)
+        const awbCandidate = term.trim();
+        if (/^\d{8,}$/.test(awbCandidate)) {
+            try {
+                const { data: awbRows } = await supabase
+                    .from('requests')
+                    .select('request_id, order_id, awb_number, forward_awb_number, carrier_awb')
+                    .or(`awb_number.eq.${awbCandidate},forward_awb_number.eq.${awbCandidate},carrier_awb.eq.${awbCandidate}`);
+                if (awbRows && awbRows.length) {
+                    for (const r of awbRows) {
+                        if (r.request_id) targetValues.add(r.request_id);
+                        if (r.order_id) targetValues.add(String(r.order_id));
+                        if (r.awb_number) targetValues.add(String(r.awb_number));
+                        if (r.forward_awb_number) targetValues.add(String(r.forward_awb_number));
+                        if (r.carrier_awb) targetValues.add(String(r.carrier_awb));
+                    }
+                }
+            } catch (e) {
+                console.warn('[ActivitySearch] AWB cross-ref failed:', e.message);
+            }
+        }
+
+        // Build OR filter: target IN (...) OR username ILIKE term
+        const targetArr = Array.from(targetValues);
+        const usernameFilter = `username.ilike.*${term}*`;
+        if (targetArr.length === 1) {
+            query = query.or(`target.eq.${targetArr[0]},${usernameFilter}`);
+        } else {
+            const targetInClause = targetArr.map(t => `target.eq.${t}`).join(',');
+            query = query.or(`${targetInClause},${usernameFilter}`);
+        }
+
+        // When searching, show the complete trail chronologically (oldest → newest)
+        searchAscending = true;
+    }
+
     if (filters.operatorId) query = query.eq('operator_id', filters.operatorId);
     if (filters.username) query = query.eq('username', filters.username);
     if (filters.action) query = query.eq('action', filters.action);
     if (filters.fromDate) query = query.gte('created_at', filters.fromDate);
     if (filters.toDate) query = query.lte('created_at', filters.toDate);
 
-    query = query.order('created_at', { ascending: false });
+    query = query.order('created_at', { ascending: searchAscending });
 
     const page = parseInt(filters.page, 10) || 1;
     const limit = Math.min(parseInt(filters.limit, 10) || 50, 200);
