@@ -431,6 +431,7 @@ function convertFromSnakeCase(data) {
         pickupDate: data.pickup_date,
         pickedUpAt: data.picked_up_at,
         inTransitAt: data.in_transit_at,
+        outForDeliveryAt: data.out_for_delivery_at || null,
         deliveredAt: data.delivered_at,
         inspectedAt: data.inspected_at,
         approvedAt: data.approved_at,

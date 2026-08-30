@@ -68,75 +68,90 @@
                 </div>
             </div>
 
-            <div id="pickupDetails" class="hidden" style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.5rem;">
-                <p style="font-weight: 500; margin-bottom: 0.5rem;">Shipment Details</p>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; font-size: 0.85rem;">
+            <div id="pickupDetails" class="hidden tr-shipment-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <p class="tr-section-header" style="margin: 0; padding: 0; border: none;">Shipment Details</p>
+                    <span id="liveIndicator" class="tr-live-badge">
+                        <span class="dot"></span>
+                        Live
+                    </span>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
                     <div>
-                        <p style="color: var(--gray-dark);">AWB Number</p>
-                        <p id="awbNumber">-</p>
+                        <p class="tr-field-label">AWB Number</p>
+                        <p id="awbNumber" class="tr-field-value mono">-</p>
                     </div>
                     <div>
-                        <p style="color: var(--gray-dark);">Pickup Date</p>
-                        <p id="pickupDate">-</p>
+                        <p class="tr-field-label">Courier</p>
+                        <p id="carrierName" class="tr-field-value">-</p>
                     </div>
                     <div>
-                        <p style="color: var(--gray-dark);">Estimated Delivery</p>
-                        <p id="estimatedDelivery">-</p>
+                        <p class="tr-field-label">Pickup Date</p>
+                        <p id="pickupDate" class="tr-field-value">-</p>
                     </div>
                     <div>
-                        <p style="color: var(--gray-dark);">Current Status</p>
-                        <p id="courierStatus" style="font-weight: 500;">-</p>
+                        <p class="tr-field-label">Est. Delivery</p>
+                        <p id="estimatedDelivery" class="tr-field-value highlight">-</p>
+                    </div>
+                    <div>
+                        <p class="tr-field-label">Status</p>
+                        <p id="courierStatus" class="tr-field-value">-</p>
+                    </div>
+                    <div>
+                        <p class="tr-field-label">Last Synced</p>
+                        <p id="lastSynced" class="tr-field-value" style="font-size: 0.8rem;">-</p>
                     </div>
                 </div>
-                <div style="margin-top: 1rem; border-top: 1px solid var(--gray-medium); padding-top: 0.75rem; display: flex; gap: 2rem;">
+                <div style="margin-top: 1rem; border-top: 1px solid var(--gray-medium); padding-top: 0.85rem; display: flex; gap: 2.5rem;">
                     <div>
-                        <p style="color: var(--gray-dark); font-size: 0.8rem;">Origin</p>
-                        <p id="shipmentOrigin">-</p>
+                        <p class="tr-field-label">Origin</p>
+                        <p id="shipmentOrigin" class="tr-field-value">-</p>
                     </div>
                     <div>
-                        <p style="color: var(--gray-dark); font-size: 0.8rem;">Destination</p>
-                        <p id="shipmentDestination">-</p>
+                        <p class="tr-field-label">Destination</p>
+                        <p id="shipmentDestination" class="tr-field-value">-</p>
                     </div>
                 </div>
             </div>
 
-            <h3 style="font-size: 1rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem;">
-                Status Timeline</h3>
+            <h3 class="tr-section-header">Status Timeline</h3>
             <div class="timeline" id="timeline">
                 <!-- Timeline will be populated here -->
             </div>
 
-            <div id="forwardJourney" class="hidden" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--gray-medium);">
-                <h3 style="font-size: 1rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem; color: #166534;">
-                    Replacement Journey</h3>
-                <div id="forwardShipmentDetails" class="hidden" style="background: #f0fdf4; padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; font-size: 0.85rem;">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem;">
+            <div id="forwardJourney" class="hidden tr-fwd-section">
+                <h3 class="tr-section-header" style="color: var(--primary-color, #0b0c0f);">Replacement Journey</h3>
+                <div id="forwardShipmentDetails" class="hidden tr-fwd-card">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.85rem;">
                         <div>
-                            <p style="color: #166534; font-weight: 500;">AWB Number</p>
-                            <p id="fwdAwbNumber">-</p>
+                            <p class="tr-field-label">AWB Number</p>
+                            <p id="fwdAwbNumber" class="tr-field-value mono">-</p>
                         </div>
                         <div>
-                            <p style="color: #166534; font-weight: 500;">Current Status</p>
-                            <p id="fwdStatus">-</p>
+                            <p class="tr-field-label">Courier</p>
+                            <p id="fwdCarrierName" class="tr-field-value">-</p>
                         </div>
                         <div>
-                            <p style="color: #166534; font-weight: 500;">Exp. Delivery</p>
-                            <p id="fwdEdd">-</p>
+                            <p class="tr-field-label">Status</p>
+                            <p id="fwdStatus" class="tr-field-value">-</p>
+                        </div>
+                        <div>
+                            <p class="tr-field-label">Exp. Delivery</p>
+                            <p id="fwdEdd" class="tr-field-value highlight">-</p>
                         </div>
                     </div>
                 </div>
                 <div class="timeline" id="forwardTimeline"></div>
             </div>
 
-            <div id="activityHistory" class="hidden" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--gray-medium);">
-                <h3 style="font-size: 1rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem;">
-                    Detailed Scan History</h3>
-                <div id="scanLog" style="max-height: 300px; overflow-y: auto; font-size: 0.85rem; border: 1px solid var(--gray-medium); border-radius: var(--radius-sm);">
+            <div id="activityHistory" class="hidden" style="margin-top: 2rem; padding-top: 1.75rem; border-top: 1px solid var(--gray-medium);">
+                <h3 class="tr-section-header">Live Tracking Checkpoints</h3>
+                <div id="scanLog" class="tr-checkpoint-log">
                     <!-- Scan history list -->
                 </div>
             </div>
 
-            <div id="approvalMessage" class="hidden" style="margin-top: 1.5rem; padding: 1rem; border-radius: var(--radius-sm);">
+            <div id="approvalMessage" class="hidden tr-approval">
                 <!-- Approval/rejection message will be shown here -->
             </div>
 
@@ -148,20 +163,20 @@
                         <span style="font-size: 1.4rem;">🎬</span>
                         <div>
                             <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--text-color); margin: 0; letter-spacing: 0.5px; text-transform: uppercase;">Video Evidence</h3>
-                            <p style="font-size: 0.75rem; color: #666; margin: 0;">Secure your return with video proof</p>
+                            <p style="font-size: 0.72rem; color: var(--gray-dark, #6b7280); margin: 0; letter-spacing: 0.3px;">Secure your return with video proof</p>
                         </div>
                     </div>
 
                     <div style="padding: 1.25rem 1.5rem;">
                         <!-- Unboxing Video from Warehouse (if uploaded) -->
                         <div id="unboxingVideoSection" class="hidden" style="margin-bottom: 1.25rem;">
-                            <div style="background: #f8f9ff; border: 1px solid #e0e2f0; border-radius: 8px; padding: 1rem;">
+                            <div style="background: var(--gray-light); border: 1px solid var(--gray-medium); border-radius: 8px; padding: 1rem;">
                                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                                     <span style="font-size: 1rem;">📦</span>
                                     <span style="font-weight: 600; color: var(--text-color); font-size: 0.85rem;">Warehouse Unboxing Video</span>
-                                    <span style="background: var(--success-color); color: #fff; font-size: 0.6rem; padding: 2px 7px; border-radius: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Uploaded</span>
+                                    <span style="background: var(--primary-color, #0b0c0f); color: #fff; font-size: 0.58rem; padding: 2px 7px; border-radius: 9999px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Uploaded</span>
                                 </div>
-                                <p style="font-size: 0.8rem; color: #666; margin: 0 0 0.75rem 0;">Our warehouse team has uploaded an unboxing video for your request.</p>
+                                <p style="font-size: 0.8rem; color: var(--gray-dark, #6b7280); margin: 0 0 0.75rem 0;">Our warehouse team has uploaded an unboxing video for your request.</p>
                                 <a id="unboxingVideoLink" href="#" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 0.5rem; background: var(--primary-color); color: #fff; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.82rem; font-weight: 600;">
                                     <span>▶</span> Watch Unboxing Video
                                 </a>
@@ -186,26 +201,26 @@
                             </div>
 
                             <!-- Already submitted -->
-                            <div id="pickupVideoSubmitted" class="hidden" style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.75rem;">
+                            <div id="pickupVideoSubmitted" class="hidden" style="background: var(--gray-light); border: 1px solid var(--primary-color, #0b0c0f); border-radius: 6px; padding: 0.75rem; margin-bottom: 0.75rem;">
                                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                                    <span style="color: var(--success-color); font-weight: 600; font-size: 0.82rem;">✓ Pickup Video Submitted</span>
+                                    <span style="color: var(--primary-color, #0b0c0f); font-weight: 600; font-size: 0.82rem;">\u2713 Pickup Video Submitted</span>
                                 </div>
                                 <a id="pickupVideoLink" href="#" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 0.5rem; background: var(--primary-color); color: #fff; padding: 0.4rem 0.85rem; border-radius: 6px; text-decoration: none; font-size: 0.8rem; font-weight: 600;">
                                     <span>▶</span> Watch Your Pickup Video
                                 </a>
-                                <p style="font-size: 0.75rem; color: #666; margin: 0.5rem 0 0 0;">You can update the link below if needed.</p>
+                                <p style="font-size: 0.75rem; color: var(--gray-dark, #6b7280); margin: 0.5rem 0 0 0;">You can update the link below if needed.</p>
                             </div>
 
                             <!-- Submission Form -->
                             <div style="margin-top: 0.25rem;">
-                                <label style="font-size: 0.8rem; color: #666; display: block; margin-bottom: 0.4rem;">Paste your video link (Google Drive, YouTube, etc.)</label>
+                                <label style="font-size: 0.78rem; color: var(--gray-dark, #6b7280); display: block; margin-bottom: 0.4rem; letter-spacing: 0.2px;">Paste your video link (Google Drive, YouTube, etc.)</label>
                                 <div style="display: flex; gap: 0.5rem;">
                                     <input type="url" id="customerPickupVideoUrl" placeholder="https://drive.google.com/..." style="flex: 1; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-medium); border-radius: 6px; background: #fff; color: var(--text-color); font-size: 0.85rem; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--primary-color)'" onblur="this.style.borderColor='var(--gray-medium)'">
                                     <button id="submitPickupVideoBtn" onclick="submitPickupVideo()" style="background: var(--primary-color); color: #fff; border: none; padding: 0.6rem 1.25rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem; cursor: pointer; white-space: nowrap; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
                                         Submit Video
                                     </button>
                                 </div>
-                                <p id="pickupVideoMsg" style="font-size: 0.75rem; margin-top: 0.4rem; color: #666;"></p>
+                                <p id="pickupVideoMsg" style="font-size: 0.75rem; margin-top: 0.4rem; color: var(--gray-dark, #6b7280);"></p>
                             </div>
                         </div>
                     </div>
@@ -216,19 +231,162 @@
 </div>
 
 <style>
-/* New styles for scan history */
+/* ── Premium Monochrome: Track Request Page ── */
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.4); }
+}
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Section Headers ── */
+.tr-section-header {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--gray-dark, #6b7280);
+    margin-bottom: 1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--gray-medium, #e4e6eb);
+}
+
+/* ── Shipment Details Card ── */
+.tr-shipment-card {
+    background: var(--gray-light, #f4f5f7);
+    border: 1px solid var(--gray-medium, #e4e6eb);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1.75rem;
+    animation: fade-in 0.4s ease;
+}
+.tr-shipment-card .tr-field-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--gray-dark, #6b7280);
+    margin-bottom: 0.3rem;
+}
+.tr-shipment-card .tr-field-value {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: var(--text-color, #16181d);
+}
+.tr-shipment-card .tr-field-value.mono {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+}
+.tr-shipment-card .tr-field-value.highlight {
+    font-weight: 700;
+    color: var(--primary-color, #0b0c0f);
+}
+
+/* ── Live Badge ── */
+.tr-live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--primary-color, #0b0c0f);
+    background: #fff;
+    padding: 0.25rem 0.65rem;
+    border-radius: 9999px;
+    border: 1px solid var(--gray-medium, #e4e6eb);
+}
+.tr-live-badge .dot {
+    width: 5px; height: 5px;
+    background: var(--primary-color, #0b0c0f);
+    border-radius: 50%;
+    animation: pulse-dot 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* ── Timeline ── */
+.timeline-item { animation: fade-in 0.35s ease both; }
+.timeline-item:nth-child(2) { animation-delay: 0.05s; }
+.timeline-item:nth-child(3) { animation-delay: 0.1s; }
+.timeline-item:nth-child(4) { animation-delay: 0.15s; }
+.timeline-item:nth-child(5) { animation-delay: 0.2s; }
+.timeline-item:nth-child(6) { animation-delay: 0.25s; }
+.timeline-item:nth-child(7) { animation-delay: 0.3s; }
+.timeline-item:nth-child(8) { animation-delay: 0.35s; }
+.timeline-item.completed h4 { color: var(--primary-color, #0b0c0f); font-weight: 600; }
+.timeline-item.completed::before { background-color: var(--primary-color, #0b0c0f) !important; border-color: var(--primary-color, #0b0c0f) !important; }
+.timeline-item.active::before { box-shadow: 0 0 0 4px rgba(11, 12, 15, 0.1); }
+.timeline-item .timeline-date { font-size: 0.75rem; color: var(--gray-dark, #6b7280); font-variant-numeric: tabular-nums; }
+
+/* ── Checkpoint Log ── */
+.tr-checkpoint-log {
+    max-height: 420px;
+    overflow-y: auto;
+    border: 1px solid var(--gray-medium, #e4e6eb);
+    border-radius: 10px;
+    background: #fff;
+}
+.tr-checkpoint-log::-webkit-scrollbar { width: 4px; }
+.tr-checkpoint-log::-webkit-scrollbar-thumb { background: var(--gray-medium, #e4e6eb); border-radius: 4px; }
 .scan-item {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--gray-light);
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--gray-light, #f4f5f7);
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    transition: background 0.2s ease;
 }
 .scan-item:last-child { border-bottom: none; }
-.scan-status { font-weight: 500; color: var(--black); }
-.scan-meta { text-align: right; font-size: 0.75rem; color: var(--gray-dark); }
-.timeline-item.completed h4 { color: #166534; }
-.timeline-item.completed::before { background-color: #22c55e !important; border-color: #22c55e !important; }
+.scan-item:first-child {
+    background: var(--gray-light, #f4f5f7);
+    border-left: 3px solid var(--primary-color, #0b0c0f);
+}
+.scan-status { font-weight: 600; font-size: 0.85rem; color: var(--primary-color, #0b0c0f); }
+.scan-meta { text-align: right; font-size: 0.72rem; color: var(--gray-dark, #6b7280); font-variant-numeric: tabular-nums; }
+.scan-location { font-size: 0.7rem; color: var(--gray-dark, #6b7280); margin-top: 0.2rem; letter-spacing: 0.2px; }
+
+/* ── Forward Journey ── */
+.tr-fwd-section {
+    margin-top: 2rem;
+    padding-top: 1.75rem;
+    border-top: 1px solid var(--gray-medium, #e4e6eb);
+}
+.tr-fwd-card {
+    background: var(--gray-light, #f4f5f7);
+    border: 1px solid var(--gray-medium, #e4e6eb);
+    border-radius: 12px;
+    padding: 1.1rem;
+    margin-bottom: 1rem;
+}
+
+/* ── Approval / Rejection ── */
+.tr-approval {
+    margin-top: 1.5rem;
+    padding: 1.15rem 1.25rem;
+    border-radius: 10px;
+    border-left: 3px solid var(--primary-color, #0b0c0f);
+    background: var(--gray-light, #f4f5f7);
+    animation: fade-in 0.4s ease;
+}
+.tr-approval.is-rejected { border-left-color: #b91c1c; background: #fef2f2; }
+
+/* ── Multiple Results ── */
+.tr-multi-item {
+    border: 1px solid var(--gray-medium, #e4e6eb);
+    border-radius: 10px;
+    padding: 1rem 1.15rem;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tr-multi-item:hover {
+    border-color: var(--primary-color, #0b0c0f);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
 </style>
 
 <script>
@@ -296,16 +454,12 @@
             const statusLabel = getStatusLabel(req.status);
             const dateStr = formatDateIST(req.createdAt);
             return `
-                <div style="border: 1px solid var(--gray-medium); border-radius: var(--radius-sm); padding: 1rem 1.125rem; margin-bottom: 0.75rem; cursor: pointer; transition: border-color 0.2s;" 
-                     onmouseover="this.style.borderColor='var(--black)'" 
-                     onmouseout="this.style.borderColor='var(--gray-medium)'"
-                     onclick="selectRequest('${req.requestId}')"
-                >
+                <div class="tr-multi-item" onclick="selectRequest('${req.requestId}')">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
-                        <span style="font-weight:500; font-size:0.9rem;">${req.requestId}</span>
-                        <span class="badge badge-${req.status.replace(/_/g,'-')}" style="font-size:0.7rem;">${statusLabel}</span>
+                        <span style="font-weight:600; font-size:0.9rem; color:var(--primary-color,#0b0c0f);">${req.requestId}</span>
+                        <span class="badge badge-${req.status.replace(/_/g,'-')}" style="font-size:0.68rem;">${statusLabel}</span>
                     </div>
-                    <p style="font-size:0.8rem; color:var(--gray-dark); margin:0;">${typeLabel} &mdash; ${dateStr}</p>
+                    <p style="font-size:0.78rem; color:var(--gray-dark,#6b7280); margin:0; letter-spacing:0.2px;">${typeLabel} &mdash; ${dateStr}</p>
                 </div>
             `;
         }).join('');
@@ -327,14 +481,16 @@
 
     function getStatusLabel(status) {
         const labels = {
-            'waiting_payment': 'Waiting for Payment',
-            'pending':         'Pending Review',
-            'scheduled':       'Pickup Booked',
-            'picked_up':       'Picked Up',
-            'in_transit':      'In Transit',
-            'delivered':       'At Warehouse',
-            'approved':        'Approved',
-            'rejected':        'Rejected'
+            'waiting_payment':  'Waiting for Payment',
+            'pending':          'Pending Review',
+            'scheduled':        'Pickup Booked',
+            'pickup_booked':    'Pickup Booked',
+            'picked_up':        'Picked Up',
+            'in_transit':       'In Transit',
+            'out_for_delivery': 'Out for Delivery',
+            'delivered':        'At Warehouse',
+            'approved':         'Approved',
+            'rejected':         'Rejected'
         };
         return labels[status] || status.replace(/_/g, ' ');
     }
@@ -353,10 +509,12 @@
             document.getElementById('pickupDetails').classList.remove('hidden');
             document.getElementById('awbNumber').textContent = data.awbNumber;
             document.getElementById('pickupDate').textContent = data.pickupDate ? formatDateIST(data.pickupDate) : 'Pending';
+            document.getElementById('carrierName').textContent = data.carrierName || data.shipment?.carrier || data.carrier || 'Pending';
 
             // Populate Additional Shipment Details if available
             if (data.shipment) {
-                document.getElementById('estimatedDelivery').textContent = data.shipment.edd ? new Date(data.shipment.edd).toDateString() : 'Pending/Unknown';
+                const edd = data.shipment.edd || data.expectedDeliveryDate;
+                document.getElementById('estimatedDelivery').textContent = edd ? new Date(edd).toDateString() : 'Pending/Unknown';
                 document.getElementById('courierStatus').textContent = data.shipment.status || '-';
                 // Clean up status text (e.g., remove underscores)
                 if (data.shipment.status) {
@@ -365,6 +523,15 @@
                 
                 document.getElementById('shipmentOrigin').textContent = data.shipment.origin || '-';
                 document.getElementById('shipmentDestination').textContent = data.shipment.destination || '-';
+            } else if (data.expectedDeliveryDate) {
+                document.getElementById('estimatedDelivery').textContent = new Date(data.expectedDeliveryDate).toDateString();
+            }
+            
+            // Last synced timestamp
+            if (data.lastSyncedAt) {
+                document.getElementById('lastSynced').textContent = formatDateIST(data.lastSyncedAt);
+            } else {
+                document.getElementById('lastSynced').textContent = 'Just now (live)';
             }
         }
 
@@ -377,11 +544,12 @@
             { key: 'pending', label: data.type === 'return' ? 'Request Submitted' : 'Exchange Request Received', date: (data.status !== 'waiting_payment' ? data.createdAt : null) },
             { 
                 key: 'scheduled', 
-                label: isFeeWaived ? 'Admin Approved & Pickup Booked' : 'Pickup Booked — Awaiting Pickup', 
-                date: data.pickupDate || (['scheduled', 'picked_up', 'in_transit', 'delivered', 'approved'].includes(data.status) ? data.updatedAt : null) 
+                label: isFeeWaived ? 'Admin Approved & Pickup Booked' : 'Pickup Booked \u2014 Awaiting Pickup', 
+                date: data.pickupDate || (['scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'approved'].includes(data.status) ? data.updatedAt : null) 
             },
             { key: 'picked_up', label: 'Item Picked Up by Courier', date: data.pickedUpAt },
-            { key: 'in_transit', label: 'In Transit', date: data.inTransitAt },
+            { key: 'in_transit', label: 'In Transit to Warehouse', date: data.inTransitAt },
+            { key: 'out_for_delivery', label: 'Out for Delivery', date: data.outForDeliveryAt },
             { key: 'delivered', label: 'Received at Warehouse', date: data.deliveredAt },
             { key: 'approved', label: data.type === 'return' ? 'Refund Processed' : 'Replacement Dispatched', date: data.approvedAt }
         ];
@@ -405,31 +573,30 @@
 
         if (data.status === 'waiting_payment') {
             statusBadge.textContent = 'Action Required: Waiting for Payment';
-            statusBadge.style.background = '#fee2e2';
-            statusBadge.style.color = '#991b1b';
+            statusBadge.style.background = '#f4f5f7';
+            statusBadge.style.color = '#0b0c0f';
             statusBadge.style.fontWeight = '600';
-            statusBadge.style.border = '1px solid #ef4444';
+            statusBadge.style.border = '1px solid #0b0c0f';
         } else if (data.status === 'pending') {
             if (isFeeWaived) {
                 statusBadge.textContent = 'Waiting for Admin Approval';
-                statusBadge.style.background = '#fef3c7';
-                statusBadge.style.color = '#92400e';
+                statusBadge.style.background = '#f4f5f7';
+                statusBadge.style.color = '#6b7280';
             } else {
                 statusBadge.textContent = 'Processing...';
-                statusBadge.style.background = '#e0f2fe';
-                statusBadge.style.color = '#075985';
+                statusBadge.style.background = '#f4f5f7';
+                statusBadge.style.color = '#0b0c0f';
             }
         }
 
         if (data.status === 'approved' || data.status === 'rejected') {
             const approvalMessage = document.getElementById('approvalMessage');
             approvalMessage.classList.remove('hidden');
-            approvalMessage.style.background = data.status === 'approved' ? '#f0fdf4' : '#fef2f2';
-            approvalMessage.style.borderLeft = `3px solid ${data.status === 'approved' ? '#22c55e' : '#ef4444'}`;
+            if (data.status === 'rejected') approvalMessage.classList.add('is-rejected');
 
             approvalMessage.innerHTML = `
-                <p style="font-weight: 500; margin-bottom: 0.5rem;">${data.status === 'approved' ? '✓ Request Approved' : '✗ Request Rejected'}</p>
-                <p style="font-size: 0.9rem; color: var(--gray-dark);">
+                <p style="font-weight: 600; margin-bottom: 0.5rem; color: var(--primary-color, #0b0c0f);">${data.status === 'approved' ? '\u2713 Request Approved' : '\u2717 Request Rejected'}</p>
+                <p style="font-size: 0.88rem; color: var(--gray-dark, #6b7280); line-height: 1.5;">
                     ${data.adminNotes || (data.status === 'approved' ? 'Your request has been approved. Refund/replacement will be processed shortly.' : 'Your request has been rejected. Please contact support for more details.')}
                 </p>
             `;
@@ -457,11 +624,11 @@
             }
         }
 
-        // --- PRO FEATURES (Activity History) ---
+        // --- PRO FEATURES (Activity History / Checkpoints) ---
         if (data.shipment && data.shipment.activities && data.shipment.activities.length > 0) {
             document.getElementById('activityHistory').classList.remove('hidden');
             const scanLog = document.getElementById('scanLog');
-            scanLog.innerHTML = data.shipment.activities.map(act => {
+            scanLog.innerHTML = data.shipment.activities.map((act, idx) => {
                 let dateDisplay = '-';
                 let timeDisplay = '';
                 
@@ -471,11 +638,15 @@
                     timeDisplay = dateParts[1] ? dateParts[1].substring(0, 5) : '';
                 }
                 
+                const statusLabel = act['sr-status-label'] || act.status || act.Status || 'Update';
+                const location = act.location || act.Location || 'Hub';
+                const isLatest = idx === 0;
+                
                 return `
                     <div class="scan-item">
                         <div>
-                            <div class="scan-status">${act['sr-status-label'] || act.status}</div>
-                            <div style="font-size: 0.75rem; color: var(--gray-dark);">${act.location || 'Hub'}</div>
+                            <div class="scan-status">${isLatest ? '\u25CF ' : ''}${statusLabel}</div>
+                            <div class="scan-location">${location}</div>
                         </div>
                         <div class="scan-meta">
                             <div>${dateDisplay}</div>
@@ -483,7 +654,7 @@
                         </div>
                     </div>
                 `;
-            }).reverse().join(''); // Reverse to show latest first
+            }).join(''); // Latest first (already sorted by carrier)
         } else {
             document.getElementById('activityHistory').classList.add('hidden');
         }
@@ -494,27 +665,53 @@
             if (data.forwardAwbNumber) {
                 document.getElementById('forwardShipmentDetails').classList.remove('hidden');
                 document.getElementById('fwdAwbNumber').textContent = data.forwardAwbNumber;
-                document.getElementById('fwdStatus').textContent = (data.forwardStatus || 'Scheduled').toUpperCase();
-                document.getElementById('fwdEdd').textContent = data.forwardShipment?.edd ? new Date(data.forwardShipment.edd).toDateString() : 'TBD';
+                document.getElementById('fwdStatus').textContent = (data.forwardStatus || 'Scheduled').replace(/_/g, ' ').toUpperCase();
+                const fwdEdd = data.forwardShipment?.edd || data.forwardExpectedDeliveryDate;
+                document.getElementById('fwdEdd').textContent = fwdEdd ? new Date(fwdEdd).toDateString() : 'TBD';
+                document.getElementById('fwdCarrierName').textContent = data.forwardCarrierName || data.forwardShipment?.courierName || data.forwardCarrier || 'Pending';
             }
 
-            // Populate Forward Timeline
+            // Populate Forward Timeline with dates
             const fwdTimeline = document.getElementById('forwardTimeline');
             const fwdStatuses = [
-                { key: 'scheduled', label: 'Replacement Dispatched' },
-                { key: 'picked_up', label: 'In Transit' },
-                { key: 'delivered', label: 'Out for Delivery' },
-                { key: 'delivered_complete', label: 'Replacement Delivered' }
+                { key: 'scheduled', label: 'Replacement Dispatched', date: data.forwardShipment?.pickupDate },
+                { key: 'picked_up', label: 'Picked Up by Courier', date: null },
+                { key: 'in_transit', label: 'In Transit', date: null },
+                { key: 'out_for_delivery', label: 'Out for Delivery', date: null },
+                { key: 'delivered_complete', label: 'Replacement Delivered', date: data.forwardShipment?.deliveredDate }
             ];
+
+            // Extract dates from forward shipment activities if available
+            if (data.forwardShipment && data.forwardShipment.activities && data.forwardShipment.activities.length > 0) {
+                const activities = data.forwardShipment.activities;
+                activities.forEach(act => {
+                    const actStatus = (act['sr-status-label'] || act.status || act.Status || '').toLowerCase();
+                    const actDate = act.date || act.Date || null;
+                    if (actStatus.includes('pickup') || actStatus.includes('picked')) {
+                        fwdStatuses[1].date = fwdStatuses[1].date || actDate;
+                    }
+                    if (actStatus.includes('transit') || actStatus.includes('in network') || actStatus.includes('reached')) {
+                        fwdStatuses[2].date = fwdStatuses[2].date || actDate;
+                    }
+                    if (actStatus.includes('out for delivery') || actStatus.includes('ofd') || actStatus.includes('dispatched')) {
+                        fwdStatuses[3].date = fwdStatuses[3].date || actDate;
+                    }
+                    if (actStatus.includes('delivered')) {
+                        fwdStatuses[4].date = fwdStatuses[4].date || actDate;
+                    }
+                });
+            }
 
             let fwdCurrentStatus = data.forwardStatus || 'scheduled';
             let fwdIndex = fwdStatuses.findIndex(s => s.key === fwdCurrentStatus);
-            if (fwdCurrentStatus === 'delivered') fwdIndex = 3; // Fully complete
+            if (fwdCurrentStatus === 'delivered') fwdIndex = 4; // Fully complete
+            if (fwdIndex === -1) fwdIndex = 0; // fallback
 
             fwdTimeline.innerHTML = fwdStatuses.map((s, i) => `
                 <div class="timeline-item ${i <= fwdIndex ? 'completed' : ''} ${i === fwdIndex ? 'active' : ''}">
                     <div class="timeline-content">
                         <h4>${s.label}</h4>
+                        ${s.date ? `<p class="timeline-date">${formatDateIST(s.date)}</p>` : ''}
                     </div>
                 </div>
             `).join('');
@@ -567,7 +764,7 @@
 
         btn.disabled = true;
         btn.textContent = 'Submitting...';
-        msg.style.color = '#666';
+        msg.style.color = 'var(--gray-dark, #6b7280)';
         msg.textContent = 'Submitting your video link...';
 
         try {
@@ -580,8 +777,8 @@
             const data = await response.json();
 
             if (response.ok) {
-                msg.style.color = 'var(--success-color)';
-                msg.textContent = '✓ Pickup video submitted successfully!';
+                msg.style.color = 'var(--primary-color, #0b0c0f)';
+                msg.textContent = '\u2713 Pickup video submitted successfully!';
                 urlInput.value = videoUrl;
 
                 // Show the submitted card
