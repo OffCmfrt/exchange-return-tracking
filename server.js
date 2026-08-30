@@ -5538,40 +5538,86 @@ app.get('/api/track-request/:identifier', async (req, res) => {
     // Normalize carrier tracking activities into a unified { status, location, date } shape
     // so the frontend checkpoint renderer works identically for Delhivery, Shiprocket, and Ekart.
     //
-    // Delhivery ScanDetail : { Scan, Location, Date }
+    // Delhivery ScanDetail : { Scan, Location, Date } (or lowercase variants)
     // Shiprocket track item  : { 'sr-status-label', activity, location, date }
     // Ekart event            : { status, desc, location, datetime }
     function normalizeActivities(raw, carrier) {
         if (!Array.isArray(raw) || raw.length === 0) return [];
+        
+        // Debug: log first activity to understand actual field names
+        if (raw.length > 0 && process.env.NODE_ENV !== 'production') {
+            console.log(`[NormalizeActivities] ${carrier} - First raw activity:`, JSON.stringify(raw[0]));
+        }
+        
         return raw.map(act => {
-            // Status / label
+            // Status / label - try all possible field names
             const status =
                 act['sr-status-label'] ||
                 act.Scan ||
                 act.scan ||
+                act.scan_type ||
                 act.status ||
                 act.Status ||
                 act.desc ||
+                act.description ||
                 act.activity ||
+                act.event ||
                 'Update';
-            // Location
+            
+            // Location - try all possible field names
             const location =
                 act.Location ||
                 act.location ||
                 act.ScanLocation ||
+                act.scan_location ||
+                act.loc ||
+                act.city ||
+                act.place ||
+                act.warehouse ||
                 'Hub';
-            // Date — Delhivery uses ISO "Date", Ekart uses ISO "datetime",
-            // Shiprocket uses "date" in "YYYY-MM-DD HH:MM:SS" format.
-            const rawDate = act.Date || act.date || act.datetime || act.scan_date || null;
+            
+            // Date — try all possible field names and formats
+            const rawDate = 
+                act.Date || 
+                act.date || 
+                act.datetime || 
+                act.dateTime ||
+                act.scan_date || 
+                act.scan_date_time ||
+                act.timestamp ||
+                act.time ||
+                act.created_at ||
+                null;
+            
             let date = rawDate;
-            if (rawDate && typeof rawDate === 'string' && rawDate.includes('T')) {
-                // ISO string — convert to "YYYY-MM-DD HH:MM" for the frontend splitter
+            if (rawDate && typeof rawDate === 'string') {
+                if (rawDate.includes('T')) {
+                    // ISO string — convert to "YYYY-MM-DD HH:MM" for the frontend splitter
+                    const d = new Date(rawDate);
+                    if (!isNaN(d.getTime())) {
+                        const pad = n => String(n).padStart(2, '0');
+                        date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    }
+                } else if (rawDate.includes(' ')) {
+                    // Already in "YYYY-MM-DD HH:MM:SS" format - keep as is
+                    date = rawDate;
+                } else if (!isNaN(Date.parse(rawDate))) {
+                    // Try parsing as date
+                    const d = new Date(rawDate);
+                    if (!isNaN(d.getTime())) {
+                        const pad = n => String(n).padStart(2, '0');
+                        date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    }
+                }
+            } else if (rawDate && typeof rawDate === 'number') {
+                // Unix timestamp
                 const d = new Date(rawDate);
                 if (!isNaN(d.getTime())) {
                     const pad = n => String(n).padStart(2, '0');
                     date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
                 }
             }
+            
             return { status, location, date };
         });
     }
