@@ -20,87 +20,19 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 
 const STORAGE_KEY = "offcomfrt-founder-os-v1";
 
-const DEPARTMENT_DEFS = [
-  { id: "dep-founder", name: "Founder / Management", owner: "You",
-    goal: "Keep company direction clear and decisions moving.",
-    priorities: ["Close the Ops Manager hire", "Unblock pending Autumn launch decisions"],
-    kpis: [{ label: "Open founder decisions", value: "3" }],
-    issues: [], health: "good" },
-  { id: "dep-product", name: "Product & Design", owner: "You",
-    goal: "Ship a design system tech packs don't fight.",
-    priorities: ["Finalize Cloud Joggers v2 tech pack", "Scope Women's Comfort line silhouettes"],
-    kpis: [{ label: "Styles in development", value: "6" }],
-    issues: ["Autumn lookbook edit pending founder approval"], health: "good" },
-  { id: "dep-sourcing", name: "Sourcing", owner: "Kabir",
-    goal: "Lock reliable fabric and trims supply.",
-    priorities: ["Finalize packaging supplier PO", "Vet a backup fleece supplier"],
-    kpis: [{ label: "Active vendors", value: "11" }],
-    issues: ["Packaging PO sign-off overdue"], health: "risk" },
-  { id: "dep-mfg", name: "Manufacturing", owner: "Dev",
-    goal: "Bring the Tirupur unit to full production.",
-    priorities: ["Resolve GSM mismatch on fleece batch", "Finalize revised MOQ terms"],
-    kpis: [{ label: "Units in production", value: "4,200" }],
-    issues: ["GSM mismatch on fleece batch — third follow-up"], health: "risk" },
-  { id: "dep-qc", name: "Quality Control", owner: "Dev",
-    goal: "Zero defect batches shipped to the warehouse.",
-    priorities: ["Clear Batch 12 QC review"],
-    kpis: [{ label: "Batches pending review", value: "2" }],
-    issues: ["Batch 12 report overdue"], health: "risk" },
-  { id: "dep-inventory", name: "Inventory", owner: "Priya",
-    goal: "Never stock out of a core style.",
-    priorities: ["Set reorder points for Core Tee"],
-    kpis: [{ label: "SKUs below safety stock", value: "3" }],
-    issues: [], health: "good" },
-  { id: "dep-ops", name: "Operations", owner: "Priya",
-    goal: "Reliable, fast fulfillment nationwide.",
-    priorities: ["Pick a 3PL for the South region"],
-    kpis: [{ label: "Avg. dispatch time", value: "1.4 days" }],
-    issues: [], health: "good" },
-  { id: "dep-marketing", name: "Marketing", owner: "Ishaan",
-    goal: "Make the Autumn launch impossible to miss.",
-    priorities: ["Finalize influencer shortlist", "Approve the lookbook"],
-    kpis: [{ label: "Campaign readiness", value: "70%" }],
-    issues: [], health: "good" },
-  { id: "dep-meta", name: "Meta Ads / Performance Marketing", owner: "Ishaan",
-    goal: "Scale spend without losing ROAS.",
-    priorities: ["Review creative batch 4", "Weekly ROAS check"],
-    kpis: [{ label: "ROAS (30d)", value: "3.8x" }, { label: "CAC", value: "₹612" }],
-    issues: [], health: "good" },
-  { id: "dep-content", name: "Content", owner: "Ishaan",
-    goal: "Stay two weeks ahead of every launch.",
-    priorities: ["Confirm Autumn shoot shotlist"],
-    kpis: [{ label: "Assets in production", value: "14" }],
-    issues: ["Shotlist confirmation pushed once"], health: "good" },
-  { id: "dep-web", name: "Website / E-commerce", owner: "Sana",
-    goal: "Redesign live before the Autumn launch.",
-    priorities: ["Approve the new PDP layout", "Ship the abandoned-cart flow"],
-    kpis: [{ label: "Conversion rate", value: "2.1%" }],
-    issues: ["PDP layout awaiting founder approval"], health: "risk" },
-  { id: "dep-support", name: "Customer Support", owner: "Meher",
-    goal: "Every ticket resolved within 24 hours.",
-    priorities: ["Clear escalated refund tickets"],
-    kpis: [{ label: "Avg. response time", value: "6h" }, { label: "Backlog", value: "9" }],
-    issues: ["Refund tickets over 3 days old"], health: "risk" },
-  { id: "dep-finance", name: "Finance", owner: "Neha",
-    goal: "Clean books, healthy cash runway.",
-    priorities: ["Reconcile July settlements"],
-    kpis: [{ label: "Cash runway", value: "7.2 mo" }],
-    issues: [], health: "good" },
-  { id: "dep-hr", name: "HR / Hiring", owner: "Neha",
-    goal: "Build a team the founder can delegate to.",
-    priorities: ["Close the Ops Manager hire", "Draft Q4 hiring plan"],
-    kpis: [{ label: "Open roles", value: "2" }],
-    issues: [], health: "good" },
-  { id: "dep-data", name: "Data / Analytics", owner: "Rahul",
-    goal: "See the business clearly, every day.",
-    priorities: ["Ship the CAC/ROAS dashboard"],
-    kpis: [{ label: "Dashboard progress", value: "35%" }],
-    issues: [], health: "good" },
-];
+const DEPARTMENT_DEFS = [];
 
 const DEPARTMENT_NAMES = DEPARTMENT_DEFS.map(d => d.name);
-const TASK_DEPARTMENTS = [...DEPARTMENT_NAMES, "Personal"];
-const PEOPLE = ["You", "Neha", "Priya", "Ishaan", "Meher", "Rahul", "Sana", "Kabir", "Dev"];
+const PEOPLE = ["You"];
+// Form options grow from the founder's own data — no hardcoded sample content
+const deptOptions = (state) => Array.from(new Set([...DEPARTMENT_NAMES, ...(state?.departments || []).map(d => d.name).filter(Boolean)]));
+const taskDeptOptions = (state) => [...deptOptions(state), "Personal"];
+const peopleOptions = (state) => Array.from(new Set([
+  ...PEOPLE,
+  ...(state?.tasks || []).map(t => t.owner).filter(Boolean),
+  ...(state?.meetings || []).map(m => m.owner).filter(Boolean),
+  ...(state?.departments || []).map(d => d.owner).filter(Boolean),
+]));
 const PRIORITIES = ["Critical", "Important", "Normal", "Low"];
 const STATUSES = ["Inbox", "Planned", "Today", "In Progress", "Waiting", "Blocked", "Completed", "Cancelled"];
 const FOUNDER_AREAS = [
@@ -655,7 +587,7 @@ function TaskDrawer({ task, onClose, actions, state }) {
           <div className="grid grid-cols-2 gap-3">
             <Field label="Department">
               <select className="select" value={form.department} onChange={e => set("department", e.target.value)}>
-                {TASK_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                {taskDeptOptions(state).map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </Field>
             <Field label="Owner">
@@ -753,7 +685,7 @@ function FilterBar({ filters, setFilters, projects }) {
       </div>
       <select className="select" style={{ width: "auto" }} value={filters.department} onChange={e => upd("department", e.target.value)}>
         <option value="">All departments</option>
-        {TASK_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+        {taskDeptOptions(state).map(d => <option key={d} value={d}>{d}</option>)}
       </select>
       <select className="select" style={{ width: "auto" }} value={filters.priority} onChange={e => upd("priority", e.target.value)}>
         <option value="">Any priority</option>
@@ -761,7 +693,7 @@ function FilterBar({ filters, setFilters, projects }) {
       </select>
       <select className="select" style={{ width: "auto" }} value={filters.owner} onChange={e => upd("owner", e.target.value)}>
         <option value="">Anyone</option>
-        {PEOPLE.map(p => <option key={p} value={p}>{p}</option>)}
+        {peopleOptions(state).map(p => <option key={p} value={p}>{p}</option>)}
       </select>
       <select className="select" style={{ width: "auto" }} value={filters.projectId} onChange={e => upd("projectId", e.target.value)}>
         <option value="">Any project</option>
@@ -935,7 +867,7 @@ function ProjectModal({ project, onClose, actions, state, openTask }) {
         <div className="grid grid-cols-2 gap-3">
           <Field label="Department">
             <select className="select" value={form.department} onChange={e => set("department", e.target.value)}>
-              {DEPARTMENT_NAMES.map(d => <option key={d} value={d}>{d}</option>)}
+              {deptOptions(state).map(d => <option key={d} value={d}>{d}</option>)}
             </select>
           </Field>
           <Field label="Owner"><input className="input" list="people-list" value={form.owner} onChange={e => set("owner", e.target.value)} /></Field>
@@ -983,7 +915,7 @@ function ProjectsView({ state, actions, openTask }) {
   const [editing, setEditing] = useState(null);
   const [deptFilter, setDeptFilter] = useState("");
   const projects = state.projects.filter(p => !deptFilter || p.department === deptFilter);
-  const blank = () => ({ id: uid("p"), code: nextCode(state.projects, "PRJ"), name: "", department: DEPARTMENT_NAMES[0], owner: "You", founderInvolvement: "Medium", objective: "", startDate: todayISO(), deadline: relDate(30), status: "Not Started", priority: "Normal", progress: 0, risks: "", budget: "", notes: "" });
+  const blank = () => ({ id: uid("p"), code: nextCode(state.projects, "PRJ"), name: "", department: deptOptions(state)[0] || "", owner: "You", founderInvolvement: "Medium", objective: "", startDate: todayISO(), deadline: relDate(30), status: "Not Started", priority: "Normal", progress: 0, risks: "", budget: "", notes: "" });
   return (
     <div>
       <SectionHeading title="Projects" icon={FolderKanban} action={
@@ -992,7 +924,7 @@ function ProjectsView({ state, actions, openTask }) {
       <div className="mb-3">
         <select className="select" style={{ width: "auto" }} value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
           <option value="">All departments</option>
-          {DEPARTMENT_NAMES.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptOptions(state).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
@@ -1170,7 +1102,7 @@ function MeetingModal({ meeting, onClose, actions, state, openTask }) {
           <Field label="Time"><input type="time" className="input" value={form.time} onChange={e => set("time", e.target.value)} /></Field>
           <Field label="Department">
             <select className="select" value={form.department} onChange={e => set("department", e.target.value)}>
-              {DEPARTMENT_NAMES.map(d => <option key={d} value={d}>{d}</option>)}
+              {deptOptions(state).map(d => <option key={d} value={d}>{d}</option>)}
             </select>
           </Field>
           <Field label="Owner"><input className="input" list="people-list" value={form.owner} onChange={e => set("owner", e.target.value)} /></Field>
@@ -1228,7 +1160,7 @@ function MeetingsView({ state, actions, openTask }) {
   const [tab, setTab] = useState("today");
   const [editing, setEditing] = useState(null);
   const meetings = [...meetingsForTab(state.meetings, tab)].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  const blank = () => ({ id: uid("m"), code: nextCode(state.meetings, "MTG"), name: "", date: todayISO(), time: "10:00", durationMinutes: 30, participants: ["You"], department: DEPARTMENT_NAMES[0], objective: "", agenda: [], notesText: "", decisions: [], actionItems: [], owner: "You", followUpDate: null, status: "upcoming" });
+  const blank = () => ({ id: uid("m"), code: nextCode(state.meetings, "MTG"), name: "", date: todayISO(), time: "10:00", durationMinutes: 30, participants: ["You"], department: deptOptions(state)[0] || "", objective: "", agenda: [], notesText: "", decisions: [], actionItems: [], owner: "You", followUpDate: null, status: "upcoming" });
   return (
     <div>
       <SectionHeading title="Meetings" icon={CalendarClock} action={
@@ -1289,7 +1221,7 @@ function DecisionModal({ decision, onClose, actions, state }) {
         <div className="grid grid-cols-2 gap-3">
           <Field label="Department">
             <select className="select" value={form.department} onChange={e => set("department", e.target.value)}>
-              {DEPARTMENT_NAMES.map(d => <option key={d} value={d}>{d}</option>)}
+              {deptOptions(state).map(d => <option key={d} value={d}>{d}</option>)}
             </select>
           </Field>
           <Field label="Date"><input type="date" className="input" value={form.date} onChange={e => set("date", e.target.value)} /></Field>
@@ -1313,7 +1245,7 @@ function DecisionModal({ decision, onClose, actions, state }) {
 function DecisionsView({ state, actions }) {
   const [editing, setEditing] = useState(null);
   const decisions = [...state.decisions].sort((a, b) => b.date.localeCompare(a.date));
-  const blank = () => ({ id: uid("d"), code: nextCode(state.decisions, "DEC"), decision: "", date: todayISO(), department: DEPARTMENT_NAMES[0], context: "", options: "", decisionMade: "", why: "", owner: "You", expectedOutcome: "", reviewDate: relDate(21), actualOutcome: "" });
+  const blank = () => ({ id: uid("d"), code: nextCode(state.decisions, "DEC"), decision: "", date: todayISO(), department: deptOptions(state)[0] || "", context: "", options: "", decisionMade: "", why: "", owner: "You", expectedOutcome: "", reviewDate: relDate(21), actualOutcome: "" });
   return (
     <div>
       <SectionHeading title="Decision Center" icon={Scale} action={
@@ -1651,7 +1583,7 @@ function WeeklyReviewView({ state, actions }) {
 
 function InboxItemRow({ item, actions, openTask }) {
   const [open, setOpen] = useState(false);
-  const [delegateTo, setDelegateTo] = useState("Neha");
+  const [delegateTo, setDelegateTo] = useState("");
   return (
     <div className="taskrow py-2.5 px-1">
       <div className="flex items-start justify-between gap-2">
@@ -1671,7 +1603,7 @@ function InboxItemRow({ item, actions, openTask }) {
           <button className="btn btn-sm" onClick={() => { actions.processInbox(item.id, "idea"); setOpen(false); }} type="button">→ Idea</button>
           <button className="btn btn-sm" onClick={() => { actions.processInbox(item.id, "decision"); setOpen(false); }} type="button">→ Decision</button>
           <select className="select" style={{ width: "auto" }} value={delegateTo} onChange={e => setDelegateTo(e.target.value)}>
-            {PEOPLE.filter(p => p !== "You").map(p => <option key={p} value={p}>{p}</option>)}
+            {peopleOptions(state).filter(p => p !== "You").map(p => <option key={p} value={p}>{p}</option>)}
           </select>
           <button className="btn btn-sm" onClick={() => { actions.processInbox(item.id, "delegate", { owner: delegateTo }); setOpen(false); }} type="button">→ Delegate</button>
           <button className="btn btn-ghost btn-sm" onClick={() => { actions.deleteInboxItem(item.id); setOpen(false); }} type="button">Dismiss</button>
@@ -2341,7 +2273,7 @@ export default function FounderOS() {
       </div>
       {drawerTask && <TaskDrawer task={drawerTask} onClose={closeTask} actions={actions} state={state} />}
       <Toast toast={toast} />
-      <datalist id="people-list">{PEOPLE.map(p => <option key={p} value={p} />)}</datalist>
+      <datalist id="people-list">{peopleOptions(state).map(p => <option key={p} value={p} />)}</datalist>
     </div>
   );
 }
