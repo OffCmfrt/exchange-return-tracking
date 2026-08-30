@@ -5535,6 +5535,47 @@ app.get('/api/track-request/:identifier', async (req, res) => {
         return workflow;
     }
 
+    // Normalize carrier tracking activities into a unified { status, location, date } shape
+    // so the frontend checkpoint renderer works identically for Delhivery, Shiprocket, and Ekart.
+    //
+    // Delhivery ScanDetail : { Scan, Location, Date }
+    // Shiprocket track item  : { 'sr-status-label', activity, location, date }
+    // Ekart event            : { status, desc, location, datetime }
+    function normalizeActivities(raw, carrier) {
+        if (!Array.isArray(raw) || raw.length === 0) return [];
+        return raw.map(act => {
+            // Status / label
+            const status =
+                act['sr-status-label'] ||
+                act.Scan ||
+                act.scan ||
+                act.status ||
+                act.Status ||
+                act.desc ||
+                act.activity ||
+                'Update';
+            // Location
+            const location =
+                act.Location ||
+                act.location ||
+                act.ScanLocation ||
+                'Hub';
+            // Date — Delhivery uses ISO "Date", Ekart uses ISO "datetime",
+            // Shiprocket uses "date" in "YYYY-MM-DD HH:MM:SS" format.
+            const rawDate = act.Date || act.date || act.datetime || act.scan_date || null;
+            let date = rawDate;
+            if (rawDate && typeof rawDate === 'string' && rawDate.includes('T')) {
+                // ISO string — convert to "YYYY-MM-DD HH:MM" for the frontend splitter
+                const d = new Date(rawDate);
+                if (!isNaN(d.getTime())) {
+                    const pad = n => String(n).padStart(2, '0');
+                    date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                }
+            }
+            return { status, location, date };
+        });
+    }
+
     // Helper to enrich a request with live tracking data (supports both Shiprocket and Delhivery)
     // Also persists EDD and status updates to DB so data is always fresh
     async function enrichWithTracking(request) {
@@ -5562,7 +5603,7 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                             destination: trackingData.return_address?.name || null,
                             status: carrierStatus || 'Pending',
                             edd: edd,
-                            activities: shipment.tracking_data || [],
+                            activities: normalizeActivities(shipment.tracking_data || [], 'delhivery'),
                             carrier: 'delhivery'
                         };
                         // Queue EDD + carrier name for persistence
@@ -5592,7 +5633,7 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                             destination: tracking.shipment_track?.[0]?.destination || tracking.destination || null,
                             status: carrierStatus || 'Pending',
                             edd: edd,
-                            activities: tracking.shipment_track || [],
+                            activities: normalizeActivities(tracking.shipment_track || [], 'shiprocket'),
                             carrier: 'shiprocket'
                         };
                         if (edd) persistUpdates.expectedDeliveryDate = edd;
@@ -5632,7 +5673,7 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                     const trackingData = await getDelhiveryTracking(request.forwardAwbNumber);
                     if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
                         const shipment = trackingData.shipments[0];
-                        const activities = shipment.tracking_data || shipment.scans || [];
+                        const activities = normalizeActivities(shipment.tracking_data || shipment.scans || [], 'delhivery');
                         const fwdEdd = shipment.eta || null;
                         const fwdStatus = shipment.status || shipment.delivered_status;
                         const fwdStatusType = shipment.status_type || null;
@@ -5665,7 +5706,7 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                     const trackingData = await shiprocketAPI(`/courier/track/awb/${request.forwardAwbNumber}`);
                     if (trackingData && trackingData.tracking_data) {
                         const tracking = trackingData.tracking_data;
-                        const activities = tracking.shipment_track || [];
+                        const activities = normalizeActivities(tracking.shipment_track || [], 'shiprocket');
                         const fwdEdd = tracking.edd || tracking.etd || null;
                         const fwdStatus = tracking.current_status;
                         
