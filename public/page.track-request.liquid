@@ -621,8 +621,10 @@
         if (data.status === 'rejected') currentIndex = -1;
 
         timeline.innerHTML = statuses.map((status, index) => {
-            const isCompleted = index <= currentIndex && currentIndex !== -1;
-            const isActive = index === currentIndex;
+            // A step is completed if: it's before the current index, OR it has a real timestamp
+            const hasTimestamp = !!status.date;
+            const isCompleted = (index < currentIndex && currentIndex !== -1) || (hasTimestamp && index <= currentIndex);
+            const isActive = index === currentIndex && !hasTimestamp;
 
             return `
                 <div class="timeline-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}">
