@@ -2815,6 +2815,133 @@
                 <p style="font-size: 0.9rem; color: #7f1d1d; white-space: pre-wrap; margin: 0;">${escapeHtml(data.adminNotes || 'No reason recorded.')}</p>
                 ${data.rejectedAt ? `<p style="font-size: 0.8rem; color: #b91c1c; margin: 0.5rem 0 0 0;">Rejected on ${formatDateIST(data.rejectedAt)}</p>` : ''}
             </div>
+
+            <!-- ═══ Video Evidence Panel (Premium) ═══ -->
+            <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-radius: 12px; padding: 0; margin-bottom: 1rem; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.06);">
+                <!-- Header -->
+                <div style="background: linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(220,38,38,0.08) 100%); padding: 1rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 36px; height: 36px; background: linear-gradient(135deg, #ef4444, #dc2626); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; color: #f1f5f9; font-size: 0.95rem; font-weight: 600; letter-spacing: 0.3px;">Video Evidence Portal</h3>
+                        <p style="margin: 0; color: #94a3b8; font-size: 0.72rem;">Pickup handover &amp; warehouse unboxing recordings</p>
+                    </div>
+                </div>
+
+                <div style="padding: 1.25rem;">
+                    <!-- Existing Videos Display -->
+                    ${(data.pickupVideoUrl || data.unboxingVideoUrl) ? `
+                    <div style="display: grid; grid-template-columns: ${data.pickupVideoUrl && data.unboxingVideoUrl ? '1fr 1fr' : '1fr'}; gap: 1rem; margin-bottom: 1.25rem;">
+                        ${data.pickupVideoUrl ? `
+                        <div style="background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); border-radius: 10px; padding: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                <div style="width: 24px; height: 24px; background: #22c55e; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                </div>
+                                <span style="color: #4ade80; font-size: 0.8rem; font-weight: 600;">Pickup Video</span>
+                            </div>
+                            <a href="${escapeHtml(data.pickupVideoUrl)}" target="_blank" rel="noopener" style="display: flex; align-items: center; gap: 0.5rem; color: #86efac; font-size: 0.8rem; text-decoration: none; word-break: break-all;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                Watch Pickup Video
+                            </a>
+                            ${data.pickupVideoSubmittedAt ? `<p style="color: #6b7280; font-size: 0.7rem; margin: 0.5rem 0 0 0;">Submitted ${formatDateIST(data.pickupVideoSubmittedAt)}</p>` : ''}
+                        </div>
+                        ` : ''}
+                        ${data.unboxingVideoUrl ? `
+                        <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); border-radius: 10px; padding: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                <div style="width: 24px; height: 24px; background: #3b82f6; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                </div>
+                                <span style="color: #60a5fa; font-size: 0.8rem; font-weight: 600;">Unboxing Video</span>
+                            </div>
+                            <a href="${escapeHtml(data.unboxingVideoUrl)}" target="_blank" rel="noopener" style="display: flex; align-items: center; gap: 0.5rem; color: #93c5fd; font-size: 0.8rem; text-decoration: none; word-break: break-all;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                Watch Unboxing Video
+                            </a>
+                            ${data.unboxingVideoSubmittedAt ? `<p style="color: #6b7280; font-size: 0.7rem; margin: 0.5rem 0 0 0;">Uploaded ${formatDateIST(data.unboxingVideoSubmittedAt)}</p>` : ''}
+                        </div>
+                        ` : ''}
+                    </div>
+                    ` : ''}
+
+                    <!-- Submit Pickup Video Link (always available for rejected) -->
+                    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 1rem; margin-bottom: ${data.unboxingVideoUrl ? '0' : '1rem'};">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                            <span style="color: #fbbf24; font-size: 0.82rem; font-weight: 600;">${data.pickupVideoUrl ? 'Update Pickup Video' : 'Submit Pickup Video'}</span>
+                        </div>
+                        <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem;">
+                            <p style="color: #fcd34d; font-size: 0.72rem; margin: 0; line-height: 1.5;">
+                                <strong>Notice:</strong> Record the pickup handover with the <strong>product clearly visible</strong> and the <strong>pickup executive in frame</strong>. This secures your package handover as proof.
+                            </p>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="url" id="pickupVideoUrlInput" placeholder="Paste video link (Google Drive, YouTube, etc.)" value="${escapeHtml(data.pickupVideoUrl || '')}" style="flex: 1; padding: 0.6rem 0.75rem; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; color: #e2e8f0; font-size: 0.82rem; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#f59e0b'" onblur="this.style.borderColor='rgba(255,255,255,0.12)'" />
+                            <button onclick="submitPickupVideo('${data.requestId}')" style="padding: 0.6rem 1.25rem; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; border-radius: 8px; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: transform 0.15s, box-shadow 0.15s; box-shadow: 0 2px 8px rgba(245,158,11,0.3);" onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 12px rgba(245,158,11,0.4)'" onmouseout="this.style.transform='none'; this.style.boxShadow='0 2px 8px rgba(245,158,11,0.3)'">
+                                <span id="pickupVideoBtnText">Submit</span>
+                                <span id="pickupVideoSpinner" class="spinner hidden" style="border-color: white; border-bottom-color: transparent; width: 14px; height: 14px; display: inline-block; vertical-align: middle; margin-left: 0.3rem;"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    ${!data.unboxingVideoUrl ? `
+                    <!-- Warehouse Unboxing Video Upload -->
+                    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 1rem; margin-top: 1rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            <span style="color: #a78bfa; font-size: 0.82rem; font-weight: 600;">Warehouse Unboxing Video</span>
+                        </div>
+                        <p style="color: #94a3b8; font-size: 0.72rem; margin: 0 0 0.75rem 0; line-height: 1.5;">Upload the unboxing video to document the condition of the returned package upon arrival at warehouse.</p>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <label style="flex: 1; min-width: 180px; padding: 0.75rem 1rem; background: rgba(139,92,246,0.1); border: 1px dashed rgba(139,92,246,0.3); border-radius: 8px; cursor: pointer; text-align: center; transition: all 0.2s;" onmouseover="this.style.borderColor='#8b5cf6'; this.style.background='rgba(139,92,246,0.15)'" onmouseout="this.style.borderColor='rgba(139,92,246,0.3)'; this.style.background='rgba(139,92,246,0.1)'">
+                                <input type="file" id="unboxingVideoFile" accept="video/*" style="display: none;" onchange="handleUnboxingFileSelect(this)" />
+                                <span style="color: #c4b5fd; font-size: 0.82rem; font-weight: 500;">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 0.3rem;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                                    Choose Video File
+                                </span>
+                            </label>
+                            <div style="flex: 1; min-width: 180px; display: flex; gap: 0.5rem;">
+                                <input type="url" id="unboxingVideoUrlInput" placeholder="Or paste video link" style="flex: 1; padding: 0.6rem 0.75rem; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; color: #e2e8f0; font-size: 0.82rem; outline: none;" onfocus="this.style.borderColor='#8b5cf6'" onblur="this.style.borderColor='rgba(255,255,255,0.12)'" />
+                                <button onclick="submitUnboxingVideo('${data.requestId}')" style="padding: 0.6rem 1rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; border: none; border-radius: 8px; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 8px rgba(139,92,246,0.3);" id="unboxingVideoSubmitBtn">
+                                    Upload
+                                </button>
+                            </div>
+                        </div>
+                        <div id="unboxingFilePreview" class="hidden" style="margin-top: 0.75rem; padding: 0.5rem 0.75rem; background: rgba(139,92,246,0.08); border-radius: 6px; display: flex; align-items: center; gap: 0.5rem;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                            <span id="unboxingFileName" style="color: #c4b5fd; font-size: 0.75rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+                            <span id="unboxingFileSize" style="color: #6b7280; font-size: 0.7rem;"></span>
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+            ` : ''}
+
+            <!-- Video Evidence (non-rejected statuses — show only if videos exist) -->
+            ${data.status !== 'rejected' && (data.pickupVideoUrl || data.unboxingVideoUrl) ? `
+            <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-radius: 12px; padding: 0; margin-bottom: 1rem; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.06);">
+                <div style="background: rgba(255,255,255,0.03); padding: 0.75rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                    <span style="color: #93c5fd; font-size: 0.82rem; font-weight: 600;">Video Evidence</span>
+                </div>
+                <div style="padding: 1rem 1.25rem; display: grid; grid-template-columns: ${data.pickupVideoUrl && data.unboxingVideoUrl ? '1fr 1fr' : '1fr'}; gap: 0.75rem;">
+                    ${data.pickupVideoUrl ? `
+                    <div style="background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); border-radius: 8px; padding: 0.75rem;">
+                        <span style="color: #4ade80; font-size: 0.75rem; font-weight: 600;">Pickup Video</span>
+                        <a href="${escapeHtml(data.pickupVideoUrl)}" target="_blank" style="display: block; color: #86efac; font-size: 0.78rem; margin-top: 0.3rem; text-decoration: none;">Watch Video &rarr;</a>
+                    </div>
+                    ` : ''}
+                    ${data.unboxingVideoUrl ? `
+                    <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); border-radius: 8px; padding: 0.75rem;">
+                        <span style="color: #60a5fa; font-size: 0.75rem; font-weight: 600;">Unboxing Video</span>
+                        <a href="${escapeHtml(data.unboxingVideoUrl)}" target="_blank" style="display: block; color: #93c5fd; font-size: 0.78rem; margin-top: 0.3rem; text-decoration: none;">Watch Video &rarr;</a>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
             ` : ''}
 
             <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
@@ -4206,6 +4333,158 @@
         } catch (error) {
             console.error('Undo rejection error:', error);
             alert('Failed to undo rejection');
+        }
+    }
+
+    // ── Video Evidence Functions ──────────────────────────────────────────────
+
+    // Submit pickup video link (customer handover proof)
+    async function submitPickupVideo(requestId) {
+        const input = document.getElementById('pickupVideoUrlInput');
+        const btnText = document.getElementById('pickupVideoBtnText');
+        const spinner = document.getElementById('pickupVideoSpinner');
+        const videoUrl = (input.value || '').trim();
+
+        if (!videoUrl) {
+            alert('Please paste a video URL');
+            return;
+        }
+
+        try {
+            new URL(videoUrl);
+        } catch (_) {
+            alert('Please enter a valid URL');
+            return;
+        }
+
+        if (btnText) btnText.textContent = 'Submitting...';
+        if (spinner) spinner.classList.remove('hidden');
+
+        try {
+            const response = await fetch(`${API_URL}/request/submit-pickup-video`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ requestId, videoUrl })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Refresh the modal to show updated video
+                await viewDetails(requestId);
+            } else {
+                alert('Failed to submit pickup video: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Submit pickup video error:', error);
+            alert('Failed to submit pickup video');
+        } finally {
+            if (btnText) btnText.textContent = 'Submit';
+            if (spinner) spinner.classList.add('hidden');
+        }
+    }
+
+    // Handle unboxing video file selection (show preview)
+    function handleUnboxingFileSelect(fileInput) {
+        const file = fileInput.files[0];
+        const preview = document.getElementById('unboxingFilePreview');
+        const nameEl = document.getElementById('unboxingFileName');
+        const sizeEl = document.getElementById('unboxingFileSize');
+
+        if (file) {
+            if (preview) {
+                preview.classList.remove('hidden');
+                preview.style.display = 'flex';
+            }
+            if (nameEl) nameEl.textContent = file.name;
+            if (sizeEl) sizeEl.textContent = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
+
+            // Clear the URL input when a file is selected
+            const urlInput = document.getElementById('unboxingVideoUrlInput');
+            if (urlInput) urlInput.value = '';
+        } else {
+            if (preview) preview.classList.add('hidden');
+        }
+    }
+
+    // Submit unboxing video (file upload or URL)
+    async function submitUnboxingVideo(requestId) {
+        const fileInput = document.getElementById('unboxingVideoFile');
+        const urlInput = document.getElementById('unboxingVideoUrlInput');
+        const submitBtn = document.getElementById('unboxingVideoSubmitBtn');
+        const file = fileInput ? fileInput.files[0] : null;
+        const videoUrl = (urlInput.value || '').trim();
+
+        if (!file && !videoUrl) {
+            alert('Please choose a video file or paste a video URL');
+            return;
+        }
+
+        const origText = submitBtn ? submitBtn.textContent : 'Upload';
+        if (submitBtn) {
+            submitBtn.textContent = 'Uploading...';
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = '0.7';
+        }
+
+        try {
+            if (file) {
+                // File upload via FormData
+                const formData = new FormData();
+                formData.append('requestId', requestId);
+                formData.append('unboxingVideo', file);
+
+                const response = await fetch(`${API_URL}/admin/upload-unboxing-video`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    await viewDetails(requestId);
+                } else {
+                    alert('Failed to upload unboxing video: ' + (data.error || 'Unknown error'));
+                }
+            } else {
+                // URL submission
+                try { new URL(videoUrl); } catch (_) {
+                    alert('Please enter a valid URL');
+                    return;
+                }
+
+                const response = await fetch(`${API_URL}/admin/submit-unboxing-video-url`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ requestId, videoUrl })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    await viewDetails(requestId);
+                } else {
+                    alert('Failed to submit unboxing video: ' + (data.error || 'Unknown error'));
+                }
+            }
+        } catch (error) {
+            console.error('Submit unboxing video error:', error);
+            alert('Failed to upload unboxing video');
+        } finally {
+            if (submitBtn) {
+                submitBtn.textContent = origText;
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+            }
         }
     }
 

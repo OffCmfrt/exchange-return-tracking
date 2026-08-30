@@ -7986,6 +7986,115 @@ app.post('/api/admin/undo-rejection', authenticateAdmin, async (req, res) => {
     }
 });
 
+// ── Video Evidence Endpoints ──────────────────────────────────────────────────
+// Customer submits pickup handover video link (shown when request is rejected)
+app.post('/api/request/submit-pickup-video', async (req, res) => {
+    try {
+        const { requestId, videoUrl } = req.body;
+
+        if (!requestId || !videoUrl) {
+            return res.status(400).json({ error: 'requestId and videoUrl are required' });
+        }
+
+        // Basic URL validation
+        try { new URL(videoUrl); } catch (_) {
+            return res.status(400).json({ error: 'Please provide a valid video URL' });
+        }
+
+        const request = await getRequestById(requestId);
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        const updated = await updateRequestStatus(requestId, {
+            pickupVideoUrl: videoUrl,
+            pickupVideoSubmittedAt: new Date().toISOString()
+        });
+
+        res.json({ success: true, request: updated });
+    } catch (error) {
+        console.error('Submit pickup video error:', error);
+        res.status(500).json({ error: 'Failed to submit pickup video' });
+    }
+});
+
+// Warehouse uploads unboxing video (file upload via Cloudinary)
+app.post('/api/admin/upload-unboxing-video', authenticateAdmin, upload.single('unboxingVideo'), async (req, res) => {
+    try {
+        const { requestId } = req.body;
+
+        if (!requestId) {
+            return res.status(400).json({ error: 'requestId is required' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'Video file is required' });
+        }
+
+        const request = await getRequestById(requestId);
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        // Determine video URL: Cloudinary gives req.file.path, memory storage gives nothing usable
+        let videoUrl;
+        if (req.file.path) {
+            // Cloudinary storage — path is the secure URL
+            videoUrl = req.file.path;
+        } else {
+            // Memory storage — upload to Cloudinary manually
+            const b64 = Buffer.from(req.file.buffer).toString('base64');
+            const dataUri = `data:${req.file.mimetype};base64,${b64}`;
+            const uploadResult = await cloudinary.uploader.upload(dataUri, {
+                folder: 'returns/unboxing',
+                resource_type: 'video',
+                format: req.file.originalname.split('.').pop() || 'mp4'
+            });
+            videoUrl = uploadResult.secure_url;
+        }
+
+        const updated = await updateRequestStatus(requestId, {
+            unboxingVideoUrl: videoUrl,
+            unboxingVideoSubmittedAt: new Date().toISOString()
+        });
+
+        res.json({ success: true, videoUrl, request: updated });
+    } catch (error) {
+        console.error('Upload unboxing video error:', error);
+        res.status(500).json({ error: 'Failed to upload unboxing video' });
+    }
+});
+
+// Warehouse can also submit an unboxing video URL (link instead of file)
+app.post('/api/admin/submit-unboxing-video-url', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, videoUrl } = req.body;
+
+        if (!requestId || !videoUrl) {
+            return res.status(400).json({ error: 'requestId and videoUrl are required' });
+        }
+
+        try { new URL(videoUrl); } catch (_) {
+            return res.status(400).json({ error: 'Please provide a valid video URL' });
+        }
+
+        const request = await getRequestById(requestId);
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        const updated = await updateRequestStatus(requestId, {
+            unboxingVideoUrl: videoUrl,
+            unboxingVideoSubmittedAt: new Date().toISOString()
+        });
+
+        res.json({ success: true, request: updated });
+    } catch (error) {
+        console.error('Submit unboxing video URL error:', error);
+        res.status(500).json({ error: 'Failed to submit unboxing video' });
+    }
+});
+
 // Delete requests (admin)
 app.post('/api/admin/delete-requests', authenticateAdmin, async (req, res) => {
     try {

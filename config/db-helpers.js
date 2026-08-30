@@ -366,6 +366,12 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.whatsappSentAt !== undefined) updateData.whatsapp_sent_at = updates.whatsappSentAt;
     if (updates.whatsappError !== undefined) updateData.whatsapp_error = updates.whatsappError;
 
+    // Video Evidence (pickup handover & warehouse unboxing)
+    if (updates.pickupVideoUrl !== undefined) updateData.pickup_video_url = updates.pickupVideoUrl;
+    if (updates.pickupVideoSubmittedAt !== undefined) updateData.pickup_video_submitted_at = updates.pickupVideoSubmittedAt;
+    if (updates.unboxingVideoUrl !== undefined) updateData.unboxing_video_url = updates.unboxingVideoUrl;
+    if (updates.unboxingVideoSubmittedAt !== undefined) updateData.unboxing_video_submitted_at = updates.unboxingVideoSubmittedAt;
+
     if (Object.keys(updateData).length === 0) return null;
 
     const { data, error } = await supabase
@@ -439,6 +445,10 @@ function convertFromSnakeCase(data) {
         whatsappSent: data.whatsapp_sent || false,
         whatsappMessageId: data.whatsapp_message_id || null,
         whatsappSentAt: data.whatsapp_sent_at || null,
+        pickupVideoUrl: data.pickup_video_url || null,
+        pickupVideoSubmittedAt: data.pickup_video_submitted_at || null,
+        unboxingVideoUrl: data.unboxing_video_url || null,
+        unboxingVideoSubmittedAt: data.unboxing_video_submitted_at || null,
         createdAt: data.created_at,
         updatedAt: data.updated_at
     };

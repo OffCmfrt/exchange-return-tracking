@@ -1,0 +1,604 @@
+{{ 'custom-pages.css' | asset_url | stylesheet_tag }}
+
+<div class="page-width" style="padding: 3rem 1rem;">
+    <!-- Lookup Container (Centered, Narrow) -->
+    <div id="lookupContainer" class="container container-narrow">
+        <a href="{{ routes.root_url }}" class="back-arrow">Back to Store</a>
+
+        <div class="header">
+            <h1>Track Request</h1>
+            <p>Enter your Request ID or Order Number to track your return / exchange</p>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <!-- Lookup Section -->
+        <div class="card">
+            <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1.5rem; text-align: center;">
+                Request Lookup</h2>
+
+            <form id="trackForm">
+                <div class="form-group">
+                    <label for="requestId">Request ID or Order Number</label>
+                    <input type="text" id="requestId" name="requestId" placeholder="REQ-XXXXX  or  1234" required>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark); margin-top: 0.4rem;">You can use your Request ID (e.g. REQ-81423) or your Order Number (e.g. 1234 or #1234)</p>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="trackBtn">
+                    <span id="trackBtnText">Track Request</span>
+                    <span id="trackSpinner" class="spinner hidden"></span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Multiple Results (order has > 1 request) -->
+    <div id="multipleContainer" class="container container-narrow hidden">
+        <div class="card">
+            <h2 style="font-size: 1.1rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem;">Multiple Requests Found</h2>
+            <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 1.5rem;">This order has more than one return/exchange request. Select one to view details.</p>
+            <div id="multipleList"></div>
+        </div>
+    </div>
+
+    <!-- Tracking Details (Wide) -->
+    <div id="trackingContainer" class="container container-wide hidden">
+        <div class="card">
+            <div class="flex-between" style="margin-bottom: 1.5rem;">
+                <div>
+                    <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px;">
+                        Request Details</h2>
+                    <p style="color: var(--gray-dark); font-size: 0.9rem; margin-top: 0.25rem;" id="requestType"></p>
+                </div>
+                <span id="statusBadge" class="badge"></span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Request ID</p>
+                    <p style="font-weight: 500;" id="displayRequestId"></p>
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Order Number</p>
+                    <p style="font-weight: 500;" id="displayOrderNumber"></p>
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Submitted On</p>
+                    <p style="font-weight: 500;" id="displayDate"></p>
+                </div>
+            </div>
+
+            <div id="pickupDetails" class="hidden" style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.5rem;">
+                <p style="font-weight: 500; margin-bottom: 0.5rem;">Shipment Details</p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; font-size: 0.85rem;">
+                    <div>
+                        <p style="color: var(--gray-dark);">AWB Number</p>
+                        <p id="awbNumber">-</p>
+                    </div>
+                    <div>
+                        <p style="color: var(--gray-dark);">Pickup Date</p>
+                        <p id="pickupDate">-</p>
+                    </div>
+                    <div>
+                        <p style="color: var(--gray-dark);">Estimated Delivery</p>
+                        <p id="estimatedDelivery">-</p>
+                    </div>
+                    <div>
+                        <p style="color: var(--gray-dark);">Current Status</p>
+                        <p id="courierStatus" style="font-weight: 500;">-</p>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; border-top: 1px solid var(--gray-medium); padding-top: 0.75rem; display: flex; gap: 2rem;">
+                    <div>
+                        <p style="color: var(--gray-dark); font-size: 0.8rem;">Origin</p>
+                        <p id="shipmentOrigin">-</p>
+                    </div>
+                    <div>
+                        <p style="color: var(--gray-dark); font-size: 0.8rem;">Destination</p>
+                        <p id="shipmentDestination">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <h3 style="font-size: 1rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem;">
+                Status Timeline</h3>
+            <div class="timeline" id="timeline">
+                <!-- Timeline will be populated here -->
+            </div>
+
+            <div id="forwardJourney" class="hidden" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--gray-medium);">
+                <h3 style="font-size: 1rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem; color: #166534;">
+                    Replacement Journey</h3>
+                <div id="forwardShipmentDetails" class="hidden" style="background: #f0fdf4; padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; font-size: 0.85rem;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem;">
+                        <div>
+                            <p style="color: #166534; font-weight: 500;">AWB Number</p>
+                            <p id="fwdAwbNumber">-</p>
+                        </div>
+                        <div>
+                            <p style="color: #166534; font-weight: 500;">Current Status</p>
+                            <p id="fwdStatus">-</p>
+                        </div>
+                        <div>
+                            <p style="color: #166534; font-weight: 500;">Exp. Delivery</p>
+                            <p id="fwdEdd">-</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="timeline" id="forwardTimeline"></div>
+            </div>
+
+            <div id="activityHistory" class="hidden" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--gray-medium);">
+                <h3 style="font-size: 1rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem;">
+                    Detailed Scan History</h3>
+                <div id="scanLog" style="max-height: 300px; overflow-y: auto; font-size: 0.85rem; border: 1px solid var(--gray-medium); border-radius: var(--radius-sm);">
+                    <!-- Scan history list -->
+                </div>
+            </div>
+
+            <div id="approvalMessage" class="hidden" style="margin-top: 1.5rem; padding: 1rem; border-radius: var(--radius-sm);">
+                <!-- Approval/rejection message will be shown here -->
+            </div>
+
+            <!-- ═══ Video Evidence Panel (Customer-Facing) ═══ -->
+            <div id="videoEvidencePanel" class="hidden" style="margin-top: 1.5rem;">
+                <div style="background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 16px rgba(0,0,0,0.07); border: 1px solid var(--gray-medium);">
+                    <!-- Header -->
+                    <div style="background: var(--gray-light); padding: 1rem 1.5rem; display: flex; align-items: center; gap: 0.75rem; border-bottom: 1px solid var(--gray-medium);">
+                        <span style="font-size: 1.4rem;">🎬</span>
+                        <div>
+                            <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--text-color); margin: 0; letter-spacing: 0.5px; text-transform: uppercase;">Video Evidence</h3>
+                            <p style="font-size: 0.75rem; color: #666; margin: 0;">Secure your return with video proof</p>
+                        </div>
+                    </div>
+
+                    <div style="padding: 1.25rem 1.5rem;">
+                        <!-- Unboxing Video from Warehouse (if uploaded) -->
+                        <div id="unboxingVideoSection" class="hidden" style="margin-bottom: 1.25rem;">
+                            <div style="background: #f8f9ff; border: 1px solid #e0e2f0; border-radius: 8px; padding: 1rem;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <span style="font-size: 1rem;">📦</span>
+                                    <span style="font-weight: 600; color: var(--text-color); font-size: 0.85rem;">Warehouse Unboxing Video</span>
+                                    <span style="background: var(--success-color); color: #fff; font-size: 0.6rem; padding: 2px 7px; border-radius: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Uploaded</span>
+                                </div>
+                                <p style="font-size: 0.8rem; color: #666; margin: 0 0 0.75rem 0;">Our warehouse team has uploaded an unboxing video for your request.</p>
+                                <a id="unboxingVideoLink" href="#" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 0.5rem; background: var(--primary-color); color: #fff; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.82rem; font-weight: 600;">
+                                    <span>▶</span> Watch Unboxing Video
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- Pickup Video Submission (Customer) -->
+                        <div style="background: var(--gray-light); border: 1px solid var(--gray-medium); border-radius: 8px; padding: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                <span style="font-size: 1rem;">📹</span>
+                                <span style="font-weight: 600; color: var(--text-color); font-size: 0.85rem;">Submit Pickup Handover Video</span>
+                            </div>
+
+                            <!-- Notice -->
+                            <div style="background: #fff; border: 1px solid var(--gray-medium); border-radius: 6px; padding: 0.75rem; margin-bottom: 1rem;">
+                                <p style="font-size: 0.8rem; color: var(--text-color); margin: 0; line-height: 1.6;">
+                                    <strong>📋 Recording Guidelines:</strong><br>
+                                    • Ensure the <strong>product is clearly visible</strong> in the frame<br>
+                                    • The <strong>pickup executive</strong> should be visible in the video<br>
+                                    • Show the complete handover process from start to finish
+                                </p>
+                            </div>
+
+                            <!-- Already submitted -->
+                            <div id="pickupVideoSubmitted" class="hidden" style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.75rem;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <span style="color: var(--success-color); font-weight: 600; font-size: 0.82rem;">✓ Pickup Video Submitted</span>
+                                </div>
+                                <a id="pickupVideoLink" href="#" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 0.5rem; background: var(--primary-color); color: #fff; padding: 0.4rem 0.85rem; border-radius: 6px; text-decoration: none; font-size: 0.8rem; font-weight: 600;">
+                                    <span>▶</span> Watch Your Pickup Video
+                                </a>
+                                <p style="font-size: 0.75rem; color: #666; margin: 0.5rem 0 0 0;">You can update the link below if needed.</p>
+                            </div>
+
+                            <!-- Submission Form -->
+                            <div style="margin-top: 0.25rem;">
+                                <label style="font-size: 0.8rem; color: #666; display: block; margin-bottom: 0.4rem;">Paste your video link (Google Drive, YouTube, etc.)</label>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <input type="url" id="customerPickupVideoUrl" placeholder="https://drive.google.com/..." style="flex: 1; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-medium); border-radius: 6px; background: #fff; color: var(--text-color); font-size: 0.85rem; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--primary-color)'" onblur="this.style.borderColor='var(--gray-medium)'">
+                                    <button id="submitPickupVideoBtn" onclick="submitPickupVideo()" style="background: var(--primary-color); color: #fff; border: none; padding: 0.6rem 1.25rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem; cursor: pointer; white-space: nowrap; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                                        Submit Video
+                                    </button>
+                                </div>
+                                <p id="pickupVideoMsg" style="font-size: 0.75rem; margin-top: 0.4rem; color: #666;"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* New styles for scan history */
+.scan-item {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--gray-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.scan-item:last-child { border-bottom: none; }
+.scan-status { font-weight: 500; color: var(--black); }
+.scan-meta { text-align: right; font-size: 0.75rem; color: var(--gray-dark); }
+.timeline-item.completed h4 { color: #166534; }
+.timeline-item.completed::before { background-color: #22c55e !important; border-color: #22c55e !important; }
+</style>
+
+<script>
+    // CONFIGURATION: Set your backend URL here
+    // Dynamic API URL: Detect local server via '?local=true'
+    const isLocal = new URLSearchParams(window.location.search).get('local') === 'true';
+    const API_URL = isLocal ? 'http://localhost:3000/api' : 'https://exchange-return-tracking.onrender.com/api';
+
+    function formatDateIST(dateString) {
+        if (!dateString) return '';
+        let dateStr = dateString;
+        // If date string doesn't have timezone offset (Z or +HH:MM), append Z to treat as UTC
+        if (!dateStr.match(/Z|[+-]\d{2}:?\d{2}$/)) {
+            dateStr += 'Z';
+        }
+        return new Date(dateStr).toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: 'numeric',
+            month: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            hour12: true
+        });
+    }
+
+    document.getElementById('trackForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const requestId = document.getElementById('requestId').value.trim();
+        showLoading(true);
+        clearAlert();
+
+        try {
+            const response = await fetch(`${API_URL}/track-request/${encodeURIComponent(requestId)}`);
+            const data = await response.json();
+
+            if (response.ok) {
+                if (data.multiple && data.requests) {
+                    // Multiple requests for this order — show a picker
+                    displayMultipleResults(data.requests);
+                } else {
+                    displayTrackingDetails(data);
+                    document.getElementById('lookupContainer').classList.add('hidden');
+                    document.getElementById('trackingContainer').classList.remove('hidden');
+                }
+            } else {
+                showAlert(data.error || 'Request not found', 'error');
+            }
+        } catch (error) {
+            showAlert('Failed to track request. Please try again.', 'error');
+        } finally {
+            showLoading(false);
+        }
+    });
+
+    function displayMultipleResults(requests) {
+        document.getElementById('lookupContainer').classList.add('hidden');
+        const multiContainer = document.getElementById('multipleContainer');
+        const list = document.getElementById('multipleList');
+        multiContainer.classList.remove('hidden');
+
+        list.innerHTML = requests.map(req => {
+            const typeLabel = req.type === 'return' ? 'Return' : 'Exchange';
+            const statusLabel = getStatusLabel(req.status);
+            const dateStr = formatDateIST(req.createdAt);
+            return `
+                <div style="border: 1px solid var(--gray-medium); border-radius: var(--radius-sm); padding: 1rem 1.125rem; margin-bottom: 0.75rem; cursor: pointer; transition: border-color 0.2s;" 
+                     onmouseover="this.style.borderColor='var(--black)'" 
+                     onmouseout="this.style.borderColor='var(--gray-medium)'"
+                     onclick="selectRequest('${req.requestId}')"
+                >
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+                        <span style="font-weight:500; font-size:0.9rem;">${req.requestId}</span>
+                        <span class="badge badge-${req.status.replace(/_/g,'-')}" style="font-size:0.7rem;">${statusLabel}</span>
+                    </div>
+                    <p style="font-size:0.8rem; color:var(--gray-dark); margin:0;">${typeLabel} &mdash; ${dateStr}</p>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function selectRequest(reqId) {
+        // Fetch and display the specific request
+        showLoading(true);
+        fetch(`${API_URL}/track-request/${encodeURIComponent(reqId)}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('multipleContainer').classList.add('hidden');
+                displayTrackingDetails(data);
+                document.getElementById('trackingContainer').classList.remove('hidden');
+            })
+            .catch(() => showAlert('Failed to load request details.', 'error'))
+            .finally(() => showLoading(false));
+    }
+
+    function getStatusLabel(status) {
+        const labels = {
+            'waiting_payment': 'Waiting for Payment',
+            'pending':         'Pending Review',
+            'scheduled':       'Pickup Booked',
+            'picked_up':       'Picked Up',
+            'in_transit':      'In Transit',
+            'delivered':       'At Warehouse',
+            'approved':        'Approved',
+            'rejected':        'Rejected'
+        };
+        return labels[status] || status.replace(/_/g, ' ');
+    }
+
+    function displayTrackingDetails(data) {
+        document.getElementById('requestType').textContent = data.type === 'return' ? 'Return Request' : 'Exchange Request';
+        document.getElementById('displayRequestId').textContent = data.requestId;
+        document.getElementById('displayOrderNumber').textContent = data.orderNumber;
+        document.getElementById('displayDate').textContent = formatDateIST(data.createdAt);
+
+        const statusBadge = document.getElementById('statusBadge');
+        statusBadge.textContent = data.status.replace('_', ' ');
+        statusBadge.className = `badge badge-${data.status.replace('_', '-')}`;
+
+        if (data.awbNumber) {
+            document.getElementById('pickupDetails').classList.remove('hidden');
+            document.getElementById('awbNumber').textContent = data.awbNumber;
+            document.getElementById('pickupDate').textContent = data.pickupDate ? formatDateIST(data.pickupDate) : 'Pending';
+
+            // Populate Additional Shipment Details if available
+            if (data.shipment) {
+                document.getElementById('estimatedDelivery').textContent = data.shipment.edd ? new Date(data.shipment.edd).toDateString() : 'Pending/Unknown';
+                document.getElementById('courierStatus').textContent = data.shipment.status || '-';
+                // Clean up status text (e.g., remove underscores)
+                if (data.shipment.status) {
+                    document.getElementById('courierStatus').textContent = data.shipment.status.replace(/_/g, ' ').toUpperCase();
+                }
+                
+                document.getElementById('shipmentOrigin').textContent = data.shipment.origin || '-';
+                document.getElementById('shipmentDestination').textContent = data.shipment.destination || '-';
+            }
+        }
+
+        const timeline = document.getElementById('timeline');
+        const isDefective = data.reason === 'defective';
+        const isFeeWaived = data.reason === 'defective' || data.reason === 'wrong_item';
+        
+        const statuses = [
+            { key: 'waiting_payment', label: 'Waiting for Payment', date: data.createdAt },
+            { key: 'pending', label: data.type === 'return' ? 'Request Submitted' : 'Exchange Request Received', date: (data.status !== 'waiting_payment' ? data.createdAt : null) },
+            { 
+                key: 'scheduled', 
+                label: isFeeWaived ? 'Admin Approved & Pickup Booked' : 'Pickup Booked — Awaiting Pickup', 
+                date: data.pickupDate || (['scheduled', 'picked_up', 'in_transit', 'delivered', 'approved'].includes(data.status) ? data.updatedAt : null) 
+            },
+            { key: 'picked_up', label: 'Item Picked Up by Courier', date: data.pickedUpAt },
+            { key: 'in_transit', label: 'In Transit', date: data.inTransitAt },
+            { key: 'delivered', label: 'Received at Warehouse', date: data.deliveredAt },
+            { key: 'approved', label: data.type === 'return' ? 'Refund Processed' : 'Replacement Dispatched', date: data.approvedAt }
+        ];
+
+        let currentIndex = statuses.findIndex(s => s.key === data.status);
+        if (data.status === 'rejected') currentIndex = -1;
+
+        timeline.innerHTML = statuses.map((status, index) => {
+            const isCompleted = index <= currentIndex && currentIndex !== -1;
+            const isActive = index === currentIndex;
+
+            return `
+                <div class="timeline-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}">
+                    <div class="timeline-content">
+                        <h4>${status.label}</h4>
+                        ${status.date && isCompleted ? `<p class="timeline-date">${formatDateIST(status.date)}</p>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        if (data.status === 'waiting_payment') {
+            statusBadge.textContent = 'Action Required: Waiting for Payment';
+            statusBadge.style.background = '#fee2e2';
+            statusBadge.style.color = '#991b1b';
+            statusBadge.style.fontWeight = '600';
+            statusBadge.style.border = '1px solid #ef4444';
+        } else if (data.status === 'pending') {
+            if (isFeeWaived) {
+                statusBadge.textContent = 'Waiting for Admin Approval';
+                statusBadge.style.background = '#fef3c7';
+                statusBadge.style.color = '#92400e';
+            } else {
+                statusBadge.textContent = 'Processing...';
+                statusBadge.style.background = '#e0f2fe';
+                statusBadge.style.color = '#075985';
+            }
+        }
+
+        if (data.status === 'approved' || data.status === 'rejected') {
+            const approvalMessage = document.getElementById('approvalMessage');
+            approvalMessage.classList.remove('hidden');
+            approvalMessage.style.background = data.status === 'approved' ? '#f0fdf4' : '#fef2f2';
+            approvalMessage.style.borderLeft = `3px solid ${data.status === 'approved' ? '#22c55e' : '#ef4444'}`;
+
+            approvalMessage.innerHTML = `
+                <p style="font-weight: 500; margin-bottom: 0.5rem;">${data.status === 'approved' ? '✓ Request Approved' : '✗ Request Rejected'}</p>
+                <p style="font-size: 0.9rem; color: var(--gray-dark);">
+                    ${data.adminNotes || (data.status === 'approved' ? 'Your request has been approved. Refund/replacement will be processed shortly.' : 'Your request has been rejected. Please contact support for more details.')}
+                </p>
+            `;
+        }
+
+        // ── Video Evidence Panel (shown when rejected) ──
+        if (data.status === 'rejected') {
+            const panel = document.getElementById('videoEvidencePanel');
+            panel.classList.remove('hidden');
+
+            // Store requestId for video submission
+            window._currentRequestId = data.requestId;
+
+            // Show unboxing video if warehouse uploaded one
+            if (data.unboxingVideoUrl) {
+                document.getElementById('unboxingVideoSection').classList.remove('hidden');
+                document.getElementById('unboxingVideoLink').href = data.unboxingVideoUrl;
+            }
+
+            // Show pickup video if already submitted
+            if (data.pickupVideoUrl) {
+                document.getElementById('pickupVideoSubmitted').classList.remove('hidden');
+                document.getElementById('pickupVideoLink').href = data.pickupVideoUrl;
+                document.getElementById('customerPickupVideoUrl').value = data.pickupVideoUrl;
+            }
+        }
+
+        // --- PRO FEATURES (Activity History) ---
+        if (data.shipment && data.shipment.activities && data.shipment.activities.length > 0) {
+            document.getElementById('activityHistory').classList.remove('hidden');
+            const scanLog = document.getElementById('scanLog');
+            scanLog.innerHTML = data.shipment.activities.map(act => {
+                let dateDisplay = '-';
+                let timeDisplay = '';
+                
+                if (act.date) {
+                    const dateParts = act.date.split(' ');
+                    dateDisplay = dateParts[0] || '-';
+                    timeDisplay = dateParts[1] ? dateParts[1].substring(0, 5) : '';
+                }
+                
+                return `
+                    <div class="scan-item">
+                        <div>
+                            <div class="scan-status">${act['sr-status-label'] || act.status}</div>
+                            <div style="font-size: 0.75rem; color: var(--gray-dark);">${act.location || 'Hub'}</div>
+                        </div>
+                        <div class="scan-meta">
+                            <div>${dateDisplay}</div>
+                            <div>${timeDisplay}</div>
+                        </div>
+                    </div>
+                `;
+            }).reverse().join(''); // Reverse to show latest first
+        } else {
+            document.getElementById('activityHistory').classList.add('hidden');
+        }
+
+        // --- PRO FEATURES (Forward Journey / Replacement) ---
+        if (data.forwardShipment || data.forwardAwbNumber) {
+            document.getElementById('forwardJourney').classList.remove('hidden');
+            if (data.forwardAwbNumber) {
+                document.getElementById('forwardShipmentDetails').classList.remove('hidden');
+                document.getElementById('fwdAwbNumber').textContent = data.forwardAwbNumber;
+                document.getElementById('fwdStatus').textContent = (data.forwardStatus || 'Scheduled').toUpperCase();
+                document.getElementById('fwdEdd').textContent = data.forwardShipment?.edd ? new Date(data.forwardShipment.edd).toDateString() : 'TBD';
+            }
+
+            // Populate Forward Timeline
+            const fwdTimeline = document.getElementById('forwardTimeline');
+            const fwdStatuses = [
+                { key: 'scheduled', label: 'Replacement Dispatched' },
+                { key: 'picked_up', label: 'In Transit' },
+                { key: 'delivered', label: 'Out for Delivery' },
+                { key: 'delivered_complete', label: 'Replacement Delivered' }
+            ];
+
+            let fwdCurrentStatus = data.forwardStatus || 'scheduled';
+            let fwdIndex = fwdStatuses.findIndex(s => s.key === fwdCurrentStatus);
+            if (fwdCurrentStatus === 'delivered') fwdIndex = 3; // Fully complete
+
+            fwdTimeline.innerHTML = fwdStatuses.map((s, i) => `
+                <div class="timeline-item ${i <= fwdIndex ? 'completed' : ''} ${i === fwdIndex ? 'active' : ''}">
+                    <div class="timeline-content">
+                        <h4>${s.label}</h4>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            document.getElementById('forwardJourney').classList.add('hidden');
+        }
+    }
+
+    function showLoading(show) {
+        document.getElementById('trackBtn').disabled = show;
+        document.getElementById('trackBtnText').classList.toggle('hidden', show);
+        document.getElementById('trackSpinner').classList.toggle('hidden', !show);
+    }
+
+    function showAlert(message, type) {
+        const alertContainer = document.getElementById('alertContainer');
+        alertContainer.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+    }
+
+    function clearAlert() {
+        document.getElementById('alertContainer').innerHTML = '';
+    }
+
+    // ── Pickup Video Submission ──
+    async function submitPickupVideo() {
+        const urlInput = document.getElementById('customerPickupVideoUrl');
+        const videoUrl = urlInput.value.trim();
+        const btn = document.getElementById('submitPickupVideoBtn');
+        const msg = document.getElementById('pickupVideoMsg');
+
+        if (!videoUrl) {
+            msg.style.color = 'var(--error-color)';
+            msg.textContent = 'Please enter a valid video URL.';
+            return;
+        }
+
+        // Basic URL validation
+        try { new URL(videoUrl); } catch (_) {
+            msg.style.color = 'var(--error-color)';
+            msg.textContent = 'Please enter a valid URL (must start with http:// or https://)';
+            return;
+        }
+
+        const requestId = window._currentRequestId;
+        if (!requestId) {
+            msg.style.color = 'var(--error-color)';
+            msg.textContent = 'Request ID not found. Please refresh and try again.';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Submitting...';
+        msg.style.color = '#666';
+        msg.textContent = 'Submitting your video link...';
+
+        try {
+            const response = await fetch(`${API_URL}/request/submit-pickup-video`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requestId, videoUrl })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                msg.style.color = 'var(--success-color)';
+                msg.textContent = '✓ Pickup video submitted successfully!';
+                urlInput.value = videoUrl;
+
+                // Show the submitted card
+                document.getElementById('pickupVideoSubmitted').classList.remove('hidden');
+                document.getElementById('pickupVideoLink').href = videoUrl;
+
+                btn.textContent = 'Update Video';
+            } else {
+                msg.style.color = 'var(--error-color)';
+                msg.textContent = data.error || 'Failed to submit video. Please try again.';
+            }
+        } catch (err) {
+            msg.style.color = 'var(--error-color)';
+            msg.textContent = 'Network error. Please try again.';
+        } finally {
+            btn.disabled = false;
+            if (btn.textContent === 'Submitting...') btn.textContent = 'Submit Video';
+        }
+    }
+</script>
