@@ -170,8 +170,16 @@ app.get('/admin/marketing', (req, res) => {
 // Manufacture Studio admin review page - same permissive CSP as admin dashboard
 // (the manufacturer-facing portal is a Shopify page template: public/page.manufacture.liquid)
 app.get('/manufacture/admin', (req, res) => {
+    const portalBaseUrl = process.env.SHOPIFY_STORE_DOMAIN
+        ? `https://${process.env.SHOPIFY_STORE_DOMAIN.replace(/^https?:\/\//, '')}/pages/manufacture`
+        : '';
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
-    res.sendFile(path.join(__dirname, 'public', 'manufacture', 'admin.html'));
+    const html = require('fs').readFileSync(path.join(__dirname, 'public', 'manufacture', 'admin.html'), 'utf8');
+    const injected = html.replace(
+        '/* PORTAL_BASE_URL_INJECT */',
+        `const PORTAL_BASE_URL = ${JSON.stringify(portalBaseUrl)};`
+    );
+    res.send(injected);
 });
 
 // Security middleware - Helmet for security headers (applied AFTER admin routes)

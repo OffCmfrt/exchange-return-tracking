@@ -40,6 +40,7 @@ const PROD_FILE_TYPE_OPTIONS = ["Purchase Order", "Invoice", "Packing List", "Sh
 const PROD_QC_RESULT_OPTIONS = ["Pending", "Pass", "Fail", "Hold"];
 const PROD_QC_CHECKPOINTS = ["Inline Inspection", "Pre-Final Inspection", "Final Random Inspection (AQL 2.5)", "Other"];
 
+/* PORTAL_BASE_URL_INJECT */
 const TOKEN_KEY = "mf_admin_token";
 let TOKEN = sessionStorage.getItem(TOKEN_KEY);
 let WS = null;      // workspace: { samples, manufacturers, techPacks, productionOrders }
@@ -204,14 +205,21 @@ function toast(msg, kind = "ok") {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2600);
 }
-/* Copy a manufacturer's portal link (?token=...). It gets appended to the
-   Shopify portal page URL — each manufacturer has their own private link. */
+/* Build the full portal URL for a manufacturer. PORTAL_BASE_URL is injected
+   server-side from SHOPIFY_STORE_DOMAIN; falls back to just the suffix. */
+const _PORTAL_BASE = (typeof PORTAL_BASE_URL !== 'undefined') ? PORTAL_BASE_URL : '';
+function buildPortalUrl(linkToken) {
+  if (!linkToken) return "";
+  const suffix = "?token=" + linkToken;
+  return _PORTAL_BASE ? _PORTAL_BASE + suffix : suffix;
+}
+/* Copy a manufacturer's full portal link to the clipboard. */
 function copyPortalLink(m) {
   if (!m || !m.linkToken) { toast("No portal link yet — enable Portal Access and save", "error"); return; }
-  const suffix = "?token=" + m.linkToken;
-  const fallback = () => { window.prompt("Append this to your manufacturer portal page URL:", suffix); };
+  const url = buildPortalUrl(m.linkToken);
+  const fallback = () => { window.prompt("Copy this portal link:", url); };
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(suffix).then(() => toast("Portal link copied — paste it after your portal page URL")).catch(fallback);
+    navigator.clipboard.writeText(url).then(() => toast("Full portal link copied!")).catch(fallback);
   } else fallback();
 }
 function confirmDialog(title, message, onConfirm) {
@@ -1408,7 +1416,7 @@ function openManufacturerModal(initial) {
             ${base.id ? `<button type="button" data-regen class="text-[10px] font-semibold uppercase tracking-wider border border-neutral-300 rounded-sm px-2 py-1 hover:bg-neutral-100">Regenerate</button>` : ""}
           </div>
         </div>
-        <div data-token class="font-mono text-[11px] text-neutral-700 break-all">${base.linkToken ? "?token=" + esc(base.linkToken) : "Generated on first save"}</div>
+        <div data-token class="font-mono text-[11px] text-neutral-700 break-all">${base.linkToken ? buildPortalUrl(base.linkToken) : "Generated on first save"}</div>
         <label class="block mt-2">
           <span class="text-[10px] font-semibold tracking-wider uppercase text-neutral-500">Portal Password</span>
           <input data-f="portalPassword" type="text" value="${esc(base.portalPassword ?? "")}" placeholder="Their login password" autocomplete="new-password" class="${INPUT_CLS} mt-1 font-mono">
@@ -1436,7 +1444,7 @@ function openManufacturerModal(initial) {
       const body = await api("/api/manufacture/admin/manufacturers/" + encodeURIComponent(base.id) + "/regenerate-link", { method: "POST" });
       base.linkToken = body.record.linkToken;
       upsertIn(WS.manufacturers, body.record);
-      overlay.querySelector("[data-token]").textContent = "?token=" + base.linkToken;
+      overlay.querySelector("[data-token]").textContent = buildPortalUrl(base.linkToken);
       toast("New portal link generated — old link stopped working");
     } catch (err) { toast(err.message, "error"); } finally { setSaving(false); }
   };
