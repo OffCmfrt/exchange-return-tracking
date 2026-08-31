@@ -4910,23 +4910,22 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
             // All carriers failed for a paid request
             const isUnserviceable = allCarriersUnserviceable;
 
-            // Always issue Razorpay refund (pickup fee should be returned regardless of failure reason)
-            if (paymentId && paymentAmount > 0) {
-                issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
-                    if (refundResult.success) {
-                        updateRequestStatus(requestId, {
-                            refundId: refundResult.refundId,
-                            refundStatus: refundResult.status,
-                            refundAmount: paymentAmount,
-                            refundedAt: new Date().toISOString()
-                        }).catch(e => console.warn(`[${requestId}] Refund status update failed:`, e.message));
-                    }
-                }).catch(err => console.error(`[${requestId}] Pickup fee refund error:`, err.message));
-            }
-
-            // Only send self-ship WhatsApp when failure is due to unserviceable pincode
             if (isUnserviceable) {
-                console.log(`[${requestId}] 📦 All carriers failed (unserviceable pincode) – sending self-ship WhatsApp to ${request.customerPhone}`);
+                // Unserviceable pincode – refund pickup fee + send self-ship WhatsApp
+                if (paymentId && paymentAmount > 0) {
+                    issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
+                        if (refundResult.success) {
+                            updateRequestStatus(requestId, {
+                                refundId: refundResult.refundId,
+                                refundStatus: refundResult.status,
+                                refundAmount: paymentAmount,
+                                refundedAt: new Date().toISOString()
+                            }).catch(e => console.warn(`[${requestId}] Refund status update failed:`, e.message));
+                        }
+                    }).catch(err => console.error(`[${requestId}] Pickup fee refund error:`, err.message));
+                }
+
+                console.log(`[${requestId}] 📦 All carriers failed (unserviceable pincode) – refunding + sending self-ship WhatsApp to ${request.customerPhone}`);
                 resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
                     return sendSelfShipRequiredWhatsApp({
                         phone: request.customerPhone,
@@ -4946,7 +4945,8 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                     }
                 }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
             } else {
-                console.log(`[${requestId}] 📦 All carriers failed (non-serviceability error) – refund issued, skipping self-ship WhatsApp. Admin intervention needed.`);
+                // Non-serviceability error (e.g. insufficient balance) – no refund, no self-ship. Admin intervention needed.
+                console.log(`[${requestId}] 📦 All carriers failed (non-serviceability error) – skipping refund and self-ship WhatsApp. Admin intervention needed.`);
             }
         } else {
             // Fee-waived / still pending — send generic payment confirmation
@@ -5200,29 +5200,29 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         console.log(`[${requestId}] ✅ Exchange Request Submitted Successfully`);
 
-        // If selected carrier failed for a paid request, send self-ship WhatsApp (only if unserviceable)
+        // If selected carrier failed for a paid request, handle refund + self-ship (only if unserviceable)
         if (!isFeeWaived && !needsPayment && primaryCarrierFailed) {
-            // Issue Razorpay refund ONLY if no carrier was actually booked (all failed)
             const paymentId = req.body.paymentId || null;
             const paymentAmount = parseFloat(req.body.paymentAmount) || 0;
-            if (!awbNumber && !shipmentId && paymentId && paymentAmount > 0) {
-                console.log(`[${requestId}] 💰 No carrier booked – issuing ₹${paymentAmount} refund for payment ${paymentId}`);
-                issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
-                    if (refundResult.success) {
-                        updateRequestStatus(requestId, {
-                            refundId: refundResult.refundId,
-                            refundStatus: refundResult.status,
-                            refundAmount: paymentAmount,
-                            refundedAt: new Date().toISOString()
-                        }).catch(e => console.warn(`[${requestId}] Refund status update failed:`, e.message));
-                    }
-                }).catch(err => console.error(`[${requestId}] Pickup fee refund error:`, err.message));
-            } else if (awbNumber || shipmentId) {
-                console.log(`[${requestId}] ℹ️ Fallback carrier succeeded (AWB: ${awbNumber}) – skipping refund`);
-            }
 
-            // Only send self-ship WhatsApp when failure is due to unserviceable pincode
             if (allCarriersUnserviceable) {
+                // Unserviceable pincode – refund pickup fee + send self-ship WhatsApp
+                if (!awbNumber && !shipmentId && paymentId && paymentAmount > 0) {
+                    console.log(`[${requestId}] 💰 Unserviceable – issuing ₹${paymentAmount} refund for payment ${paymentId}`);
+                    issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
+                        if (refundResult.success) {
+                            updateRequestStatus(requestId, {
+                                refundId: refundResult.refundId,
+                                refundStatus: refundResult.status,
+                                refundAmount: paymentAmount,
+                                refundedAt: new Date().toISOString()
+                            }).catch(e => console.warn(`[${requestId}] Refund status update failed:`, e.message));
+                        }
+                    }).catch(err => console.error(`[${requestId}] Pickup fee refund error:`, err.message));
+                } else if (awbNumber || shipmentId) {
+                    console.log(`[${requestId}] ℹ️ Fallback carrier succeeded (AWB: ${awbNumber}) – skipping refund`);
+                }
+
                 console.log(`[${requestId}] 📦 All carriers failed (unserviceable pincode) – sending self-ship WhatsApp to ${customerPhone}`);
                 resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
                     return sendSelfShipRequiredWhatsApp({
@@ -5243,7 +5243,8 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                     }
                 }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
             } else {
-                console.log(`[${requestId}] 📦 Carrier failed (non-serviceability error) – refund issued, skipping self-ship WhatsApp. Admin intervention needed.`);
+                // Non-serviceability error – no refund, no self-ship. Admin intervention needed.
+                console.log(`[${requestId}] 📦 Carrier failed (non-serviceability error) – skipping refund and self-ship WhatsApp. Admin intervention needed.`);
             }
         }
 
@@ -5485,29 +5486,29 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         console.log(`[${requestId}] ✅ Return Request Submitted Successfully`);
 
-        // If selected carrier failed for a paid request, send self-ship WhatsApp (only if unserviceable)
+        // If selected carrier failed for a paid request, handle refund + self-ship (only if unserviceable)
         if (!isFeeWaivedReturn && !needsPayment && primaryCarrierFailed) {
-            // Issue Razorpay refund ONLY if no carrier was actually booked (all failed)
             const paymentId = req.body.paymentId || null;
             const paymentAmount = parseFloat(req.body.paymentAmount) || 0;
-            if (!awbNumber && !shipmentId && paymentId && paymentAmount > 0) {
-                console.log(`[${requestId}] 💰 No carrier booked – issuing ₹${paymentAmount} refund for payment ${paymentId}`);
-                issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
-                    if (refundResult.success) {
-                        updateRequestStatus(requestId, {
-                            refundId: refundResult.refundId,
-                            refundStatus: refundResult.status,
-                            refundAmount: paymentAmount,
-                            refundedAt: new Date().toISOString()
-                        }).catch(e => console.warn(`[${requestId}] Refund status update failed:`, e.message));
-                    }
-                }).catch(err => console.error(`[${requestId}] Pickup fee refund error:`, err.message));
-            } else if (awbNumber || shipmentId) {
-                console.log(`[${requestId}] ℹ️ Fallback carrier succeeded (AWB: ${awbNumber}) – skipping refund`);
-            }
 
-            // Only send self-ship WhatsApp when failure is due to unserviceable pincode
             if (allCarriersUnserviceable) {
+                // Unserviceable pincode – refund pickup fee + send self-ship WhatsApp
+                if (!awbNumber && !shipmentId && paymentId && paymentAmount > 0) {
+                    console.log(`[${requestId}] 💰 Unserviceable – issuing ₹${paymentAmount} refund for payment ${paymentId}`);
+                    issuePickupFeeRefund(requestId, paymentId, paymentAmount).then(refundResult => {
+                        if (refundResult.success) {
+                            updateRequestStatus(requestId, {
+                                refundId: refundResult.refundId,
+                                refundStatus: refundResult.status,
+                                refundAmount: paymentAmount,
+                                refundedAt: new Date().toISOString()
+                            }).catch(e => console.warn(`[${requestId}] Refund status update failed:`, e.message));
+                        }
+                    }).catch(err => console.error(`[${requestId}] Pickup fee refund error:`, err.message));
+                } else if (awbNumber || shipmentId) {
+                    console.log(`[${requestId}] ℹ️ Fallback carrier succeeded (AWB: ${awbNumber}) – skipping refund`);
+                }
+
                 console.log(`[${requestId}] 📦 All carriers failed (unserviceable pincode) – sending self-ship WhatsApp to ${customerPhone}`);
                 resolveWarehouseAddress().then(({ address, phone: whPhone }) => {
                     return sendSelfShipRequiredWhatsApp({
@@ -5528,7 +5529,8 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                     }
                 }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
             } else {
-                console.log(`[${requestId}] 📦 Carrier failed (non-serviceability error) – refund issued, skipping self-ship WhatsApp. Admin intervention needed.`);
+                // Non-serviceability error – no refund, no self-ship. Admin intervention needed.
+                console.log(`[${requestId}] 📦 Carrier failed (non-serviceability error) – skipping refund and self-ship WhatsApp. Admin intervention needed.`);
             }
         }
 
