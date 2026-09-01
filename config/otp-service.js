@@ -766,7 +766,7 @@ async function linkOrdersToCustomer(phone, customerId) {
  * This allows OTP login to work on subsequent attempts without needing
  * activation URLs (which only work for disabled/invited accounts).
  */
-async function loginEnabledAccount(customerId, email) {
+async function loginEnabledAccount(customerId, email, phone) {
     const shop = process.env.SHOPIFY_STORE;
     const newPassword = randomPassword();
 
@@ -845,7 +845,7 @@ async function issueStorefrontLogin(phone) {
         }
 
         // Update password and return credentials for login form
-        const loginData = await loginEnabledAccount(customer.id, email);
+        const loginData = await loginEnabledAccount(customer.id, email, phone);
 
         // Link guest orders (best-effort)
         await linkOrdersToCustomer(phone, customer.id);
