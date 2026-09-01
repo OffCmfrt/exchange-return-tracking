@@ -28,19 +28,16 @@
 //           Phone-only customers get an email resolved from real sources
 //           (Shopify order checkout emails -> local DB requests/abandoned
 //           carts) before falling back to a synthetic <phone>@<store> email.
-//        b. Generate a one-time account activation URL via Admin API
-//           (customerGenerateAccountActivationUrl equivalent - NO email needed,
-//           unlike the password-reset-token trick which requires intercepting
-//           the reset email Shopify sends)
-//        c. Activate the account server-side by POSTing the storefront
-//           activation form with a random password
-//        d. Return { action, email, password } so the storefront JS submits a
-//           normal /account/login form (same-origin -> Shopify issues the
-//           _secure_customer_session cookie directly in the browser)
+//        b. For NEW or DISABLED accounts: generate activation URL, activate
+//           server-side, return {action, email, password} for theme to submit
+//           to /account/login (same-origin -> Shopify issues session cookie).
+//        c. For ENABLED accounts (re-login): use Storefront API to create a
+//           customerAccessToken directly, returning {accessToken, redirect}
+//           so the theme can set the session cookie via JS.
 //
-// Note: already-activated accounts (state === 'enabled') keep their own
-// password - Shopify exposes no API to override it, so the theme shows
-// them the classic email login form instead (error code already_active).
+// Note: The Storefront API approach for enabled accounts means OTP login
+// works every time, regardless of whether the account has been activated
+// before. No more "already_active" errors blocking re-login.
 //
 // Env vars:
 //   SHOPIFY_STORE, SHOPIFY_ACCESS_TOKEN      (already present)
@@ -764,8 +761,46 @@ async function linkOrdersToCustomer(phone, customerId) {
 }
 
 /**
- * Full verify-otp backend flow: find/create customer, activate account,
- * return the storefront login credentials for the theme to submit.
+ * For already-enabled accounts: update password via Admin API and return
+ * credentials for the standard /account/login form submission.
+ * This allows OTP login to work on subsequent attempts without needing
+ * activation URLs (which only work for disabled/invited accounts).
+ */
+async function loginEnabledAccount(customerId, email) {
+    const shop = process.env.SHOPIFY_STORE;
+    const newPassword = randomPassword();
+
+    try {
+        // Update password via Admin API (works for enabled accounts)
+        await shopifyAdmin(`customers/${customerId}.json`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                customer: {
+                    id: customerId,
+                    password: newPassword,
+                    password_confirmation: newPassword
+                }
+            })
+        });
+
+        console.log(`[OTP] Updated password for enabled customer ${customerId} (+${phone})`);
+
+        return {
+            type: 'credentials',
+            action: `https://${shop}/account/login`,
+            email: email,
+            password: newPassword,
+            redirect: '/account'
+        };
+    } catch (err) {
+        console.error('[OTP] Password update failed for enabled account:', err.message);
+        throw new OtpError('login_failed', 'Could not complete login. Please try again.', 502);
+    }
+}
+
+/**
+ * Full verify-otp backend flow: find/create customer, handle login based on
+ * account state, return credentials for the theme to establish session.
  */
 async function issueStorefrontLogin(phone) {
     const shop = process.env.SHOPIFY_STORE;
@@ -779,15 +814,46 @@ async function issueStorefrontLogin(phone) {
         console.log(`[OTP] Created Shopify customer ${customer.id} for +${phone} | email: ${resolved ? `real (${resolved.source})` : 'synthetic'}`);
     }
 
-    // Already-activated accounts have a password that no public Shopify
-    // API can override (customer state is read-only; activation URLs only
-    // work for invited/declined accounts). Those users use email login -
-    // the theme auto-reveals the email form on this error code.
+    // Handle already-enabled accounts (re-login via OTP)
+    // Update password via Admin API and return credentials for login form
     if (customer.state === 'enabled') {
-        throw new OtpError('already_active',
-            'This number is linked to an account with a password. Please use "Login with email instead" below.', 409);
+        // Ensure customer has an email (resolve real or use synthetic)
+        let email = customer.email;
+        if (!email) {
+            const resolved = await resolveRealEmail(phone);
+            email = resolved?.email || syntheticEmail(phone);
+
+            try {
+                const data = await shopifyAdmin(`customers/${customer.id}.json`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ customer: { id: customer.id, email } })
+                });
+                customer = data.customer || { ...customer, email };
+            } catch (err) {
+                if (resolved && err.message.includes('422')) {
+                    console.warn(`[OTP] Resolved email ${resolved.email} already taken; using synthetic for customer ${customer.id}`);
+                    email = syntheticEmail(phone);
+                    const data = await shopifyAdmin(`customers/${customer.id}.json`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ customer: { id: customer.id, email } })
+                    });
+                    customer = data.customer || { ...customer, email };
+                } else {
+                    throw err;
+                }
+            }
+        }
+
+        // Update password and return credentials for login form
+        const loginData = await loginEnabledAccount(customer.id, email);
+
+        // Link guest orders (best-effort)
+        await linkOrdersToCustomer(phone, customer.id);
+
+        return loginData;
     }
 
+    // For new or disabled accounts: use activation flow
     // Phone-only customers (common with GoKwik checkout) have no email,
     // but classic-account login needs one. Resolution order: real email
     // from Shopify orders / our DB -> synthetic email as last resort.
@@ -828,6 +894,7 @@ async function issueStorefrontLogin(phone) {
     await linkOrdersToCustomer(phone, customer.id);
 
     return {
+        type: 'credentials',
         action: `https://${shop}/account/login`,
         email: customer.email,
         password,
