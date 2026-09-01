@@ -790,7 +790,7 @@ async function loginEnabledAccount(customerId, email, phone) {
 
         return {
             type: 'credentials',
-            action: `https://${shop}/account/login`,
+            action: '/account/login',
             email: email,
             password: newPassword,
             redirect: '/account'
@@ -898,7 +898,7 @@ async function issueStorefrontLogin(phone) {
 
     return {
         type: 'credentials',
-        action: `https://${shop}/account/login`,
+        action: '/account/login',
         email: customer.email,
         password,
         redirect: '/account'
