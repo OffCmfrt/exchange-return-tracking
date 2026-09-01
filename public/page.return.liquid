@@ -1,0 +1,561 @@
+{{ 'custom-pages.css' | asset_url | stylesheet_tag }}
+
+<div class="page-width" style="padding: 3rem 1rem;">
+    <!-- Step Bar (Initially Hidden) -->
+    <div id="stepBarContainer" class="container container-wide hidden" style="padding-bottom: 0;">
+        <div class="step-progress">
+            <div class="step-progress-item active" id="step1">
+                <div class="step-circle">1</div>
+                <span class="step-label">Select Items</span>
+            </div>
+            <div class="step-progress-item" id="step2">
+                <div class="step-circle">2</div>
+                <span class="step-label">Return Details</span>
+            </div>
+            <div class="step-progress-item" id="step3">
+                <div class="step-circle">3</div>
+                <span class="step-label">Pay & Submit</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lookup Container (Centered, Narrow) -->
+    <div id="lookupContainer" class="container container-narrow">
+        <a href="{{ routes.root_url }}" class="back-arrow">Back to Store</a>
+
+        <div class="header">
+            <h1>Returns</h1>
+            <p>Enter your order details to initiate a return request</p>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <!-- Step 1: Order Lookup -->
+        <div id="lookupSection" class="card">
+            <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1.5rem; text-align: center;">
+                Order Lookup</h2>
+
+            <form id="lookupForm">
+                <div class="form-group">
+                    <label for="orderNumber">Order Number</label>
+                    <input type="text" id="orderNumber" name="orderNumber" placeholder="#1234" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email or Phone</label>
+                    <input type="text" id="email" name="email" placeholder="Enter email or phone number" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="lookupBtn">
+                    <span id="lookupBtnText">Check Order</span>
+                    <span id="lookupSpinner" class="spinner hidden"></span>
+                </button>
+            </form>
+
+            <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--gray-dark); text-align: center;">
+                Track your order by entering the Order number and email or phone number
+            </p>
+        </div>
+    </div>
+
+    <!-- Main Flow Container (Wide) -->
+    <div id="mainContainer" class="container container-wide hidden">
+        <div id="alertContainerMain"></div>
+
+        <!-- Step 2: Select Items to Return -->
+        <div id="returnSection">
+            <div class="order-details">
+                <div class="order-header">
+                    <h2>Choose items to return</h2>
+                    <span class="order-number" id="displayOrderNumber"></span>
+                </div>
+
+                <div id="orderInfo" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                    <!-- Order info will be populated here -->
+                </div>
+
+                <div id="productGrid" class="product-grid">
+                    <!-- Products will be populated here -->
+                </div>
+            </div>
+
+            <div class="card" style="max-width: 800px; margin: 0 auto;">
+                <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1.5rem;">
+                    Return Details</h2>
+
+                <form id="returnForm">
+                    <div class="form-group">
+                        <label for="returnReason">Reason for Return *</label>
+                        <select id="returnReason" name="returnReason" required>
+                            <option value="">Select a reason</option>
+                            <option value="size">Wrong Size</option>
+                            <option value="color">Different Color Preference</option>
+                            <option value="defective">Defective/Damaged Product</option>
+                            <option value="wrong_item">Wrong Item Received</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="returnComments">Additional Comments</label>
+                        <textarea id="returnComments" name="returnComments" placeholder="Please provide any additional details..."></textarea>
+                        <p style="font-size: 0.8rem; color: var(--gray-dark); margin-top: 0.5rem;" id="commentHint">
+                            Provide details about your request
+                        </p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="returnImages">Upload Images (Required for Damaged Product)</label>
+                        <input type="file" id="returnImages" name="returnImages" accept="image/*" multiple>
+                        <p style="font-size: 0.8rem; color: var(--gray-dark); margin-top: 0.5rem;" id="imageHint">
+                            Upload photos if the product is damaged or defective
+                        </p>
+                    </div>
+                   
+                    <div style="background: var(--gray-light); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.5rem;">
+                        <p style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>What happens next?</strong></p>
+                        <ol style="font-size: 0.85rem; color: var(--gray-dark); padding-left: 1.25rem;">
+                            <li>Shiprocket will schedule a pickup from your address</li>
+                            <li>Product will be picked up and delivered to us</li>
+                            <li>We'll inspect the product condition</li>
+                            <li>Once approved, refund will be issued as <strong>store credit</strong> (except for damaged or missing item cases)</li>
+                        </ol>
+                    </div>
+
+
+                    <!-- Policy Notices -->
+                    <div style="margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+
+                        <div style="display: flex; align-items: flex-start; gap: 0.875rem; padding: 1rem 1.125rem; background: #fafaf9; border-left: 3px solid #d97706; border-radius: 0 4px 4px 0;">
+                            <span style="font-size: 1.1rem; line-height: 1; flex-shrink: 0; margin-top: 1px;">💳</span>
+                            <p style="margin: 0; font-size: 0.83rem; color: #44403c; line-height: 1.55;">
+                                <span style="display: block; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.72rem; color: #92400e; margin-bottom: 0.2rem;">Refund Policy</span>
+                                Refunds are processed as <strong>store credit</strong>. Direct refunds apply only for orders confirmed as damaged or missing.
+                            </p>
+                        </div>
+
+                        <div style="display: flex; align-items: flex-start; gap: 0.875rem; padding: 1rem 1.125rem; background: #fafaf9; border-left: 3px solid #dc2626; border-radius: 0 4px 4px 0;">
+                            <span style="font-size: 1.1rem; line-height: 1; flex-shrink: 0; margin-top: 1px;">📹</span>
+                            <p style="margin: 0; font-size: 0.83rem; color: #44403c; line-height: 1.55;">
+                                <span style="display: block; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.72rem; color: #991b1b; margin-bottom: 0.2rem;">Video Required at Pickup</span>
+                                Recording a video while handing the parcel to the delivery partner is <strong>mandatory</strong>. Disputes without video evidence cannot be processed.
+                            </p>
+                        </div>
+
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block" id="submitBtn">
+                        <span id="submitBtnText">Submit Return Request</span>
+                        <span id="submitSpinner" class="spinner hidden"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Success Section -->
+        <div id="successSection" class="hidden card success-modal" style="max-width: 600px; margin: 0 auto;">
+            <div class="success-icon">✓</div>
+            <h2 style="font-size: 1.5rem; font-weight: 400; margin-bottom: 1rem; text-transform: uppercase;">Return Request Submitted</h2>
+            <p style="color: var(--gray-dark); margin-bottom: 1.5rem;">
+                Your return request has been submitted successfully. Shiprocket pickup will be scheduled shortly.
+            </p>
+            <div style="background: var(--gray-light); padding: 1.5rem; border-radius: var(--radius-md); margin-bottom: 1.5rem;">
+                <p style="font-size: 0.85rem; color: var(--gray-dark); margin-bottom: 0.5rem;">Request ID</p>
+                <p style="font-size: 1.5rem; font-weight: 500; letter-spacing: 2px;" id="requestId"></p>
+            </div>
+            <p style="font-size: 0.9rem; margin-bottom: 1.5rem;">
+                Save this Request ID to track your return status
+            </p>
+            <a href="/pages/track-request" class="btn btn-secondary">Track Request</a>
+            <a href="{{ routes.root_url }}" class="btn btn-primary" style="margin-left: 1rem;">Back to Store</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Dynamic API URL: Detect if we should use local server via '?local=true'
+    const isLocal = new URLSearchParams(window.location.search).get('local') === 'true';
+    const API_URL = isLocal ? 'http://localhost:3000/api' : 'https://exchange-return-tracking.onrender.com/api';
+    
+    // Log active API for clarity
+    console.log('🔗 Return/Exchange API:', API_URL);
+    let RAZORPAY_KEY_ID = null; // Will be fetched from backend
+    let razorpayLoaded = false;
+
+    let orderData = null;
+    let selectedProducts = [];
+    const RETURN_FEE = 150; // Return processing fee
+
+    // Load Razorpay script dynamically
+    function loadRazorpay() {
+        return new Promise((resolve, reject) => {
+            if (razorpayLoaded) {
+                resolve();
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            script.onload = () => {
+                razorpayLoaded = true;
+                resolve();
+            };
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    // Fetch configuration and check if returns are disabled
+    fetch(`${API_URL}/config`)
+        .then(r => r.json())
+        .then(data => {
+            RAZORPAY_KEY_ID = data.razorpayKey;
+            
+            // Disable the page if returns are turned off globally
+            if (data.allowReturns === false) {
+                document.getElementById('lookupBtn').disabled = true;
+                const emailInput = document.getElementById('email');
+                emailInput.value = '';
+                emailInput.disabled = true;
+                const orderInput = document.getElementById('orderNumber');
+                orderInput.value = '';
+                orderInput.disabled = true;
+                
+                showAlert('Return requests are temporarily disabled by the administrator. Please try again later.', 'error');
+            }
+        })
+        .catch(err => console.error('Failed to load config:', err));
+
+    // Order Lookup
+    document.getElementById('lookupForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const orderNumber = document.getElementById('orderNumber').value;
+        const email = document.getElementById('email').value;
+        showLoading('lookup', true);
+        clearAlert();
+
+        try {
+            const response = await fetch(`${API_URL}/lookup-order`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderNumber, email })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                if (!data.isEligible) {
+                    showAlert(data.eligibilityMessage, 'error');
+                    showLoading('lookup', false);
+                    return;
+                }
+                orderData = data.order;
+                displayOrderDetails();
+                document.getElementById('lookupContainer').classList.add('hidden');
+                document.getElementById('stepBarContainer').classList.remove('hidden');
+                document.getElementById('mainContainer').classList.remove('hidden');
+                document.getElementById('returnSection').classList.remove('hidden');
+            } else {
+                if (data.alreadyHasRequest) {
+                    const trackUrl = '{{ routes.root_url }}pages/track-request';
+                    showAlert(
+                        `${data.eligibilityMessage} <a href="${trackUrl}" style="font-weight:600;text-decoration:underline;">Track your request &rarr;</a>`,
+                        'error'
+                    );
+                } else {
+                    showAlert(data.error || data.eligibilityMessage || 'Order not found', 'error');
+                }
+            }
+        } catch (error) {
+            showAlert('Failed to lookup order. Please try again.', 'error');
+        } finally {
+            showLoading('lookup', false);
+        }
+    });
+
+    function displayOrderDetails() {
+        document.getElementById('displayOrderNumber').textContent = orderData.orderNumber;
+        const orderInfo = document.getElementById('orderInfo');
+        let orderDateHtml = `<div><p style="font-size: 0.8rem; color: var(--gray-dark);">Order Date</p><p style="font-weight: 500;">${new Date(orderData.orderDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</p></div>`;
+        
+        if (orderData.deliveredDate) {
+            orderDateHtml += `<div><p style="font-size: 0.8rem; color: var(--gray-dark);">Delivered Date</p><p style="font-weight: 500; color: #166534;">${new Date(orderData.deliveredDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</p></div>`;
+        }
+
+        orderInfo.innerHTML = `
+            <div><p style="font-size: 0.8rem; color: var(--gray-dark);">Customer</p><p style="font-weight: 500;">${orderData.customerName}</p></div>
+            ${orderDateHtml}
+            <div><p style="font-size: 0.8rem; color: var(--gray-dark);">Total Amount</p><p style="font-weight: 500;">₹${orderData.totalAmount}</p></div>
+            <div style="grid-column: 1 / -1; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--gray-medium);">
+                <p style="font-size: 0.8rem; color: var(--gray-dark);">Shipping Address</p>
+                <p style="font-size: 0.9rem; margin-top: 0.25rem;">${orderData.shippingAddress || 'N/A'}</p>
+            </div>
+        `;
+        const productGrid = document.getElementById('productGrid');
+        productGrid.innerHTML = orderData.items.map((item, index) => `
+            <div class="product-card" data-index="${index}" onclick="toggleProduct(${index})">
+                <img src="${item.image || 'https://via.placeholder.com/200'}" alt="${item.name}" class="product-image">
+                <div class="product-info">
+                    <h3>${item.name}</h3>
+                    <p>Size: ${item.variant || 'N/A'}</p>
+                    <p>Quantity: ${item.quantity}</p>
+                    <p class="product-price">₹${item.price}</p>
+                </div>
+                <div class="checkbox-wrapper">
+                    <input type="checkbox" id="product-${index}" style="pointer-events: none;">
+                    <label for="product-${index}" style="pointer-events: none;">Select for return</label>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function toggleProduct(index) {
+        const checkbox = document.getElementById(`product-${index}`);
+        const card = document.querySelector(`[data-index="${index}"]`);
+        if (selectedProducts.includes(index)) {
+            selectedProducts = selectedProducts.filter(i => i !== index);
+            checkbox.checked = false;
+            card.classList.remove('selected');
+        } else {
+            selectedProducts.push(index);
+            checkbox.checked = true;
+            card.classList.add('selected');
+        }
+        updateSubmitButton();
+    }
+
+    function updateSubmitButton() {
+        const btnText = document.getElementById('submitBtnText');
+        const reason = document.getElementById('returnReason').value;
+        const imageHint = document.getElementById('imageHint');
+        const commentHint = document.getElementById('commentHint');
+
+        if (reason === 'defective' || reason === 'wrong_item') {
+            imageHint.style.color = '#dc2626';
+            imageHint.style.fontWeight = '500';
+            imageHint.textContent = reason === 'defective' ? 'Photos are MANDATORY for damaged products.' : 'Photos are MANDATORY for wrong item received.';
+            
+            commentHint.style.color = '#dc2626';
+            commentHint.style.fontWeight = '500';
+            commentHint.textContent = reason === 'defective' ? 'A detailed description (at least 5 words) is MANDATORY for damaged products.' : 'A detailed description (at least 5 words) is MANDATORY for wrong item received.';
+        } else {
+            imageHint.style.color = 'var(--gray-dark)';
+            imageHint.style.fontWeight = '400';
+            imageHint.textContent = 'Upload photos if the product is damaged or defective';
+            
+            commentHint.style.color = 'var(--gray-dark)';
+            commentHint.style.fontWeight = '400';
+            commentHint.textContent = 'Provide details about your request';
+        }
+
+        if (selectedProducts.length > 0) {
+            let totalPayable = RETURN_FEE;
+            let feeText = ` (Return Processing Fee)`;
+            
+            if (reason === 'defective' || reason === 'wrong_item') {
+                totalPayable = 0;
+                feeText = ` (Fee waived for ${reason === 'defective' ? 'damaged product' : 'wrong item'})`;
+            }
+
+            let text = totalPayable > 0 ? `Pay ₹${totalPayable} & Submit Return` : `Submit Return Request`;
+            text += feeText;
+            btnText.textContent = text;
+        } else {
+            btnText.textContent = 'Submit Return Request';
+        }
+    }
+
+    // Update button when reason changes
+    document.getElementById('returnReason').addEventListener('change', updateSubmitButton);
+
+    async function submitReturnForm() {
+        if (selectedProducts.length === 0) {
+            showAlert('Please select at least one item to return', 'error');
+            return;
+        }
+
+        const reason = document.getElementById('returnReason').value;
+        const comments = document.getElementById('returnComments').value.trim();
+        const images = document.getElementById('returnImages').files;
+
+        if (reason === 'defective' || reason === 'wrong_item') {
+            if (images.length === 0) {
+                showAlert('Please upload at least one photo showing the damage.', 'error');
+                return;
+            }
+            const wordCount = comments.split(/\s+/).filter(word => word.length > 0).length;
+            if (wordCount < 5) {
+                showAlert(`Please provide a detailed description (at least 5 words). Current: ${wordCount} words.`, 'error');
+                return;
+            }
+        }
+
+        const totalPayable = (reason === 'defective' || reason === 'wrong_item') ? 0 : RETURN_FEE;
+        processReturnSubmission(null);
+    }
+
+    async function initiatePayment(requestId, amount) {
+        if (!RAZORPAY_KEY_ID) {
+            try {
+                const res = await fetch(`${API_URL}/config`);
+                const data = await res.json();
+                RAZORPAY_KEY_ID = data.razorpayKey;
+            } catch (e) {
+                console.error('Failed to load Razorpay config', e);
+            }
+        }
+
+        if (!RAZORPAY_KEY_ID) {
+            RAZORPAY_KEY_ID = "{{ settings.razorpay_key_id }}";
+        }
+
+        if (!RAZORPAY_KEY_ID) {
+            showAlert('Payment Gateway Configuration Missing. Please contact support.', 'error');
+            return;
+        }
+
+        try {
+            await loadRazorpay();
+        } catch (err) {
+            showAlert('Failed to load payment gateway. Please try again.', 'error');
+            return;
+        }
+        
+        const options = {
+            "key": RAZORPAY_KEY_ID,
+            "amount": amount * 100,
+            "currency": "INR",
+            "name": "{{ shop.name }}",
+            "description": "Return Processing Fee",
+            "notes": {
+                "requestId": requestId
+            },
+            "handler": async function (response) {
+                console.log('✅ Payment successful:', response.razorpay_payment_id);
+                try {
+                    await fetch(`${API_URL}/finalize-payment`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            requestId,
+                            paymentId: response.razorpay_payment_id,
+                            paymentAmount: amount
+                        })
+                    });
+                } catch (e) {
+                    console.error('Finalize call failed (likely will be caught by webhook):', e);
+                }
+                showSuccess(requestId);
+            },
+            "prefill": {
+                "name": orderData.customerName,
+                "email": orderData.email,
+                "contact": orderData.phone
+            },
+            "theme": { "color": "#000000" },
+            "modal": {
+                "ondismiss": function () {
+                    showLoading('submit', false);
+                    showAlert('Payment cancelled. Return request not submitted.', 'error');
+                }
+            }
+        };
+        const rzp1 = new Razorpay(options);
+        rzp1.open();
+    }
+
+    async function processReturnSubmission(paymentId) {
+        const reason = document.getElementById('returnReason').value;
+        const totalPayable = (reason === 'defective' || reason === 'wrong_item') ? 0 : RETURN_FEE;
+
+        const formData = new FormData();
+        formData.append('orderNumber', orderData.orderNumber);
+        formData.append('email', orderData.email);
+        formData.append('customerName', orderData.customerName);
+        formData.append('customerPhone', orderData.phone);
+        formData.append('items', JSON.stringify(selectedProducts.map(i => orderData.items[i])));
+        formData.append('reason', reason);
+        formData.append('comments', document.getElementById('returnComments').value);
+        
+        if (paymentId) {
+            formData.append('paymentId', paymentId);
+            formData.append('paymentAmount', totalPayable);
+        }
+        
+        const images = document.getElementById('returnImages').files;
+        for (let i = 0; i < images.length; i++) {
+            formData.append('images', images[i]);
+        }
+        
+        showLoading('submit', true);
+        try {
+            console.log('📤 Submitting return request...');
+            const response = await fetch(`${API_URL}/submit-return`, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            
+            if (response.ok) {
+                if (data.requestId && !paymentId && totalPayable > 0) {
+                    initiatePayment(data.requestId, totalPayable);
+                } else {
+                    showSuccess(data.requestId);
+                }
+            } else {
+                showAlert(data.error || 'Failed to submit return request', 'error');
+                showLoading('submit', false);
+            }
+        } catch (error) {
+            console.error('Submission error:', error);
+            showAlert('Failed to connect to server. Please try again.', 'error');
+            showLoading('submit', false);
+        }
+    }
+
+    function showSuccess(requestId) {
+        document.getElementById('requestId').textContent = requestId;
+        document.getElementById('returnSection').classList.add('hidden');
+        if (document.getElementById('stepBarContainer')) {
+            document.getElementById('stepBarContainer').classList.add('hidden');
+        }
+        document.getElementById('successSection').classList.remove('hidden');
+        window.scrollTo(0, 0);
+        showLoading('submit', false);
+    }
+
+    document.getElementById('returnForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        submitReturnForm();
+    });
+
+    function showLoading(type, show) {
+        const btn = type === 'lookup' ? 'lookupBtn' : 'submitBtn';
+        const text = type === 'lookup' ? 'lookupBtnText' : 'submitBtnText';
+        const spinner = type === 'lookup' ? 'lookupSpinner' : 'submitSpinner';
+        document.getElementById(btn).disabled = show;
+        document.getElementById(text).classList.toggle('hidden', show);
+        document.getElementById(spinner).classList.toggle('hidden', !show);
+    }
+
+    function showAlert(message, type) {
+        const alertContainer = document.getElementById('alertContainer');
+        alertContainer.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+        window.scrollTo(0, 0);
+    }
+
+    function clearAlert() {
+        document.getElementById('alertContainer').innerHTML = '';
+    }
+
+     // Fix for "Cannot read properties of null (reading 'find')"
+    window.initializeSelections = function() {
+        console.log('initializeSelections called (Return Page)');
+        if (!orderData || !orderData.items) {
+             return;
+        }
+    };
+
+
+    function clearAlert() {
+        document.getElementById('alertContainer').innerHTML = '';
+    }
+</script>

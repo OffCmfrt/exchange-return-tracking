@@ -1,0 +1,406 @@
+{{ 'custom-pages.css' | asset_url | stylesheet_tag }}
+
+<div class="page-width" style="padding: 3rem 1rem;">
+    <!-- Lookup Container (Centered, Narrow) -->
+    <div id="lookupContainer" class="container container-narrow">
+        <a href="{{ routes.root_url }}" class="back-arrow">Back to Store</a>
+
+        <div class="header">
+            <h1>Track Order</h1>
+            <p>Enter your order details to track your shipment</p>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <!-- Order Lookup Form -->
+        <div class="card">
+            <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1.5rem; text-align: center;">
+                Order Lookup</h2>
+
+            <form id="trackForm">
+                <div class="form-group">
+                    <label for="orderNumber">Order Number</label>
+                    <input type="text" id="orderNumber" name="orderNumber" placeholder="#1234" required>
+                </div>
+
+                <div class="form-group">
+                <label for="email">Email or Phone</label>
+                <input type="text" id="email" placeholder="Enter email or phone number" required>
+            </div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="trackBtn">
+                    <span id="trackBtnText">Track Order</span>
+                    <span id="trackSpinner" class="spinner hidden"></span>
+                </button>
+            </form>
+
+            <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--gray-dark); text-align: center;">
+                Track your order by entering the Order number and email or phone number used during checkout
+            </p>
+        </div>
+    </div>
+
+    <!-- Tracking Details Container (Wide) -->
+    <div id="trackingContainer" class="container container-wide hidden">
+        <a href="/pages/track-order" class="back-arrow">Track Another Order</a>
+
+        <!-- Tracking Header -->
+        <div class="card">
+            <div class="flex-between" style="margin-bottom: 1.5rem;">
+                <div>
+                    <h2 style="font-size: 1.5rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px;">
+                        Shipment Tracking (Redirecting...)</h2>
+                    <p style="color: var(--gray-dark); font-size: 0.9rem; margin-top: 0.25rem;" id="orderNumberDisplay"></p>
+                </div>
+                <span id="statusBadge" class="badge"></span>
+            </div>
+
+            <!-- Order Summary -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Customer</p>
+                    <p style="font-weight: 500;" id="customerName"></p>
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Order Date</p>
+                    <p style="font-weight: 500;" id="orderDate"></p>
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Total Amount</p>
+                    <p style="font-weight: 500;" id="totalAmount"></p>
+                </div>
+            </div>
+
+            <!-- Shipment Info -->
+            <div id="shipmentInfo" style="background: var(--gray-light); padding: 1.5rem; border-radius: var(--radius-md); margin-bottom: 1.5rem;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                    <div>
+                        <p style="font-size: 0.8rem; color: var(--gray-dark); margin-bottom: 0.25rem;">AWB Number</p>
+                        <p style="font-weight: 500; font-family: monospace;" id="awbNumber"></p>
+                    </div>
+                    <div>
+                        <p style="font-size: 0.8rem; color: var(--gray-dark); margin-bottom: 0.25rem;">Courier</p>
+                        <p style="font-weight: 500;" id="courierName"></p>
+                    </div>
+                    <div>
+                        <p style="font-size: 0.8rem; color: var(--gray-dark); margin-bottom: 0.25rem;">Estimated Delivery</p>
+                        <p style="font-weight: 500;" id="estimatedDelivery"></p>
+                    </div>
+                </div>
+
+                <div id="shipmentDetails" class="hidden" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-medium);">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; font-size: 0.85rem;">
+                        <div>
+                            <p style="color: var(--gray-dark);">Origin</p>
+                            <p id="origin">-</p>
+                        </div>
+                        <div>
+                            <p style="color: var(--gray-dark);">Destination</p>
+                            <p id="destination">-</p>
+                        </div>
+                        <div>
+                            <p style="color: var(--gray-dark);">Weight</p>
+                            <p id="weight">-</p>
+                        </div>
+                        <div>
+                            <p style="color: var(--gray-dark);">Packages</p>
+                            <p id="packages">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tracking Timeline -->
+            <h3 style="font-size: 1rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem;">
+                Shipment Journey</h3>
+            <div class="tracking-timeline" id="trackingTimeline">
+                <!-- Timeline will be populated here -->
+            </div>
+
+            <!-- External Tracking Link -->
+            <div id="trackingLinkContainer" class="hidden" style="margin-top: 1.5rem; text-align: center;">
+                <a href="#" id="trackingLink" target="_blank" class="btn btn-secondary">
+                    Check Live Status →
+                </a>
+            </div>
+        </div>
+
+        <!-- Order Items -->
+        <div class="card" style="margin-top: 1.5rem;">
+            <h3 style="font-size: 1rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem;">
+                Order Items</h3>
+            <div id="orderItems" class="product-grid">
+                <!-- Items will be populated here -->
+            </div>
+        </div>
+
+        <!-- Pending Shipment Message -->
+        <div id="pendingMessage" class="hidden card" style="text-align: center; padding: 2rem;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">📦</div>
+            <h2 style="font-size: 1.25rem; font-weight: 400; margin-bottom: 0.5rem;">Order Being Processed</h2>
+            <p style="color: var(--gray-dark); margin-bottom: 1.5rem;" id="pendingText"></p>
+            <a href="{{ routes.root_url }}" class="btn btn-primary">Back to Store</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Dynamic API URL: Detect local server via '?local=true'
+    const isLocal = new URLSearchParams(window.location.search).get('local') === 'true';
+    const API_URL = isLocal ? 'http://localhost:3000/api' : 'https://exchange-return-tracking.onrender.com/api';
+
+    document.getElementById('trackForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var orderNumber = document.getElementById('orderNumber').value.trim();
+        var email = document.getElementById('email').value.trim();
+        
+        // Validate inputs
+        if (!orderNumber || !email) {
+            showAlert('Please enter both order number and email/phone', 'error');
+            return;
+        }
+        
+        showLoading(true);
+        clearAlert();
+
+        try {
+            var response = await fetch(API_URL + '/track-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderNumber: orderNumber, email: email })
+            });
+            var data = await response.json();
+
+            if (response.ok) {
+                // FOOLPROOF REDIRECT: Redirect to Shiprocket or tracking URL immediately
+                var trackUrl = data.trackingUrl 
+                    ? data.trackingUrl 
+                    : (data.awbNumber && data.awbNumber !== 'N/A' ? 'https://shiprocket.in/tracking/' + data.awbNumber : null);
+                
+                if (trackUrl && data.status !== 'pending_shipment') {
+                    console.log('Jumping to tracking page...');
+                    window.top.location.href = trackUrl;
+                    return;
+                }
+
+                if (data.status === 'pending_shipment') {
+                    displayPendingShipment(data);
+                    document.getElementById('lookupContainer').classList.add('hidden');
+                    document.getElementById('trackingContainer').classList.remove('hidden');
+                } else {
+                    displayTrackingDetails(data);
+                    document.getElementById('lookupContainer').classList.add('hidden');
+                    document.getElementById('trackingContainer').classList.remove('hidden');
+                }
+            } else {
+                showAlert(data.error || 'Order not found', 'error');
+            }
+        } catch (error) {
+            console.error('Tracking error:', error);
+            showAlert('Failed to track order. Please try again.', 'error');
+        } finally {
+            showLoading(false);
+        }
+    });
+
+    function displayPendingShipment(data) {
+        // Hide tracking details, show pending message
+        const trackingCard = document.querySelector('#trackingContainer > .card');
+        const orderItemsCard = document.querySelector('#trackingContainer .card:nth-of-type(2)');
+        
+        if (trackingCard) trackingCard.classList.add('hidden');
+        if (orderItemsCard) orderItemsCard.classList.add('hidden');
+        
+        document.getElementById('pendingMessage').classList.remove('hidden');
+        document.getElementById('pendingText').textContent = data.message || 'Your order is being prepared for shipment.';
+    }
+
+    function displayTrackingDetails(data) {
+        // Validate data exists
+        if (!data) {
+            console.error('No data provided to displayTrackingDetails');
+            showAlert('Unable to display tracking details', 'error');
+            return;
+        }
+
+        // Hide pending message, show tracking details
+        document.getElementById('pendingMessage').classList.add('hidden');
+        const trackingCard = document.querySelector('#trackingContainer > .card');
+        const orderItemsCard = document.querySelector('#trackingContainer .card:nth-of-type(2)');
+        
+        if (trackingCard) trackingCard.classList.remove('hidden');
+        if (orderItemsCard) orderItemsCard.classList.remove('hidden');
+
+        // Header - with null checks
+        const orderNumberEl = document.getElementById('orderNumberDisplay');
+        const customerNameEl = document.getElementById('customerName');
+        const orderDateEl = document.getElementById('orderDate');
+        const totalAmountEl = document.getElementById('totalAmount');
+        
+        if (orderNumberEl) orderNumberEl.textContent = `Order ${data.orderNumber || 'N/A'}`;
+        if (customerNameEl) customerNameEl.textContent = data.customerName || 'N/A';
+        if (orderDateEl) orderDateEl.textContent = data.orderDate 
+            ? new Date(data.orderDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) 
+            : 'N/A';
+        if (totalAmountEl) totalAmountEl.textContent = `₹${data.totalAmount || '0'}`;
+
+        // Status Badge with null check
+        const statusBadge = document.getElementById('statusBadge');
+        if (statusBadge) {
+            const currentStatus = data.currentStatus || 'Unknown';
+            statusBadge.textContent = currentStatus;
+            statusBadge.className = 'badge badge-' + currentStatus.toLowerCase().replace(/\s+/g, '-');
+        }
+
+        // Show message for old/delivered orders
+        if (data.message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = data.isDelivered ? 'alert alert-success' : 'alert alert-info';
+            alertDiv.style.marginBottom = '1.5rem';
+            alertDiv.textContent = data.message;
+
+            if (data.isOldOrder && !data.isDelivered) {
+                alertDiv.innerHTML += '<br><small>Note: Detailed tracking may no longer be available for orders older than 30 days.</small>';
+            }
+
+            const trackingCard = document.querySelector('#trackingContainer .card');
+            if (trackingCard && trackingCard.firstChild) {
+                trackingCard.insertBefore(alertDiv, trackingCard.firstChild.nextSibling);
+            }
+        }
+
+        // Shipment Info - with null checks
+        const awbNumberEl = document.getElementById('awbNumber');
+        const courierNameEl = document.getElementById('courierName');
+        const estimatedDeliveryEl = document.getElementById('estimatedDelivery');
+        
+        if (awbNumberEl) awbNumberEl.textContent = data.awbNumber || 'N/A';
+        if (courierNameEl) courierNameEl.textContent = data.courierName || 'N/A';
+
+        // Handle delivered orders
+        if (data.isDelivered && data.shipment && data.shipment.deliveredDate) {
+            const deliveryLabel = estimatedDeliveryEl ? estimatedDeliveryEl.parentElement.querySelector('p') : null;
+            if (deliveryLabel) deliveryLabel.textContent = 'Delivered On';
+            if (estimatedDeliveryEl) {
+                estimatedDeliveryEl.textContent = new Date(data.shipment.deliveredDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
+                estimatedDeliveryEl.style.color = '#22c55e';
+                estimatedDeliveryEl.style.fontWeight = '600';
+            }
+        } else {
+            if (estimatedDeliveryEl) {
+                estimatedDeliveryEl.textContent = data.estimatedDelivery
+                    ? new Date(data.estimatedDelivery).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })
+                    : 'Calculating...';
+            }
+        }
+
+        // Shipment Details
+        if (data.shipment) {
+            const shipmentDetailsEl = document.getElementById('shipmentDetails');
+            if (shipmentDetailsEl) shipmentDetailsEl.classList.remove('hidden');
+            
+            const originEl = document.getElementById('origin');
+            const destinationEl = document.getElementById('destination');
+            const weightEl = document.getElementById('weight');
+            const packagesEl = document.getElementById('packages');
+            
+            if (originEl) originEl.textContent = data.shipment.origin || '-';
+            if (destinationEl) destinationEl.textContent = data.shipment.destination || '-';
+            if (weightEl) weightEl.textContent = data.shipment.weight ? `${data.shipment.weight} kg` : '-';
+            if (packagesEl) packagesEl.textContent = data.shipment.packages || '-';
+
+            // Show delivered to info if available
+            if (data.shipment.deliveredTo && shipmentDetailsEl) {
+                const deliveredInfo = document.createElement('div');
+                deliveredInfo.innerHTML = `
+                    <p style="color: var(--gray-dark);">Delivered To</p>
+                    <p style="color: #22c55e; font-weight: 500;">${data.shipment.deliveredTo}</p>
+                `;
+                const detailsGrid = shipmentDetailsEl.querySelector('div');
+                if (detailsGrid) detailsGrid.appendChild(deliveredInfo);
+            }
+        }
+
+        // Tracking Timeline
+        const timeline = document.getElementById('trackingTimeline');
+        if (timeline) {
+            if (data.activities && Array.isArray(data.activities) && data.activities.length > 0) {
+                timeline.innerHTML = data.activities.map((activity, index) => `
+                    <div class="tracking-activity ${index === 0 ? 'active' : ''}">
+                        <div class="tracking-dot"></div>
+                        <div class="tracking-content">
+                            <div class="tracking-status">${activity.status || activity['sr-status-label'] || 'Update'}</div>
+                            <div class="tracking-description">${activity.activity || 'No description'}</div>
+                            <div class="tracking-meta">
+                                <span>${activity.date ? new Date(activity.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Date unknown'}</span>
+                                ${activity.location ? `<span> • ${activity.location}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                // Fallback for no tracking data
+                timeline.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; background: var(--gray-light); border-radius: var(--radius-md);">
+                        <p style="color: var(--gray-dark); margin-bottom: 0.5rem;">📦 No detailed tracking updates available</p>
+                        <p style="font-size: 0.85rem; color: var(--gray-dark);">
+                            ${data.isOldOrder
+                                ? 'Tracking history is no longer available for this order.'
+                                : 'Your order has been shipped. Tracking updates will appear here soon.'}
+                        </p>
+                    </div>
+                `;
+            }
+        }
+
+        // External Tracking Link
+        if (data.trackingUrl) {
+            const trackingLinkContainer = document.getElementById('trackingLinkContainer');
+            const trackingLink = document.getElementById('trackingLink');
+            
+            if (trackingLinkContainer) trackingLinkContainer.classList.remove('hidden');
+            if (trackingLink) trackingLink.href = data.trackingUrl;
+        }
+
+        // Order Items
+        const orderItems = document.getElementById('orderItems');
+        if (orderItems && data.items && Array.isArray(data.items)) {
+            orderItems.innerHTML = data.items.map(item => `
+                <div class="product-card">
+                    <img src="${item.image || 'https://via.placeholder.com/200'}" alt="${item.name || 'Product'}" class="product-image">
+                    <div class="product-info">
+                        <h3>${item.name || 'Unknown Product'}</h3>
+                        <p>Size: ${item.variant || 'N/A'}</p>
+                        <p>Quantity: ${item.quantity || 1}</p>
+                        <p class="product-price">₹${item.price || '0'}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+
+    function showLoading(show) {
+        const trackBtn = document.getElementById('trackBtn');
+        const trackBtnText = document.getElementById('trackBtnText');
+        const trackSpinner = document.getElementById('trackSpinner');
+        
+        if (trackBtn) trackBtn.disabled = show;
+        if (trackBtnText) trackBtnText.classList.toggle('hidden', show);
+        if (trackSpinner) trackSpinner.classList.toggle('hidden', !show);
+    }
+
+    function showAlert(message, type) {
+        const alertContainer = document.getElementById('alertContainer');
+        if (alertContainer) {
+            alertContainer.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+
+    function clearAlert() {
+        const alertContainer = document.getElementById('alertContainer');
+        if (alertContainer) {
+            alertContainer.innerHTML = '';
+        }
+    }
+</script>
