@@ -785,6 +785,9 @@ async function loginEnabledAccount(customerId, email, phone) {
 
         console.log(`[OTP] Updated password for enabled customer ${customerId} (+${phone})`);
 
+        // Small delay to ensure Shopify processes the password update
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         return {
             type: 'credentials',
             action: `https://${shop}/account/login`,

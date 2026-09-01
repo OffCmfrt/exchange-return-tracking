@@ -14017,7 +14017,7 @@ app.post('/api/auth/otp/verify', otpLimiter, async (req, res) => {
         await otpService.verifyOtp(normalized, otp);
 
         const login = await otpService.issueStorefrontLogin(normalized);
-        console.log('[OTP] Login response for +${normalized}:', JSON.stringify(login));
+        console.log(`[OTP] Login response for +${normalized}:`, JSON.stringify(login));
         res.json({ success: true, login });
     } catch (err) {
         if (err instanceof otpService.OtpError) {
