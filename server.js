@@ -4078,22 +4078,44 @@ app.post('/api/lookup-order', async (req, res) => {
 
         // Fetch delivery date BEFORE eligibility check so we can base window on it
         let deliveredDate = null;
+        let trackingCurrentStatus = null; // Track actual shipment status to block returns on in-transit orders
         if (order.fulfillments && order.fulfillments.length > 0) {
             const fulfillment = order.fulfillments[0];
             const awb = fulfillment.tracking_number;
             console.log('Fulfillment found. AWB:', awb);
 
             if (awb) {
-                const tracking = await getShiprocketTracking(awb);
-                console.log('Tracking data fetched:', tracking ? 'Yes' : 'No');
+                // Detect carrier from AWB format to query the right tracking API
+                const fwdCarrier = detectCarrierForAwb(awb, null, null, null);
+                console.log('Detected forward carrier:', fwdCarrier, 'for AWB:', awb);
 
-                if (tracking) {
-                    // Only use the ACTUAL delivered_date — NOT estimated dates (etd/edd).
-                    // Using estimated dates caused orders to fail the return window check
-                    // even when they were delivered today or still in transit.
-                    deliveredDate = tracking.delivered_date || null;
-                    console.log('Extracted deliveredDate (actual only):', deliveredDate);
+                let trackingRaw = null;
+                try {
+                    if (fwdCarrier === 'delhivery') {
+                        trackingRaw = await getDelhiveryTracking(awb);
+                        if (trackingRaw && trackingRaw.shipments && trackingRaw.shipments.length > 0) {
+                            const s = trackingRaw.shipments[0];
+                            deliveredDate = s.delivered_date || null;
+                            trackingCurrentStatus = (s.status || s.status_type || '').toLowerCase().replace(/\s+/g, '_');
+                        }
+                    } else if (fwdCarrier === 'ekart') {
+                        trackingRaw = await getEkartTracking(awb);
+                        if (trackingRaw && trackingRaw.shipments && trackingRaw.shipments.length > 0) {
+                            const s = trackingRaw.shipments[0];
+                            deliveredDate = s.delivered_date || null;
+                            trackingCurrentStatus = (s.status || s.status_type || '').toLowerCase().replace(/\s+/g, '_');
+                        }
+                    } else {
+                        trackingRaw = await getShiprocketTracking(awb);
+                        if (trackingRaw) {
+                            deliveredDate = trackingRaw.delivered_date || null;
+                            trackingCurrentStatus = (trackingRaw.current_status || trackingRaw.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_');
+                        }
+                    }
+                } catch (trackErr) {
+                    console.warn('Forward tracking fetch failed for carrier', fwdCarrier, ':', trackErr.message);
                 }
+                console.log('Extracted deliveredDate (actual only):', deliveredDate, '| tracking status:', trackingCurrentStatus, '| carrier:', fwdCarrier);
             }
         } else {
             console.log('No fulfillments found for order');
@@ -4119,10 +4141,22 @@ app.post('/api/lookup-order', async (req, res) => {
                         deliveredDate = shopperInfo.deliveredAt;
                     }
                     if (!deliveredDate && shopperInfo.awb) {
-                        const shopperTracking = await getShiprocketTracking(shopperInfo.awb);
-                        if (shopperTracking && shopperTracking.delivered_date) {
-                            deliveredDate = shopperTracking.delivered_date;
-                        }
+                        const shopperCarrier = detectCarrierForAwb(shopperInfo.awb, null, null, null);
+                        try {
+                            if (shopperCarrier === 'delhivery') {
+                                const st = await getDelhiveryTracking(shopperInfo.awb);
+                                if (st?.shipments?.[0]?.delivered_date) deliveredDate = st.shipments[0].delivered_date;
+                                else if (st?.shipments?.[0]) trackingCurrentStatus = trackingCurrentStatus || (st.shipments[0].status || st.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
+                            } else if (shopperCarrier === 'ekart') {
+                                const st = await getEkartTracking(shopperInfo.awb);
+                                if (st?.shipments?.[0]?.delivered_date) deliveredDate = st.shipments[0].delivered_date;
+                                else if (st?.shipments?.[0]) trackingCurrentStatus = trackingCurrentStatus || (st.shipments[0].status || st.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
+                            } else {
+                                const st = await getShiprocketTracking(shopperInfo.awb);
+                                if (st?.delivered_date) deliveredDate = st.delivered_date;
+                                else if (st) trackingCurrentStatus = trackingCurrentStatus || (st.current_status || st.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_');
+                            }
+                        } catch (stErr) { console.warn('[ShopperHub] Tracking fetch failed:', stErr.message); }
                     }
                     console.log(`[ShopperHub] deliveredDate resolved to: ${deliveredDate || 'unknown (allowing as fulfilled)'}`);
                 }
@@ -4195,21 +4229,43 @@ app.post('/api/lookup-order', async (req, res) => {
                 daysSinceReference = (Date.now() - delivered.getTime()) / (1000 * 60 * 60 * 24);
                 isWithinWindow = daysSinceReference <= RETURN_WINDOW_DAYS;
             } else if (isFulfilled) {
-                // No delivery date available yet — allow if fulfilled (pickup pending)
-                isWithinWindow = true;
+                // No delivery date available — check actual tracking status
+                // Block returns if the shipment is still in transit / out for delivery
+                const inTransitStatuses = ['in_transit', 'out_for_delivery', 'shipped', 'picked_up', 'ready_to_ship'];
+                if (trackingCurrentStatus && inTransitStatuses.includes(trackingCurrentStatus)) {
+                    isWithinWindow = false; // Order not yet delivered — block return
+                    console.log(`[lookup-order] Order fulfilled but tracking status is "${trackingCurrentStatus}" — blocking return (not delivered yet)`);
+                } else {
+                    // No delivery date and not in transit — fall back to order date for window check
+                    // This prevents old orders (where tracking lost the delivery date) from bypassing the window
+                    if (order.created_at) {
+                        referenceDate = order.created_at;
+                        const orderDate = new Date(referenceDate);
+                        daysSinceReference = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
+                        isWithinWindow = daysSinceReference <= RETURN_WINDOW_DAYS;
+                        console.log(`[lookup-order] No deliveredDate — falling back to order date for window check: ${daysSinceReference.toFixed(1)} days (order mode fallback)`);
+                    } else {
+                        // No date reference at all — allow (edge case safety)
+                        isWithinWindow = true;
+                    }
+                }
             }
         }
 
         const windowTypeText = RETURN_WINDOW_MODE === 'order' ? 'order date' : 'delivery';
+        const inTransitStatuses = ['in_transit', 'out_for_delivery', 'shipped', 'picked_up', 'ready_to_ship'];
+        const orderInTransit = isFulfilled && !deliveredDate && trackingCurrentStatus && inTransitStatuses.includes(trackingCurrentStatus);
         const eligibilityMessage = RETURN_WINDOW_MODE === 'order'
             ? (!isWithinWindow
                 ? `Return/exchange window has closed. Requests must be raised within ${RETURN_WINDOW_DAYS} days of order date.`
                 : 'Order is eligible for exchange/return')
-            : (!isFulfilled
-                ? 'Order must be delivered before exchange/return'
-                : !isWithinWindow
-                    ? `Return/exchange window has closed. Requests must be raised within ${RETURN_WINDOW_DAYS} days of delivery.`
-                    : 'Order is eligible for exchange/return');
+            : (orderInTransit
+                ? `Your order is still in transit (${trackingCurrentStatus.replace(/_/g, ' ')}). Please wait until delivery before raising a return/exchange request.`
+                : !isFulfilled
+                    ? 'Order must be delivered before exchange/return'
+                    : !isWithinWindow
+                        ? `Return/exchange window has closed. Requests must be raised within ${RETURN_WINDOW_DAYS} days of delivery.`
+                        : 'Order is eligible for exchange/return');
 
         console.log('Eligibility:', { isFulfilled, deliveredDate, referenceDate, daysSinceReference, isWithinWindow, returnWindowMode: RETURN_WINDOW_MODE });
 
@@ -5048,6 +5104,39 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
             console.error(`[${requestId}] Failed to fetch Shopify order for submission:`, err);
         }
 
+        // ── Delivery status safety net ──────────────────────────────────────────
+        // Block exchange submission if the order is still in transit (not yet delivered).
+        if (shopifyOrder && shopifyOrder.fulfillment_status === 'fulfilled' && shopifyOrder.fulfillments?.length > 0) {
+            const fwdAwb = shopifyOrder.fulfillments[0].tracking_number;
+            if (fwdAwb) {
+                const fwdCarrier = detectCarrierForAwb(fwdAwb, null, null, null);
+                let fwdStatus = null;
+                try {
+                    if (fwdCarrier === 'delhivery') {
+                        const t = await getDelhiveryTracking(fwdAwb);
+                        if (t?.shipments?.[0]) fwdStatus = (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
+                    } else if (fwdCarrier === 'ekart') {
+                        const t = await getEkartTracking(fwdAwb);
+                        if (t?.shipments?.[0]) fwdStatus = (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
+                    } else {
+                        const t = await getShiprocketTracking(fwdAwb);
+                        if (t) fwdStatus = (t.current_status || t.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_');
+                    }
+                } catch (e) { console.warn(`[${requestId}] Forward tracking safety net failed:`, e.message); }
+                if (fwdStatus) {
+                    const stillInTransit = ['in_transit', 'out_for_delivery', 'shipped', 'picked_up', 'ready_to_ship'].includes(fwdStatus);
+                    const isDelivered = fwdStatus.includes('delivered');
+                    if (stillInTransit && !isDelivered) {
+                        console.warn(`[${requestId}] ❌ Exchange blocked — order still in transit (status: ${fwdStatus}, carrier: ${fwdCarrier})`);
+                        return res.status(400).json({
+                            error: `This order has not been delivered yet (current status: ${fwdStatus.replace(/_/g, ' ')}). Please wait until delivery before filing an exchange.`
+                        });
+                    }
+                }
+            }
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
         const customerName = req.body.customerName || (shopifyOrder?.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer');
         const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
         const email = req.body.email || shopifyOrder?.email;
@@ -5338,6 +5427,40 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
         } catch (err) {
             console.error('Failed to fetch Shopify order for submission:', err);
         }
+
+        // ── Delivery status safety net ──────────────────────────────────────────
+        // Block return submission if the order is still in transit (not yet delivered).
+        // This prevents returns filed before the customer actually receives the package.
+        if (shopifyOrder && shopifyOrder.fulfillment_status === 'fulfilled' && shopifyOrder.fulfillments?.length > 0) {
+            const fwdAwb = shopifyOrder.fulfillments[0].tracking_number;
+            if (fwdAwb) {
+                const fwdCarrier = detectCarrierForAwb(fwdAwb, null, null, null);
+                let fwdStatus = null;
+                try {
+                    if (fwdCarrier === 'delhivery') {
+                        const t = await getDelhiveryTracking(fwdAwb);
+                        if (t?.shipments?.[0]) fwdStatus = (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
+                    } else if (fwdCarrier === 'ekart') {
+                        const t = await getEkartTracking(fwdAwb);
+                        if (t?.shipments?.[0]) fwdStatus = (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
+                    } else {
+                        const t = await getShiprocketTracking(fwdAwb);
+                        if (t) fwdStatus = (t.current_status || t.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_');
+                    }
+                } catch (e) { console.warn(`[${requestId}] Forward tracking safety net failed:`, e.message); }
+                if (fwdStatus) {
+                    const stillInTransit = ['in_transit', 'out_for_delivery', 'shipped', 'picked_up', 'ready_to_ship'].includes(fwdStatus);
+                    const isDelivered = fwdStatus.includes('delivered');
+                    if (stillInTransit && !isDelivered) {
+                        console.warn(`[${requestId}] ❌ Return blocked — order still in transit (status: ${fwdStatus}, carrier: ${fwdCarrier})`);
+                        return res.status(400).json({
+                            error: `This order has not been delivered yet (current status: ${fwdStatus.replace(/_/g, ' ')}). Please wait until delivery before filing a return.`
+                        });
+                    }
+                }
+            }
+        }
+        // ────────────────────────────────────────────────────────────────────────
 
         const customerName = req.body.customerName || (shopifyOrder?.customer ? `${shopifyOrder.customer.first_name || ''} ${shopifyOrder.customer.last_name || ''}`.trim() : 'Customer');
         const customerPhone = req.body.customerPhone || shopifyOrder?.shipping_address?.phone || shopifyOrder?.customer?.phone || '';
