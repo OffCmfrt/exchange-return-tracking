@@ -4089,33 +4089,63 @@ app.post('/api/lookup-order', async (req, res) => {
                 const fwdCarrier = detectCarrierForAwb(awb, null, null, null);
                 console.log('Detected forward carrier:', fwdCarrier, 'for AWB:', awb);
 
-                let trackingRaw = null;
-                try {
-                    if (fwdCarrier === 'delhivery') {
-                        trackingRaw = await getDelhiveryTracking(awb);
-                        if (trackingRaw && trackingRaw.shipments && trackingRaw.shipments.length > 0) {
-                            const s = trackingRaw.shipments[0];
-                            deliveredDate = s.delivered_date || null;
-                            trackingCurrentStatus = (s.status || s.status_type || '').toLowerCase().replace(/\s+/g, '_');
+                // Try primary carrier first, then fallback to other carriers for delivered_date
+                const carrierFetchFns = {
+                    delhivery: async () => {
+                        const t = await getDelhiveryTracking(awb);
+                        if (t?.shipments?.[0]) {
+                            return {
+                                deliveredDate: t.shipments[0].delivered_date || null,
+                                status: (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_')
+                            };
                         }
-                    } else if (fwdCarrier === 'ekart') {
-                        trackingRaw = await getEkartTracking(awb);
-                        if (trackingRaw && trackingRaw.shipments && trackingRaw.shipments.length > 0) {
-                            const s = trackingRaw.shipments[0];
-                            deliveredDate = s.delivered_date || null;
-                            trackingCurrentStatus = (s.status || s.status_type || '').toLowerCase().replace(/\s+/g, '_');
+                        return null;
+                    },
+                    ekart: async () => {
+                        const t = await getEkartTracking(awb);
+                        if (t?.shipments?.[0]) {
+                            return {
+                                deliveredDate: t.shipments[0].delivered_date || null,
+                                status: (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_')
+                            };
                         }
-                    } else {
-                        trackingRaw = await getShiprocketTracking(awb);
-                        if (trackingRaw) {
-                            deliveredDate = trackingRaw.delivered_date || null;
-                            trackingCurrentStatus = (trackingRaw.current_status || trackingRaw.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_');
+                        return null;
+                    },
+                    shiprocket: async () => {
+                        const t = await getShiprocketTracking(awb);
+                        if (t) {
+                            return {
+                                deliveredDate: t.delivered_date || null,
+                                status: (t.current_status || t.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_')
+                            };
                         }
+                        return null;
                     }
-                } catch (trackErr) {
-                    console.warn('Forward tracking fetch failed for carrier', fwdCarrier, ':', trackErr.message);
+                };
+
+                // Order: try primary carrier first, then others as fallbacks
+                const carrierOrder = [fwdCarrier, ...Object.keys(carrierFetchFns).filter(c => c !== fwdCarrier)];
+                
+                for (const carrier of carrierOrder) {
+                    try {
+                        const result = await carrierFetchFns[carrier]();
+                        if (result) {
+                            // Always take status from first successful tracking
+                            if (!trackingCurrentStatus) {
+                                trackingCurrentStatus = result.status;
+                            }
+                            // Take delivered_date from first carrier that has it
+                            if (result.deliveredDate) {
+                                deliveredDate = result.deliveredDate;
+                                console.log(`Got deliveredDate from ${carrier}: ${deliveredDate}`);
+                                break; // Found delivery date, stop trying other carriers
+                            }
+                        }
+                    } catch (trackErr) {
+                        console.warn(`Tracking fetch failed for ${carrier}:`, trackErr.message);
+                    }
                 }
-                console.log('Extracted deliveredDate (actual only):', deliveredDate, '| tracking status:', trackingCurrentStatus, '| carrier:', fwdCarrier);
+                console.log('Final deliveredDate:', deliveredDate, '| tracking status:', trackingCurrentStatus, '| primary carrier:', fwdCarrier);
             }
         } else {
             console.log('No fulfillments found for order');
