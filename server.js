@@ -14296,12 +14296,12 @@ app.put('/api/manufacture/samples/:id', authenticateManufacturer, async (req, re
         if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'Nothing to update' });
 
         const row = manufactureDB.toDb('samples', patch, { partial: true });
-        const saved = await manufactureDB.upsert('samples', existing.id, row);
+        const saved = await manufactureDB.updateById('samples', existing.id, row);
         res.json({ success: true, record: saved });
     } catch (error) {
         if (error.statusCode === 400) return res.status(400).json({ error: error.message });
-        console.error('[Manufacture] Sample update error:', error.message);
-        res.status(500).json({ error: 'Failed to update sample' });
+        console.error('[Manufacture] Sample update error:', error.message, error.details || '', error.hint || '', error.code || '');
+        res.status(500).json({ error: 'Failed to update sample: ' + (error.message || 'unknown error') });
     }
 });
 
@@ -14324,12 +14324,12 @@ app.put('/api/manufacture/orders/:id', authenticateManufacturer, async (req, res
         if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'Nothing to update' });
 
         const row = manufactureDB.toDb('orders', patch, { partial: true });
-        const saved = await manufactureDB.upsert('orders', existing.id, row);
+        const saved = await manufactureDB.updateById('orders', existing.id, row);
         res.json({ success: true, record: saved });
     } catch (error) {
         if (error.statusCode === 400) return res.status(400).json({ error: error.message });
-        console.error('[Manufacture] Order update error:', error.message);
-        res.status(500).json({ error: 'Failed to update order' });
+        console.error('[Manufacture] Order update error:', error.message, error.details || '', error.hint || '', error.code || '');
+        res.status(500).json({ error: 'Failed to update order: ' + (error.message || 'unknown error') });
     }
 });
 
@@ -14342,13 +14342,13 @@ app.put('/api/manufacture/techpacks/:id', authenticateManufacturer, async (req, 
         const { manufacturerQuestions } = req.body || {};
         if (manufacturerQuestions === undefined) return res.status(400).json({ error: 'Nothing to update' });
 
-        const saved = await manufactureDB.upsert('techPacks', existing.id, {
+        const saved = await manufactureDB.updateById('techPacks', existing.id, {
             manufacturer_questions: String(manufacturerQuestions || '').trim() || null
         });
         res.json({ success: true, record: saved });
     } catch (error) {
-        console.error('[Manufacture] Tech pack question error:', error.message);
-        res.status(500).json({ error: 'Failed to save questions' });
+        console.error('[Manufacture] Tech pack question error:', error.message, error.details || '', error.code || '');
+        res.status(500).json({ error: 'Failed to save questions: ' + (error.message || 'unknown error') });
     }
 });
 
@@ -14415,13 +14415,25 @@ app.put('/api/manufacture/admin/:kind', authenticateAdmin, async (req, res) => {
         }
         validatePortalAccess(kind, record);
         const row = manufactureDB.toDb(kind, record, { partial: true });
-        const saved = await manufactureDB.upsert(kind, id, row);
+        // Try update first (record should already exist for admin edits);
+        // fall back to upsert in case the row is missing.
+        let saved;
+        try {
+            saved = await manufactureDB.updateById(kind, id, row);
+        } catch (updateErr) {
+            if (updateErr.code === 'PGRST116') {
+                // No row matched — fall back to full upsert (insert)
+                saved = await manufactureDB.upsert(kind, id, row);
+            } else {
+                throw updateErr;
+            }
+        }
         res.json({ success: true, record: saved });
     } catch (error) {
         if (error.statusCode === 400) return res.status(400).json({ error: error.message });
         if (error.code === '23505') return res.status(409).json({ error: 'An entry with that name already exists' });
-        console.error('[Manufacture] Admin update error:', error.message);
-        res.status(500).json({ error: 'Failed to update record' });
+        console.error('[Manufacture] Admin update error:', error.message, error.details || '', error.hint || '', error.code || '');
+        res.status(500).json({ error: 'Failed to update record: ' + (error.message || 'unknown error') });
     }
 });
 

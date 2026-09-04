@@ -160,6 +160,21 @@ async function upsert(kind, id, rowPartial) {
     return toUi(data, kind);
 }
 
+// Partial update on id — only updates the columns provided in rowPartial,
+// leaving all other columns unchanged. Use this when the record is known to
+// exist (avoids any full-row-replacement side-effects of upsert).
+async function updateById(kind, id, rowPartial) {
+    if (HAS_UPDATED_AT.has(kind)) rowPartial.updated_at = new Date().toISOString();
+    const { data, error } = await supabase
+        .from(TABLES[kind].table)
+        .update(rowPartial)
+        .eq('id', id)
+        .select()
+        .single();
+    if (error) throw error;
+    return toUi(data, kind);
+}
+
 async function remove(kind, id) {
     const { error } = await supabase.from(TABLES[kind].table).delete().eq('id', id);
     if (error) throw error;
@@ -216,6 +231,7 @@ module.exports = {
     getById,
     insert,
     upsert,
+    updateById,
     remove,
     getByLinkToken,
     getWorkspace,
