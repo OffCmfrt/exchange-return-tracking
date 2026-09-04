@@ -4236,18 +4236,13 @@ app.post('/api/lookup-order', async (req, res) => {
                     isWithinWindow = false; // Order not yet delivered — block return
                     console.log(`[lookup-order] Order fulfilled but tracking status is "${trackingCurrentStatus}" — blocking return (not delivered yet)`);
                 } else {
-                    // No delivery date and not in transit — fall back to order date for window check
-                    // This prevents old orders (where tracking lost the delivery date) from bypassing the window
-                    if (order.created_at) {
-                        referenceDate = order.created_at;
-                        const orderDate = new Date(referenceDate);
-                        daysSinceReference = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
-                        isWithinWindow = daysSinceReference <= RETURN_WINDOW_DAYS;
-                        console.log(`[lookup-order] No deliveredDate — falling back to order date for window check: ${daysSinceReference.toFixed(1)} days (order mode fallback)`);
-                    } else {
-                        // No date reference at all — allow (edge case safety)
-                        isWithinWindow = true;
-                    }
+                    // Fulfilled + not in transit = must be delivered (tracking just didn't return a date)
+                    // Treat as delivered now — 2-day window starts from today
+                    referenceDate = new Date().toISOString();
+                    deliveredDate = referenceDate;
+                    daysSinceReference = 0;
+                    isWithinWindow = true;
+                    console.log(`[lookup-order] No deliveredDate but fulfilled & not in transit — treating as delivered today (window starts now)`);
                 }
             }
         }
