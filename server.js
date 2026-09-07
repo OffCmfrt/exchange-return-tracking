@@ -7841,12 +7841,6 @@ app.post('/api/admin/create-duplicate-forward', authenticateAdmin, async (req, r
         if (requestDetails.type !== 'exchange') {
             return res.status(400).json({ error: 'Duplicate forward orders are only available for exchange requests' });
         }
-        if (requestDetails.status !== 'approved') {
-            return res.status(400).json({
-                error: 'Can only create a duplicate forward order after the request is approved',
-                currentStatus: requestDetails.status
-            });
-        }
 
         const prevForwardAwb = requestDetails.forwardAwbNumber || 'none';
         console.log(`[${requestId}] Creating DUPLICATE forward order (previous forward AWB: ${prevForwardAwb})`);
