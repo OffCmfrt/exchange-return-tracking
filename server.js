@@ -1707,6 +1707,88 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
     }
 }
 
+// ── Build Your Combo bundle discount ──
+// Separate from createShopifyDiscountCode() above: that function uses
+// target_selection: 'all' (correct for store-wide return-compensation
+// codes), which would let a bundle code discount an unrelated item in the
+// customer's cart instead of the actual combo pair. This one scopes
+// strictly to the two specific variant IDs via target_selection: 'entitled'.
+async function createBundleDiscountCode(variantIdA, variantIdB, discountAmount, bundleId) {
+    const randomSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const code = `COMBO-${randomSuffix}`;
+
+    // Expire unused codes after 48h so abandoned-cart clicks don't pile up
+    // as permanent dead price rules in Shopify Admin.
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+    // Rough anti-gaming floor: requires the cart to still total at least the
+    // combo pair's price. Not airtight if the customer has other items in
+    // cart already over this threshold, but raises the bar against
+    // "add combo, remove one paired item, still redeem the code."
+    const priceRulePayload = {
+        price_rule: {
+            title: `Build Your Combo (bundle ${bundleId})`,
+            target_type: 'line_item',
+            target_selection: 'entitled',
+            entitled_variant_ids: [Number(variantIdA), Number(variantIdB)],
+            allocation_method: 'across',
+            value_type: 'fixed_amount',
+            value: `-${discountAmount}`,
+            customer_selection: 'all',
+            once_per_customer: true,
+            usage_limit: 1,
+            starts_at: new Date().toISOString(),
+            ends_at: expiresAt,
+            prerequisite_subtotal_range: {
+                greater_than_or_equal_to: String(discountAmount)
+            }
+        }
+    };
+
+    const priceRuleResponse = await shopifyAPI('price_rules.json', {
+        method: 'POST',
+        body: JSON.stringify(priceRulePayload)
+    });
+    const priceRuleId = priceRuleResponse.price_rule.id;
+
+    const discountCodeResponse = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
+        method: 'POST',
+        body: JSON.stringify({ discount_code: { code } })
+    });
+    const discountCodeId = discountCodeResponse.discount_code.id;
+
+    console.log(`[bundle-discount] Created ${code} for bundle ${bundleId} (variants ${variantIdA}+${variantIdB}, -₹${discountAmount}, expires ${expiresAt})`);
+
+    return { priceRuleId, discountCodeId, code };
+}
+
+// Public endpoint — called by the storefront theme the instant a shopper
+// completes a "Build Your Combo" add-to-cart. Not behind authenticateAdmin
+// since it's hit by anonymous shoppers; rate-limited via writeLimiter.
+app.post('/api/bundle/create-discount', writeLimiter, async (req, res) => {
+    try {
+        const { variantIdA, variantIdB, discountAmount, bundleId } = req.body;
+
+        if (!variantIdA || !variantIdB || !bundleId) {
+            return res.status(400).json({ error: 'variantIdA, variantIdB, and bundleId are required' });
+        }
+        const amount = parseFloat(discountAmount);
+        if (!amount || amount <= 0) {
+            return res.status(400).json({ error: 'discountAmount must be a positive number' });
+        }
+        if (String(variantIdA) === String(variantIdB)) {
+            return res.status(400).json({ error: 'variantIdA and variantIdB must be different variants' });
+        }
+
+        const result = await createBundleDiscountCode(variantIdA, variantIdB, amount, String(bundleId).slice(0, 64));
+
+        res.json({ success: true, code: result.code });
+    } catch (error) {
+        console.error('[bundle-discount] create-discount error:', error.message);
+        res.status(500).json({ error: 'Failed to create bundle discount code' });
+    }
+});
+
 async function updateShopifyDiscountCode(priceRuleId, newCode, newPercentage, newUsageLimit) {
     try {
         // Update percentage on Price Rule
@@ -8183,7 +8265,15 @@ app.post('/api/admin/lookup-order-force', authenticateAdmin, async (req, res) =>
                     name: li.title,
                     variant: li.variant_title || 'Default',
                     quantity: li.quantity,
-                    price: li.price
+                    price: li.price,
+                    // Build Your Combo: surfaced so an admin approving a
+                    // return can see it was part of a bundle before typing
+                    // a compensation amount. Shopify's REST API returns
+                    // line_item.properties as an array of {name, value}
+                    // pairs — verify this against one real bundle order
+                    // before relying on it.
+                    bundleId: Array.isArray(li.properties) ? (li.properties.find(p => p.name === '_bundle_id')?.value || null) : null,
+                    bundleDiscount: Array.isArray(li.properties) ? (li.properties.find(p => p.name === '_bundle_discount')?.value || null) : null
                 }))
             },
             existingRequests: active.map(r => ({ requestId: r.requestId, status: r.status, type: r.type }))
