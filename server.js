@@ -1803,8 +1803,11 @@ async function createShopifyRefund(orderNumber, refundAmount, reason, note) {
 // target_selection: 'all' (correct for store-wide return-compensation
 // codes), which would let a bundle code discount an unrelated item in the
 // customer's cart instead of the actual combo pair. This one scopes
-// strictly to the two specific variant IDs via target_selection: 'entitled'.
-async function createBundleDiscountCode(variantIdA, variantIdB, discountAmount, bundleId, combinedSubtotal) {
+// strictly to the given variant IDs via target_selection: 'entitled'.
+// variantIds holds 2 IDs for a normal combo, 3 for a TRIPLE bundle - the
+// price rule itself doesn't care how many, entitled_variant_ids is just
+// an array.
+async function createBundleDiscountCode(variantIds, discountAmount, bundleId, combinedSubtotal) {
     const randomSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
     const code = `COMBO-${randomSuffix}`;
 
@@ -1817,16 +1820,16 @@ async function createBundleDiscountCode(variantIdA, variantIdB, discountAmount, 
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
     // Anti-gaming/anti-leak floor: requires the cart to total at least the
-    // combo pair's own combined price, not just the discount amount. This
+    // combo group's own combined price, not just the discount amount. This
     // is the actual fix for a real incident: the floor was previously set
     // to discountAmount alone (e.g. 399), so a single unrelated ₹1,199 item
-    // cleared it easily and got discounted by itself. Flooring at the pair's
-    // real combined price (e.g. ~2,498) means a lone item from the pair can
-    // no longer trigger it - the cart would need to independently total at
-    // least the full pair price on its own. Still not airtight against a
-    // large unrelated cart that happens to clear this floor while containing
-    // one entitled variant, but this closes the specific failure mode that
-    // was actually observed in production testing.
+    // cleared it easily and got discounted by itself. Flooring at the
+    // group's real combined price (e.g. ~2,498) means a lone item from the
+    // group can no longer trigger it - the cart would need to independently
+    // total at least the full group price on its own. Still not airtight
+    // against a large unrelated cart that happens to clear this floor while
+    // containing one entitled variant, but this closes the specific failure
+    // mode that was actually observed in production testing.
     const subtotalFloor = combinedSubtotal && combinedSubtotal > discountAmount ? combinedSubtotal : discountAmount;
 
     const priceRulePayload = {
@@ -1834,7 +1837,7 @@ async function createBundleDiscountCode(variantIdA, variantIdB, discountAmount, 
             title: `Build Your Combo (bundle ${bundleId})`,
             target_type: 'line_item',
             target_selection: 'entitled',
-            entitled_variant_ids: [Number(variantIdA), Number(variantIdB)],
+            entitled_variant_ids: variantIds.map(Number),
             allocation_method: 'across',
             value_type: 'fixed_amount',
             value: `-${discountAmount}`,
@@ -1861,7 +1864,7 @@ async function createBundleDiscountCode(variantIdA, variantIdB, discountAmount, 
     });
     const discountCodeId = discountCodeResponse.discount_code.id;
 
-    console.log(`[bundle-discount] Created ${code} for bundle ${bundleId} (variants ${variantIdA}+${variantIdB}, -₹${discountAmount}, expires ${expiresAt})`);
+    console.log(`[bundle-discount] Created ${code} for bundle ${bundleId} (variants ${variantIds.join('+')}, -₹${discountAmount}, expires ${expiresAt})`);
 
     return { priceRuleId, discountCodeId, code };
 }
@@ -1893,50 +1896,66 @@ async function getVariantForBundle(variantId) {
 }
 
 // Public endpoint — called by the storefront theme the instant a shopper
-// completes a "Build Your Combo" add-to-cart. Not behind authenticateAdmin
-// since it's hit by anonymous shoppers; rate-limited via writeLimiter.
+// completes a "Build Your Combo" / "Change Your Bundle" add-to-cart. Not
+// behind authenticateAdmin since it's hit by anonymous shoppers; rate-
+// limited via writeLimiter.
+//
+// Accepts variantIds as an array (2 for a normal combo, 3 for a TRIPLE
+// bundle - the theme decides the count from the product's own title).
 //
 // Everything that affects pricing is verified against Shopify's own real
 // data here, not trusted from the request body: the request's variant IDs
-// are only ever used to look up the real variants, both variants' real
-// parent products must share the same family (same rule the theme itself
-// uses to decide what's eligible to pair in the first place), the combined
-// price used as the discount's eligibility floor is computed from their
-// real prices, and the requested discount amount is capped so it can never
-// exceed the pair's own real combined price. None of this can be spoofed
-// by sending different numbers in the request - only by having Shopify
-// itself actually re-priced one of the two real products.
+// are only ever used to look up the real variants, every variant's real
+// parent product must share the same family (same rule the theme itself
+// uses to decide what's eligible to group in the first place), the
+// combined price used as the discount's eligibility floor is computed
+// from their real prices, and the requested discount amount is capped so
+// it can never exceed the group's own real combined price. None of this
+// can be spoofed by sending different numbers in the request - only by
+// having Shopify itself actually re-priced one of the real products.
 app.post('/api/bundle/create-discount', writeLimiter, async (req, res) => {
     try {
-        const { variantIdA, variantIdB, discountAmount, bundleId } = req.body;
+        const { variantIds, discountAmount, bundleId } = req.body;
 
-        if (!variantIdA || !variantIdB || !bundleId) {
-            return res.status(400).json({ error: 'variantIdA, variantIdB, and bundleId are required' });
+        // Capped at 3, not a looser round number - the theme only ever sends 2
+        // (a normal combo) or 3 (a TRIPLE bundle), so this is the real ceiling,
+        // not just "some array", on a public endpoint anyone can call directly.
+        if (!Array.isArray(variantIds) || variantIds.length < 2 || variantIds.length > 3 || !bundleId) {
+            return res.status(400).json({ error: 'variantIds (array of 2-3 items) and bundleId are required' });
+        }
+        // Every element must be a genuine positive-integer-looking string/number
+        // before it's trusted anywhere below - without this, values like "123"
+        // and "0123" both pass a plain uniqueness check (Set treats them as
+        // different strings) but collapse to the same number once Number()
+        // is applied when building the price rule, silently defeating the
+        // "must be different variants" rule a few lines down.
+        if (!variantIds.every(id => /^\d+$/.test(String(id)))) {
+            return res.status(400).json({ error: 'variantIds must all be positive integers' });
         }
         const amount = parseFloat(discountAmount);
         if (!amount || amount <= 0) {
             return res.status(400).json({ error: 'discountAmount must be a positive number' });
         }
-        if (String(variantIdA) === String(variantIdB)) {
-            return res.status(400).json({ error: 'variantIdA and variantIdB must be different variants' });
+        const uniqueIds = new Set(variantIds.map(id => String(Number(id))));
+        if (uniqueIds.size !== variantIds.length) {
+            return res.status(400).json({ error: 'variantIds must all be different variants' });
         }
 
-        const [variantA, variantB] = await Promise.all([
-            getVariantForBundle(variantIdA),
-            getVariantForBundle(variantIdB)
-        ]);
+        const variants = await Promise.all(variantIds.map(getVariantForBundle));
 
-        if (variantA.familyKey !== variantB.familyKey) {
-            console.warn(`[bundle-discount] Rejected mismatched family: "${variantA.productTitle}" + "${variantB.productTitle}"`);
-            return res.status(400).json({ error: 'Both items must be from the same product family' });
+        const familyKey = variants[0].familyKey;
+        const mismatched = variants.find(v => v.familyKey !== familyKey);
+        if (mismatched) {
+            console.warn(`[bundle-discount] Rejected mismatched family: ${variants.map(v => `"${v.productTitle}"`).join(' + ')}`);
+            return res.status(400).json({ error: 'All items must be from the same product family' });
         }
 
-        const realCombinedSubtotal = variantA.price + variantB.price;
+        const realCombinedSubtotal = variants.reduce((sum, v) => sum + v.price, 0);
         if (amount >= realCombinedSubtotal) {
-            return res.status(400).json({ error: 'discountAmount cannot exceed the combined price of the two items' });
+            return res.status(400).json({ error: 'discountAmount cannot exceed the combined price of the items' });
         }
 
-        const result = await createBundleDiscountCode(variantIdA, variantIdB, amount, String(bundleId).slice(0, 64), realCombinedSubtotal);
+        const result = await createBundleDiscountCode(variantIds, amount, String(bundleId).slice(0, 64), realCombinedSubtotal);
 
         res.json({ success: true, code: result.code });
     } catch (error) {
