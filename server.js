@@ -657,7 +657,12 @@ const STATUS_RANK = {
     picked_up: 3,
     in_transit: 4,
     out_for_delivery: 5,
-    delivered: 6
+    delivered: 6,
+    inspected: 7,
+    approved: 8,
+    rejected: 8,
+    cancelled: 8,
+    failed: 8
 };
 
 // Returns true only when `next` is strictly further along than `current`,

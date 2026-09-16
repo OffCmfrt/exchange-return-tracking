@@ -379,6 +379,15 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.unboxingVideoUrl !== undefined) updateData.unboxing_video_url = updates.unboxingVideoUrl;
     if (updates.unboxingVideoSubmittedAt !== undefined) updateData.unboxing_video_submitted_at = updates.unboxingVideoSubmittedAt;
 
+    // Agent Payment Link
+    if (updates.agentPaymentLink !== undefined) updateData.agent_payment_link = updates.agentPaymentLink;
+    if (updates.agentPaymentLinkId !== undefined) updateData.agent_payment_link_id = updates.agentPaymentLinkId;
+    if (updates.agentPaymentAmount !== undefined) updateData.agent_payment_amount = updates.agentPaymentAmount;
+    if (updates.agentPaymentStatus !== undefined) updateData.agent_payment_status = updates.agentPaymentStatus;
+    if (updates.agentPaymentPaidAt !== undefined) updateData.agent_payment_paid_at = updates.agentPaymentPaidAt;
+    if (updates.agentPaymentInitiatedBy !== undefined) updateData.agent_payment_initiated_by = updates.agentPaymentInitiatedBy;
+    if (updates.agentPaymentInitiatedAt !== undefined) updateData.agent_payment_initiated_at = updates.agentPaymentInitiatedAt;
+
     if (Object.keys(updateData).length === 0) return null;
 
     const { data, error } = await supabase
@@ -462,6 +471,13 @@ function convertFromSnakeCase(data) {
         pickupVideoSubmittedAt: data.pickup_video_submitted_at || null,
         unboxingVideoUrl: data.unboxing_video_url || null,
         unboxingVideoSubmittedAt: data.unboxing_video_submitted_at || null,
+        agentPaymentLink: data.agent_payment_link || null,
+        agentPaymentLinkId: data.agent_payment_link_id || null,
+        agentPaymentAmount: parseFloat(data.agent_payment_amount) || null,
+        agentPaymentStatus: data.agent_payment_status || null,
+        agentPaymentPaidAt: data.agent_payment_paid_at || null,
+        agentPaymentInitiatedBy: data.agent_payment_initiated_by || null,
+        agentPaymentInitiatedAt: data.agent_payment_initiated_at || null,
         createdAt: data.created_at,
         updatedAt: data.updated_at
     };
