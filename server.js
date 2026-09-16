@@ -1560,6 +1560,38 @@ async function shopifyAPI(endpoint, options = {}) {
     return data;
 }
 
+// Same auth/store as shopifyAPI, but for the GraphQL Admin API - needed for
+// anything using Shopify's newer discount-combination system (combinesWith),
+// which the classic price_rules.json REST resource has no field for at all.
+async function shopifyGraphQL(query, variables = {}) {
+    const token = process.env.SHOPIFY_ACCESS_TOKEN || storage.accessToken;
+    const shop = process.env.SHOPIFY_STORE;
+
+    if (!token) {
+        throw new Error('Not authorized. Please complete OAuth flow first.');
+    }
+
+    const response = await fetchWithRetry(`https://${shop}/admin/api/2024-01/graphql.json`, {
+        method: 'POST',
+        headers: {
+            'X-Shopify-Access-Token': token,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Shopify GraphQL error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (data.errors) {
+        throw new Error(`Shopify GraphQL error: ${JSON.stringify(data.errors)}`);
+    }
+    return data.data;
+}
+
 // ==================== FETCH ALL SHOPIFY PRODUCTS (CURSOR PAGINATION) ====================
 
 // In-memory product cache (refreshes every 5 minutes)
@@ -1712,6 +1744,74 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
     }
 }
 
+// Return-compensation / store-credit coupons only. Deliberately separate
+// from createShopifyDiscountCode() above (which stays on the classic
+// price_rules.json REST resource for influencer/abandoned-cart codes) -
+// the classic resource has no combinesWith field at all, so a code created
+// through it can never combine with anything, no matter what settings are
+// passed. This one goes through the newer GraphQL discount API instead,
+// specifically so a compensation coupon can combine with a "Build Your
+// Combo" bundle coupon (see createBundleDiscountCode, which is on the same
+// GraphQL system for the same reason) - each must explicitly declare it
+// accepts the other's discount class, or Shopify won't combine them even
+// if both support combining in general.
+async function createCompensationDiscountCode(code, value, valueType, usageLimit, title) {
+    const finalValueType = valueType || 'percentage';
+    const customerGetsValue = finalValueType === 'fixed_amount'
+        ? { discountAmount: { amount: String(value), appliesOnEachItem: false } }
+        : { percentage: value / 100 };
+
+    const input = {
+        title: title || `Compensation: ${code}`,
+        code: code.toUpperCase(),
+        startsAt: new Date().toISOString(),
+        customerSelection: { all: true },
+        customerGets: {
+            value: customerGetsValue,
+            items: { all: true }
+        },
+        appliesOncePerCustomer: true,
+        // Order-level discount, explicitly willing to combine with a
+        // product-level one (the bundle/combo coupon) - not with another
+        // order-level discount or a shipping discount, since that wasn't
+        // asked for and stacking two order-wide coupons unintentionally is
+        // a real margin risk.
+        combinesWith: {
+            orderDiscounts: false,
+            productDiscounts: true,
+            shippingDiscounts: false
+        }
+    };
+    if (usageLimit) {
+        input.usageLimit = usageLimit;
+    }
+
+    const mutation = `
+        mutation CreateCompensationDiscount($input: DiscountCodeBasicInput!) {
+            discountCodeBasicCreate(basicCodeDiscount: $input) {
+                codeDiscountNode {
+                    id
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+    `;
+
+    const result = await shopifyGraphQL(mutation, { input });
+    const payload = result.discountCodeBasicCreate;
+    if (payload.userErrors && payload.userErrors.length > 0) {
+        throw new Error(`Shopify discount create failed: ${payload.userErrors.map(e => e.message).join(', ')}`);
+    }
+
+    const nodeId = payload.codeDiscountNode.id;
+    console.log(`✅ Created compensation discount code: ${code.toUpperCase()} | type=${finalValueType} value=${value} usage_limit=${usageLimit || 'unlimited'} (${nodeId})`);
+
+    return { priceRuleId: nodeId, discountCodeId: nodeId, code: code.toUpperCase() };
+}
+
 // ==================== SHOPIFY REFUND HELPER ====================
 
 /**
@@ -1832,41 +1932,67 @@ async function createBundleDiscountCode(variantIds, discountAmount, bundleId, co
     // mode that was actually observed in production testing.
     const subtotalFloor = combinedSubtotal && combinedSubtotal > discountAmount ? combinedSubtotal : discountAmount;
 
-    const priceRulePayload = {
-        price_rule: {
-            title: `Build Your Combo (bundle ${bundleId})`,
-            target_type: 'line_item',
-            target_selection: 'entitled',
-            entitled_variant_ids: variantIds.map(Number),
-            allocation_method: 'across',
-            value_type: 'fixed_amount',
-            value: `-${discountAmount}`,
-            customer_selection: 'all',
-            once_per_customer: true,
-            usage_limit: 1,
-            starts_at: new Date().toISOString(),
-            ends_at: expiresAt,
-            prerequisite_subtotal_range: {
-                greater_than_or_equal_to: String(subtotalFloor)
+    // On the newer GraphQL discount API (not classic price_rules.json)
+    // specifically so this can combine with a return-compensation coupon -
+    // see createCompensationDiscountCode for the other half of that pairing
+    // and why classic-API discounts can never combine with anything.
+    const input = {
+        title: `Build Your Combo (bundle ${bundleId})`,
+        code,
+        startsAt: new Date().toISOString(),
+        endsAt: expiresAt,
+        customerSelection: { all: true },
+        customerGets: {
+            value: {
+                discountAmount: { amount: String(discountAmount), appliesOnEachItem: false }
+            },
+            items: {
+                variants: {
+                    add: variantIds.map(id => `gid://shopify/ProductVariant/${id}`)
+                }
             }
+        },
+        appliesOncePerCustomer: true,
+        usageLimit: 1,
+        minimumRequirement: {
+            subtotal: {
+                greaterThanOrEqualToSubtotal: String(subtotalFloor)
+            }
+        },
+        // Product-level discount, explicitly willing to combine with an
+        // order-level one (the compensation/store-credit coupon) - not with
+        // another product-level discount or a shipping discount.
+        combinesWith: {
+            orderDiscounts: true,
+            productDiscounts: false,
+            shippingDiscounts: false
         }
     };
 
-    const priceRuleResponse = await shopifyAPI('price_rules.json', {
-        method: 'POST',
-        body: JSON.stringify(priceRulePayload)
-    });
-    const priceRuleId = priceRuleResponse.price_rule.id;
+    const mutation = `
+        mutation CreateBundleDiscount($input: DiscountCodeBasicInput!) {
+            discountCodeBasicCreate(basicCodeDiscount: $input) {
+                codeDiscountNode {
+                    id
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+    `;
 
-    const discountCodeResponse = await shopifyAPI(`price_rules/${priceRuleId}/discount_codes.json`, {
-        method: 'POST',
-        body: JSON.stringify({ discount_code: { code } })
-    });
-    const discountCodeId = discountCodeResponse.discount_code.id;
+    const result = await shopifyGraphQL(mutation, { input });
+    const payload = result.discountCodeBasicCreate;
+    if (payload.userErrors && payload.userErrors.length > 0) {
+        throw new Error(`Bundle discount create failed: ${payload.userErrors.map(e => e.message).join(', ')}`);
+    }
 
+    const nodeId = payload.codeDiscountNode.id;
     console.log(`[bundle-discount] Created ${code} for bundle ${bundleId} (variants ${variantIds.join('+')}, -₹${discountAmount}, expires ${expiresAt})`);
 
-    return { priceRuleId, discountCodeId, code };
+    return { priceRuleId: nodeId, discountCodeId: nodeId, code };
 }
 
 // Family name comes from the product title, same convention the theme uses
@@ -7638,7 +7764,7 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
             const title = `Return Compensation: ${requestDetails.orderNumber}`;
             
             console.log(`[approve-discount][${requestId}] Creating Shopify discount: code=${finalCode}, value=${discountValue}, type=${valueType}, usage=${usageLimit || 'unlimited'}`);
-            shopifyResult = await createShopifyDiscountCode(
+            shopifyResult = await createCompensationDiscountCode(
                 finalCode,
                 parseFloat(discountValue),
                 valueType,
@@ -7916,7 +8042,7 @@ app.post('/api/admin/resolve-exchange', authenticateAdmin, async (req, res) => {
             const valueType = discountType === 'fixed' ? 'fixed_amount' : 'percentage';
             const title = `Store Credit: ${requestDetails.orderNumber}`;
 
-            const shopifyResult = await createShopifyDiscountCode(
+            const shopifyResult = await createCompensationDiscountCode(
                 finalCode,
                 parseFloat(discountValue),
                 valueType,
@@ -8135,7 +8261,7 @@ app.post('/api/admin/send-coupon-code', authenticateAdmin, async (req, res) => {
 
         let shopifyResult = null;
         try {
-            shopifyResult = await createShopifyDiscountCode(
+            shopifyResult = await createCompensationDiscountCode(
                 finalCode,
                 parseFloat(discountValue),
                 valueType,
