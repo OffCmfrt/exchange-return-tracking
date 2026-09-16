@@ -388,6 +388,12 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.agentPaymentInitiatedBy !== undefined) updateData.agent_payment_initiated_by = updates.agentPaymentInitiatedBy;
     if (updates.agentPaymentInitiatedAt !== undefined) updateData.agent_payment_initiated_at = updates.agentPaymentInitiatedAt;
 
+    // Resolution & Conversion
+    if (updates.resolution !== undefined) updateData.resolution = updates.resolution;
+    if (updates.originalType !== undefined) updateData.original_type = updates.originalType;
+    if (updates.requestHistory !== undefined) updateData.request_history = updates.requestHistory;
+    if (updates.type !== undefined) updateData.type = updates.type;
+
     if (Object.keys(updateData).length === 0) return null;
 
     const { data, error } = await supabase
@@ -478,6 +484,9 @@ function convertFromSnakeCase(data) {
         agentPaymentPaidAt: data.agent_payment_paid_at || null,
         agentPaymentInitiatedBy: data.agent_payment_initiated_by || null,
         agentPaymentInitiatedAt: data.agent_payment_initiated_at || null,
+        resolution: data.resolution || null,
+        originalType: data.original_type || null,
+        requestHistory: data.request_history || [],
         createdAt: data.created_at,
         updatedAt: data.updated_at
     };

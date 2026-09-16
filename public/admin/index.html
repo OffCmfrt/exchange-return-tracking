@@ -1455,6 +1455,35 @@
                 <span id="cr-submit-spin" class="spinner hidden"></span>
             </button>
         </div>
+
+        <!-- Step 3: Optional Payment Link -->
+        <div id="cr-step3" style="display:none;">
+            <div style="text-align:center; margin-bottom:1.25rem;">
+                <div style="width:48px;height:48px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 0.75rem;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <p style="font-weight:600; font-size:1rem; margin:0;">Request <span id="cr-new-requestId"></span> Created!</p>
+                <p style="color:#6b7280; font-size:0.82rem; margin:0.25rem 0 0 0;">Would you like to generate a payment link for the customer?</p>
+            </div>
+
+            <div style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:1rem;">
+                <div style="flex:1; min-width:140px;">
+                    <label style="display:block; font-size:0.72rem; color:#6b7280; margin-bottom:0.35rem; text-transform:uppercase; letter-spacing:0.5px;">Amount (₹)</label>
+                    <input type="number" id="cr-payAmount" placeholder="e.g. 150" min="1" step="1" style="width:100%; padding:0.6rem 0.75rem; border:1px solid #d1d5db; border-radius:6px; font-size:0.9rem; outline:none;">
+                </div>
+                <button onclick="crGeneratePayLink()" id="cr-payLinkBtn" style="padding:0.6rem 1.25rem; background:#111827; color:white; border:none; border-radius:6px; font-size:0.82rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem; white-space:nowrap;">
+                    <span id="cr-payLinkText">Generate & Send</span>
+                    <span id="cr-payLinkSpin" class="spinner hidden" style="border-color:white; border-bottom-color:transparent; width:14px; height:14px; display:inline-block;"></span>
+                </button>
+            </div>
+            <div id="cr-payLink-result" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:0.75rem; margin-bottom:1rem; font-size:0.85rem; color:#166534;"></div>
+            <div id="cr-payLink-error" style="display:none; color:#dc2626; font-size:0.82rem; margin-bottom:0.75rem;"></div>
+
+            <div style="display:flex; gap:0.75rem;">
+                <button onclick="crCloseAfterSuccess()" class="btn btn-secondary" style="flex:1;">Done</button>
+                <button onclick="crSkipPayLink()" style="flex:1; padding:0.6rem; background:none; border:1px solid #d1d5db; border-radius:6px; color:#6b7280; font-size:0.85rem; cursor:pointer;">Skip</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -2698,6 +2727,9 @@
             const isRefunded = req.refundId || req.refundedAt;
             const rowClass = isRefunded ? 'row-refunded' : '';
             const refundBadge = isRefunded ? `<span class="badge badge-refunded" style="margin-left: 0.4rem; font-size: 0.7rem; vertical-align: middle;">₹${req.refundAmount || 150} Refunded</span>` : '';
+            const payLinkBadge = req.agentPaymentStatus
+                ? `<span style="display: inline-block; margin-left: 0.4rem; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.65rem; font-weight: 600; vertical-align: middle; ${req.agentPaymentStatus === 'paid' ? 'background: #dcfce7; color: #166534;' : req.agentPaymentStatus === 'pending' ? 'background: #fef3c7; color: #92400e;' : 'background: #fee2e2; color: #991b1b;'}" title="Payment: ₹${req.agentPaymentAmount || '?'} (${req.agentPaymentStatus})">₹${req.agentPaymentAmount || '?'} ${req.agentPaymentStatus === 'paid' ? '✓' : req.agentPaymentStatus === 'pending' ? '⏳' : '✗'}</span>`
+                : '';
             return `
             <tr class="${rowClass}">
                 <td class="select-col hidden"><input type="checkbox" class="req-checkbox" value="${req.requestId}" onchange="updateDeleteButton()"></td>
@@ -2709,7 +2741,7 @@
                 <td>
                     ${carrierBadge(req)}
                 </td>
-                <td><span class="badge badge-${req.status.replace(/_/g, '-')}" ${req.status === 'rejected' && req.adminNotes ? `title="Rejection reason: ${escapeHtml(req.adminNotes)}"` : ''}>${getStatusLabel(req.status)}</span>${refundBadge}</td>
+                <td><span class="badge badge-${req.status.replace(/_/g, '-')}" ${req.status === 'rejected' && req.adminNotes ? `title="Rejection reason: ${escapeHtml(req.adminNotes)}"` : ''}>${getStatusLabel(req.status)}</span>${refundBadge}${payLinkBadge}</td>
                 <td>
                     <button onclick="viewDetails('${req.requestId}')" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
                         View
@@ -2793,7 +2825,7 @@
                 </div>
                 <div>
                     <p style="font-size: 0.8rem; color: var(--gray-dark);">Type</p>
-                    <p style="font-weight: 500; text-transform: capitalize;">${data.type}</p>
+                    <p style="font-weight: 500; text-transform: capitalize;">${data.type}${data.originalType ? ` <span style="font-size: 0.75rem; color: #6b7280; text-transform: none;">(converted from ${data.originalType})</span>` : ''}</p>
                 </div>
                 <div>
                     <p style="font-size: 0.8rem; color: var(--gray-dark);">Order Number</p>
@@ -2814,6 +2846,135 @@
 
             <div id="trackingPipeline" class="tracking-pipeline hidden">
                 ${buildTrackingPipeline(data)}
+            </div>
+
+            ${data.resolution ? `
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.875rem 1rem; background: ${data.resolution === 'exchange' ? 'linear-gradient(135deg, #ecfdf5, #d1fae5)' : data.resolution === 'refund' ? 'linear-gradient(135deg, #eff6ff, #dbeafe)' : 'linear-gradient(135deg, #faf5ff, #ede9fe)'}; border-radius: 10px; border: 1px solid ${data.resolution === 'exchange' ? '#a7f3d0' : data.resolution === 'refund' ? '#bfdbfe' : '#ddd6fe'};">
+                <span style="font-size: 1.1rem;">${data.resolution === 'exchange' ? '📦' : data.resolution === 'refund' ? '💰' : '🎁'}</span>
+                <div>
+                    <p style="margin: 0; font-weight: 600; font-size: 0.85rem; color: ${data.resolution === 'exchange' ? '#065f46' : data.resolution === 'refund' ? '#1e40af' : '#5b21b6'};">
+                        Resolution: ${data.resolution === 'exchange' ? 'Replacement Dispatched' : data.resolution === 'refund' ? 'Refund Issued' : 'Store Credit Issued'}
+                    </p>
+                    ${data.discountCode && data.resolution === 'store_credit' ? `<p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: #6b21a8;">Code: <strong>${data.discountCode}</strong> — ${data.discountType === 'fixed' ? '₹' : ''}${data.discountValue}${data.discountType === 'percentage' ? '%' : ''}</p>` : ''}
+                </div>
+            </div>
+            ` : ''}
+
+            ${(data.requestHistory && data.requestHistory.length > 0) ? `
+            <details style="margin-bottom: 1rem; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                <summary style="padding: 0.75rem 1rem; cursor: pointer; font-weight: 500; font-size: 0.85rem; color: #374151; user-select: none;">
+                    📋 Request History (${data.requestHistory.length} event${data.requestHistory.length > 1 ? 's' : ''})
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    ${data.requestHistory.map(entry => `
+                        <div style="display: flex; gap: 0.75rem; padding: 0.625rem 0; border-bottom: 1px solid #f3f4f6; align-items: flex-start;">
+                            <div style="width: 8px; height: 8px; border-radius: 50%; background: ${entry.action === 'converted_to_exchange' ? '#f59e0b' : entry.action === 'resolution_selected' ? '#3b82f6' : '#9ca3af'}; margin-top: 6px; flex-shrink: 0;"></div>
+                            <div style="flex: 1;">
+                                <p style="margin: 0; font-size: 0.82rem; font-weight: 500; color: #111827;">
+                                    ${entry.action === 'converted_to_exchange' ? 'Converted from Return → Exchange' : entry.action === 'resolution_selected' ? `Resolution: ${entry.resolution === 'exchange' ? 'Replacement Dispatch' : entry.resolution === 'refund' ? 'Refund' : 'Store Credit'}` : entry.action}
+                                </p>
+                                ${entry.notes ? `<p style="margin: 0.2rem 0 0 0; font-size: 0.75rem; color: #6b7280;">${escapeHtml(entry.notes)}</p>` : ''}
+                                <p style="margin: 0.2rem 0 0 0; font-size: 0.7rem; color: #9ca3af;">${formatDateIST(entry.timestamp)}${entry.by ? ' · by ' + entry.by : ''}</p>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </details>
+            ` : ''}
+
+            <!-- ═══ Agent Payment Link Panel ═══ -->
+            <div id="agentPaymentPanel" style="background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%); border: 1px solid #e5e7eb; border-radius: 12px; padding: 0; margin-bottom: 1rem; overflow: hidden;">
+                <div style="padding: 1rem 1.25rem; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem; background: white;">
+                    <div style="width: 32px; height: 32px; background: #111827; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; font-size: 0.9rem; font-weight: 600; color: #111827;">Payment Link</h3>
+                        <p style="margin: 0; color: #6b7280; font-size: 0.72rem;">Generate & send payment link to customer</p>
+                    </div>
+                    ${data.agentPaymentStatus ? `<span style="margin-left: auto; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.72rem; font-weight: 600; ${data.agentPaymentStatus === 'paid' ? 'background: #dcfce7; color: #166534;' : data.agentPaymentStatus === 'pending' ? 'background: #fef3c7; color: #92400e;' : 'background: #fee2e2; color: #991b1b;'}">${data.agentPaymentStatus.toUpperCase()}</span>` : ''}
+                </div>
+
+                <div style="padding: 1.25rem;">
+                    ${data.agentPaymentStatus === 'paid' ? `
+                    <!-- Paid State -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem;">
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Amount Requested</p>
+                            <p style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0;">₹${data.agentPaymentAmount || '—'}</p>
+                        </div>
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Amount Paid</p>
+                            <p style="font-size: 1.1rem; font-weight: 600; color: #166534; margin: 0;">₹${data.agentPaymentAmount || '—'}</p>
+                        </div>
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Payment Reference</p>
+                            <p style="font-size: 0.85rem; font-weight: 500; color: #111827; margin: 0; word-break: break-all;">${data.agentPaymentLinkId || '—'}</p>
+                        </div>
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Paid At</p>
+                            <p style="font-size: 0.85rem; font-weight: 500; color: #111827; margin: 0;">${data.agentPaymentPaidAt ? formatDateIST(data.agentPaymentPaidAt) : '—'}</p>
+                        </div>
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Initiated By</p>
+                            <p style="font-size: 0.85rem; font-weight: 500; color: #111827; margin: 0;">${data.agentPaymentInitiatedBy || '—'}</p>
+                        </div>
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Approval Status</p>
+                            <p style="font-size: 0.85rem; font-weight: 500; margin: 0;"><span class="badge badge-${data.status.replace(/_/g, '-')}">${getStatusLabel(data.status)}</span></p>
+                        </div>
+                    </div>
+                    ` : data.agentPaymentStatus === 'pending' ? `
+                    <!-- Pending State -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Amount Requested</p>
+                            <p style="font-size: 1.1rem; font-weight: 600; color: #111827; margin: 0;">₹${data.agentPaymentAmount || '—'}</p>
+                        </div>
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Payment Reference</p>
+                            <p style="font-size: 0.85rem; font-weight: 500; color: #111827; margin: 0; word-break: break-all;">${data.agentPaymentLinkId || '—'}</p>
+                        </div>
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Initiated By</p>
+                            <p style="font-size: 0.85rem; font-weight: 500; color: #111827; margin: 0;">${data.agentPaymentInitiatedBy || '—'}</p>
+                        </div>
+                        <div>
+                            <p style="font-size: 0.72rem; color: #6b7280; margin: 0 0 0.25rem; text-transform: uppercase; letter-spacing: 0.5px;">Initiated At</p>
+                            <p style="font-size: 0.85rem; font-weight: 500; color: #111827; margin: 0;">${data.agentPaymentInitiatedAt ? formatDateIST(data.agentPaymentInitiatedAt) : '—'}</p>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        <a href="${data.agentPaymentLink || '#'}" target="_blank" rel="noopener" style="padding: 0.5rem 1rem; background: #111827; color: white; border-radius: 6px; font-size: 0.82rem; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                            Copy Link
+                        </a>
+                        <button onclick="resendPaymentLinkWhatsapp('${data.requestId}')" style="padding: 0.5rem 1rem; background: #25c550; color: white; border: none; border-radius: 6px; font-size: 0.82rem; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                            Resend WhatsApp
+                        </button>
+                        <button onclick="generatePaymentLink('${data.requestId}')" style="padding: 0.5rem 1rem; background: #dc2626; color: white; border: none; border-radius: 6px; font-size: 0.82rem; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                            Generate New Link
+                        </button>
+                    </div>
+                    ` : `
+                    <!-- No Link State — Show Generate Form -->
+                    <div style="display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 160px;">
+                            <label style="display: block; font-size: 0.72rem; color: #6b7280; margin-bottom: 0.35rem; text-transform: uppercase; letter-spacing: 0.5px;">Amount (₹)</label>
+                            <input type="number" id="paymentLinkAmount" placeholder="e.g. 150" min="1" step="1" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#111827'" onblur="this.style.borderColor='#d1d5db'">
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button onclick="generatePaymentLink('${data.requestId}')" id="genPayLinkBtn" style="padding: 0.6rem 1.25rem; background: #111827; color: white; border: none; border-radius: 6px; font-size: 0.82rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; transition: all 0.2s; white-space: nowrap;" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='#111827'">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                <span id="genPayLinkText">Generate & Send</span>
+                                <span id="genPayLinkSpin" class="spinner hidden" style="border-color: white; border-bottom-color: transparent; width: 14px; height: 14px; display: inline-block; vertical-align: middle;"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <p style="font-size: 0.72rem; color: #9ca3af; margin: 0.75rem 0 0 0;">Link will be sent to the customer via WhatsApp. Request auto-approves on payment.</p>
+                    `}
+                </div>
             </div>
 
             ${data.status === 'rejected' ? `
@@ -3145,7 +3306,7 @@
         // User said: "pickup booked -> item delivered -> admin approves". 
         // So we show buttons if status is 'delivered'.
         
-        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'rejected', 'approved'].includes(data.status)) {
+        if (['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'inspected', 'cancelled', 'failed', 'rejected', 'approved'].includes(data.status)) {
             console.log('Action block status matched:', data.status);
             modalActions.classList.remove('hidden');
             
@@ -3217,19 +3378,25 @@
                     approveBtn.classList.remove('hidden');
                     approveBtn.textContent = 'Approve & Initiate Pickup';
                     approveBtn.style.background = '#2563eb'; // Blue
+                    approveBtn.setAttribute('onclick', 'approveRequest()');
                 } else if (data.status === 'pickup_pending') {
                     // Show Re-initiate button for pickup_pending
                     approveBtn.classList.remove('hidden');
                     approveBtn.textContent = 'Re-initiate Pickup with Selected Carrier';
                     approveBtn.style.background = '#f59e0b'; // Orange warning color
-                } else if (data.status === 'delivered') {
+                    approveBtn.setAttribute('onclick', 'approveRequest()');
+                } else if (data.status === 'delivered' || data.status === 'inspected') {
                     approveBtn.classList.remove('hidden');
                     if (data.type === 'exchange') {
-                        approveBtn.textContent = 'Approve & Dispatch Replacement';
+                        // Exchange at delivered/inspected: show resolution chooser
+                        approveBtn.textContent = 'Choose Resolution';
+                        approveBtn.style.background = '#111827';
+                        approveBtn.setAttribute('onclick', 'openResolutionModal()');
                     } else {
                         approveBtn.textContent = 'Approve (QC Passed)';
+                        approveBtn.style.background = '#22c55e';
+                        approveBtn.setAttribute('onclick', 'approveRequest()');
                     }
-                    approveBtn.style.background = '#22c55e'; // Green for final approval
                 } else {
                     approveBtn.classList.add('hidden');
                 }
@@ -3245,6 +3412,24 @@
                 } else {
                     modifyBeforeDispatchBtn.classList.add('hidden');
                 }
+            }
+
+            // Convert to Exchange button: shown for return requests in active (non-terminal) statuses
+            let convertBtn = modalActions.querySelector('button[onclick="openConvertToExchangeModal()"]');
+            const convertibleReturnStatuses = ['delivered', 'inspected', 'picked_up', 'in_transit', 'out_for_delivery', 'pickup_booked', 'scheduled', 'pending', 'pickup_pending'];
+            const isConvertibleReturn = data.type === 'return' && convertibleReturnStatuses.includes(data.status);
+            if (isConvertibleReturn) {
+                if (!convertBtn) {
+                    convertBtn = document.createElement('button');
+                    convertBtn.setAttribute('onclick', 'openConvertToExchangeModal()');
+                    convertBtn.onclick = () => openConvertToExchangeModal();
+                    convertBtn.textContent = '🔄 Convert to Exchange';
+                    convertBtn.style.cssText = 'flex: 1; min-width: 150px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 8px; padding: 0.6rem 1rem; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3); transition: all 0.2s;';
+                    modalActions.appendChild(convertBtn);
+                }
+                convertBtn.classList.remove('hidden');
+            } else if (convertBtn) {
+                convertBtn.classList.add('hidden');
             }
 
             // Discount code section handled below (outside status block)
@@ -4056,6 +4241,331 @@
         }
     }
 
+    // ── Resolution Modal (exchange / refund / store_credit) ─────────────────
+    function openResolutionModal() {
+        if (!currentRequest) return;
+        const existing = document.getElementById('resolutionModal');
+        if (existing) existing.remove();
+
+        const items = Array.isArray(currentRequest.items)
+            ? currentRequest.items
+            : (typeof currentRequest.items === 'string' ? (() => { try { return JSON.parse(currentRequest.items); } catch(e) { return []; } })() : []);
+        const totalPaid = items.reduce((sum, item) => {
+            const price = parseFloat(item.paidPrice || item.price || 0);
+            const qty = parseInt(item.quantity || 1);
+            return sum + (price * qty);
+        }, 0) + (parseFloat(currentRequest.codCharges) || 0);
+
+        const overlay = document.createElement('div');
+        overlay.id = 'resolutionModal';
+        overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease;';
+        overlay.innerHTML = `
+            <div style="background: white; border-radius: 16px; padding: 0; width: 92%; max-width: 640px; box-shadow: 0 20px 60px rgba(0,0,0,0.25); overflow: hidden; animation: slideUp 0.25s ease;">
+                <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #111827;">Choose Resolution</h3>
+                        <p style="margin: 0.2rem 0 0 0; font-size: 0.8rem; color: #6b7280;">${currentRequest.requestId} · ${currentRequest.orderNumber}</p>
+                    </div>
+                    <button onclick="document.getElementById('resolutionModal').remove()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #9ca3af; padding: 0.25rem;">&times;</button>
+                </div>
+                <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                    <!-- Option 1: Proceed with Exchange -->
+                    <div class="resolution-card" data-resolution="exchange" onclick="selectResolution('exchange')" style="border: 2px solid #e5e7eb; border-radius: 12px; padding: 1.125rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: flex-start; gap: 1rem;">
+                        <div style="width: 44px; height: 44px; background: #ecfdf5; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.3rem;">📦</div>
+                        <div style="flex: 1;">
+                            <p style="margin: 0; font-weight: 600; font-size: 0.95rem; color: #111827;">Proceed with Exchange</p>
+                            <p style="margin: 0.3rem 0 0 0; font-size: 0.8rem; color: #6b7280; line-height: 1.4;">Dispatch the replacement item to the customer via carrier. Forward shipment will be created.</p>
+                        </div>
+                        <div class="resolution-check" style="width: 22px; height: 22px; border: 2px solid #d1d5db; border-radius: 50%; flex-shrink: 0; margin-top: 0.5rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"></div>
+                    </div>
+
+                    <!-- Option 2: Offer Refund -->
+                    <div class="resolution-card" data-resolution="refund" onclick="selectResolution('refund')" style="border: 2px solid #e5e7eb; border-radius: 12px; padding: 1.125rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: flex-start; gap: 1rem;">
+                        <div style="width: 44px; height: 44px; background: #eff6ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.3rem;">💰</div>
+                        <div style="flex: 1;">
+                            <p style="margin: 0; font-weight: 600; font-size: 0.95rem; color: #111827;">Offer Refund Instead</p>
+                            <p style="margin: 0.3rem 0 0 0; font-size: 0.8rem; color: #6b7280; line-height: 1.4;">Issue a Shopify refund of <strong>₹${totalPaid.toFixed(2)}</strong> back to the customer's original payment method.</p>
+                        </div>
+                        <div class="resolution-check" style="width: 22px; height: 22px; border: 2px solid #d1d5db; border-radius: 50%; flex-shrink: 0; margin-top: 0.5rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"></div>
+                    </div>
+
+                    <!-- Option 3: Offer Store Credit -->
+                    <div class="resolution-card" data-resolution="store_credit" onclick="selectResolution('store_credit')" style="border: 2px solid #e5e7eb; border-radius: 12px; padding: 1.125rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: flex-start; gap: 1rem;">
+                        <div style="width: 44px; height: 44px; background: #faf5ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.3rem;">🎁</div>
+                        <div style="flex: 1;">
+                            <p style="margin: 0; font-weight: 600; font-size: 0.95rem; color: #111827;">Offer Store Credit Instead</p>
+                            <p style="margin: 0.3rem 0 0 0; font-size: 0.8rem; color: #6b7280; line-height: 1.4;">Create a Shopify discount code as store credit for the customer.</p>
+                        </div>
+                        <div class="resolution-check" style="width: 22px; height: 22px; border: 2px solid #d1d5db; border-radius: 50%; flex-shrink: 0; margin-top: 0.5rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"></div>
+                    </div>
+
+                    <!-- Store Credit Form (hidden by default) -->
+                    <div id="storeCreditForm" style="display: none; margin-top: 0.5rem; padding: 1rem; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 10px;">
+                        <p style="margin: 0 0 0.75rem 0; font-weight: 600; font-size: 0.85rem; color: #5b21b6;">Store Credit Details</p>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                            <div>
+                                <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.25rem;">Discount Code</label>
+                                <input id="resDiscountCode" type="text" value="CREDIT${currentRequest.requestId.replace(/[^0-9]/g, '').slice(-4)}" style="width: 100%; padding: 0.5rem 0.625rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;" />
+                            </div>
+                            <div>
+                                <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.25rem;">Value</label>
+                                <input id="resDiscountValue" type="number" value="${totalPaid.toFixed(0)}" min="1" style="width: 100%; padding: 0.5rem 0.625rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;" />
+                            </div>
+                            <div>
+                                <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.25rem;">Type</label>
+                                <select id="resDiscountType" style="width: 100%; padding: 0.5rem 0.625rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;">
+                                    <option value="fixed">₹ Fixed Amount</option>
+                                    <option value="percentage">% Percentage</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.25rem;">Usage Limit</label>
+                                <input id="resUsageLimit" type="number" value="1" min="1" style="width: 100%; padding: 0.5rem 0.625rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;" />
+                            </div>
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; cursor: pointer; font-size: 0.82rem; color: #374151;">
+                            <input id="resSendWhatsApp" type="checkbox" checked style="width: 16px; height: 16px; accent-color: #25d366;" />
+                            <i class="fab fa-whatsapp" style="color: #25d366;"></i> Send code to customer via WhatsApp
+                        </label>
+                    </div>
+
+                    <!-- Admin Notes -->
+                    <div style="margin-top: 0.5rem;">
+                        <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.25rem;">Admin Notes (optional)</label>
+                        <textarea id="resAdminNotes" rows="2" placeholder="Add notes about this resolution..." style="width: 100%; padding: 0.625rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; resize: vertical; box-sizing: border-box;"></textarea>
+                    </div>
+
+                    <!-- Confirm Button -->
+                    <button id="confirmResolutionBtn" onclick="confirmResolution()" disabled style="margin-top: 0.5rem; width: 100%; padding: 0.875rem; background: #e5e7eb; color: #9ca3af; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 600; cursor: not-allowed; transition: all 0.2s;">
+                        Select a resolution option above
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        window._selectedResolution = null;
+    }
+
+    function selectResolution(resolution) {
+        window._selectedResolution = resolution;
+        // Update card styles
+        document.querySelectorAll('.resolution-card').forEach(card => {
+            const isSelected = card.dataset.resolution === resolution;
+            card.style.borderColor = isSelected ? '#111827' : '#e5e7eb';
+            card.style.background = isSelected ? '#f9fafb' : 'white';
+            const check = card.querySelector('.resolution-check');
+            if (isSelected) {
+                check.style.borderColor = '#111827';
+                check.style.background = '#111827';
+                check.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+            } else {
+                check.style.borderColor = '#d1d5db';
+                check.style.background = 'transparent';
+                check.innerHTML = '';
+            }
+        });
+        // Show/hide store credit form
+        const scForm = document.getElementById('storeCreditForm');
+        if (scForm) scForm.style.display = resolution === 'store_credit' ? 'block' : 'none';
+        // Update confirm button
+        const btn = document.getElementById('confirmResolutionBtn');
+        if (btn) {
+            btn.disabled = false;
+            btn.style.cursor = 'pointer';
+            btn.style.background = '#111827';
+            btn.style.color = 'white';
+            const labels = { exchange: 'Confirm: Dispatch Replacement', refund: 'Confirm: Issue Refund', store_credit: 'Confirm: Issue Store Credit' };
+            btn.textContent = labels[resolution] || 'Confirm Resolution';
+        }
+    }
+
+    async function confirmResolution() {
+        const resolution = window._selectedResolution;
+        if (!resolution || !currentRequest) return;
+
+        const notes = document.getElementById('resAdminNotes')?.value || '';
+        const btn = document.getElementById('confirmResolutionBtn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Processing...'; }
+
+        try {
+            const body = {
+                requestId: currentRequest.requestId,
+                resolution,
+                notes
+            };
+
+            if (resolution === 'store_credit') {
+                body.discountCode = document.getElementById('resDiscountCode')?.value || null;
+                body.discountValue = parseFloat(document.getElementById('resDiscountValue')?.value || 0);
+                body.discountType = document.getElementById('resDiscountType')?.value || 'fixed';
+                body.usageLimit = parseInt(document.getElementById('resUsageLimit')?.value || 1);
+                body.sendWhatsApp = document.getElementById('resSendWhatsApp')?.checked || false;
+                body.whatsappPhone = currentRequest.customerPhone;
+            }
+
+            const response = await fetch(`${API_URL}/admin/resolve-exchange`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify(body)
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                document.getElementById('resolutionModal')?.remove();
+                const msgs = {
+                    exchange: '✅ Replacement dispatched successfully!',
+                    refund: `✅ Refund of ₹${data.refundAmount} issued successfully!\nRefund ID: ${data.refundId}`,
+                    store_credit: `✅ Store credit issued!\nCode: ${data.discountCode}\n${data.whatsappSent ? 'WhatsApp sent to customer.' : ''}`
+                };
+                alert(msgs[resolution] || 'Resolution applied successfully');
+                closeModal();
+                loadRequests();
+            } else {
+                alert('❌ ' + (data.error || 'Failed to apply resolution'));
+                if (btn) { btn.disabled = false; btn.textContent = 'Confirm Resolution'; }
+            }
+        } catch (error) {
+            console.error('Resolution error:', error);
+            alert('❌ An error occurred. Please check console.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Confirm Resolution'; }
+        }
+    }
+
+    // ── Convert Return to Exchange Modal ─────────────────────────────────────
+    async function openConvertToExchangeModal() {
+        if (!currentRequest) return;
+        const existing = document.getElementById('convertModal');
+        if (existing) existing.remove();
+
+        const items = Array.isArray(currentRequest.items)
+            ? currentRequest.items
+            : (typeof currentRequest.items === 'string' ? (() => { try { return JSON.parse(currentRequest.items); } catch(e) { return []; } })() : []);
+
+        // Fetch order products from Shopify for replacement selection
+        let orderProducts = [];
+        try {
+            const orderResp = await fetch(`${API_URL}/shopify/order/${encodeURIComponent(currentRequest.orderNumber)}`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (orderResp.ok) {
+                const orderData = await orderResp.json();
+                orderProducts = (orderData.line_items || []).map(li => ({
+                    productId: String(li.product_id || ''),
+                    variantId: String(li.variant_id || ''),
+                    variantTitle: li.variant_title || li.title || '',
+                    productTitle: li.title || '',
+                    price: li.price || '0',
+                    image: li.image || ''
+                }));
+            }
+        } catch (e) {
+            console.warn('Could not fetch order products:', e.message);
+        }
+
+        const overlay = document.createElement('div');
+        overlay.id = 'convertModal';
+        overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease;';
+        overlay.innerHTML = `
+            <div style="background: white; border-radius: 16px; padding: 0; width: 92%; max-width: 680px; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25); animation: slideUp 0.25s ease;">
+                <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: white; z-index: 1; border-radius: 16px 16px 0 0;">
+                    <div>
+                        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #111827;">Convert to Exchange</h3>
+                        <p style="margin: 0.2rem 0 0 0; font-size: 0.8rem; color: #6b7280;">${currentRequest.requestId} · Select replacement items</p>
+                    </div>
+                    <button onclick="document.getElementById('convertModal').remove()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #9ca3af; padding: 0.25rem;">&times;</button>
+                </div>
+                <div style="padding: 1.5rem;">
+                    <div style="margin-bottom: 1rem; padding: 0.875rem; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;">
+                        <p style="margin: 0; font-size: 0.82rem; color: #92400e; line-height: 1.5;"><strong>Note:</strong> This will convert the return request into an exchange. The original request history will be preserved. After conversion, you can choose a resolution (dispatch, refund, or store credit).</p>
+                    </div>
+
+                    ${items.map((item, idx) => `
+                        <div style="margin-bottom: 1.25rem; padding: 1rem; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px;">
+                            <p style="margin: 0 0 0.5rem 0; font-weight: 600; font-size: 0.85rem; color: #374151;">Original: ${escapeHtml(item.name || '')}</p>
+                            <p style="margin: 0 0 0.75rem 0; font-size: 0.8rem; color: #6b7280;">Size: ${escapeHtml(item.variant || '')} · ₹${item.price || '0'}</p>
+                            <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.35rem; font-weight: 500;">Select replacement variant:</label>
+                            <select id="replacementSelect_${idx}" style="width: 100%; padding: 0.625rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; box-sizing: border-box;">
+                                <option value="">-- Select replacement --</option>
+                                ${orderProducts.map(p => `<option value='${JSON.stringify(p).replace(/'/g, "&#39;")}' data-price="${p.price}" data-image="${p.image}">${escapeHtml(p.productTitle)} — ${escapeHtml(p.variantTitle)} (₹${p.price})</option>`).join('')}
+                            </select>
+                        </div>
+                    `).join('')}
+
+                    <div style="margin-bottom: 1rem;">
+                        <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.25rem;">Admin Notes (optional)</label>
+                        <textarea id="convertNotes" rows="2" placeholder="Reason for conversion..." style="width: 100%; padding: 0.625rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; resize: vertical; box-sizing: border-box;"></textarea>
+                    </div>
+
+                    <button id="confirmConvertBtn" onclick="confirmConvertToExchange()" style="width: 100%; padding: 0.875rem; background: #111827; color: white; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                        Convert to Exchange
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    }
+
+    async function confirmConvertToExchange() {
+        if (!currentRequest) return;
+
+        const items = Array.isArray(currentRequest.items)
+            ? currentRequest.items
+            : (typeof currentRequest.items === 'string' ? (() => { try { return JSON.parse(currentRequest.items); } catch(e) { return []; } })() : []);
+
+        const replacementItems = [];
+        for (let idx = 0; idx < items.length; idx++) {
+            const select = document.getElementById(`replacementSelect_${idx}`);
+            if (!select || !select.value) {
+                alert(`Please select a replacement for item ${idx + 1}`);
+                return;
+            }
+            try {
+                replacementItems.push(JSON.parse(select.value));
+            } catch (e) {
+                alert('Invalid replacement selection');
+                return;
+            }
+        }
+
+        const notes = document.getElementById('convertNotes')?.value || '';
+        const btn = document.getElementById('confirmConvertBtn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Converting...'; }
+
+        try {
+            const response = await fetch(`${API_URL}/admin/convert-to-exchange`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    requestId: currentRequest.requestId,
+                    replacementItems,
+                    notes
+                })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                document.getElementById('convertModal')?.remove();
+                alert('✅ Return converted to exchange successfully!\n\nYou can now choose a resolution (dispatch, refund, or store credit).');
+                // Refresh the detail view to show updated type and resolution options
+                viewDetails(currentRequest.requestId);
+                loadRequests();
+            } else {
+                alert('❌ ' + (data.error || 'Failed to convert'));
+                if (btn) { btn.disabled = false; btn.textContent = 'Convert to Exchange'; }
+            }
+        } catch (error) {
+            console.error('Convert error:', error);
+            alert('❌ An error occurred. Please check console.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Convert to Exchange'; }
+        }
+    }
+
     async function resetPickupToPending() {
         if (!confirm('Reset this request to pending status? This will clear carrier booking info and allow you to re-initiate pickup.')) return;
         
@@ -4309,6 +4819,86 @@
             }
         };
         document.getElementById('rejectReasonInput').focus();
+    }
+
+    // ── Agent Payment Link Functions ──
+    async function generatePaymentLink(requestId) {
+        const amountInput = document.getElementById('paymentLinkAmount');
+        const amount = amountInput ? parseFloat(amountInput.value) : 0;
+
+        if (!amount || amount <= 0) {
+            alert('Please enter a valid amount greater than 0.');
+            if (amountInput) amountInput.focus();
+            return;
+        }
+
+        const btnText = document.getElementById('genPayLinkText');
+        const spinner = document.getElementById('genPayLinkSpin');
+        const btn = document.getElementById('genPayLinkBtn');
+
+        if (btnText) btnText.textContent = 'Generating...';
+        if (spinner) spinner.classList.remove('hidden');
+        if (btn) btn.disabled = true;
+
+        try {
+            const response = await fetch(`${API_URL}/admin/generate-payment-link`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ requestId, amount, sendWhatsapp: true })
+            });
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                alert(`✅ Payment link generated for ₹${amount}\n\nLink: ${data.paymentLink}\n\nCustomer has been notified via WhatsApp.`);
+                // Refresh the detail view
+                viewDetails(requestId);
+                loadRequests();
+            } else {
+                alert(data.error || 'Failed to generate payment link.');
+            }
+        } catch (err) {
+            alert('Failed to generate payment link. Please try again.');
+        } finally {
+            if (btnText) btnText.textContent = 'Generate & Send';
+            if (spinner) spinner.classList.add('hidden');
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async function resendPaymentLinkWhatsapp(requestId) {
+        // Re-generate the link with same amount and send WhatsApp
+        const currentData = window.currentRequestData;
+        if (!currentData || !currentData.agentPaymentAmount) {
+            alert('No active payment link found for this request.');
+            return;
+        }
+
+        if (!confirm(`Resend the payment link (₹${currentData.agentPaymentAmount}) to the customer via WhatsApp?`)) return;
+
+        try {
+            // Generate a new link (old one will be superseded)
+            const response = await fetch(`${API_URL}/admin/generate-payment-link`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ requestId, amount: currentData.agentPaymentAmount, sendWhatsapp: true })
+            });
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                alert('✅ Payment link resent via WhatsApp.');
+                viewDetails(requestId);
+            } else {
+                alert(data.error || 'Failed to resend payment link.');
+            }
+        } catch (err) {
+            alert('Failed to resend. Please try again.');
+        }
     }
 
     async function undoRejection() {
@@ -4668,9 +5258,11 @@
         document.getElementById('cr-lookup-error').style.display = 'none';
         document.getElementById('cr-step1').style.display = '';
         document.getElementById('cr-step2').style.display = 'none';
+        document.getElementById('cr-step3').style.display = 'none';
         document.getElementById('cr-success').style.display = 'none';
         document.getElementById('cr-submit-error').style.display = 'none';
         crOrderData = null;
+        window._crNewRequestId = null;
         document.getElementById('createRequestModal').classList.add('active');
     }
 
@@ -4803,12 +5395,14 @@
                 document.getElementById('cr-existing-warning').style.display = '';
                 document.getElementById('cr-existing-text').textContent = data.error;
             } else if (res.ok) {
-                const successEl = document.getElementById('cr-success');
-                successEl.innerHTML = `✅ <strong>${data.requestId}</strong> created successfully!
-                    ${data.pickupDate ? `<br>Pickup: ${data.pickupDate}` : ''}
-                    ${data.awbNumber ? `<br>AWB: ${data.awbNumber}` : ''}
-                    <br>Status: <strong>${data.status}</strong>`;
-                successEl.style.display = '';
+                // Store the new request ID for Step 3
+                window._crNewRequestId = data.requestId;
+                document.getElementById('cr-new-requestId').textContent = data.requestId;
+                // Transition to Step 3 (payment link)
+                document.getElementById('cr-step2').style.display = 'none';
+                document.getElementById('cr-step3').style.display = '';
+                document.getElementById('cr-payLink-result').style.display = 'none';
+                document.getElementById('cr-payLink-error').style.display = 'none';
                 loadRequests(); // Refresh table
             } else {
                 errEl.textContent = data.error || 'Failed to create request';
@@ -4822,7 +5416,65 @@
             document.getElementById('cr-submit-spin').classList.add('hidden');
         }
     }
-    // ───────────────────────────────────────────────────────────────────────
+
+    // Step 3: Generate payment link for newly created request
+    async function crGeneratePayLink() {
+        const requestId = window._crNewRequestId;
+        if (!requestId) return;
+
+        const amount = parseFloat(document.getElementById('cr-payAmount').value);
+        if (!amount || amount <= 0) {
+            document.getElementById('cr-payLink-error').textContent = 'Please enter a valid amount.';
+            document.getElementById('cr-payLink-error').style.display = '';
+            return;
+        }
+
+        const btnText = document.getElementById('cr-payLinkText');
+        const spinner = document.getElementById('cr-payLinkSpin');
+        const btn = document.getElementById('cr-payLinkBtn');
+        btnText.textContent = 'Generating...';
+        spinner.classList.remove('hidden');
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(`${API_URL}/admin/generate-payment-link`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                body: JSON.stringify({ requestId, amount, sendWhatsapp: true })
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                const resultEl = document.getElementById('cr-payLink-result');
+                resultEl.innerHTML = `✅ Payment link generated for <strong>₹${amount}</strong><br>
+                    <span style="font-size:0.78rem; word-break:break-all;">${data.paymentLink}</span><br>
+                    <span style="font-size:0.78rem;">Customer notified via WhatsApp.</span>`;
+                resultEl.style.display = '';
+                document.getElementById('cr-payLink-error').style.display = 'none';
+                loadRequests();
+            } else {
+                document.getElementById('cr-payLink-error').textContent = data.error || 'Failed to generate payment link.';
+                document.getElementById('cr-payLink-error').style.display = '';
+            }
+        } catch (err) {
+            document.getElementById('cr-payLink-error').textContent = 'Failed to generate. Please try again.';
+            document.getElementById('cr-payLink-error').style.display = '';
+        } finally {
+            btnText.textContent = 'Generate & Send';
+            spinner.classList.add('hidden');
+            btn.disabled = false;
+        }
+    }
+
+    function crSkipPayLink() {
+        closeCreateModal();
+        loadRequests();
+    }
+
+    function crCloseAfterSuccess() {
+        closeCreateModal();
+        loadRequests();
+    }
 
     // ── ADMIN SETTINGS ──────────────────────────────────────────────────────
     const AVAILABLE_REASONS = [

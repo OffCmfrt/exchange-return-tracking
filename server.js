@@ -1712,6 +1712,92 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
     }
 }
 
+// ==================== SHOPIFY REFUND HELPER ====================
+
+/**
+ * Create a Shopify refund for an order back to the customer's original payment method.
+ * Fetches the order to get transaction ID and line item IDs, then creates a full refund.
+ *
+ * @param {string} orderNumber  - Shopify order name (e.g. "#1234" or "1234")
+ * @param {number} refundAmount - Amount to refund in ₹ (rupees)
+ * @param {string} reason       - 'customer' | 'declined' | 'changed_order' | 'merchant'
+ * @param {string} note         - Internal note for the refund
+ * @returns {Promise<{success, refundId?, refundAmount?, error?}>}
+ */
+async function createShopifyRefund(orderNumber, refundAmount, reason, note) {
+    try {
+        // Step 1: Find the Shopify order
+        const orderName = orderNumber.startsWith('#') ? orderNumber : `#${orderNumber}`;
+        const orderData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+        if (!orderData.orders || orderData.orders.length === 0) {
+            // Try without '#' prefix
+            const bare = orderNumber.replace(/^#/, '');
+            const altData = await shopifyAPI(`orders.json?name=${encodeURIComponent(bare)}&status=any&limit=1`);
+            if (!altData.orders || altData.orders.length === 0) {
+                return { success: false, error: `Shopify order not found: ${orderNumber}` };
+            }
+            orderData.orders = altData.orders;
+        }
+
+        const order = orderData.orders[0];
+        const orderId = order.id;
+
+        // Step 2: Find the successful financial transaction (capture/sale)
+        const transactions = order.transactions || [];
+        const saleTransaction = transactions.find(t =>
+            t.kind === 'capture' || t.kind === 'sale'
+        ) || transactions.find(t => t.kind === 'authorization');
+
+        if (!saleTransaction) {
+            return { success: false, error: `No refundable transaction found for order ${orderNumber}` };
+        }
+
+        // Step 3: Build refund line items from order line items
+        const refundLineItems = (order.line_items || []).map(li => ({
+            line_item_id: li.id,
+            quantity: li.quantity,
+            restock_type: 'no_restock'
+        }));
+
+        // Step 4: Create the refund
+        const refundPayload = {
+            refund: {
+                notify: true,
+                note: note || 'Return/Exchange resolution: Refund',
+                reason: reason || 'customer',
+                refund_line_items: refundLineItems,
+                transactions: [{
+                    parent_id: saleTransaction.id,
+                    amount: refundAmount,
+                    kind: 'refund'
+                }]
+            }
+        };
+
+        console.log(`[Shopify Refund] Creating refund of ₹${refundAmount} for order ${orderNumber} (order_id: ${orderId}, parent_tx: ${saleTransaction.id})`);
+
+        const refundResult = await shopifyAPI(`orders/${orderId}/refunds.json`, {
+            method: 'POST',
+            body: JSON.stringify(refundPayload)
+        });
+
+        const refund = refundResult.refund;
+        console.log(`[Shopify Refund] ✅ Success: Refund ID ${refund.id}, status: ${refund.status}`);
+
+        return {
+            success: true,
+            refundId: refund.id,
+            refundAmount: refundAmount,
+            orderId: orderId,
+            status: refund.status
+        };
+    } catch (error) {
+        console.error('[Shopify Refund] ❌ Failed:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
 // ── Build Your Combo bundle discount ──
 // Separate from createShopifyDiscountCode() above: that function uses
 // target_selection: 'all' (correct for store-wide return-compensation
@@ -7629,6 +7715,373 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
     }
 });
 
+// ==================== RESOLVE EXCHANGE (exchange / refund / store_credit) ====================
+// Replaces the "approve exchange" path for requests in delivered/inspected status.
+// Admin chooses one of three resolutions: dispatch replacement, issue refund, or issue store credit.
+app.post('/api/admin/resolve-exchange', authenticateAdmin, async (req, res) => {
+    try {
+        const {
+            requestId,
+            resolution,         // 'exchange' | 'refund' | 'store_credit'
+            notes,
+            carrierOverride,
+            discountValue,
+            discountType,
+            discountCode,
+            usageLimit,
+            sendWhatsApp,
+            whatsappPhone
+        } = req.body;
+
+        if (!['exchange', 'refund', 'store_credit'].includes(resolution)) {
+            return res.status(400).json({ error: 'Invalid resolution. Must be exchange, refund, or store_credit.' });
+        }
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        // Only allow resolution for exchanges in delivered/inspected status
+        if (requestDetails.type !== 'exchange') {
+            return res.status(400).json({ error: 'Resolution is only available for exchange requests' });
+        }
+        if (!['delivered', 'inspected'].includes(requestDetails.status)) {
+            return res.status(400).json({ error: 'Can only resolve exchanges in delivered or inspected status' });
+        }
+
+        let adminNotes = notes || '';
+        const existingHistory = Array.isArray(requestDetails.requestHistory) ? [...requestDetails.requestHistory] : [];
+        const historyEntry = {
+            action: 'resolution_selected',
+            resolution,
+            notes: adminNotes || null,
+            timestamp: new Date().toISOString(),
+            by: 'admin'
+        };
+
+        // ── Resolution: EXCHANGE (dispatch replacement) ──
+        if (resolution === 'exchange') {
+            console.log(`[${requestId}] Resolving exchange: dispatching replacement...`);
+
+            const carrierMode = await getCarrierMode('dispatch');
+            const carrierResolution = resolveCarrier(carrierMode, null, 'dispatch');
+            console.log(`[${requestId}] Forward carrier: ${carrierResolution.primary}${carrierResolution.useFallback ? ' (with fallback)' : ''}`);
+
+            let items = requestDetails.items;
+            if (typeof items === 'string') {
+                try { items = JSON.parse(items); } catch (e) { items = []; }
+            }
+
+            let forwardOrder = null;
+            let carrierUsed = null;
+            const primaryCarrier = carrierResolution.primary;
+            const useFallback = carrierResolution.useFallback;
+
+            try {
+                const primaryResult = await forwardBookingAttempt(primaryCarrier, { ...requestDetails, items });
+                forwardOrder = primaryResult.forwardOrder;
+                carrierUsed = primaryResult.carrierUsed;
+            } catch (primaryError) {
+                if (useFallback) {
+                    const fallbackCarrier = getFallbackCarrier(primaryCarrier);
+                    try {
+                        const fallbackResult = await forwardBookingAttempt(fallbackCarrier, { ...requestDetails, items });
+                        forwardOrder = fallbackResult.forwardOrder;
+                        carrierUsed = fallbackResult.carrierUsed;
+                    } catch (fallbackError) {
+                        forwardOrder = null;
+                    }
+                } else {
+                    forwardOrder = null;
+                }
+            }
+
+            if (forwardOrder && (forwardOrder.shipment_id || forwardOrder.waybill)) {
+                const shipmentInfo = carrierUsed === 'shiprocket'
+                    ? `Shiprocket ID: ${forwardOrder.shipment_id}`
+                    : `${carrierUsed === 'ekart' ? 'Ekart' : 'Delhivery'} AWB: ${forwardOrder.waybill}`;
+                adminNotes += `\nResolution: EXCHANGE — Replacement Shipment Created (${carrierUsed}: ${shipmentInfo})`;
+                existingHistory.push(historyEntry);
+
+                const request = await updateRequestStatus(requestId, {
+                    status: 'approved',
+                    resolution: 'exchange',
+                    adminNotes,
+                    requestHistory: existingHistory,
+                    forwardShipmentId: String(forwardOrder.shipment_id || forwardOrder.order_id),
+                    forwardAwbNumber: forwardOrder.awb_code || forwardOrder.waybill || '',
+                    forwardStatus: 'scheduled',
+                    forwardCarrier: carrierUsed
+                });
+
+                // Notify Zoho
+                let zohoItems = requestDetails.items;
+                if (typeof zohoItems === 'string') { try { zohoItems = JSON.parse(zohoItems); } catch (e) { zohoItems = []; } }
+                notifyZohoExchange(requestDetails, Array.isArray(zohoItems) ? zohoItems : []).catch(() => {});
+
+                return res.json({ success: true, message: 'Exchange resolved: replacement dispatched', resolution: 'exchange', request });
+            } else {
+                adminNotes += `\nResolution: EXCHANGE — Failed to create forward shipment. Check logs.`;
+                existingHistory.push({ ...historyEntry, resolution: 'exchange_failed', notes: adminNotes });
+                return res.status(500).json({
+                    success: false,
+                    error: 'Failed to create forward shipment. Please check logs and try again.',
+                    requestId
+                });
+            }
+        }
+
+        // ── Resolution: REFUND (Shopify refund) ──
+        if (resolution === 'refund') {
+            console.log(`[${requestId}] Resolving exchange: issuing Shopify refund...`);
+
+            // Calculate refund amount from items
+            let items = requestDetails.items;
+            if (typeof items === 'string') { try { items = JSON.parse(items); } catch (e) { items = []; } }
+            const refundAmount = (Array.isArray(items) ? items : []).reduce((sum, item) => {
+                const price = parseFloat(item.paidPrice || item.price || 0);
+                const qty = parseInt(item.quantity || 1);
+                return sum + (price * qty);
+            }, 0) + (parseFloat(requestDetails.codCharges) || 0);
+
+            if (refundAmount <= 0) {
+                return res.status(400).json({ error: 'Cannot calculate refund amount from items' });
+            }
+
+            const refundResult = await createShopifyRefund(
+                requestDetails.orderNumber,
+                refundAmount,
+                'customer',
+                `Return/Exchange resolution: Refund for ${requestId}`
+            );
+
+            if (refundResult.success) {
+                adminNotes += `\nResolution: REFUND — Shopify refund of ₹${refundAmount} issued (Refund ID: ${refundResult.refundId})`;
+                existingHistory.push(historyEntry);
+
+                const request = await updateRequestStatus(requestId, {
+                    status: 'approved',
+                    resolution: 'refund',
+                    adminNotes,
+                    requestHistory: existingHistory
+                });
+
+                return res.json({
+                    success: true,
+                    message: 'Exchange resolved: refund issued',
+                    resolution: 'refund',
+                    refundId: refundResult.refundId,
+                    refundAmount,
+                    request
+                });
+            } else {
+                existingHistory.push({ ...historyEntry, resolution: 'refund_failed', notes: refundResult.error });
+                return res.status(500).json({
+                    success: false,
+                    error: `Shopify refund failed: ${refundResult.error}`,
+                    requestId
+                });
+            }
+        }
+
+        // ── Resolution: STORE CREDIT (Shopify discount code) ──
+        if (resolution === 'store_credit') {
+            console.log(`[${requestId}] Resolving exchange: issuing store credit...`);
+
+            if (!discountValue || parseFloat(discountValue) <= 0) {
+                return res.status(400).json({ error: 'Discount value is required for store credit resolution' });
+            }
+
+            const finalCode = discountCode || `CREDIT${requestId.slice(-6).toUpperCase()}`;
+            const valueType = discountType === 'fixed' ? 'fixed_amount' : 'percentage';
+            const title = `Store Credit: ${requestDetails.orderNumber}`;
+
+            const shopifyResult = await createShopifyDiscountCode(
+                finalCode,
+                parseFloat(discountValue),
+                valueType,
+                usageLimit || null,
+                title
+            );
+
+            const discountCodeGenerated = finalCode.toUpperCase();
+            adminNotes += `\nResolution: STORE CREDIT — Discount Code: ${discountCodeGenerated} (${discountType === 'fixed' ? '₹' : ''}${discountValue}${discountType === 'percentage' ? '%' : ''})`;
+            existingHistory.push(historyEntry);
+
+            const request = await updateRequestStatus(requestId, {
+                status: 'approved',
+                resolution: 'store_credit',
+                adminNotes,
+                requestHistory: existingHistory,
+                discountCode: discountCodeGenerated,
+                discountValue: parseFloat(discountValue),
+                discountType: discountType || 'fixed'
+            });
+
+            // Send WhatsApp notification if requested
+            let whatsappSent = false;
+            let whatsappMessageId = null;
+            let whatsappError = null;
+
+            if (sendWhatsApp && discountCodeGenerated) {
+                const phoneToSend = whatsappPhone || requestDetails.customerPhone;
+                if (phoneToSend) {
+                    const valueTypeLabel = discountType === 'fixed' ? `₹${discountValue}` : `${discountValue}%`;
+                    const customerName = requestDetails.customerName || 'Valued Customer';
+                    const message = `Hi ${customerName}! 👋\n\nYour return/exchange for order *${requestDetails.orderNumber}* has been processed. ✅\n\n🎁 *Your Store Credit:*\n━━━━━━━━━━━━━━━━━\n💰 Code: *${discountCodeGenerated}*\n💎 Value: ${valueTypeLabel}\n━━━━━━━━━━━━━━━━━\n\nApply this code at checkout!\n\nThank you for shopping with us! 🙏`;
+
+                    try {
+                        const waResult = await sendWhatsAppNotification(
+                            phoneToSend, message, 'store_credit_issued', requestId,
+                            { customerName, orderNumber: requestDetails.orderNumber, discountCode: discountCodeGenerated }
+                        );
+                        whatsappSent = true;
+                        whatsappMessageId = waResult?.messageId || null;
+                        await updateRequestStatus(requestId, {
+                            whatsappSent: true,
+                            whatsappMessageId,
+                            whatsappSentAt: new Date().toISOString()
+                        });
+                    } catch (waErr) {
+                        whatsappError = waErr.message;
+                        await updateRequestStatus(requestId, { whatsappSent: false, whatsappError: waErr.message });
+                    }
+                }
+            }
+
+            return res.json({
+                success: true,
+                message: 'Exchange resolved: store credit issued',
+                resolution: 'store_credit',
+                discountCode: discountCodeGenerated,
+                whatsappSent,
+                whatsappMessageId,
+                whatsappError,
+                request
+            });
+        }
+    } catch (error) {
+        console.error('Resolve exchange error:', error);
+        res.status(500).json({ error: 'Failed to resolve exchange: ' + error.message });
+    }
+});
+
+// ==================== CONVERT RETURN TO EXCHANGE ====================
+// Converts an existing return request into an exchange by adding replacement item data.
+app.post('/api/admin/convert-to-exchange', authenticateAdmin, async (req, res) => {
+    try {
+        const { requestId, replacementItems, notes } = req.body;
+
+        if (!replacementItems || !Array.isArray(replacementItems) || replacementItems.length === 0) {
+            return res.status(400).json({ error: 'replacementItems array is required' });
+        }
+
+        const requestDetails = await getRequestById(requestId);
+        if (!requestDetails) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        if (requestDetails.type !== 'return') {
+            return res.status(400).json({ error: 'Only return requests can be converted to exchange' });
+        }
+
+        if (['approved', 'rejected', 'cancelled'].includes(requestDetails.status)) {
+            return res.status(400).json({ error: `Cannot convert a ${requestDetails.status} request` });
+        }
+
+        // Merge replacement data into existing items
+        let items = requestDetails.items;
+        if (typeof items === 'string') { try { items = JSON.parse(items); } catch (e) { items = []; } }
+        if (!Array.isArray(items)) items = [];
+
+        const updatedItems = items.map((item, idx) => {
+            const replacement = replacementItems[idx] || replacementItems[0];
+            if (!replacement) return item;
+            return {
+                ...item,
+                replacementProductId: replacement.productId || replacement.product_id || null,
+                replacementVariantId: replacement.variantId || replacement.variant_id || null,
+                replacementProductTitle: replacement.variantTitle || replacement.productTitle || replacement.title || item.name,
+                replacementVariant: replacement.variantTitle || replacement.variant_title || replacement.variant || '',
+                replacementPrice: replacement.price || item.price,
+                replacementProductImage: replacement.image || item.image || null
+            };
+        });
+
+        // Build history
+        const existingHistory = Array.isArray(requestDetails.requestHistory) ? [...requestDetails.requestHistory] : [];
+        existingHistory.push({
+            action: 'converted_to_exchange',
+            from_type: 'return',
+            to_type: 'exchange',
+            notes: notes || null,
+            timestamp: new Date().toISOString(),
+            by: 'admin'
+        });
+
+        let adminNotes = requestDetails.adminNotes || '';
+        adminNotes += `\n--- Converted from Return to Exchange by Admin ---\nReplacement items: ${replacementItems.length} item(s) selected`;
+        if (notes) adminNotes += `\nNotes: ${notes}`;
+
+        // Update the request
+        const request = await updateRequestStatus(requestId, {
+            type: 'exchange',
+            originalType: 'return',
+            adminNotes,
+            requestHistory: existingHistory,
+            items: JSON.stringify(updatedItems)
+        });
+
+        console.log(`[${requestId}] ✅ Converted return to exchange with ${replacementItems.length} replacement item(s)`);
+
+        res.json({
+            success: true,
+            message: 'Return converted to exchange successfully',
+            request
+        });
+    } catch (error) {
+        console.error('Convert to exchange error:', error);
+        res.status(500).json({ error: 'Failed to convert: ' + error.message });
+    }
+});
+
+// ==================== SHOPIFY ORDER LOOKUP (for admin modals) ====================
+app.get('/api/shopify/order/:orderNumber', authenticateAdmin, async (req, res) => {
+    try {
+        const { orderNumber } = req.params;
+        const orderName = orderNumber.startsWith('#') ? orderNumber : `#${orderNumber}`;
+        let orderData = await shopifyAPI(`orders.json?name=${encodeURIComponent(orderName)}&status=any&limit=1`);
+
+        if (!orderData.orders || orderData.orders.length === 0) {
+            const bare = orderNumber.replace(/^#/, '');
+            orderData = await shopifyAPI(`orders.json?name=${encodeURIComponent(bare)}&status=any&limit=1`);
+        }
+
+        if (!orderData.orders || orderData.orders.length === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+
+        const order = orderData.orders[0];
+        res.json({
+            id: order.id,
+            name: order.name,
+            line_items: (order.line_items || []).map(li => ({
+                product_id: li.product_id,
+                variant_id: li.variant_id,
+                title: li.title,
+                variant_title: li.variant_title,
+                price: li.price,
+                quantity: li.quantity,
+                image: li.image
+            }))
+        });
+    } catch (error) {
+        console.error('Shopify order lookup error:', error);
+        res.status(500).json({ error: 'Failed to fetch order' });
+    }
+});
+
 // ── Send Coupon Code (create discount + send WhatsApp message, no status change) ──
 app.post('/api/admin/send-coupon-code', authenticateAdmin, async (req, res) => {
     try {
@@ -8932,7 +9385,320 @@ app.post('/api/razorpay-webhook', async (req, res) => {
         }
     }
 
+    // ── Payment Link Paid (agent-initiated links) ──
+    if (event === 'payment_link.paid') {
+        const paymentLink = payload.payment_link?.entity;
+        if (paymentLink) {
+            const requestId = paymentLink.notes?.requestId;
+            const linkId = paymentLink.id;
+            const amountPaid = (paymentLink.amount_paid || 0) / 100;
+
+            if (requestId && requestId.startsWith('REQ-')) {
+                if (storage.processingPayments.has(linkId)) {
+                    console.log(`[${requestId}] ⏭️ Payment link webhook duplicate: ${linkId}. Skipping.`);
+                } else {
+                    storage.processingPayments.add(linkId);
+                    console.log(`[${requestId}] 🎉 Payment link ${linkId} paid via main webhook! Amount: ₹${amountPaid}. Auto-approving...`);
+                    try {
+                        const request = await getRequestById(requestId);
+                        if (request) {
+                            const paymentId = payload.payment?.entity?.id || null;
+                            await updateRequestStatus(requestId, {
+                                agentPaymentStatus: 'paid',
+                                agentPaymentPaidAt: new Date().toISOString(),
+                                paymentId: paymentId || request.paymentId,
+                                paymentAmount: amountPaid || request.paymentAmount
+                            });
+
+                            const approvalNotes = `Auto-approved via payment link.\nLink ID: ${linkId}\nAmount Paid: ₹${amountPaid}\nPaid at: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+                            if (['pending', 'waiting_payment', 'pickup_pending'].includes(request.status)) {
+                                await updateRequestStatus(requestId, {
+                                    status: 'approved',
+                                    adminNotes: (request.adminNotes || '') + '\n' + approvalNotes
+                                });
+                                sendReturnExchangeApprovalWhatsApp({
+                                    phone: request.customerPhone,
+                                    requestId,
+                                    orderNumber: request.orderNumber,
+                                    type: request.type
+                                }).catch(() => {});
+                                console.log(`[${requestId}] ✅ Auto-approved via main webhook`);
+                            }
+                        }
+                    } catch (err) {
+                        console.error(`[${requestId}] ❌ Auto-approval via main webhook failed:`, err.message);
+                    } finally {
+                        storage.processingPayments.delete(linkId);
+                    }
+                }
+            }
+        }
+    }
+
     res.json({ status: 'ok' });
+});
+
+// ==================== AGENT PAYMENT LINKS ====================
+
+/**
+ * Generate a Razorpay payment link for a return/exchange request.
+ * The link is sent to the customer via WhatsApp. Once paid, the request auto-approves.
+ */
+app.post('/api/admin/generate-payment-link', authenticateAdmin, async (req, res) => {
+    const { requestId, amount, sendWhatsapp } = req.body;
+
+    if (!requestId || !amount || amount <= 0) {
+        return res.status(400).json({ error: 'requestId and a positive amount are required' });
+    }
+
+    if (!razorpay) {
+        return res.status(503).json({ error: 'Payment gateway is not configured. Contact the administrator.' });
+    }
+
+    try {
+        const request = await getRequestById(requestId);
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+
+        // Prevent duplicate active links
+        if (request.agentPaymentLinkId && request.agentPaymentStatus === 'pending') {
+            return res.status(409).json({
+                error: 'A payment link is already active for this request. Wait for it to expire or cancel it first.',
+                existingLink: request.agentPaymentLink
+            });
+        }
+
+        // Already paid
+        if (request.agentPaymentStatus === 'paid') {
+            return res.status(409).json({ error: 'Payment for this request has already been completed.' });
+        }
+
+        const agentName = (req.operator && req.operator.username) || (req.user && req.user.username) || 'admin';
+        const typeLabel = request.type === 'exchange' ? 'Exchange' : 'Return';
+        const description = `Offcomfrt ${typeLabel} — ${request.requestId} (${request.orderNumber})`;
+
+        // Create Razorpay Payment Link
+        const paymentLinkData = {
+            amount: Math.round(amount * 100), // Razorpay expects paise
+            currency: 'INR',
+            accept_partial: false,
+            description: description,
+            customer: {
+                name: request.customerName || 'Customer',
+                email: request.customerEmail || request.email || 'customer@offcomfrt.com',
+                contact: request.customerPhone ? String(request.customerPhone).replace(/\D/g, '').slice(-10) : '9999999999'
+            },
+            notify: { sms: false, email: false },
+            reminder_enable: true,
+            notes: {
+                requestId: request.requestId,
+                orderNumber: request.orderNumber,
+                type: request.type,
+                initiatedBy: agentName,
+                source: 'admin_dashboard'
+            },
+            callback_url: `https://exchange-return-tracking.onrender.com/api/payment-link-callback?requestId=${encodeURIComponent(request.requestId)}`,
+            callback_method: 'get'
+        };
+
+        console.log(`[${requestId}] 💳 Agent ${agentName} generating payment link for ₹${amount}`);
+        const paymentLink = await razorpay.paymentLink.create(paymentLinkData);
+
+        const linkUrl = paymentLink.short_url || paymentLink.long_url;
+        const linkId = paymentLink.id;
+
+        // Persist link details to DB
+        await updateRequestStatus(requestId, {
+            agentPaymentLink: linkUrl,
+            agentPaymentLinkId: linkId,
+            agentPaymentAmount: amount,
+            agentPaymentStatus: 'pending',
+            agentPaymentInitiatedBy: agentName,
+            agentPaymentInitiatedAt: new Date().toISOString()
+        });
+
+        console.log(`[${requestId}] ✅ Payment link created: ${linkUrl} (ID: ${linkId})`);
+
+        // Send WhatsApp notification to customer (non-blocking)
+        let whatsappResult = null;
+        if (sendWhatsapp !== false && request.customerPhone) {
+            const message = `Hi ${request.customerName || 'there'}! 👋\n\n` +
+                `Your ${typeLabel} Request *${request.requestId}* for Order *${request.orderNumber}* requires a payment of *₹${amount}*.\n\n` +
+                `Please complete the payment using this link:\n${linkUrl}\n\n` +
+                `Once paid, your request will be automatically approved and processed. 🚀\n\n` +
+                `Thank you!\nTeam Offcomfrt`;
+
+            sendWhatsAppNotification(request.customerPhone, message, request.type, requestId)
+                .then(() => console.log(`[${requestId}] ✅ Payment link WhatsApp sent to ${request.customerPhone}`))
+                .catch(err => console.warn(`[${requestId}] ⚠️ Payment link WhatsApp failed:`, err.message));
+        }
+
+        res.json({
+            success: true,
+            requestId,
+            paymentLink: linkUrl,
+            paymentLinkId: linkId,
+            amount,
+            status: 'pending',
+            message: `Payment link generated for ₹${amount}. ${sendWhatsapp !== false ? 'Customer notified via WhatsApp.' : ''}`
+        });
+
+    } catch (error) {
+        console.error(`[${requestId}] ❌ Payment link generation failed:`, error.message);
+        res.status(500).json({ error: 'Failed to generate payment link: ' + error.message });
+    }
+});
+
+/**
+ * Razorpay Payment Link Webhook Handler
+ * Handles payment_link.paid events to auto-approve requests.
+ * Also extends the existing payment webhook above.
+ */
+app.post('/api/razorpay-payment-link-webhook', async (req, res) => {
+    const signature = req.headers['x-razorpay-signature'];
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+    console.log('📥 Received Razorpay Payment Link Webhook');
+
+    if (secret && signature) {
+        const expectedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(req.rawBody || JSON.stringify(req.body))
+            .digest('hex');
+
+        if (signature !== expectedSignature) {
+            console.error('❌ Payment Link Webhook Signature Mismatch');
+            return res.status(400).send('Invalid signature');
+        }
+    } else if (!secret) {
+        console.warn('⚠️ RAZORPAY_WEBHOOK_SECRET missing. Skipping signature verification (DEVELOPMENT ONLY)');
+    }
+
+    const event = req.body.event;
+    const payload = req.body.payload;
+
+    if (event === 'payment_link.paid') {
+        const paymentLink = payload.payment_link?.entity;
+        if (!paymentLink) {
+            console.log('[Payment Link Webhook] No payment_link entity in payload');
+            return res.json({ status: 'ok' });
+        }
+
+        const requestId = paymentLink.notes?.requestId;
+        const linkId = paymentLink.id;
+        const amountPaid = (paymentLink.amount_paid || 0) / 100; // Convert paise to rupees
+
+        if (!requestId || !requestId.startsWith('REQ-')) {
+            console.log(`[Payment Link Webhook] Link ${linkId} paid but no requestId in notes`);
+            return res.json({ status: 'ok' });
+        }
+
+        // Dedup guard
+        if (storage.processingPayments.has(linkId)) {
+            console.log(`[${requestId}] ⏭️ Payment link webhook duplicate: ${linkId}. Skipping.`);
+            return res.json({ status: 'ok' });
+        }
+
+        storage.processingPayments.add(linkId);
+        console.log(`[${requestId}] 🎉 Payment link ${linkId} paid! Amount: ₹${amountPaid}. Auto-approving...`);
+
+        try {
+            const request = await getRequestById(requestId);
+            if (!request) {
+                console.error(`[${requestId}] ❌ Cannot auto-approve: Request not found`);
+                return res.json({ status: 'ok' });
+            }
+
+            // Extract payment ID from the payment entity
+            const paymentId = payload.payment?.entity?.id || null;
+
+            // Update payment status to paid
+            await updateRequestStatus(requestId, {
+                agentPaymentStatus: 'paid',
+                agentPaymentPaidAt: new Date().toISOString(),
+                paymentId: paymentId || request.paymentId,
+                paymentAmount: amountPaid || request.paymentAmount
+            });
+
+            // Auto-approve the request
+            const approvalNotes = `Auto-approved via payment link.\nLink ID: ${linkId}\nAmount Paid: ₹${amountPaid}\nPaid at: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+
+            if (request.status === 'pending' || request.status === 'waiting_payment' || request.status === 'pickup_pending') {
+                // For exchanges, trigger forward shipment via the approve flow
+                if (request.type === 'exchange') {
+                    // Use the same approve logic for exchanges (creates forward shipment)
+                    console.log(`[${requestId}] 🔄 Triggering exchange approval flow (forward shipment)...`);
+                    await updateRequestStatus(requestId, {
+                        status: 'approved',
+                        adminNotes: (request.adminNotes || '') + '\n' + approvalNotes
+                    });
+                } else {
+                    // For returns, just approve and let admin initiate pickup if needed
+                    await updateRequestStatus(requestId, {
+                        status: 'approved',
+                        adminNotes: (request.adminNotes || '') + '\n' + approvalNotes
+                    });
+                }
+
+                // Send approval WhatsApp to customer
+                sendReturnExchangeApprovalWhatsApp({
+                    phone: request.customerPhone,
+                    requestId,
+                    orderNumber: request.orderNumber,
+                    type: request.type
+                }).then(waResult => {
+                    if (waResult?.success) {
+                        updateRequestStatus(requestId, {
+                            whatsappSent: true,
+                            whatsappMessageId: waResult.messageId || null,
+                            whatsappSentAt: new Date().toISOString()
+                        }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
+                    }
+                }).catch(() => {});
+
+                console.log(`[${requestId}] ✅ Auto-approved successfully after payment link completion`);
+            } else {
+                console.log(`[${requestId}] ℹ️ Request already in status '${request.status}' — payment recorded but no status change`);
+                await updateRequestStatus(requestId, {
+                    adminNotes: (request.adminNotes || '') + '\n' + approvalNotes
+                });
+            }
+
+            res.json({ status: 'ok', requestId, autoApproved: true });
+        } catch (err) {
+            console.error(`[${requestId}] ❌ Auto-approval failed:`, err.message);
+            res.json({ status: 'ok', error: err.message }); // Return 200 to prevent Razorpay retries
+        } finally {
+            storage.processingPayments.delete(linkId);
+        }
+    } else {
+        console.log(`[Payment Link Webhook] Unhandled event: ${event}`);
+        res.json({ status: 'ok' });
+    }
+});
+
+/**
+ * Payment Link Callback (redirect after customer pays)
+ * Lightweight GET handler — just shows a success page.
+ */
+app.get('/api/payment-link-callback', async (req, res) => {
+    const { requestId } = req.query;
+    res.send(`
+        <!DOCTYPE html>
+        <html><head><title>Payment Successful</title>
+        <style>body{font-family:'Inter',sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f9fafb;}
+        .card{text-align:center;padding:3rem;background:white;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.08);max-width:420px;}
+        .check{width:64px;height:64px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;}
+        .check svg{stroke:white;stroke-width:3;fill:none;}
+        h1{font-size:1.5rem;margin:0 0 0.5rem;color:#111827;}p{color:#6b7280;font-size:0.95rem;line-height:1.6;}</style></head>
+        <body><div class="card">
+        <div class="check"><svg width="32" height="32" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg></div>
+        <h1>Payment Successful!</h1>
+        <p>Thank you! Your request <strong>${requestId || ''}</strong> has been received and will be processed automatically.</p>
+        <p style="margin-top:1rem;font-size:0.85rem;">You can close this window.</p>
+        </div></body></html>
+    `);
 });
 
 // ==================== HEALTH CHECK ====================
