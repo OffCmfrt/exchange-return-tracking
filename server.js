@@ -157,13 +157,13 @@ app.set('trust proxy', 1);
 // Serve admin dashboard BEFORE helmet (to bypass CSP restrictions)
 app.get('/admin', (req, res) => {
     // Custom CSP for admin - allows inline scripts and event handlers
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
     res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
 });
 
 // Marketing dashboard - same permissive CSP as admin dashboard
 app.get('/admin/marketing', (req, res) => {
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net;");
     res.sendFile(path.join(__dirname, 'public', 'admin', 'marketing', 'index.html'));
 });
 
@@ -171,7 +171,7 @@ app.get('/admin/marketing', (req, res) => {
 // (the manufacturer-facing portal is a Shopify page template: public/page.manufacture.liquid)
 app.get('/manufacture/admin', (req, res) => {
     const portalBaseUrl = process.env.MANUFACTURE_PORTAL_URL || 'https://offcomfrt.in/pages/manufactures-crm2026';
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
     const html = require('fs').readFileSync(path.join(__dirname, 'public', 'manufacture', 'admin.html'), 'utf8');
     const injected = html.replace(
         '/* PORTAL_BASE_URL_INJECT */',
@@ -15450,12 +15450,12 @@ function authenticateTeamMember(req, res, next) {
 
 // ---------- Page Routes ----------
 app.get('/tech-team/admin', (req, res) => {
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
     res.sendFile(path.join(__dirname, 'public', 'tech-team', 'admin.html'));
 });
 
 app.get('/tech-team/portal', (req, res) => {
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
     res.sendFile(path.join(__dirname, 'public', 'tech-team', 'portal.html'));
 });
 
