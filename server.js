@@ -14503,6 +14503,230 @@ app.put('/api/founder-os/state', authenticateAdmin, async (req, res) => {
     }
 });
 
+// ==================== TECH TEAM PORTAL ====================
+// Task management portal for the internal tech team.
+// Members log in with username + mobile; admins assign and track tasks.
+const techTeamDB = require('./config/tech-team-db');
+
+// Team member authentication middleware
+function authenticateTeamMember(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    const decoded = verifyToken(authHeader.substring(7));
+    if (!decoded || decoded.role !== 'team_member') {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    req.teamMember = decoded;
+    next();
+}
+
+// ---------- Page Routes ----------
+app.get('/tech-team/admin', (req, res) => {
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
+    res.sendFile(path.join(__dirname, 'public', 'tech-team', 'admin.html'));
+});
+
+app.get('/tech-team/portal', (req, res) => {
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com;");
+    res.sendFile(path.join(__dirname, 'public', 'tech-team', 'portal.html'));
+});
+
+// ---------- Team Member Login ----------
+app.post('/api/tech-team/login', async (req, res) => {
+    try {
+        const { username, mobile } = req.body;
+        if (!username || !mobile) {
+            return res.status(400).json({ error: 'Username and mobile number are required' });
+        }
+        const member = await techTeamDB.getTeamMemberByLogin(username, mobile);
+        if (!member) {
+            trackSuspicious(req.ip, 'failed_team_login');
+            return res.status(401).json({ error: 'Invalid credentials or account deactivated' });
+        }
+        const token = generateToken({ role: 'team_member', memberId: member.id, username: member.username, name: member.fullName, timestamp: Date.now() });
+        res.json({ success: true, token, member });
+    } catch (error) {
+        console.error('[TechTeam] Login error:', error.message);
+        res.status(500).json({ error: 'Login failed. Please try again.' });
+    }
+});
+
+// ---------- Team Member Routes (self-scoped) ----------
+app.get('/api/tech-team/me', authenticateTeamMember, async (req, res) => {
+    try {
+        const member = await techTeamDB.getTeamMember(req.teamMember.memberId);
+        if (!member) return res.status(404).json({ error: 'Member not found' });
+        res.json({ success: true, member });
+    } catch (error) {
+        console.error('[TechTeam] Get me error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch profile' });
+    }
+});
+
+app.get('/api/tech-team/my-tasks', authenticateTeamMember, async (req, res) => {
+    try {
+        const tasks = await techTeamDB.getMemberTasks(req.teamMember.memberId);
+        res.json({ success: true, tasks });
+    } catch (error) {
+        console.error('[TechTeam] My tasks error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch tasks' });
+    }
+});
+
+app.put('/api/tech-team/my-tasks/:id', authenticateTeamMember, async (req, res) => {
+    try {
+        // Members can only update their own tasks, and only certain fields
+        const task = await techTeamDB.getTask(req.params.id);
+        if (!task || task.assignedTo !== req.teamMember.memberId) {
+            return res.status(404).json({ error: 'Task not found or not assigned to you' });
+        }
+        const allowed = ['status', 'progress', 'actualHours'];
+        const updates = {};
+        for (const key of allowed) {
+            if (req.body[key] !== undefined) updates[key] = req.body[key];
+        }
+        const updated = await techTeamDB.updateTask(req.params.id, updates);
+        res.json({ success: true, task: updated });
+    } catch (error) {
+        console.error('[TechTeam] Update task error:', error.message);
+        res.status(500).json({ error: 'Failed to update task' });
+    }
+});
+
+app.post('/api/tech-team/my-tasks/:id/notes', authenticateTeamMember, async (req, res) => {
+    try {
+        const task = await techTeamDB.getTask(req.params.id);
+        if (!task || task.assignedTo !== req.teamMember.memberId) {
+            return res.status(404).json({ error: 'Task not found or not assigned to you' });
+        }
+        const { text } = req.body;
+        if (!text) return res.status(400).json({ error: 'Note text is required' });
+        const notes = await techTeamDB.addTaskNote(req.params.id, { text, author: req.teamMember.name || req.teamMember.username });
+        res.json({ success: true, notes });
+    } catch (error) {
+        console.error('[TechTeam] Add note error:', error.message);
+        res.status(500).json({ error: 'Failed to add note' });
+    }
+});
+
+// ---------- Admin Routes (full control) ----------
+
+// Members
+app.get('/api/tech-team/admin/members', authenticateAdmin, async (req, res) => {
+    try {
+        const members = await techTeamDB.listTeamMembers();
+        res.json({ success: true, members });
+    } catch (error) {
+        console.error('[TechTeam] List members error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch members' });
+    }
+});
+
+app.post('/api/tech-team/admin/members', authenticateAdmin, async (req, res) => {
+    try {
+        const member = await techTeamDB.createTeamMember(req.body);
+        res.json({ success: true, member });
+    } catch (error) {
+        console.error('[TechTeam] Create member error:', error.message);
+        res.status(500).json({ error: 'Failed to create member: ' + error.message });
+    }
+});
+
+app.put('/api/tech-team/admin/members/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const member = await techTeamDB.updateTeamMember(req.params.id, req.body);
+        res.json({ success: true, member });
+    } catch (error) {
+        console.error('[TechTeam] Update member error:', error.message);
+        res.status(500).json({ error: 'Failed to update member' });
+    }
+});
+
+app.delete('/api/tech-team/admin/members/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await techTeamDB.deleteTeamMember(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete member error:', error.message);
+        res.status(500).json({ error: 'Failed to delete member' });
+    }
+});
+
+// Tasks
+app.get('/api/tech-team/admin/tasks', authenticateAdmin, async (req, res) => {
+    try {
+        const filters = {};
+        if (req.query.status) filters.status = req.query.status;
+        if (req.query.assignedTo) filters.assignedTo = req.query.assignedTo;
+        if (req.query.project) filters.project = req.query.project;
+        if (req.query.priority) filters.priority = req.query.priority;
+        if (req.query.department) filters.department = req.query.department;
+        if (req.query.category) filters.category = req.query.category;
+        const tasks = await techTeamDB.listTasks(filters);
+        res.json({ success: true, tasks });
+    } catch (error) {
+        console.error('[TechTeam] List tasks error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch tasks' });
+    }
+});
+
+app.post('/api/tech-team/admin/tasks', authenticateAdmin, async (req, res) => {
+    try {
+        if (req.body.createdBy) req.body.createdBy = req.body.createdBy;
+        const task = await techTeamDB.createTask(req.body);
+        res.json({ success: true, task });
+    } catch (error) {
+        console.error('[TechTeam] Create task error:', error.message);
+        res.status(500).json({ error: 'Failed to create task' });
+    }
+});
+
+app.put('/api/tech-team/admin/tasks/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const task = await techTeamDB.updateTask(req.params.id, req.body);
+        res.json({ success: true, task });
+    } catch (error) {
+        console.error('[TechTeam] Update task error:', error.message);
+        res.status(500).json({ error: 'Failed to update task' });
+    }
+});
+
+app.delete('/api/tech-team/admin/tasks/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await techTeamDB.deleteTask(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete task error:', error.message);
+        res.status(500).json({ error: 'Failed to delete task' });
+    }
+});
+
+app.post('/api/tech-team/admin/tasks/:id/notes', authenticateAdmin, async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text) return res.status(400).json({ error: 'Note text is required' });
+        const author = req.body.author || 'Admin';
+        const notes = await techTeamDB.addTaskNote(req.params.id, { text, author });
+        res.json({ success: true, notes });
+    } catch (error) {
+        console.error('[TechTeam] Add note error:', error.message);
+        res.status(500).json({ error: 'Failed to add note' });
+    }
+});
+
+// Stats
+app.get('/api/tech-team/admin/stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await techTeamDB.getStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[TechTeam] Stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+});
+
 // ==================== ERROR HANDLING ====================
 
 // 404 handler

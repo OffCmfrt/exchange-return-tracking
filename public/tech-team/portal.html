@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tech Team — Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--black:#000;--white:#fff;--g50:#fafafa;--g100:#f5f5f5;--g200:#e5e5e5;--g300:#d4d4d4;--g400:#a3a3a3;--g500:#737373;--g600:#525252;--g700:#404040;--g800:#262626;--g900:#171717;--g950:#0a0a0a}
+body{font-family:'Archivo',sans-serif;background:var(--g950);color:var(--g200);min-height:100vh;overflow-x:hidden}
+/* Animations */
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes pulse{0%,100%{border-color:var(--g700)}50%{border-color:var(--g500)}}
+@keyframes toastIn{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes breathe{0%,100%{opacity:.4}50%{opacity:1}}
+@keyframes expandIn{from{opacity:0;max-height:0}to{opacity:1;max-height:600px}}
+.fade-in{animation:fadeIn .4s ease both}
+.stagger-1{animation-delay:.05s}.stagger-2{animation-delay:.1s}.stagger-3{animation-delay:.15s}
+.stagger-4{animation-delay:.2s}.stagger-5{animation-delay:.25s}.stagger-6{animation-delay:.3s}
+/* Login */
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.login-card{background:var(--g900);border:1px solid var(--g800);border-radius:12px;padding:40px;width:100%;max-width:380px;animation:slideUp .5s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden}
+.login-card::before{content:'';position:absolute;inset:-1px;border-radius:12px;border:1px solid transparent;background:linear-gradient(135deg,var(--g700),transparent,var(--g700)) border-box;animation:pulse 3s ease infinite;mask:linear-gradient(#fff 0 0) padding-box,linear-gradient(#fff 0 0);mask-composite:exclude;-webkit-mask-composite:xor;pointer-events:none}
+.login-brand{text-align:center;margin-bottom:32px}
+.login-brand h1{font-size:18px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--white)}
+.login-brand p{font-size:11px;color:var(--g500);margin-top:6px;letter-spacing:.06em;text-transform:uppercase}
+.form-group{margin-bottom:20px}
+.form-label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--g500);margin-bottom:8px}
+.form-input{width:100%;padding:12px 0;background:transparent;border:none;border-bottom:1px solid var(--g700);color:var(--white);font-size:14px;font-family:'Archivo',sans-serif;transition:border-color .3s,border-width .3s}
+.form-input:focus{outline:none;border-bottom:2px solid var(--white)}
+.form-input::placeholder{color:var(--g600)}
+.btn-login{width:100%;padding:14px;background:var(--white);color:var(--black);border:none;border-radius:6px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:all .2s;font-family:'Archivo',sans-serif;margin-top:8px}
+.btn-login:hover{background:var(--g200);transform:translateY(-1px);box-shadow:0 4px 16px rgba(255,255,255,.1)}
+.btn-login:active{transform:translateY(0)}
+.login-error{color:var(--g400);font-size:12px;text-align:center;margin-top:12px;min-height:18px}
+/* Portal */
+.portal{display:none;min-height:100vh}
+.portal.active{display:block}
+.topbar{background:var(--g900);border-bottom:1px solid var(--g800);padding:16px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.topbar-left{display:flex;align-items:center;gap:16px}
+.topbar-left h1{font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--white)}
+.topbar-right{display:flex;align-items:center;gap:16px}
+.user-badge{display:flex;align-items:center;gap:10px}
+.user-avatar{width:32px;height:32px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--g300)}
+.user-info{font-size:12px;color:var(--g400)}
+.user-info strong{color:var(--white);font-weight:500;display:block}
+.btn-logout{background:none;border:1px solid var(--g800);color:var(--g500);padding:6px 12px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;transition:all .2s;font-family:'Archivo',sans-serif}
+.btn-logout:hover{border-color:var(--g600);color:var(--white)}
+/* Content */
+.content{padding:32px}
+/* Stats */
+.stats-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:32px}
+.stat-card{background:var(--g900);border:1px solid var(--g800);border-radius:8px;padding:16px;text-align:center;transition:all .25s}
+.stat-card:hover{border-color:var(--g700);transform:translateY(-2px)}
+.stat-value{font-size:28px;font-weight:700;color:var(--white)}
+.stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-top:4px}
+/* View toggle */
+.view-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.view-toggle{display:flex;gap:4px}
+.view-btn{padding:6px 14px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;border:1px solid var(--g800);background:transparent;color:var(--g500);transition:all .2s;font-family:'Archivo',sans-serif}
+.view-btn.active{background:var(--white);color:var(--black);border-color:var(--white)}
+/* Kanban */
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;min-height:400px}
+.kanban-col{background:var(--g900);border:1px solid var(--g800);border-radius:8px;padding:16px;display:flex;flex-direction:column}
+.kanban-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--g800)}
+.kanban-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g400);font-weight:500}
+.kanban-count{font-size:10px;color:var(--g600);background:var(--g800);padding:2px 8px;border-radius:10px}
+.kanban-cards{flex:1;display:flex;flex-direction:column;gap:10px;overflow-y:auto}
+/* Task card */
+.task-card{background:var(--g950);border:1px solid var(--g800);border-radius:6px;padding:14px;cursor:pointer;transition:all .2s}
+.task-card:hover{border-color:var(--g700);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.task-card-title{font-size:13px;font-weight:500;color:var(--white);margin-bottom:8px;line-height:1.4}
+.task-card-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.task-tag{font-size:9px;padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em;background:var(--g800);color:var(--g500)}
+.task-priority{font-size:9px;padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em}
+.priority-low{background:var(--g800);color:var(--g600)}
+.priority-medium{background:var(--g700);color:var(--g400)}
+.priority-high{background:var(--g600);color:var(--g200)}
+.priority-critical{background:var(--white);color:var(--black)}
+.task-progress{margin-top:8px}
+.progress-track{width:100%;height:4px;background:var(--g800);border-radius:2px;overflow:hidden}
+.progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--g600),var(--g400));border-radius:2px;transition:width .6s cubic-bezier(.4,0,.2,1);position:relative}
+.progress-bar-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);background-size:200% 100%;animation:shimmer 2.5s infinite}
+.task-due{font-size:10px;color:var(--g600);margin-top:6px}
+.task-due.overdue{color:var(--g400)}
+/* List view */
+.list-view{display:flex;flex-direction:column;gap:8px}
+.list-item{display:grid;grid-template-columns:1fr 120px 100px 100px 80px 60px;align-items:center;gap:12px;padding:14px 16px;background:var(--g900);border:1px solid var(--g800);border-radius:6px;cursor:pointer;transition:all .2s}
+.list-item:hover{border-color:var(--g700);transform:translateX(2px)}
+.list-item-title{font-size:13px;font-weight:500;color:var(--white);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Badge */
+.badge{display:inline-flex;padding:3px 8px;border-radius:12px;font-size:9px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+.badge-todo{background:var(--g800);color:var(--g500)}
+.badge-in_progress{background:var(--g700);color:var(--g300)}
+.badge-review{background:var(--g600);color:var(--white)}
+.badge-done{background:var(--white);color:var(--black)}
+.badge-blocked{background:#333;color:#999}
+/* Task detail panel */
+.detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);z-index:50;display:none;animation:fadeIn .2s ease}
+.detail-overlay.open{display:block}
+.detail-panel{position:fixed;right:0;top:0;bottom:0;width:480px;max-width:100%;background:var(--g900);border-left:1px solid var(--g800);z-index:51;overflow-y:auto;animation:slideIn .3s cubic-bezier(.4,0,.2,1);padding:32px}
+@keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.detail-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px}
+.detail-header h2{font-size:18px;font-weight:600;color:var(--white);line-height:1.4;flex:1;margin-right:16px}
+.close-detail{background:none;border:none;color:var(--g500);cursor:pointer;font-size:20px;padding:4px;transition:color .2s}
+.close-detail:hover{color:var(--white)}
+.detail-section{margin-bottom:24px}
+.detail-section h4{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:8px}
+.detail-desc{font-size:13px;color:var(--g300);line-height:1.6}
+.detail-meta{display:flex;gap:8px;flex-wrap:wrap}
+.detail-meta-item{background:var(--g950);border:1px solid var(--g800);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--g400)}
+.detail-meta-item strong{color:var(--white);display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+/* Progress slider */
+.slider-wrap{display:flex;align-items:center;gap:12px}
+.slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;background:var(--g800);border-radius:2px;outline:none;transition:background .2s}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--white);cursor:pointer;transition:transform .2s}
+.slider::-webkit-slider-thumb:hover{transform:scale(1.2)}
+.slider-val{font-size:14px;font-weight:600;color:var(--white);min-width:36px;text-align:right}
+/* Status selector */
+.status-select{display:flex;gap:4px}
+.status-opt{padding:6px 12px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;border:1px solid var(--g800);background:transparent;color:var(--g500);transition:all .2s;font-family:'Archivo',sans-serif}
+.status-opt:hover{border-color:var(--g600);color:var(--g300)}
+.status-opt.active{background:var(--white);color:var(--black);border-color:var(--white)}
+/* Notes timeline */
+.notes-list{position:relative;padding-left:16px}
+.notes-list::before{content:'';position:absolute;left:4px;top:0;bottom:0;width:1px;background:var(--g800)}
+.note-item{position:relative;padding-bottom:16px;animation:fadeIn .3s ease both}
+.note-item::before{content:'';position:absolute;left:-14px;top:4px;width:6px;height:6px;border-radius:50%;background:var(--g600)}
+.note-time{font-size:9px;color:var(--g600);text-transform:uppercase;letter-spacing:.04em}
+.note-text{font-size:12px;color:var(--g300);margin-top:2px}
+.note-author{font-size:10px;color:var(--g500)}
+/* Add note */
+.note-input-wrap{display:flex;gap:8px;margin-top:12px}
+.note-input{flex:1;padding:8px 12px;background:var(--g950);border:1px solid var(--g800);border-radius:4px;color:var(--g200);font-size:12px;font-family:'Archivo',sans-serif;transition:border-color .2s}
+.note-input:focus{outline:none;border-color:var(--g600)}
+.note-submit{padding:8px 14px;background:var(--white);color:var(--black);border:none;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;transition:all .2s;font-family:'Archivo',sans-serif}
+.note-submit:hover{background:var(--g200)}
+/* Toast */
+.toast{position:fixed;top:20px;right:20px;padding:12px 20px;background:var(--g800);border:1px solid var(--g700);border-radius:8px;font-size:13px;color:var(--g200);z-index:200;animation:toastIn .3s ease both}
+/* Responsive */
+@media(max-width:768px){.kanban{grid-template-columns:1fr 1fr}.list-item{grid-template-columns:1fr 80px 60px}.detail-panel{width:100%}.content{padding:16px}}
+@media(max-width:480px){.kanban{grid-template-columns:1fr}.stats-bar{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div class="login-wrap" id="loginScreen">
+<div class="login-card">
+<div class="login-brand">
+<h1>Tech Team</h1>
+<p>Member Portal</p>
+</div>
+<div class="form-group">
+<label class="form-label">Username</label>
+<input type="text" class="form-input" id="loginUser" placeholder="Enter your username" autocomplete="username">
+</div>
+<div class="form-group">
+<label class="form-label">Mobile Number</label>
+<input type="tel" class="form-input" id="loginMobile" placeholder="Enter your mobile number" autocomplete="tel">
+</div>
+<button class="btn-login" onclick="doLogin()">Sign In</button>
+<div class="login-error" id="loginError"></div>
+</div>
+</div>
+
+<!-- Portal -->
+<div class="portal" id="portal">
+<div class="topbar">
+<div class="topbar-left">
+<h1>Tech Team</h1>
+</div>
+<div class="topbar-right">
+<div class="user-badge">
+<div class="user-avatar" id="userAvatar"></div>
+<div class="user-info"><strong id="userName"></strong><span id="userDept"></span></div>
+</div>
+<button class="btn-logout" onclick="logout()">Logout</button>
+</div>
+</div>
+<div class="content">
+<div class="stats-bar" id="statsBar"></div>
+<div class="view-controls">
+<div style="font-size:12px;color:var(--g500);text-transform:uppercase;letter-spacing:.06em">My Tasks</div>
+<div class="view-toggle">
+<button class="view-btn active" onclick="setView('kanban')">Board</button>
+<button class="view-btn" onclick="setView('list')">List</button>
+</div>
+</div>
+<div id="taskArea"></div>
+</div>
+</div>
+
+<!-- Task Detail Panel -->
+<div class="detail-overlay" id="detailOverlay" onclick="closeDetail()"></div>
+<div class="detail-panel" id="detailPanel" style="display:none"></div>
+
+<script>
+const API = '/api/tech-team';
+let member = null;
+let tasks = [];
+let view = 'kanban';
+let selectedTask = null;
+
+// ---- API ----
+async function api(path, opts = {}) {
+    const token = localStorage.getItem('team_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch(API + path, { ...opts, headers });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+}
+
+function toast(msg) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+}
+
+// ---- Login ----
+async function doLogin() {
+    const username = document.getElementById('loginUser').value.trim();
+    const mobile = document.getElementById('loginMobile').value.trim();
+    const errEl = document.getElementById('loginError');
+    if (!username || !mobile) { errEl.textContent = 'Please enter both username and mobile'; return; }
+    try {
+        const res = await fetch(API + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, mobile }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Invalid credentials');
+        localStorage.setItem('team_token', data.token);
+        localStorage.setItem('team_member', JSON.stringify(data.member));
+        member = data.member;
+        showPortal();
+    } catch (e) { errEl.textContent = e.message; }
+}
+
+function logout() {
+    localStorage.removeItem('team_token');
+    localStorage.removeItem('team_member');
+    location.reload();
+}
+
+function showPortal() {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('portal').classList.add('active');
+    document.getElementById('userName').textContent = member.fullName;
+    document.getElementById('userDept').textContent = (member.department || '') + ' · ' + (member.hierarchy || '');
+    document.getElementById('userAvatar').textContent = member.fullName.split(' ').map(n => n[0]).join('').slice(0, 2);
+    loadTasks();
+}
+
+// ---- Tasks ----
+async function loadTasks() {
+    try {
+        const data = await api('/my-tasks');
+        tasks = data.tasks;
+        renderStats();
+        renderTasks();
+    } catch (e) { toast(e.message); }
+}
+
+function renderStats() {
+    const counts = { todo: 0, in_progress: 0, review: 0, done: 0, blocked: 0 };
+    tasks.forEach(t => { if (counts[t.status] != null) counts[t.status]++; });
+    const overdue = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done').length;
+    document.getElementById('statsBar').innerHTML = `
+        <div class="stat-card fade-in stagger-1"><div class="stat-value">${tasks.length}</div><div class="stat-label">Total</div></div>
+        <div class="stat-card fade-in stagger-2"><div class="stat-value">${counts.in_progress}</div><div class="stat-label">In Progress</div></div>
+        <div class="stat-card fade-in stagger-3"><div class="stat-value">${counts.review}</div><div class="stat-label">In Review</div></div>
+        <div class="stat-card fade-in stagger-4"><div class="stat-value">${counts.done}</div><div class="stat-label">Done</div></div>
+        <div class="stat-card fade-in stagger-5"><div class="stat-value">${overdue}</div><div class="stat-label">Overdue</div></div>
+    `;
+}
+
+function renderTasks() {
+    const area = document.getElementById('taskArea');
+    if (view === 'kanban') {
+        const cols = ['todo', 'in_progress', 'review', 'done'];
+        area.innerHTML = `<div class="kanban">${cols.map(s => {
+            const colTasks = tasks.filter(t => t.status === s);
+            return `<div class="kanban-col fade-in">
+                <div class="kanban-header">
+                    <span class="kanban-title">${s.replace('_', ' ')}</span>
+                    <span class="kanban-count">${colTasks.length}</span>
+                </div>
+                <div class="kanban-cards">
+                    ${colTasks.map((t, i) => taskCard(t, i)).join('')}
+                </div>
+            </div>`;
+        }).join('')}</div>`;
+    } else {
+        area.innerHTML = `<div class="list-view">${tasks.map((t, i) => `
+            <div class="list-item fade-in" style="animation-delay:${i * .03}s" onclick="openDetail('${t.id}')">
+                <div class="list-item-title">${t.title}</div>
+                <div><span class="task-tag">${t.project || t.department || '—'}</span></div>
+                <div><span class="badge badge-${t.status}">${t.status.replace('_',' ')}</span></div>
+                <div><span class="task-priority priority-${t.priority}">${t.priority}</span></div>
+                <div style="min-width:50px"><div class="progress-track"><div class="progress-bar-fill" style="width:${t.progress}%"></div></div></div>
+                <div style="font-size:10px;color:var(--g500)">${t.progress}%</div>
+            </div>
+        `).join('')}</div>`;
+    }
+}
+
+function taskCard(t, i) {
+    const isOverdue = t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done';
+    return `<div class="task-card fade-in" style="animation-delay:${i * .05}s" onclick="openDetail('${t.id}')">
+        <div class="task-card-title">${t.title}</div>
+        <div class="task-card-meta">
+            ${t.project ? `<span class="task-tag">${t.project}</span>` : ''}
+            ${t.department ? `<span class="task-tag">${t.department}</span>` : ''}
+            <span class="task-priority priority-${t.priority}">${t.priority}</span>
+        </div>
+        <div class="task-progress">
+            <div class="progress-track"><div class="progress-bar-fill" style="width:${t.progress}%"></div></div>
+        </div>
+        <div class="task-due${isOverdue ? ' overdue' : ''}">${t.dueDate ? (isOverdue ? 'Overdue: ' : 'Due: ') + t.dueDate : ''}</div>
+    </div>`;
+}
+
+function setView(v) {
+    view = v;
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === v));
+    renderTasks();
+}
+
+// ---- Task Detail ----
+function openDetail(id) {
+    selectedTask = tasks.find(t => t.id === id);
+    if (!selectedTask) return;
+    const t = selectedTask;
+    const panel = document.getElementById('detailPanel');
+    const notes = Array.isArray(t.notes) ? t.notes : [];
+    panel.innerHTML = `
+        <div class="detail-header">
+            <h2>${t.title}</h2>
+            <button class="close-detail" onclick="closeDetail()">&times;</button>
+        </div>
+        ${t.description ? `<div class="detail-section"><h4>Description</h4><div class="detail-desc">${t.description}</div></div>` : ''}
+        <div class="detail-section">
+            <h4>Details</h4>
+            <div class="detail-meta">
+                ${t.project ? `<div class="detail-meta-item"><strong>Project</strong>${t.project}</div>` : ''}
+                ${t.department ? `<div class="detail-meta-item"><strong>Department</strong>${t.department}</div>` : ''}
+                ${t.category ? `<div class="detail-meta-item"><strong>Category</strong>${t.category}</div>` : ''}
+                ${t.dueDate ? `<div class="detail-meta-item"><strong>Due Date</strong>${t.dueDate}</div>` : ''}
+                ${t.estimatedHours ? `<div class="detail-meta-item"><strong>Est. Hours</strong>${t.estimatedHours}h</div>` : ''}
+                ${t.actualHours ? `<div class="detail-meta-item"><strong>Actual Hours</strong>${t.actualHours}h</div>` : ''}
+            </div>
+        </div>
+        <div class="detail-section">
+            <h4>Status</h4>
+            <div class="status-select">
+                ${['todo','in_progress','review','done','blocked'].map(s => `<div class="status-opt${t.status===s?' active':''}" onclick="updateStatus('${t.id}','${s}')">${s.replace('_',' ')}</div>`).join('')}
+            </div>
+        </div>
+        <div class="detail-section">
+            <h4>Progress</h4>
+            <div class="slider-wrap">
+                <input type="range" class="slider" min="0" max="100" value="${t.progress}" oninput="document.getElementById('pVal').textContent=this.value+'%'">
+                <span class="slider-val" id="pVal">${t.progress}%</span>
+            </div>
+            <button class="btn-login" style="margin-top:12px;font-size:10px;padding:8px" onclick="updateProgress('${t.id}')">Update Progress</button>
+        </div>
+        <div class="detail-section">
+            <h4>Activity Notes</h4>
+            ${notes.length ? `<div class="notes-list">${notes.slice().reverse().map((n, i) => `
+                <div class="note-item" style="animation-delay:${i * .05}s">
+                    <div class="note-time">${new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+                    <div class="note-text">${n.text}</div>
+                    <div class="note-author">— ${n.author || 'Unknown'}</div>
+                </div>
+            `).join('')}</div>` : '<p style="font-size:12px;color:var(--g600)">No notes yet</p>'}
+            <div class="note-input-wrap">
+                <input class="note-input" id="noteInput" placeholder="Add a progress note...">
+                <button class="note-submit" onclick="addNote('${t.id}')">Add</button>
+            </div>
+        </div>
+    `;
+    panel.style.display = 'block';
+    document.getElementById('detailOverlay').classList.add('open');
+}
+
+function closeDetail() {
+    document.getElementById('detailPanel').style.display = 'none';
+    document.getElementById('detailOverlay').classList.remove('open');
+    selectedTask = null;
+}
+
+async function updateStatus(id, status) {
+    try {
+        await api('/my-tasks/' + id, { method: 'PUT', body: JSON.stringify({ status }) });
+        toast('Status updated');
+        loadTasks();
+        openDetail(id);
+    } catch (e) { toast(e.message); }
+}
+
+async function updateProgress(id) {
+    const val = parseInt(document.querySelector('.slider').value);
+    try {
+        await api('/my-tasks/' + id, { method: 'PUT', body: JSON.stringify({ progress: val }) });
+        toast('Progress updated to ' + val + '%');
+        loadTasks();
+    } catch (e) { toast(e.message); }
+}
+
+async function addNote(id) {
+    const input = document.getElementById('noteInput');
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+        await api('/my-tasks/' + id + '/notes', { method: 'POST', body: JSON.stringify({ text }) });
+        input.value = '';
+        toast('Note added');
+        loadTasks();
+        openDetail(id);
+    } catch (e) { toast(e.message); }
+}
+
+// ---- Init ----
+function init() {
+    const saved = localStorage.getItem('team_member');
+    const token = localStorage.getItem('team_token');
+    if (saved && token) {
+        try {
+            member = JSON.parse(saved);
+            showPortal();
+        } catch (e) { logout(); }
+    }
+    // Enter key on login
+    document.getElementById('loginMobile').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+    document.getElementById('loginUser').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginMobile').focus(); });
+}
+init();
+</script>
+</body>
+</html>
