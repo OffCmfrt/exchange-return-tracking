@@ -1768,28 +1768,48 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
 // if both support combining in general.
 async function createCompensationDiscountCode(code, value, valueType, usageLimit, title) {
     const upperCode = code.toUpperCase();
-
-    // Same duplicate-safety createShopifyDiscountCode() has: if this exact
-    // code already exists (e.g. an admin re-approving the same request, or
-    // a retry after a network blip), fail with a clear, specific message
-    // instead of letting Shopify's own generic "code already exists"
-    // rejection surface from deep inside the mutation.
-    try {
-        const searchResp = await shopifyAPI(`discount_codes.json?code=${encodeURIComponent(upperCode)}`);
-        const existingCodes = searchResp.discount_codes || [];
-        const match = existingCodes.find(c => c.code && c.code.toUpperCase() === upperCode);
-        if (match) {
-            throw new Error(`Discount code ${upperCode} already exists in Shopify (id ${match.id}) - use a different code or resend the existing one`);
-        }
-    } catch (searchErr) {
-        if (searchErr.message.startsWith('Discount code')) throw searchErr;
-        console.warn('⚠️ Could not search existing discount codes, proceeding with creation:', searchErr.message);
-    }
-
     const finalValueType = valueType || 'percentage';
     const customerGetsValue = finalValueType === 'fixed_amount'
         ? { discountAmount: { amount: String(value), appliesOnEachItem: false } }
         : { percentage: value / 100 };
+
+    // Same duplicate-safety createShopifyDiscountCode() has: if this exact
+    // code already exists (e.g. an admin re-approving the same request, or
+    // a retry after a network blip), UPDATE its value instead of trying to
+    // create a second discount with the same code - never silently skip.
+    // codeDiscountNodeByCode is a first-party exact-code lookup that finds
+    // a discount regardless of which API (classic REST or this one) created
+    // it, unlike the classic discount_codes.json search this replaces,
+    // which wasn't guaranteed to see a discount created through this newer
+    // API at all.
+    try {
+        const lookup = await shopifyGraphQL(
+            `query FindDiscountByCode($code: String!) { codeDiscountNodeByCode(code: $code) { id } }`,
+            { code: upperCode }
+        );
+        const existingId = lookup.codeDiscountNodeByCode && lookup.codeDiscountNodeByCode.id;
+        if (existingId) {
+            console.log(`♻️  Discount code ${upperCode} already exists (${existingId}), updating value to ${JSON.stringify(customerGetsValue)}`);
+            const updateResult = await shopifyGraphQL(
+                `mutation UpdateCompensationDiscount($id: ID!, $input: DiscountCodeBasicInput!) {
+                    discountCodeBasicUpdate(id: $id, basicCodeDiscount: $input) {
+                        codeDiscountNode { id }
+                        userErrors { field message }
+                    }
+                }`,
+                { id: existingId, input: { customerGets: { value: customerGetsValue } } }
+            );
+            const updatePayload = updateResult.discountCodeBasicUpdate;
+            if (updatePayload.userErrors && updatePayload.userErrors.length > 0) {
+                console.warn(`⚠️ Could not update existing discount ${existingId}:`, updatePayload.userErrors.map(e => e.message).join(', '));
+            } else {
+                console.log(`✅ Updated existing discount code ${upperCode} (${existingId})`);
+            }
+            return { priceRuleId: existingId, discountCodeId: existingId, code: upperCode };
+        }
+    } catch (searchErr) {
+        console.warn('⚠️ Could not search existing discount codes, proceeding with creation:', searchErr.message);
+    }
 
     const input = {
         title: title || `Compensation: ${code}`,
@@ -1815,7 +1835,9 @@ async function createCompensationDiscountCode(code, value, valueType, usageLimit
             shippingDiscounts: false
         }
     };
-    if (usageLimit) {
+    // Matches createShopifyDiscountCode()'s own guard: only a positive
+    // usage limit is applied; zero/negative/absent means unlimited.
+    if (usageLimit && usageLimit > 0) {
         input.usageLimit = usageLimit;
     }
 
@@ -1840,9 +1862,9 @@ async function createCompensationDiscountCode(code, value, valueType, usageLimit
     }
 
     const nodeId = payload.codeDiscountNode.id;
-    console.log(`✅ Created compensation discount code: ${code.toUpperCase()} | type=${finalValueType} value=${value} usage_limit=${usageLimit || 'unlimited'} (${nodeId})`);
+    console.log(`✅ Created compensation discount code: ${upperCode} | type=${finalValueType} value=${value} usage_limit=${usageLimit || 'unlimited'} (${nodeId})`);
 
-    return { priceRuleId: nodeId, discountCodeId: nodeId, code: code.toUpperCase() };
+    return { priceRuleId: nodeId, discountCodeId: nodeId, code: upperCode };
 }
 
 // ==================== SHOPIFY REFUND HELPER ====================
