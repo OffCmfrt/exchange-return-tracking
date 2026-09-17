@@ -2003,8 +2003,8 @@ async function createBundleDiscountCode(variantIds, discountAmount, bundleId, co
                 discountAmount: { amount: String(discountAmount), appliesOnEachItem: false }
             },
             items: {
-                variants: {
-                    add: variantIds.map(id => `gid://shopify/ProductVariant/${id}`)
+                products: {
+                    productVariantsToAdd: variantIds.map(id => `gid://shopify/ProductVariant/${id}`)
                 }
             }
         },
