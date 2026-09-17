@@ -2141,10 +2141,7 @@ app.post('/api/bundle/create-discount', writeLimiter, async (req, res) => {
         res.json({ success: true, code: result.code });
     } catch (error) {
         console.error('[bundle-discount] create-discount error:', error.message);
-        // TEMPORARY: surfacing the real error to diagnose the GraphQL
-        // discount migration live, since Render logs aren't reachable
-        // right now - revert this once the root cause is confirmed.
-        res.status(500).json({ error: 'Failed to create bundle discount code', debug: error.message });
+        res.status(500).json({ error: 'Failed to create bundle discount code' });
     }
 });
 
