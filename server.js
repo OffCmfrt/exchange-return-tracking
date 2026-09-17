@@ -2077,67 +2077,55 @@ async function getVariantForBundle(variantId) {
     };
 }
 
-// Public endpoint — called by the storefront theme the instant a shopper
-// completes a "Build Your Combo" / "Change Your Bundle" add-to-cart. Not
-// behind authenticateAdmin since it's hit by anonymous shoppers; rate-
-// limited via writeLimiter.
-//
-// Accepts variantIds as an array (2 for a normal combo, 3 for a TRIPLE
-// bundle - the theme decides the count from the product's own title).
-//
-// Everything that affects pricing is verified against Shopify's own real
-// data here, not trusted from the request body: the request's variant IDs
-// are only ever used to look up the real variants, every variant's real
-// parent product must share the same family (same rule the theme itself
-// uses to decide what's eligible to group in the first place), the
-// combined price used as the discount's eligibility floor is computed
-// from their real prices, and the requested discount amount is capped so
-// it can never exceed the group's own real combined price. None of this
-// can be spoofed by sending different numbers in the request - only by
-// having Shopify itself actually re-priced one of the real products.
+// Public endpoint — called by the storefront after every bundle-cart change.
+// It creates one code for all active bundle groups so Shopify never needs to
+// keep multiple per-bundle codes active in the same cart.
 app.post('/api/bundle/create-discount', writeLimiter, async (req, res) => {
     try {
         const { variantIds, discountAmount, bundleId } = req.body;
+        const requestedBundles = Array.isArray(req.body.bundles) && req.body.bundles.length
+            ? req.body.bundles
+            : [{ variantIds, discountAmount, bundleId }];
 
-        // Capped at 3, not a looser round number - the theme only ever sends 2
-        // (a normal combo) or 3 (a TRIPLE bundle), so this is the real ceiling,
-        // not just "some array", on a public endpoint anyone can call directly.
-        if (!Array.isArray(variantIds) || variantIds.length < 2 || variantIds.length > 3 || !bundleId) {
-            return res.status(400).json({ error: 'variantIds (array of 2-3 items) and bundleId are required' });
-        }
-        // Every element must be a genuine positive-integer-looking string/number
-        // before it's trusted anywhere below - without this, values like "123"
-        // and "0123" both pass a plain uniqueness check (Set treats them as
-        // different strings) but collapse to the same number once Number()
-        // is applied when building the price rule, silently defeating the
-        // "must be different variants" rule a few lines down.
-        if (!variantIds.every(id => /^\d+$/.test(String(id)))) {
-            return res.status(400).json({ error: 'variantIds must all be positive integers' });
-        }
-        const amount = parseFloat(discountAmount);
-        if (!amount || amount <= 0) {
-            return res.status(400).json({ error: 'discountAmount must be a positive number' });
-        }
-        const uniqueIds = new Set(variantIds.map(id => String(Number(id))));
-        if (uniqueIds.size !== variantIds.length) {
-            return res.status(400).json({ error: 'variantIds must all be different variants' });
+        if (requestedBundles.length > 12) {
+            return res.status(400).json({ error: 'A maximum of 12 bundle groups is allowed' });
         }
 
-        const variants = await Promise.all(variantIds.map(getVariantForBundle));
+        const bundles = await Promise.all(requestedBundles.map(async (bundle) => {
+            const ids = bundle && bundle.variantIds;
+            const amount = parseFloat(bundle && bundle.discountAmount);
+            if (!Array.isArray(ids) || ids.length < 2 || ids.length > 3 || !bundle.bundleId) {
+                throw new Error('Each bundle requires 2-3 variantIds, discountAmount, and bundleId');
+            }
+            if (!ids.every(id => /^\d+$/.test(String(id)))) {
+                throw new Error('variantIds must all be positive integers');
+            }
+            const normalizedIds = ids.map(id => String(Number(id)));
+            if (new Set(normalizedIds).size !== normalizedIds.length) {
+                throw new Error('Each bundle must contain different variants');
+            }
+            if (!amount || amount <= 0) {
+                throw new Error('discountAmount must be a positive number');
+            }
 
-        const familyKey = variants[0].familyKey;
-        const mismatched = variants.find(v => v.familyKey !== familyKey);
-        if (mismatched) {
-            console.warn(`[bundle-discount] Rejected mismatched family: ${variants.map(v => `"${v.productTitle}"`).join(' + ')}`);
-            return res.status(400).json({ error: 'All items must be from the same product family' });
-        }
+            const variants = await Promise.all(normalizedIds.map(getVariantForBundle));
+            const familyKey = variants[0].familyKey;
+            if (variants.some(variant => variant.familyKey !== familyKey)) {
+                throw new Error('All items in each bundle must be from the same product family');
+            }
 
-        const realCombinedSubtotal = variants.reduce((sum, v) => sum + v.price, 0);
-        if (amount >= realCombinedSubtotal) {
-            return res.status(400).json({ error: 'discountAmount cannot exceed the combined price of the items' });
-        }
+            const subtotal = variants.reduce((sum, variant) => sum + variant.price, 0);
+            if (amount >= subtotal) {
+                throw new Error('discountAmount cannot exceed the combined price of a bundle');
+            }
+            return { bundleId: String(bundle.bundleId).slice(0, 64), variantIds: normalizedIds, amount, subtotal };
+        }));
 
-        const result = await createBundleDiscountCode(variantIds, amount, String(bundleId).slice(0, 64), realCombinedSubtotal);
+        const compositeVariantIds = [...new Set(bundles.flatMap(bundle => bundle.variantIds))];
+        const totalDiscount = bundles.reduce((sum, bundle) => sum + bundle.amount, 0);
+        const combinedSubtotal = bundles.reduce((sum, bundle) => sum + bundle.subtotal, 0);
+        const compositeBundleId = bundles.map(bundle => bundle.bundleId).join('-').slice(0, 64);
+        const result = await createBundleDiscountCode(compositeVariantIds, totalDiscount, compositeBundleId, combinedSubtotal);
 
         res.json({ success: true, code: result.code });
     } catch (error) {
