@@ -6552,6 +6552,8 @@ const PERMISSION_RULES = [
     { method: 'POST', pattern: /^\/api\/admin\/approve(-return|-exchange)?$/, perm: 'approve', label: 'Approve Request' },
     { method: 'POST', pattern: /^\/api\/admin\/approve-return-with-discount$/, perm: 'approve', label: 'Approve with Discount' },
     { method: 'POST', pattern: /^\/api\/admin\/send-coupon-code$/, perm: 'approve', label: 'Send Coupon Code' },
+    { method: 'POST', pattern: /^\/api\/admin\/resolve-exchange$/, perm: 'approve', label: 'Resolve Exchange' },
+    { method: 'POST', pattern: /^\/api\/admin\/convert-to-exchange$/, perm: 'approve', label: 'Convert to Exchange' },
     { method: 'POST', pattern: /^\/api\/admin\/reject(-return|-exchange)?$/, perm: 'reject', label: 'Reject Request' },
     { method: 'POST', pattern: /^\/api\/admin\/undo-rejection$/, perm: 'reject', label: 'Undo Rejection' },
     { method: 'PUT', pattern: /^\/api\/admin\/update-request\/[^/]+$/, perm: 'edit_requests', label: 'Edit Request' },
