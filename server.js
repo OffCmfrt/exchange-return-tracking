@@ -185,10 +185,11 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-            connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
-            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net", "https://cdn.tailwindcss.com", "https://cdnjs.cloudflare.com"],
+            scriptSrcAttr: ["'unsafe-inline'"],
+            connectSrc: ["'self'", "https://exchange-return-tracking.onrender.com", "https://cdn.jsdelivr.net"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
             imgSrc: ["'self'", "data:", "https:"],
         },
     },
@@ -7761,9 +7762,9 @@ app.post('/api/admin/resolve-exchange', authenticateAdmin, async (req, res) => {
             return res.status(404).json({ error: 'Request not found' });
         }
 
-        // Only allow resolution for exchanges in delivered/inspected status
-        if (requestDetails.type !== 'exchange') {
-            return res.status(400).json({ error: 'Resolution is only available for exchange requests' });
+        // Only allow resolution for exchanges/returns in delivered/inspected status
+        if (!['exchange', 'return'].includes(requestDetails.type)) {
+            return res.status(400).json({ error: 'Resolution is only available for exchange and return requests' });
         }
         if (!['delivered', 'inspected'].includes(requestDetails.status)) {
             return res.status(400).json({ error: 'Can only resolve exchanges in delivered or inspected status' });
