@@ -1427,7 +1427,18 @@ app.get('/auth/install', (req, res) => {
     const shop = process.env.SHOPIFY_STORE;
     const clientId = process.env.SHOPIFY_CLIENT_ID;
     const redirectUri = process.env.SHOPIFY_REDIRECT_URI;
-    const scopes = 'read_orders,write_orders,read_products,read_customers';
+    // write_price_rules covers the classic price_rules.json calls already
+    // in use (influencer/abandoned-cart codes, and previously bundle/
+    // compensation too); write_discounts is separately required for the
+    // newer GraphQL discountCodeBasicCreate mutation (bundle + compensation
+    // coupons now use it so they can combine with each other) - Shopify
+    // treats these as two distinct scopes, granting one doesn't imply the
+    // other. This string was already missing write_price_rules despite it
+    // being relied on elsewhere, meaning the actually-installed token's
+    // real scopes come from whatever was granted at install time, not
+    // necessarily this constant - a re-authorization is what actually
+    // updates the live token if a scope here is missing from it.
+    const scopes = 'read_orders,write_orders,read_products,read_customers,write_price_rules,write_discounts';
 
     const state = crypto.randomBytes(16).toString('hex');
     storage.oauthState = state;
@@ -1756,6 +1767,25 @@ async function createShopifyDiscountCode(code, value, valueType, usageLimit, tit
 // accepts the other's discount class, or Shopify won't combine them even
 // if both support combining in general.
 async function createCompensationDiscountCode(code, value, valueType, usageLimit, title) {
+    const upperCode = code.toUpperCase();
+
+    // Same duplicate-safety createShopifyDiscountCode() has: if this exact
+    // code already exists (e.g. an admin re-approving the same request, or
+    // a retry after a network blip), fail with a clear, specific message
+    // instead of letting Shopify's own generic "code already exists"
+    // rejection surface from deep inside the mutation.
+    try {
+        const searchResp = await shopifyAPI(`discount_codes.json?code=${encodeURIComponent(upperCode)}`);
+        const existingCodes = searchResp.discount_codes || [];
+        const match = existingCodes.find(c => c.code && c.code.toUpperCase() === upperCode);
+        if (match) {
+            throw new Error(`Discount code ${upperCode} already exists in Shopify (id ${match.id}) - use a different code or resend the existing one`);
+        }
+    } catch (searchErr) {
+        if (searchErr.message.startsWith('Discount code')) throw searchErr;
+        console.warn('⚠️ Could not search existing discount codes, proceeding with creation:', searchErr.message);
+    }
+
     const finalValueType = valueType || 'percentage';
     const customerGetsValue = finalValueType === 'fixed_amount'
         ? { discountAmount: { amount: String(value), appliesOnEachItem: false } }
@@ -1763,14 +1793,17 @@ async function createCompensationDiscountCode(code, value, valueType, usageLimit
 
     const input = {
         title: title || `Compensation: ${code}`,
-        code: code.toUpperCase(),
+        code: upperCode,
         startsAt: new Date().toISOString(),
         customerSelection: { all: true },
         customerGets: {
             value: customerGetsValue,
             items: { all: true }
         },
-        appliesOncePerCustomer: true,
+        // Matches createShopifyDiscountCode()'s own rule: only fixed-amount
+        // compensation is capped to one use per customer; percentage-based
+        // codes are left reusable, same as they've always been.
+        appliesOncePerCustomer: finalValueType === 'fixed_amount',
         // Order-level discount, explicitly willing to combine with a
         // product-level one (the bundle/combo coupon) - not with another
         // order-level discount or a shipping discount, since that wasn't
