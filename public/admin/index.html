@@ -5654,25 +5654,15 @@
                         toggleWindowMode(); // Update help text
                     }
                     
-                    // Set carrier mode (supports separate pickup/dispatch with backward compatibility)
-                    // Load pickup carrier mode
+                    // Set carrier mode using drag-and-drop zones
                     const pickupCarrierMode = data.carrier_mode_pickup || data.carrier_mode || 'shiprocket_with_fallback';
-                    // Map carrier mode values to element IDs (remove '_with' from with_fallback options)
-                    const pickupElementId = pickupCarrierMode.replace('_with_fallback', '-fallback').replace(/_/g, '-');
-                    const pickupCarrierModeId = `carrier-pickup-${pickupElementId}`;
-                    const pickupCarrierModeEl = document.getElementById(pickupCarrierModeId);
-                    if (pickupCarrierModeEl) {
-                        pickupCarrierModeEl.checked = true;
-                    }
+                    setCarrierModeToDropZone('pickup', pickupCarrierMode);
                     
-                    // Load dispatch carrier mode
                     const dispatchCarrierMode = data.carrier_mode_dispatch || data.carrier_mode || 'shiprocket_with_fallback';
-                    const dispatchElementId = dispatchCarrierMode.replace('_with_fallback', '-fallback').replace(/_/g, '-');
-                    const dispatchCarrierModeId = `carrier-dispatch-${dispatchElementId}`;
-                    const dispatchCarrierModeEl = document.getElementById(dispatchCarrierModeId);
-                    if (dispatchCarrierModeEl) {
-                        dispatchCarrierModeEl.checked = true;
-                    }
+                    setCarrierModeToDropZone('dispatch', dispatchCarrierMode);
+                    
+                    // Initialize drag-and-drop
+                    initCarrierDragAndDrop();
                     
                     // Set cutoff date
                     const hasCutoff = data.cutoff_date && data.cutoff_date_enabled;
@@ -5746,6 +5736,162 @@
         }
     }
 
+    // Carrier drag-and-drop helper functions
+    function getCarrierModeFromDropZone(zone) {
+        const dropZone = document.getElementById(`${zone}-drop-zone`);
+        if (!dropZone) return 'shiprocket_with_fallback';
+        
+        const items = Array.from(dropZone.querySelectorAll('.carrier-drag-item'));
+        if (items.length === 0) return 'shiprocket_with_fallback';
+        
+        const primary = items[0].dataset.carrier;
+        const secondary = items[1].dataset.carrier;
+        
+        // Map to carrier mode
+        if (primary && secondary) {
+            return `${primary}_with_fallback`;
+        } else if (primary) {
+            return `${primary}_only`;
+        }
+        return 'shiprocket_with_fallback';
+    }
+    
+    function setCarrierModeToDropZone(zone, carrierMode) {
+        const dropZone = document.getElementById(`${zone}-drop-zone`);
+        if (!dropZone) return;
+        
+        // Parse carrier mode
+        let primary, secondary;
+        if (carrierMode.includes('_with_fallback')) {
+            primary = carrierMode.replace('_with_fallback', '');
+            const fallbackMap = {
+                'shiprocket': 'delhivery',
+                'delhivery': 'shiprocket',
+                'ekart': 'shiprocket'
+            };
+            secondary = fallbackMap[primary] || 'delhivery';
+        } else if (carrierMode.includes('_only')) {
+            primary = carrierMode.replace('_only', '');
+            secondary = null;
+        } else {
+            primary = 'shiprocket';
+            secondary = 'delhivery';
+        }
+        
+        // Get all carriers
+        const allCarriers = ['shiprocket', 'delhivery', 'ekart'];
+        const orderedCarriers = [primary];
+        if (secondary) orderedCarriers.push(secondary);
+        
+        // Add remaining carriers as disabled
+        allCarriers.forEach(carrier => {
+            if (!orderedCarriers.includes(carrier)) {
+                orderedCarriers.push(carrier);
+            }
+        });
+        
+        // Reorder DOM elements
+        const items = Array.from(dropZone.querySelectorAll('.carrier-drag-item'));
+        const itemMap = {};
+        items.forEach(item => {
+            itemMap[item.dataset.carrier] = item;
+        });
+        
+        // Clear and re-append in order
+        dropZone.innerHTML = '';
+        orderedCarriers.forEach((carrier, index) => {
+            const item = itemMap[carrier];
+            if (item) {
+                dropZone.appendChild(item);
+                updateCarrierItemPosition(item, index);
+            }
+        });
+    }
+    
+    function updateCarrierItemPosition(item, position) {
+        const statusEl = item.querySelector('.carrier-card-status');
+        const positionBadge = item.querySelector('.position-number');
+        
+        if (position === 0) {
+            if (statusEl) statusEl.textContent = 'Primary';
+            if (positionBadge) positionBadge.textContent = '1';
+        } else if (position === 1) {
+            if (statusEl) statusEl.textContent = 'Secondary';
+            if (positionBadge) positionBadge.textContent = '2';
+        } else {
+            if (statusEl) statusEl.textContent = 'Disabled';
+            if (positionBadge) positionBadge.textContent = '3';
+        }
+    }
+    
+    function initCarrierDragAndDrop() {
+        const dropZones = document.querySelectorAll('.carrier-drop-zone');
+        
+        dropZones.forEach(zone => {
+            const items = zone.querySelectorAll('.carrier-drag-item');
+            
+            items.forEach((item, index) => {
+                // Set initial position
+                updateCarrierItemPosition(item, index);
+                
+                // Drag start
+                item.addEventListener('dragstart', (e) => {
+                    item.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/html', item.outerHTML);
+                });
+                
+                // Drag end
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('dragging');
+                    // Remove drag-over class from all items
+                    zone.querySelectorAll('.carrier-drag-item').forEach(i => {
+                        i.classList.remove('drag-over');
+                    });
+                });
+                
+                // Drag over
+                item.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const dragging = zone.querySelector('.dragging');
+                    if (dragging && dragging !== item) {
+                        item.classList.add('drag-over');
+                    }
+                });
+                
+                // Drag leave
+                item.addEventListener('dragleave', () => {
+                    item.classList.remove('drag-over');
+                });
+                
+                // Drop
+                item.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    item.classList.remove('drag-over');
+                    const dragging = zone.querySelector('.dragging');
+                    if (dragging && dragging !== item) {
+                        // Swap positions
+                        const allItems = Array.from(zone.querySelectorAll('.carrier-drag-item'));
+                        const draggingIndex = allItems.indexOf(dragging);
+                        const targetIndex = allItems.indexOf(item);
+                        
+                        if (draggingIndex < targetIndex) {
+                            item.after(dragging);
+                        } else {
+                            item.before(dragging);
+                        }
+                        
+                        // Update positions
+                        Array.from(zone.querySelectorAll('.carrier-drag-item')).forEach((i, idx) => {
+                            updateCarrierItemPosition(i, idx);
+                        });
+                    }
+                });
+            });
+        });
+    }
+    
     async function saveSettings() {
         const btnText = document.getElementById('save-settings-text');
         const spinner = document.getElementById('save-settings-spin');
