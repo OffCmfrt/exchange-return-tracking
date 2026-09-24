@@ -394,6 +394,12 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.requestHistory !== undefined) updateData.request_history = updates.requestHistory;
     if (updates.type !== undefined) updateData.type = updates.type;
 
+    // Shipping Address (backfill from Shopify)
+    if (updates.shippingAddress !== undefined) updateData.shipping_address = updates.shippingAddress;
+    if (updates.shippingCity !== undefined) updateData.shipping_city = updates.shippingCity;
+    if (updates.shippingState !== undefined) updateData.shipping_state = updates.shippingState;
+    if (updates.shippingPincode !== undefined) updateData.shipping_pincode = updates.shippingPincode;
+
     if (Object.keys(updateData).length === 0) return null;
 
     const { data, error } = await supabase

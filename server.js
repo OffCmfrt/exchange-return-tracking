@@ -6468,6 +6468,40 @@ app.get('/api/track-request/:identifier', async (req, res) => {
         return request;
     }
 
+    // Helper: fetch shipping address from Shopify when missing in DB
+    async function backfillShippingAddress(request) {
+        if (request.shippingAddress) return; // already present
+        if (!request.orderNumber) return;
+
+        try {
+            const bare = String(request.orderNumber).replace(/^#/, '');
+            const shopifyData = await shopifyAPI(`orders.json?name=${encodeURIComponent(bare)}&status=any&limit=1`);
+            const order = shopifyData?.orders?.[0];
+            if (!order) return;
+
+            const addr = order.shipping_address || (order.fulfillments?.[0]?.destination);
+            if (!addr) return;
+
+            request.shippingAddress = [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country]
+                .filter(Boolean).join(', ');
+            request.shippingCity = addr.city || '';
+            request.shippingState = addr.province || '';
+            request.shippingPincode = addr.zip || '';
+
+            // Persist back to DB so we don't hit Shopify again
+            updateRequestStatus(request.requestId, {
+                shippingAddress: request.shippingAddress,
+                shippingCity: request.shippingCity,
+                shippingState: request.shippingState,
+                shippingPincode: request.shippingPincode,
+            }).catch(e => console.warn(`[Backfill Address] Persist failed for ${request.requestId}:`, e.message));
+
+            console.log(`[Backfill Address] ${request.requestId} — fetched from Shopify:`, request.shippingAddress);
+        } catch (err) {
+            console.warn(`[Backfill Address] ${request.requestId} — Shopify fetch failed:`, err.message);
+        }
+    }
+
     try {
         // Detect: REQ IDs always start with 'REQ-'; everything else treated as an order number
         const isReqId = identifier.toUpperCase().startsWith('REQ-');
@@ -6482,6 +6516,7 @@ app.get('/api/track-request/:identifier', async (req, res) => {
             console.log(`[Track Request] DB status for ${identifier}:`, request.status);
             
             await ensurePaidPrices(request);
+            await backfillShippingAddress(request);
             await enrichWithTracking(request);
             console.log(`[Track Request] After enrichment, status:`, request.status);
             return res.json(request);
@@ -6491,8 +6526,12 @@ app.get('/api/track-request/:identifier', async (req, res) => {
             if (!requests || requests.length === 0) {
                 return res.status(404).json({ error: 'No return or exchange request found for this order number' });
             }
-            // Backfill paid prices (legacy requests), then enrich with live tracking data
-            const enriched = await Promise.all(requests.map(async r => enrichWithTracking(await ensurePaidPrices(r))));
+            // Backfill paid prices + shipping address (legacy requests), then enrich with live tracking data
+            const enriched = await Promise.all(requests.map(async r => {
+                await ensurePaidPrices(r);
+                await backfillShippingAddress(r);
+                return enrichWithTracking(r);
+            }));
             // If exactly one, return as single object (keeps frontend backward compatible)
             if (enriched.length === 1) return res.json(enriched[0]);
             // Multiple: return as array under 'requests' key
