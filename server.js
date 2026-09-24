@@ -3865,8 +3865,7 @@ async function createEkartReturnOrder(requestData, shopifyOrder) {
 
         const address = shopifyOrder ? (shopifyOrder.shipping_address || (shopifyOrder.customer && shopifyOrder.customer.default_address)) : null;
         if (!address) {
-            console.error(`[${requestData.requestId}] ❌ Ekart Error: No customer address found. ShopifyOrder fetched: ${!!shopifyOrder}`);
-            return null;
+            throw new Error(`Ekart: No customer address found (ShopifyOrder fetched: ${!!shopifyOrder}, orderNumber: ${requestData.orderNumber})`);
         }
 
         // Customer (pickup) details
@@ -3920,7 +3919,7 @@ async function createEkartReturnOrder(requestData, shopifyOrder) {
         return { waybill, shipment_id, success: true, data };
     } catch (error) {
         console.error(`[${requestData.requestId}] ❌ Failed to create Ekart return:`, error.message);
-        return null;
+        throw error;
     }
 }
 
@@ -3991,8 +3990,7 @@ async function createEkartForwardOrder(requestData, shopifyOrder) {
         }
 
         if (!customerAddress || !customerPincode) {
-            console.error(`[${requestData.requestId}] ❌ Ekart forward: customer address/pincode empty after all resolution attempts`);
-            return null;
+            throw new Error(`Ekart forward: customer address/pincode empty after all resolution attempts (address: '${!!customerAddress}', pincode: '${customerPincode}')`);
         }
 
         const phoneDigits = String(customerPhone).replace(/\D/g, '');
@@ -4038,7 +4036,7 @@ async function createEkartForwardOrder(requestData, shopifyOrder) {
         return { waybill, shipment_id, order_id: ekartOrderId, success: true, data };
     } catch (error) {
         console.error(`[${requestData.requestId}] ❌ Error creating Ekart forward order:`, error.message);
-        return null;
+        throw error;
     }
 }
 
@@ -5643,7 +5641,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
 
         if (!isFeeWaived && !needsPayment) {
             // Get carrier mode from settings
-            const carrierMode = await getSetting('carrier_mode', 'shiprocket_with_fallback');
+            const carrierMode = await getCarrierMode('pickup');
             console.log(`[${requestId}] Auto-Pickup with carrier mode: ${carrierMode} for paid reason: ${req.body.reason}`);
             
             const requestData = {
@@ -5963,7 +5961,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
 
         if (!isFeeWaivedReturn && !needsPayment) {
             // Get carrier mode from settings
-            const carrierMode = await getSetting('carrier_mode', 'shiprocket_with_fallback');
+            const carrierMode = await getCarrierMode('pickup');
             console.log(`[${requestId}] Auto-Pickup with carrier mode: ${carrierMode} for paid reason: ${req.body.reason}`);
             
             const requestData = {
