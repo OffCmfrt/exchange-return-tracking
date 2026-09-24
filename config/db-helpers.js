@@ -400,6 +400,10 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.shippingState !== undefined) updateData.shipping_state = updates.shippingState;
     if (updates.shippingPincode !== undefined) updateData.shipping_pincode = updates.shippingPincode;
 
+    // Customer Info (backfill from Shopify)
+    if (updates.customerPhone !== undefined) updateData.customer_phone = updates.customerPhone;
+    if (updates.customerName !== undefined) updateData.customer_name = updates.customerName;
+
     if (Object.keys(updateData).length === 0) return null;
 
     const { data, error } = await supabase

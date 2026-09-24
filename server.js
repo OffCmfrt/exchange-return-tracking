@@ -6468,7 +6468,10 @@ app.get('/api/track-request/:identifier', async (req, res) => {
 
     // Helper: fetch shipping address from Shopify when missing in DB
     async function backfillShippingAddress(request) {
-        if (request.shippingAddress) return; // already present
+        const needsAddress = !request.shippingAddress;
+        const needsPhone = !request.customerPhone;
+        const needsName = !request.customerName || request.customerName === 'Customer' || request.customerName === 'null';
+        if (!needsAddress && !needsPhone && !needsName) return; // nothing to backfill
         if (!request.orderNumber) return;
 
         try {
@@ -6478,25 +6481,48 @@ app.get('/api/track-request/:identifier', async (req, res) => {
             if (!order) return;
 
             const addr = order.shipping_address || (order.fulfillments?.[0]?.destination);
-            if (!addr) return;
+            const customer = order.customer || {};
 
-            request.shippingAddress = [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country]
-                .filter(Boolean).join(', ');
-            request.shippingCity = addr.city || '';
-            request.shippingState = addr.province || '';
-            request.shippingPincode = addr.zip || '';
+            const updates = {};
+
+            if (needsAddress && addr) {
+                request.shippingAddress = [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country]
+                    .filter(Boolean).join(', ');
+                request.shippingCity = addr.city || '';
+                request.shippingState = addr.province || '';
+                request.shippingPincode = addr.zip || '';
+                updates.shippingAddress = request.shippingAddress;
+                updates.shippingCity = request.shippingCity;
+                updates.shippingState = request.shippingState;
+                updates.shippingPincode = request.shippingPincode;
+                console.log(`[Backfill Address] ${request.requestId} — fetched from Shopify:`, request.shippingAddress);
+            }
+
+            if (needsPhone) {
+                const phone = addr?.phone || customer?.phone || customer?.default_address?.phone || null;
+                if (phone) {
+                    request.customerPhone = phone;
+                    updates.customerPhone = phone;
+                    console.log(`[Backfill Phone] ${request.requestId} — fetched from Shopify:`, phone);
+                }
+            }
+
+            if (needsName && customer) {
+                const name = `${customer.first_name || ''} ${customer.last_name || ''}`.trim();
+                if (name) {
+                    request.customerName = name;
+                    updates.customerName = name;
+                    console.log(`[Backfill Name] ${request.requestId} — fetched from Shopify:`, name);
+                }
+            }
 
             // Persist back to DB so we don't hit Shopify again
-            updateRequestStatus(request.requestId, {
-                shippingAddress: request.shippingAddress,
-                shippingCity: request.shippingCity,
-                shippingState: request.shippingState,
-                shippingPincode: request.shippingPincode,
-            }).catch(e => console.warn(`[Backfill Address] Persist failed for ${request.requestId}:`, e.message));
-
-            console.log(`[Backfill Address] ${request.requestId} — fetched from Shopify:`, request.shippingAddress);
+            if (Object.keys(updates).length > 0) {
+                updateRequestStatus(request.requestId, updates)
+                    .catch(e => console.warn(`[Backfill] Persist failed for ${request.requestId}:`, e.message));
+            }
         } catch (err) {
-            console.warn(`[Backfill Address] ${request.requestId} — Shopify fetch failed:`, err.message);
+            console.warn(`[Backfill] ${request.requestId} — Shopify fetch failed:`, err.message);
         }
     }
 

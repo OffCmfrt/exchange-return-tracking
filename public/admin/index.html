@@ -624,95 +624,207 @@
                     }
                     
                     /* Carrier Options */
-                    .carrier-options {
+                    /* Premium Carrier Drag-and-Drop Configuration */
+                    .carrier-config-zone {
+                        background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+                        border: 1px solid #e5e5e5;
+                        border-radius: 16px;
+                        padding: 1.5rem;
+                        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    }
+                    
+                    .carrier-config-zone:hover {
+                        border-color: #d4d4d4;
+                        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+                    }
+                    
+                    .carrier-zone-header {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        margin-bottom: 1.25rem;
+                        padding-bottom: 1rem;
+                        border-bottom: 2px solid #e5e5e5;
+                    }
+                    
+                    .zone-title {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        font-weight: 600;
+                        font-size: 1rem;
+                        color: #171717;
+                    }
+                    
+                    .zone-title i {
+                        font-size: 1.25rem;
+                        color: #000;
+                    }
+                    
+                    .zone-badge {
+                        padding: 0.4rem 0.9rem;
+                        background: linear-gradient(135deg, #171717 0%, #000 100%);
+                        color: white;
+                        font-size: 0.75rem;
+                        font-weight: 600;
+                        border-radius: 20px;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    
+                    .carrier-drop-zone {
                         display: flex;
                         flex-direction: column;
                         gap: 0.75rem;
+                        min-height: 200px;
                     }
                     
-                    .carrier-option {
-                        cursor: pointer;
-                    }
-                    
-                    .carrier-option input[type="radio"] {
-                        display: none;
-                    }
-                    
-                    .carrier-option-content {
+                    .carrier-drag-item {
                         display: flex;
                         align-items: center;
                         gap: 1rem;
                         padding: 1rem;
-                        background: #f9fafb;
-                        border: 2px solid #e5e7eb;
-                        border-radius: 8px;
-                        transition: all 0.2s;
+                        background: white;
+                        border: 2px solid #e5e5e5;
+                        border-radius: 12px;
+                        cursor: grab;
+                        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                        user-select: none;
                     }
                     
-                    .carrier-option input[type="radio"]:checked + .carrier-option-content {
-                        background: #f3f4f6;
-                        border-color: #000000;
-                        box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
+                    .carrier-drag-item:hover {
+                        border-color: #000;
+                        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+                        transform: translateY(-2px);
                     }
                     
-                    .carrier-icon {
-                        width: 48px;
-                        height: 48px;
-                        border-radius: 8px;
+                    .carrier-drag-item:active {
+                        cursor: grabbing;
+                    }
+                    
+                    .carrier-drag-item.dragging {
+                        opacity: 0.4;
+                        transform: scale(0.98);
+                        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+                    }
+                    
+                    .carrier-drag-item.drag-over {
+                        border-color: #000;
+                        border-style: dashed;
+                        background: #fafafa;
+                    }
+                    
+                    .drag-handle {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        width: 32px;
+                        height: 32px;
+                        color: #a3a3a3;
+                        font-size: 1.25rem;
+                        cursor: grab;
+                        transition: color 0.2s;
+                    }
+                    
+                    .drag-handle:hover {
+                        color: #000;
+                    }
+                    
+                    .carrier-card {
+                        display: flex;
+                        align-items: center;
+                        gap: 1rem;
+                        flex: 1;
+                    }
+                    
+                    .carrier-card-icon {
+                        width: 52px;
+                        height: 52px;
+                        border-radius: 10px;
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         font-size: 1.5rem;
                         flex-shrink: 0;
+                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                    }
+                    
+                    .carrier-card-info {
+                        flex: 1;
+                    }
+                    
+                    .carrier-card-name {
+                        font-weight: 600;
+                        font-size: 1rem;
+                        color: #171717;
+                        margin-bottom: 0.25rem;
+                    }
+                    
+                    .carrier-card-status {
+                        font-size: 0.85rem;
+                        color: #737373;
+                        font-weight: 500;
+                    }
+                    
+                    .carrier-position-badge {
+                        width: 36px;
+                        height: 36px;
+                        border-radius: 50%;
+                        background: linear-gradient(135deg, #f5f5f5 0%, #e5e5e5 100%);
+                        border: 2px solid #d4d4d4;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-weight: 700;
+                        font-size: 0.9rem;
+                        color: #525252;
+                        transition: all 0.3s;
+                    }
+                    
+                    .carrier-drag-item:nth-child(1) .carrier-position-badge {
+                        background: linear-gradient(135deg, #171717 0%, #000 100%);
+                        border-color: #000;
+                        color: white;
+                    }
+                    
+                    .carrier-drag-item:nth-child(2) .carrier-position-badge {
+                        background: linear-gradient(135deg, #525252 0%, #404040 100%);
+                        border-color: #404040;
+                        color: white;
+                    }
+                    
+                    .carrier-info-note {
+                        margin-top: 1.25rem;
+                        padding: 1rem;
+                        background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+                        border: 1px solid #e5e5e5;
+                        border-radius: 10px;
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 0.75rem;
+                        font-size: 0.875rem;
+                        color: #525252;
+                    }
+                    
+                    .carrier-info-note i {
+                        color: #000;
+                        font-size: 1rem;
+                        margin-top: 0.1rem;
                     }
                     
                     .shiprocket-icon {
-                        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+                        background: linear-gradient(135deg, #262626 0%, #0a0a0a 100%);
                         color: white;
                     }
                     
                     .delhivery-icon {
-                        background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+                        background: linear-gradient(135deg, #404040 0%, #262626 100%);
                         color: white;
                     }
                     
                     .ekart-icon {
-                        background: linear-gradient(135deg, #2874f0 0%, #1a5dc8 100%);
+                        background: linear-gradient(135deg, #525252 0%, #404040 100%);
                         color: white;
-                    }
-                    
-                    .combo-icon {
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                    }
-                    
-                    .carrier-info {
-                        flex: 1;
-                    }
-                    
-                    .carrier-name {
-                        font-weight: 600;
-                        color: #111827;
-                        font-size: 1rem;
-                        margin-bottom: 0.25rem;
-                    }
-                    
-                    .carrier-desc {
-                        font-size: 0.85rem;
-                        color: #6b7280;
-                    }
-                    
-                    .badge-recommended {
-                        display: inline-block;
-                        padding: 0.2rem 0.5rem;
-                        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-                        color: white;
-                        font-size: 0.7rem;
-                        font-weight: 600;
-                        border-radius: 4px;
-                        margin-left: 0.5rem;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
                     }
                     
                     /* Window Mode Options */
@@ -1546,182 +1658,140 @@
                     <!-- Carrier Configuration -->
                     <div class="settings-section">
                         <h3><i class="fas fa-shipping-fast"></i> Carrier Configuration</h3>
-                        <p class="section-desc">Select which shipping carrier(s) to use for return pickups and dispatch replacements</p>
+                        <p class="section-desc">Drag carriers to set priority order. Top = Primary, Middle = Secondary (fallback), Bottom = Disabled</p>
                         
                         <!-- Pickup Carrier Settings -->
-                        <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f0f9ff; border-radius: 8px; border-left: 3px solid #0ea5e9;">
-                            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; color: #0369a1;"><i class="fas fa-truck-pickup" style="margin-right: 0.5rem;"></i>Pickup Carrier (Return Requests)</h4>
-                            <div class="carrier-options" style="margin: 0;">
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-pickup" value="shiprocket_only" id="carrier-pickup-shiprocket-only">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon shiprocket-icon">
+                        <div class="carrier-config-zone" style="margin-bottom: 1.5rem;">
+                            <div class="carrier-zone-header">
+                                <div class="zone-title">
+                                    <i class="fas fa-truck-pickup"></i>
+                                    <span>Pickup Carrier (Return Requests)</span>
+                                </div>
+                                <div class="zone-badge">Primary + Fallback</div>
+                            </div>
+                            <div class="carrier-drop-zone" id="pickup-drop-zone" data-zone="pickup">
+                                <div class="carrier-drag-item" draggable="true" data-carrier="shiprocket" data-zone="pickup">
+                                    <div class="drag-handle">
+                                        <i class="fas fa-grip-vertical"></i>
+                                    </div>
+                                    <div class="carrier-card">
+                                        <div class="carrier-card-icon shiprocket-icon">
                                             <i class="fas fa-rocket"></i>
                                         </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Shiprocket Only</div>
-                                            <div class="carrier-desc">Use only Shiprocket for pickups</div>
+                                        <div class="carrier-card-info">
+                                            <div class="carrier-card-name">Shiprocket</div>
+                                            <div class="carrier-card-status">Primary</div>
                                         </div>
                                     </div>
-                                </label>
-                                
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-pickup" value="delhivery_only" id="carrier-pickup-delhivery-only">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon delhivery-icon">
+                                    <div class="carrier-position-badge">
+                                        <span class="position-number">1</span>
+                                    </div>
+                                </div>
+                                <div class="carrier-drag-item" draggable="true" data-carrier="delhivery" data-zone="pickup">
+                                    <div class="drag-handle">
+                                        <i class="fas fa-grip-vertical"></i>
+                                    </div>
+                                    <div class="carrier-card">
+                                        <div class="carrier-card-icon delhivery-icon">
                                             <i class="fas fa-truck"></i>
                                         </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Delhivery Only</div>
-                                            <div class="carrier-desc">Use only Delhivery for pickups</div>
+                                        <div class="carrier-card-info">
+                                            <div class="carrier-card-name">Delhivery</div>
+                                            <div class="carrier-card-status">Secondary</div>
                                         </div>
                                     </div>
-                                </label>
-                                
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-pickup" value="shiprocket_with_fallback" id="carrier-pickup-shiprocket-fallback" checked>
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon combo-icon">
-                                            <i class="fas fa-layer-group"></i>
-                                        </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Shiprocket + Delhivery Fallback <span class="badge-recommended">Recommended</span></div>
-                                            <div class="carrier-desc">Primary: Shiprocket, Fallback: Delhivery</div>
-                                        </div>
+                                    <div class="carrier-position-badge">
+                                        <span class="position-number">2</span>
                                     </div>
-                                </label>
-
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-pickup" value="delhivery_with_fallback" id="carrier-pickup-delhivery-fallback">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon combo-icon">
-                                            <i class="fas fa-layer-group"></i>
-                                        </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Delhivery + Shiprocket Fallback</div>
-                                            <div class="carrier-desc">Primary: Delhivery, Fallback: Shiprocket</div>
-                                        </div>
+                                </div>
+                                <div class="carrier-drag-item" draggable="true" data-carrier="ekart" data-zone="pickup">
+                                    <div class="drag-handle">
+                                        <i class="fas fa-grip-vertical"></i>
                                     </div>
-                                </label>
-
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-pickup" value="ekart_only" id="carrier-pickup-ekart-only">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon ekart-icon">
+                                    <div class="carrier-card">
+                                        <div class="carrier-card-icon ekart-icon">
                                             <i class="fas fa-shipping-fast"></i>
                                         </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Ekart Only</div>
-                                            <div class="carrier-desc">Use only Ekart for pickups</div>
+                                        <div class="carrier-card-info">
+                                            <div class="carrier-card-name">Ekart</div>
+                                            <div class="carrier-card-status">Disabled</div>
                                         </div>
                                     </div>
-                                </label>
-
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-pickup" value="ekart_with_fallback" id="carrier-pickup-ekart-fallback">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon combo-icon">
-                                            <i class="fas fa-layer-group"></i>
-                                        </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Ekart + Shiprocket Fallback</div>
-                                            <div class="carrier-desc">Primary: Ekart, Fallback: Shiprocket</div>
-                                        </div>
+                                    <div class="carrier-position-badge">
+                                        <span class="position-number">3</span>
                                     </div>
-                                </label>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Dispatch Carrier Settings -->
-                        <div style="padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 3px solid #22c55e;">
-                            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; color: #15803d;"><i class="fas fa-box" style="margin-right: 0.5rem;"></i>Dispatch Carrier (Exchange Replacements)</h4>
-                            <div class="carrier-options" style="margin: 0;">
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-dispatch" value="shiprocket_only" id="carrier-dispatch-shiprocket-only">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon shiprocket-icon">
+                        <div class="carrier-config-zone">
+                            <div class="carrier-zone-header">
+                                <div class="zone-title">
+                                    <i class="fas fa-box"></i>
+                                    <span>Dispatch Carrier (Exchange Replacements)</span>
+                                </div>
+                                <div class="zone-badge">Primary + Fallback</div>
+                            </div>
+                            <div class="carrier-drop-zone" id="dispatch-drop-zone" data-zone="dispatch">
+                                <div class="carrier-drag-item" draggable="true" data-carrier="shiprocket" data-zone="dispatch">
+                                    <div class="drag-handle">
+                                        <i class="fas fa-grip-vertical"></i>
+                                    </div>
+                                    <div class="carrier-card">
+                                        <div class="carrier-card-icon shiprocket-icon">
                                             <i class="fas fa-rocket"></i>
                                         </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Shiprocket Only</div>
-                                            <div class="carrier-desc">Use only Shiprocket for dispatches</div>
+                                        <div class="carrier-card-info">
+                                            <div class="carrier-card-name">Shiprocket</div>
+                                            <div class="carrier-card-status">Primary</div>
                                         </div>
                                     </div>
-                                </label>
-                                
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-dispatch" value="delhivery_only" id="carrier-dispatch-delhivery-only">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon delhivery-icon">
+                                    <div class="carrier-position-badge">
+                                        <span class="position-number">1</span>
+                                    </div>
+                                </div>
+                                <div class="carrier-drag-item" draggable="true" data-carrier="delhivery" data-zone="dispatch">
+                                    <div class="drag-handle">
+                                        <i class="fas fa-grip-vertical"></i>
+                                    </div>
+                                    <div class="carrier-card">
+                                        <div class="carrier-card-icon delhivery-icon">
                                             <i class="fas fa-truck"></i>
                                         </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Delhivery Only</div>
-                                            <div class="carrier-desc">Use only Delhivery for dispatches</div>
+                                        <div class="carrier-card-info">
+                                            <div class="carrier-card-name">Delhivery</div>
+                                            <div class="carrier-card-status">Secondary</div>
                                         </div>
                                     </div>
-                                </label>
-                                
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-dispatch" value="shiprocket_with_fallback" id="carrier-dispatch-shiprocket-fallback" checked>
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon combo-icon">
-                                            <i class="fas fa-layer-group"></i>
-                                        </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Shiprocket + Delhivery Fallback <span class="badge-recommended">Recommended</span></div>
-                                            <div class="carrier-desc">Primary: Shiprocket, Fallback: Delhivery</div>
-                                        </div>
+                                    <div class="carrier-position-badge">
+                                        <span class="position-number">2</span>
                                     </div>
-                                </label>
-
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-dispatch" value="delhivery_with_fallback" id="carrier-dispatch-delhivery-fallback">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon combo-icon">
-                                            <i class="fas fa-layer-group"></i>
-                                        </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Delhivery + Shiprocket Fallback</div>
-                                            <div class="carrier-desc">Primary: Delhivery, Fallback: Shiprocket</div>
-                                        </div>
+                                </div>
+                                <div class="carrier-drag-item" draggable="true" data-carrier="ekart" data-zone="dispatch">
+                                    <div class="drag-handle">
+                                        <i class="fas fa-grip-vertical"></i>
                                     </div>
-                                </label>
-
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-dispatch" value="ekart_only" id="carrier-dispatch-ekart-only">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon ekart-icon">
+                                    <div class="carrier-card">
+                                        <div class="carrier-card-icon ekart-icon">
                                             <i class="fas fa-shipping-fast"></i>
                                         </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Ekart Only</div>
-                                            <div class="carrier-desc">Use only Ekart for dispatches</div>
+                                        <div class="carrier-card-info">
+                                            <div class="carrier-card-name">Ekart</div>
+                                            <div class="carrier-card-status">Disabled</div>
                                         </div>
                                     </div>
-                                </label>
-
-                                <label class="carrier-option">
-                                    <input type="radio" name="carrier-mode-dispatch" value="ekart_with_fallback" id="carrier-dispatch-ekart-fallback">
-                                    <div class="carrier-option-content">
-                                        <div class="carrier-icon combo-icon">
-                                            <i class="fas fa-layer-group"></i>
-                                        </div>
-                                        <div class="carrier-info">
-                                            <div class="carrier-name">Ekart + Shiprocket Fallback</div>
-                                            <div class="carrier-desc">Primary: Ekart, Fallback: Shiprocket</div>
-                                        </div>
+                                    <div class="carrier-position-badge">
+                                        <span class="position-number">3</span>
                                     </div>
-                                </label>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Backward Compatibility Note -->
-                        <div style="margin-top: 1rem; padding: 0.75rem; background: #fef3c7; border-radius: 6px; border-left: 3px solid #f59e0b;">
-                            <p style="margin: 0; font-size: 0.8rem; color: #92400e;">
-                                <i class="fas fa-info-circle" style="margin-right: 0.5rem;"></i>
-                                <strong>Note:</strong> If you don't set specific pickup/dispatch carriers above, the system will use the legacy global setting.
-                            </p>
+                        <!-- Info Note -->
+                        <div class="carrier-info-note">
+                            <i class="fas fa-info-circle"></i>
+                            <span><strong>Tip:</strong> Drag carriers to reorder. The system will try the primary carrier first, then fallback to secondary if available.</span>
                         </div>
                     </div>
 
@@ -5688,8 +5758,8 @@
         const approvedReasons = Array.from(document.querySelectorAll('.set-reason-cb:checked')).map(cb => cb.value);
 
         const windowMode = document.querySelector('input[name="window-mode"]:checked')?.value || 'delivery';
-        const pickupCarrierMode = document.querySelector('input[name="carrier-mode-pickup"]:checked')?.value || 'shiprocket_with_fallback';
-        const dispatchCarrierMode = document.querySelector('input[name="carrier-mode-dispatch"]:checked')?.value || 'shiprocket_with_fallback';
+        const pickupCarrierMode = getCarrierModeFromDropZone('pickup');
+        const dispatchCarrierMode = getCarrierModeFromDropZone('dispatch');
         const cutoffEnabled = document.getElementById('set-enable-cutoff').checked;
         const cutoffDate = document.getElementById('set-cutoff-date').value;
         
