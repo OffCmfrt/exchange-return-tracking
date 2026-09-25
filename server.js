@@ -15940,6 +15940,10 @@ app.get('/api/tech-team/admin/reviews', authenticateAdmin, async (req, res) => {
 
 app.post('/api/tech-team/admin/reviews', authenticateAdmin, async (req, res) => {
     try {
+        // Fallback: if reviewerId not provided, use memberId (self-review) or 'admin'
+        if (!req.body.reviewerId) {
+            req.body.reviewerId = req.body.memberId || 'admin';
+        }
         const review = await techTeamDB.createReview(req.body);
         res.json({ success: true, review });
     } catch (error) {

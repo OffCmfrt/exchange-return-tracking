@@ -126,6 +126,17 @@ body{font-family:'Archivo',sans-serif;background:var(--g950);color:var(--g200);m
 .note-submit{padding:7px 12px;background:var(--white);color:var(--black);border:none;border-radius:4px;font-size:9px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;font-family:'Archivo',sans-serif}
 .toast{position:fixed;top:16px;right:16px;padding:10px 18px;background:var(--g800);border:1px solid var(--g700);border-radius:8px;font-size:12px;color:var(--g200);z-index:200;animation:toastIn .3s ease both}
 .rating-stars{display:flex;gap:2px}.rating-star{color:var(--g700);font-size:13px}.rating-star.filled{color:var(--white)}
+.sa-criterion{padding:12px;background:var(--g950);border:1px solid var(--g800);border-radius:8px;margin-bottom:8px}
+.sa-criterion-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.sa-criterion-name{font-size:11px;font-weight:600;color:var(--g300);text-transform:uppercase;letter-spacing:.06em}
+.sa-criterion-desc{font-size:10px;color:var(--g600);margin-bottom:8px;line-height:1.4}
+.sa-stars{display:flex;gap:3px}
+.sa-stars .sa-star{width:28px;height:28px;border-radius:6px;border:1px solid var(--g800);background:var(--g900);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:var(--g700);transition:all .15s}
+.sa-stars .sa-star:hover{border-color:var(--g600);background:var(--g800)}
+.sa-stars .sa-star.active{background:var(--white);color:var(--black);border-color:var(--white)}
+.sa-overall{text-align:center;padding:14px;background:var(--g950);border:1px solid var(--g800);border-radius:8px;margin:12px 0}
+.sa-overall-value{font-size:32px;font-weight:700;color:var(--white)}
+.sa-overall-label{font-size:10px;color:var(--g600);margin-top:2px}
 .skill-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
 .skill-dot-1{background:var(--g700)}.skill-dot-2{background:var(--g600)}.skill-dot-3{background:var(--g500)}.skill-dot-4{background:var(--g400)}.skill-dot-5{background:var(--white)}
 .progress-bar{width:100%;height:5px;background:var(--g800);border-radius:3px;overflow:hidden}
@@ -340,26 +351,42 @@ document.getElementById('addSubBtn').addEventListener('click',async()=>{const in
 function closeDetail(){document.getElementById('detailPanel').style.display='none';document.getElementById('detailOverlay').classList.remove('open');selectedTask=null;}
 
 // ---- SELF ASSESSMENT ----
+const SA_CRITERIA=[
+{key:'timeliness',name:'Timeliness',desc:'How consistently do you meet deadlines and deliver on time?'},
+{key:'quality',name:'Quality of Work',desc:'How thorough, accurate, and well-crafted is your output?'},
+{key:'communication',name:'Communication',desc:'How clearly and proactively do you communicate with your team?'},
+{key:'collaboration',name:'Collaboration',desc:'How effectively do you work with others and support teammates?'},
+{key:'initiative',name:'Initiative',desc:'How often do you take ownership and go beyond assigned tasks?'},
+{key:'problemSolving',name:'Problem Solving',desc:'How well do you analyze issues and find effective solutions?'}
+];
+const SA_LABELS=['','Poor','Below Avg','Average','Good','Excellent'];
+
 async function renderAssessment(el){
 const{reviews}=await api('/my-reviews');myReviews=reviews;
 const selfReviews=reviews.filter(r=>r.reviewType==='self');
 const managerReviews=reviews.filter(r=>r.reviewType==='manager');
 const latestSelf=selfReviews[0];const latestManager=managerReviews[0];
-el.innerHTML=`<div style="margin-bottom:20px"><h2 style="font-size:20px;font-weight:600;color:var(--white)">Self Assessment</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">Rate yourself and compare with manager feedback</p></div>
+const criterionHtml=SA_CRITERIA.map(c=>`<div class="sa-criterion" data-sakey="${c.key}"><div class="sa-criterion-header"><span class="sa-criterion-name">${c.name}</span><span style="font-size:16px;font-weight:700;color:var(--white)" id="sav_${c.key}">3</span></div><div class="sa-criterion-desc">${c.desc}</div><div class="sa-stars" data-sakey="${c.key}">${[1,2,3,4,5].map(n=>`<div class="sa-star${n<=3?' active':''}" data-val="${n}" title="${n} — ${SA_LABELS[n]}">${n}</div>`).join('')}</div></div>`).join('');
+el.innerHTML=`<div style="margin-bottom:20px"><h2 style="font-size:20px;font-weight:600;color:var(--white)">Self Assessment</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">Rate yourself honestly and compare with manager feedback</p></div>
 <div class="card fade-in" style="margin-bottom:16px"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:14px">Submit Self Assessment</h3>
-<div class="form-row">${[['sa_timeliness','Timeliness'],['sa_quality','Quality'],['sa_communication','Communication'],['sa_collaboration','Collaboration'],['sa_initiative','Initiative'],['sa_problemSolving','Problem Solving']].map(([k,l])=>`<div class="form-group"><label class="form-label">${l}</label><select class="form-select" id="${k}">${[1,2,3,4,5].map(p=>`<option value="${p}">${p} - ${PROFICIENCY_LABELS[p]}</option>`).join('')}</select></div>`).join('')}</div>
-<div class="form-group"><label class="form-label">Strengths</label><textarea class="form-textarea" id="sa_strengths" placeholder="What are your key strengths this period?"></textarea></div>
-<div class="form-group"><label class="form-label">Areas for Improvement</label><textarea class="form-textarea" id="sa_improvements" placeholder="What would you like to improve?"></textarea></div>
-<div class="form-group"><label class="form-label">Period</label><select class="form-select" id="sa_period"><option>2026-Q1</option><option>2026-Q2</option><option selected>2026-Q3</option><option>2026-Q4</option></select></div>
-<button class="btn btn-primary" id="submitAssessmentBtn">Submit Assessment</button></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${criterionHtml}</div>
+<div class="sa-overall"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:4px">Overall Self-Rating</div><div class="sa-overall-value" id="sa_overall_display">3.0</div><div class="sa-overall-label" id="sa_overall_label">Average</div></div>
+<div class="form-group"><label class="form-label">Key Strengths</label><textarea class="form-textarea" id="sa_strengths" placeholder="What did you excel at this period? Provide specific examples..." style="min-height:80px"></textarea></div>
+<div class="form-group"><label class="form-label">Areas for Improvement</label><textarea class="form-textarea" id="sa_improvements" placeholder="Where do you want to grow? Be honest and specific..." style="min-height:80px"></textarea></div>
+<div class="form-group"><label class="form-label">Review Period</label><select class="form-select" id="sa_period"><option>2026-Q1</option><option>2026-Q2</option><option selected>2026-Q3</option><option>2026-Q4</option></select></div>
+<button class="btn btn-primary" id="submitAssessmentBtn" style="width:100%;padding:12px;font-size:11px;letter-spacing:.08em">Submit Self Assessment</button></div>
 ${latestManager?`<div class="card fade-in stagger-1"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Latest Manager Review (${latestManager.reviewPeriod})</h3>
-<div class="grid-2">${[['timeliness','Timeliness'],['quality','Quality'],['communication','Communication'],['collaboration','Collaboration'],['initiative','Initiative'],['problemSolving','Problem Solving']].map(([k,l])=>`<div style="font-size:11px"><span style="color:var(--g500)">${l}:</span> <strong style="color:var(--white)">${latestManager[k]||3}/5</strong></div>`).join('')}</div>
-<div style="margin-top:10px;font-size:11px;color:var(--g400)"><strong style="color:var(--g300)">Strengths:</strong> ${latestManager.strengths||'N/A'}</div>
-<div style="font-size:11px;color:var(--g400)"><strong style="color:var(--g300)">Improve:</strong> ${latestManager.improvements||'N/A'}</div></div>`:''}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${SA_CRITERIA.map(c=>`<div style="padding:8px;background:var(--g950);border-radius:6px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:10px;color:var(--g500)">${c.name}</span><strong style="color:var(--white);font-size:14px">${latestManager[c.key]||3}/5</strong></div>`).join('')}</div>
+<div style="margin-top:12px;padding:10px;background:var(--g950);border-radius:6px"><div style="font-size:10px;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Strengths</div><div style="font-size:11px;color:var(--g300);line-height:1.5">${latestManager.strengths||'N/A'}</div></div>
+<div style="margin-top:8px;padding:10px;background:var(--g950);border-radius:6px"><div style="font-size:10px;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Areas to Improve</div><div style="font-size:11px;color:var(--g300);line-height:1.5">${latestManager.improvements||'N/A'}</div></div></div>`:''}
 <div class="card fade-in stagger-2" style="margin-top:16px"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Assessment History (${selfReviews.length})</h3>
 ${selfReviews.length?`<div class="timeline">${selfReviews.map(r=>`<div class="timeline-item"><div class="time">${r.reviewPeriod} \u2014 Self Assessment</div><div class="content">Overall: <strong style="color:var(--white)">${r.overallRating}/5</strong></div></div>`).join('')}</div>`:'<p style="font-size:11px;color:var(--g600)">No self assessments yet</p>'}</div>`;
+document.querySelectorAll('.sa-stars').forEach(group=>{group.querySelectorAll('.sa-star').forEach(star=>{star.addEventListener('click',()=>{const key=group.dataset.sakey;const val=parseInt(star.dataset.val);group.querySelectorAll('.sa-star').forEach(s=>{s.classList.toggle('active',parseInt(s.dataset.val)<=val);});document.getElementById('sav_'+key).textContent=val;updateSaOverall();});});});
+function updateSaoverall(){let sum=0;SA_CRITERIA.forEach(c=>{sum+=parseInt(document.getElementById('sav_'+c.key).textContent);});const avg=(sum/6).toFixed(1);document.getElementById('sa_overall_display').textContent=avg;const idx=Math.round(parseFloat(avg));document.getElementById('sa_overall_label').textContent=SA_LABELS[idx]||'';}
+updateSaOverall();
 document.getElementById('submitAssessmentBtn').addEventListener('click',async()=>{
-const body={reviewPeriod:document.getElementById('sa_period').value,reviewType:'self',overallRating:parseFloat((parseInt(document.getElementById('sa_timeliness').value)+parseInt(document.getElementById('sa_quality').value)+parseInt(document.getElementById('sa_communication').value)+parseInt(document.getElementById('sa_collaboration').value)+parseInt(document.getElementById('sa_initiative').value)+parseInt(document.getElementById('sa_problemSolving').value))/6).toFixed(1),timeliness:parseInt(document.getElementById('sa_timeliness').value),quality:parseInt(document.getElementById('sa_quality').value),communication:parseInt(document.getElementById('sa_communication').value),collaboration:parseInt(document.getElementById('sa_collaboration').value),initiative:parseInt(document.getElementById('sa_initiative').value),problemSolving:parseInt(document.getElementById('sa_problemSolving').value),strengths:document.getElementById('sa_strengths').value,improvements:document.getElementById('sa_improvements').value};
+let sum=0;const scores={};SA_CRITERIA.forEach(c=>{const v=parseInt(document.getElementById('sav_'+c.key).textContent);scores[c.key]=v;sum+=v;});
+const body={reviewPeriod:document.getElementById('sa_period').value,reviewType:'self',overallRating:parseFloat((sum/6).toFixed(1)),timeliness:scores.timeliness,quality:scores.quality,communication:scores.communication,collaboration:scores.collaboration,initiative:scores.initiative,problemSolving:scores.problemSolving,strengths:document.getElementById('sa_strengths').value,improvements:document.getElementById('sa_improvements').value};
 try{await api('/my-reviews',{method:'POST',body:JSON.stringify(body)});toast('Assessment submitted!');loadSection();}catch(e){toast(e.message);}});
 }
 
