@@ -443,9 +443,9 @@ return`<tr class="fade-in" style="animation-delay:${i*.02}s;cursor:pointer" data
 ${['timeliness','quality','communication','collaboration','initiative','problemSolving'].map(k=>{const v=mr.length?Math.round(mr.reduce((s,r)=>s+(r[k]||3),0)/mr.length):'—';return`<td style="font-size:11px;color:${typeof v==='number'?(v>=4?'var(--white)':v>=3?'var(--g300)':'var(--g500)'):'var(--g600)'}">${v}</td>`;}).join('')}
 <td style="font-size:11px;color:var(--g500)">${mr.length}</td><td><button class="btn btn-sm" data-reviewbtn="${m.id}">Review</button></td></tr>`;}).join('')}
 </tbody></table></div>`;
-document.getElementById('newReviewBtn').addEventListener('click',()=>openReviewModal());
+document.getElementById('newReviewBtn').addEventListener('click',()=>{console.log('New Review button clicked');openReviewModal();});
 document.querySelectorAll('[data-period]').forEach(p=>p.addEventListener('click',()=>{state.filters.period=p.dataset.period;loadTab();}));
-document.querySelectorAll('[data-reviewbtn]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();openReviewModal(null,b.dataset.reviewbtn);}));
+document.querySelectorAll('[data-reviewbtn]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();console.log('Review button clicked for member:',b.dataset.reviewbtn);openReviewModal(null,b.dataset.reviewbtn);}));
 document.querySelectorAll('[data-review]').forEach(r=>r.addEventListener('click',()=>openMemberReviewDrawer(r.dataset.review)));
 }
 
@@ -461,8 +461,10 @@ const RATING_LABELS=['','Poor','Below Avg','Average','Good','Excellent'];
 const RATING_GUIDELINES=['','Consistently misses deadlines, quality suffers','Frequently late or delivers incomplete work','Meets most deadlines with acceptable quality','Consistently on time with high-quality output','Exceptional — always early, thorough, and proactive'];
 
 async function openReviewModal(id,memberId){
+try{
 const review=id?state.reviews.find(r=>r.id===id):null;
 const{members}=await api('/admin/members');
+if(!members||!members.length){toast('No team members found',true);return;}
 const modalEl=document.getElementById('modal');
 modalEl.classList.add('modal-wide');
 const criterionHtml=(k,val)=>RATING_CRITERIA.map((c,i)=>{const v=review?review[c.key]||3:(val||3);return`<div class="rating-criterion" data-criterion="${c.key}"><div class="rating-criterion-header"><span class="rating-criterion-name">${c.name}</span><span class="rating-value-badge" id="rv_${c.key}">${v}</span></div><div class="rating-criterion-desc">${c.desc}</div><div class="star-rating-stars" data-key="${c.key}">${[1,2,3,4,5].map(n=>`<div class="star${n<=v?' active':''}" data-val="${n}" title="${n} — ${RATING_LABELS[n]}">${n}</div>`).join('')}</div><div style="font-size:9px;color:var(--g600);margin-top:4px" id="rg_${c.key}">${RATING_GUIDELINES[v]}</div></div>`}).join('');
@@ -488,7 +490,11 @@ if(review)document.getElementById('delReviewBtn').addEventListener('click',()=>{
 document.querySelectorAll('.star-rating-stars').forEach(group=>{group.querySelectorAll('.star').forEach(star=>{star.addEventListener('click',()=>{const key=group.dataset.key;const val=parseInt(star.dataset.val);group.querySelectorAll('.star').forEach(s=>{s.classList.toggle('active',parseInt(s.dataset.val)<=val);});document.getElementById('rv_'+key).textContent=val;document.getElementById('rg_'+key).textContent=RATING_GUIDELINES[val];updateOverall();});});});
 function updateOverall(){let sum=0;RATING_CRITERIA.forEach(c=>{sum+=parseInt(document.getElementById('rv_'+c.key).textContent);});const avg=(sum/6).toFixed(1);document.getElementById('r_overall_display').textContent=avg;const idx=Math.round(parseFloat(avg));document.getElementById('r_overall_label').textContent=RATING_LABELS[idx]||'';}
 updateOverall();
-}
+}catch(e){
+document.getElementById('modal').classList.remove('modal-wide');
+toast('Failed to open review form: '+e.message,true);
+console.error('openReviewModal error:',e);
+}}
 
 async function saveReview(id){
 let sum=0;const scores={};RATING_CRITERIA.forEach(c=>{const v=parseInt(document.getElementById('rv_'+c.key).textContent);scores[c.key]=v;sum+=v;});
