@@ -16277,8 +16277,8 @@ Rules:
         }
         res.json({ success: true, reply });
     } catch (error) {
-        console.error('[TechTeam] AI chat error:', error.message);
-        res.status(500).json({ success: false, error: 'AI request failed. Please try again.' });
+        console.error('[TechTeam] AI chat error:', error.message, error.stack);
+        res.status(500).json({ success: false, error: 'AI request failed: ' + error.message });
     }
 });
 

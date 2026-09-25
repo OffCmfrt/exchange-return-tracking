@@ -461,19 +461,12 @@ const RATING_LABELS=['','Poor','Below Avg','Average','Good','Excellent'];
 const RATING_GUIDELINES=['','Consistently misses deadlines, quality suffers','Frequently late or delivers incomplete work','Meets most deadlines with acceptable quality','Consistently on time with high-quality output','Exceptional — always early, thorough, and proactive'];
 
 async function openReviewModal(id,memberId){
-console.log('openReviewModal called with:', {id, memberId});
 try{
 const review=id?state.reviews.find(r=>r.id===id):null;
-console.log('Fetching members...');
 const{members}=await api('/admin/members');
-console.log('Members fetched:', members?.length);
 if(!members||!members.length){toast('No team members found',true);return;}
-const modalEl=document.getElementById('modal');
-console.log('Modal element:', modalEl);
-modalEl.classList.add('modal-wide');
-const criterionHtml=(k,val)=>RATING_CRITERIA.map((c,i)=>{const v=review?review[c.key]||3:(val||3);return`<div class="rating-criterion" data-criterion="${c.key}"><div class="rating-criterion-header"><span class="rating-criterion-name">${c.name}</span><span class="rating-value-badge" id="rv_${c.key}">${v}</span></div><div class="rating-criterion-desc">${c.desc}</div><div class="star-rating-stars" data-key="${c.key}">${[1,2,3,4,5].map(n=>`<div class="star${n<=v?' active':''}" data-val="${n}" title="${n} — ${RATING_LABELS[n]}">${n}</div>`).join('')}</div><div style="font-size:9px;color:var(--g600);margin-top:4px" id="rg_${c.key}">${RATING_GUIDELINES[v]}</div></div>`}).join('');
-console.log('Setting modal innerHTML...');
-modalEl.innerHTML=`<div class="modal-header"><h3>${review?'Edit Performance Review':'New Performance Review'}</h3><button class="close-btn" id="closeRM">&times;</button></div>
+const criterionHtml=RATING_CRITERIA.map(c=>{const v=review?review[c.key]||3:3;return`<div class="rating-criterion"><div class="rating-criterion-header"><span class="rating-criterion-name">${c.name}</span><span class="rating-value-badge" id="rv_${c.key}">${v}</span></div><div class="rating-criterion-desc">${c.desc}</div><div class="star-rating-stars" data-key="${c.key}">${[1,2,3,4,5].map(n=>`<div class="star${n<=v?' active':''}" data-val="${n}" title="${n} — ${RATING_LABELS[n]}">${n}</div>`).join('')}</div><div style="font-size:9px;color:var(--g600);margin-top:4px" id="rg_${c.key}">${RATING_GUIDELINES[v]}</div></div>`}).join('');
+const html=`<div class="modal-header"><h3>${review?'Edit Performance Review':'New Performance Review'}</h3><button class="close-btn" id="closeRM">&times;</button></div>
 <div class="modal-body">
 <div style="padding:12px;background:var(--g950);border:1px solid var(--g800);border-radius:8px;margin-bottom:16px">
 <div class="form-row"><div class="form-group" style="margin-bottom:0"><label class="form-label">Team Member</label><select class="form-select" id="r_member">${members.map(m=>`<option value="${m.id}"${review&&review.memberId===m.id?' selected':''}${memberId&&memberId===m.id?' selected':''}>${m.fullName} — ${m.role}</option>`).join('')}</select></div>
@@ -481,23 +474,25 @@ modalEl.innerHTML=`<div class="modal-header"><h3>${review?'Edit Performance Revi
 <div class="form-row" style="margin-top:10px"><div class="form-group" style="margin-bottom:0"><label class="form-label">Review Period</label><select class="form-select" id="r_period">${REVIEW_PERIODS.map(p=>`<option value="${p}"${review&&review.reviewPeriod===p?' selected':''}>${p}</option>`).join('')}</select></div>
 <div class="form-group" style="margin-bottom:0"><label class="form-label">Review Type</label><select class="form-select" id="r_type"><option value="manager"${review&&review.reviewType==='manager'?' selected':''}>Manager Review</option><option value="peer"${review&&review.reviewType==='peer'?' selected':''}>Peer Review</option><option value="self"${review&&review.reviewType==='self'?' selected':''}>Self Assessment</option></select></div></div></div>
 <h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin:0 0 10px">Rating Criteria</h4>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="criteriaGrid">${criterionHtml()}</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="criteriaGrid">${criterionHtml}</div>
 <div style="text-align:center;padding:12px;background:var(--g950);border:1px solid var(--g800);border-radius:8px;margin:12px 0"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:4px">Overall Rating</div><div style="font-size:32px;font-weight:700;color:var(--white)" id="r_overall_display">3.0</div><div style="font-size:10px;color:var(--g600)" id="r_overall_label">Average</div></div>
 <h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin:16px 0 8px">Written Feedback</h4>
-<div class="form-group"><label class="form-label">Key Strengths</label><textarea class="form-textarea" id="r_strengths" placeholder="What does this team member excel at? Provide specific examples..." style="min-height:80px">${review?review.strengths||'':''}</textarea></div>
-<div class="form-group"><label class="form-label">Areas for Improvement</label><textarea class="form-textarea" id="r_improvements" placeholder="Where can they grow? Be constructive and specific..." style="min-height:80px">${review?review.improvements||'':''}</textarea></div>
-<div class="form-group"><label class="form-label">Additional Comments</label><textarea class="form-textarea" id="r_comments" placeholder="Any other observations, goals, or action items..." style="min-height:60px">${review?review.comments||'':''}</textarea></div>
+<div class="form-group"><label class="form-label">Key Strengths</label><textarea class="form-textarea" id="r_strengths" placeholder="What does this team member excel at?" style="min-height:80px">${review?review.strengths||'':''}</textarea></div>
+<div class="form-group"><label class="form-label">Areas for Improvement</label><textarea class="form-textarea" id="r_improvements" placeholder="Where can they grow?" style="min-height:80px">${review?review.improvements||'':''}</textarea></div>
+<div class="form-group"><label class="form-label">Additional Comments</label><textarea class="form-textarea" id="r_comments" placeholder="Any other observations..." style="min-height:60px">${review?review.comments||'':''}</textarea></div>
 </div><div class="modal-footer">${review?'<button class="btn btn-danger" id="delReviewBtn">Delete</button>':''}<button class="btn" id="cancelRM">Cancel</button><button class="btn btn-primary" id="saveReviewBtn">${review?'Update Review':'Submit Review'}</button></div>`;
-document.getElementById('closeRM').addEventListener('click',()=>{modalEl.classList.remove('modal-wide');closeModal();});
-document.getElementById('cancelRM').addEventListener('click',()=>{modalEl.classList.remove('modal-wide');closeModal();});
+openModal(html);
+document.getElementById('modal').classList.add('modal-wide');
+document.getElementById('closeRM').addEventListener('click',()=>{document.getElementById('modal').classList.remove('modal-wide');closeModal();});
+document.getElementById('cancelRM').addEventListener('click',()=>{document.getElementById('modal').classList.remove('modal-wide');closeModal();});
 document.getElementById('saveReviewBtn').addEventListener('click',()=>saveReview(id));
-if(review)document.getElementById('delReviewBtn').addEventListener('click',()=>{modalEl.classList.remove('modal-wide');deleteReview(id);});
+if(review)document.getElementById('delReviewBtn').addEventListener('click',()=>{document.getElementById('modal').classList.remove('modal-wide');deleteReview(id);});
 document.querySelectorAll('.star-rating-stars').forEach(group=>{group.querySelectorAll('.star').forEach(star=>{star.addEventListener('click',()=>{const key=group.dataset.key;const val=parseInt(star.dataset.val);group.querySelectorAll('.star').forEach(s=>{s.classList.toggle('active',parseInt(s.dataset.val)<=val);});document.getElementById('rv_'+key).textContent=val;document.getElementById('rg_'+key).textContent=RATING_GUIDELINES[val];updateOverall();});});});
 function updateOverall(){let sum=0;RATING_CRITERIA.forEach(c=>{sum+=parseInt(document.getElementById('rv_'+c.key).textContent);});const avg=(sum/6).toFixed(1);document.getElementById('r_overall_display').textContent=avg;const idx=Math.round(parseFloat(avg));document.getElementById('r_overall_label').textContent=RATING_LABELS[idx]||'';}
 updateOverall();
-document.getElementById('modalOverlay').classList.add('open');
 }catch(e){
 document.getElementById('modal').classList.remove('modal-wide');
+closeModal();
 toast('Failed to open review form: '+e.message,true);
 console.error('openReviewModal error:',e);
 }}
