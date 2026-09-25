@@ -15910,6 +15910,507 @@ app.get('/api/tech-team/admin/stats', authenticateAdmin, async (req, res) => {
     }
 });
 
+// Premium Stats
+app.get('/api/tech-team/admin/premium-stats', authenticateAdmin, async (req, res) => {
+    try {
+        const stats = await techTeamDB.getPremiumStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        console.error('[TechTeam] Premium stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch premium stats' });
+    }
+});
+
+// ---------- Premium Admin Routes ----------
+
+// Reviews
+app.get('/api/tech-team/admin/reviews', authenticateAdmin, async (req, res) => {
+    try {
+        const filters = {};
+        if (req.query.memberId) filters.memberId = req.query.memberId;
+        if (req.query.period) filters.period = req.query.period;
+        if (req.query.reviewType) filters.reviewType = req.query.reviewType;
+        const reviews = await techTeamDB.listReviews(filters);
+        res.json({ success: true, reviews });
+    } catch (error) {
+        console.error('[TechTeam] List reviews error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch reviews' });
+    }
+});
+
+app.post('/api/tech-team/admin/reviews', authenticateAdmin, async (req, res) => {
+    try {
+        const review = await techTeamDB.createReview(req.body);
+        res.json({ success: true, review });
+    } catch (error) {
+        console.error('[TechTeam] Create review error:', error.message);
+        res.status(500).json({ error: 'Failed to create review' });
+    }
+});
+
+app.put('/api/tech-team/admin/reviews/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const review = await techTeamDB.updateReview(req.params.id, req.body);
+        res.json({ success: true, review });
+    } catch (error) {
+        console.error('[TechTeam] Update review error:', error.message);
+        res.status(500).json({ error: 'Failed to update review' });
+    }
+});
+
+app.delete('/api/tech-team/admin/reviews/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await techTeamDB.deleteReview(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete review error:', error.message);
+        res.status(500).json({ error: 'Failed to delete review' });
+    }
+});
+
+// Skills
+app.get('/api/tech-team/admin/skills', authenticateAdmin, async (req, res) => {
+    try {
+        const filters = {};
+        if (req.query.memberId) filters.memberId = req.query.memberId;
+        if (req.query.category) filters.category = req.query.category;
+        if (req.query.skillName) filters.skillName = req.query.skillName;
+        const skills = await techTeamDB.listSkills(filters);
+        res.json({ success: true, skills });
+    } catch (error) {
+        console.error('[TechTeam] List skills error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch skills' });
+    }
+});
+
+app.get('/api/tech-team/admin/skill-matrix', authenticateAdmin, async (req, res) => {
+    try {
+        const matrix = await techTeamDB.getSkillMatrix();
+        res.json({ success: true, matrix });
+    } catch (error) {
+        console.error('[TechTeam] Skill matrix error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch skill matrix' });
+    }
+});
+
+app.post('/api/tech-team/admin/skills', authenticateAdmin, async (req, res) => {
+    try {
+        const skill = await techTeamDB.createSkill(req.body);
+        res.json({ success: true, skill });
+    } catch (error) {
+        console.error('[TechTeam] Create skill error:', error.message);
+        res.status(500).json({ error: 'Failed to create skill' });
+    }
+});
+
+app.put('/api/tech-team/admin/skills/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const skill = await techTeamDB.updateSkill(req.params.id, req.body);
+        res.json({ success: true, skill });
+    } catch (error) {
+        console.error('[TechTeam] Update skill error:', error.message);
+        res.status(500).json({ error: 'Failed to update skill' });
+    }
+});
+
+app.delete('/api/tech-team/admin/skills/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await techTeamDB.deleteSkill(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete skill error:', error.message);
+        res.status(500).json({ error: 'Failed to delete skill' });
+    }
+});
+
+// OKRs
+app.get('/api/tech-team/admin/okrs', authenticateAdmin, async (req, res) => {
+    try {
+        const filters = {};
+        if (req.query.memberId) filters.memberId = req.query.memberId;
+        if (req.query.period) filters.period = req.query.period;
+        if (req.query.status) filters.status = req.query.status;
+        const okrs = await techTeamDB.listOkrs(filters);
+        res.json({ success: true, okrs });
+    } catch (error) {
+        console.error('[TechTeam] List OKRs error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch OKRs' });
+    }
+});
+
+app.post('/api/tech-team/admin/okrs', authenticateAdmin, async (req, res) => {
+    try {
+        const okr = await techTeamDB.createOkr(req.body);
+        res.json({ success: true, okr });
+    } catch (error) {
+        console.error('[TechTeam] Create OKR error:', error.message);
+        res.status(500).json({ error: 'Failed to create OKR' });
+    }
+});
+
+app.put('/api/tech-team/admin/okrs/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const okr = await techTeamDB.updateOkr(req.params.id, req.body);
+        res.json({ success: true, okr });
+    } catch (error) {
+        console.error('[TechTeam] Update OKR error:', error.message);
+        res.status(500).json({ error: 'Failed to update OKR' });
+    }
+});
+
+app.delete('/api/tech-team/admin/okrs/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await techTeamDB.deleteOkr(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete OKR error:', error.message);
+        res.status(500).json({ error: 'Failed to delete OKR' });
+    }
+});
+
+// Meetings
+app.get('/api/tech-team/admin/meetings', authenticateAdmin, async (req, res) => {
+    try {
+        const filters = {};
+        if (req.query.memberId) filters.memberId = req.query.memberId;
+        if (req.query.meetingType) filters.meetingType = req.query.meetingType;
+        if (req.query.fromDate) filters.fromDate = req.query.fromDate;
+        if (req.query.toDate) filters.toDate = req.query.toDate;
+        const meetings = await techTeamDB.listMeetings(filters);
+        res.json({ success: true, meetings });
+    } catch (error) {
+        console.error('[TechTeam] List meetings error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch meetings' });
+    }
+});
+
+app.post('/api/tech-team/admin/meetings', authenticateAdmin, async (req, res) => {
+    try {
+        const meeting = await techTeamDB.createMeeting(req.body);
+        res.json({ success: true, meeting });
+    } catch (error) {
+        console.error('[TechTeam] Create meeting error:', error.message);
+        res.status(500).json({ error: 'Failed to create meeting' });
+    }
+});
+
+app.put('/api/tech-team/admin/meetings/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const meeting = await techTeamDB.updateMeeting(req.params.id, req.body);
+        res.json({ success: true, meeting });
+    } catch (error) {
+        console.error('[TechTeam] Update meeting error:', error.message);
+        res.status(500).json({ error: 'Failed to update meeting' });
+    }
+});
+
+app.delete('/api/tech-team/admin/meetings/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await techTeamDB.deleteMeeting(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete meeting error:', error.message);
+        res.status(500).json({ error: 'Failed to delete meeting' });
+    }
+});
+
+// Achievements
+app.get('/api/tech-team/admin/achievements', authenticateAdmin, async (req, res) => {
+    try {
+        const filters = {};
+        if (req.query.memberId) filters.memberId = req.query.memberId;
+        if (req.query.category) filters.category = req.query.category;
+        const achievements = await techTeamDB.listAchievements(filters);
+        res.json({ success: true, achievements });
+    } catch (error) {
+        console.error('[TechTeam] List achievements error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch achievements' });
+    }
+});
+
+app.post('/api/tech-team/admin/achievements', authenticateAdmin, async (req, res) => {
+    try {
+        const achievement = await techTeamDB.createAchievement(req.body);
+        res.json({ success: true, achievement });
+    } catch (error) {
+        console.error('[TechTeam] Create achievement error:', error.message);
+        res.status(500).json({ error: 'Failed to create achievement' });
+    }
+});
+
+app.delete('/api/tech-team/admin/achievements/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await techTeamDB.deleteAchievement(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete achievement error:', error.message);
+        res.status(500).json({ error: 'Failed to delete achievement' });
+    }
+});
+
+// Goals
+app.get('/api/tech-team/admin/goals', authenticateAdmin, async (req, res) => {
+    try {
+        const filters = {};
+        if (req.query.memberId) filters.memberId = req.query.memberId;
+        if (req.query.category) filters.category = req.query.category;
+        if (req.query.status) filters.status = req.query.status;
+        const goals = await techTeamDB.listGoals(filters);
+        res.json({ success: true, goals });
+    } catch (error) {
+        console.error('[TechTeam] List goals error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch goals' });
+    }
+});
+
+app.post('/api/tech-team/admin/goals', authenticateAdmin, async (req, res) => {
+    try {
+        const goal = await techTeamDB.createGoal(req.body);
+        res.json({ success: true, goal });
+    } catch (error) {
+        console.error('[TechTeam] Create goal error:', error.message);
+        res.status(500).json({ error: 'Failed to create goal' });
+    }
+});
+
+app.put('/api/tech-team/admin/goals/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const goal = await techTeamDB.updateGoal(req.params.id, req.body);
+        res.json({ success: true, goal });
+    } catch (error) {
+        console.error('[TechTeam] Update goal error:', error.message);
+        res.status(500).json({ error: 'Failed to update goal' });
+    }
+});
+
+app.delete('/api/tech-team/admin/goals/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await techTeamDB.deleteGoal(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete goal error:', error.message);
+        res.status(500).json({ error: 'Failed to delete goal' });
+    }
+});
+
+// ---------- Premium Team Member Routes ----------
+
+// Member self: skills
+app.get('/api/tech-team/my-skills', authenticateTeamMember, async (req, res) => {
+    try {
+        const skills = await techTeamDB.listSkills({ memberId: req.teamMember.memberId });
+        res.json({ success: true, skills });
+    } catch (error) {
+        console.error('[TechTeam] My skills error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch skills' });
+    }
+});
+
+app.post('/api/tech-team/my-skills', authenticateTeamMember, async (req, res) => {
+    try {
+        req.body.memberId = req.teamMember.memberId;
+        const skill = await techTeamDB.createSkill(req.body);
+        res.json({ success: true, skill });
+    } catch (error) {
+        console.error('[TechTeam] Create skill error:', error.message);
+        res.status(500).json({ error: 'Failed to create skill' });
+    }
+});
+
+app.put('/api/tech-team/my-skills/:id', authenticateTeamMember, async (req, res) => {
+    try {
+        const skill = await techTeamDB.updateSkill(req.params.id, req.body);
+        res.json({ success: true, skill });
+    } catch (error) {
+        console.error('[TechTeam] Update skill error:', error.message);
+        res.status(500).json({ error: 'Failed to update skill' });
+    }
+});
+
+app.delete('/api/tech-team/my-skills/:id', authenticateTeamMember, async (req, res) => {
+    try {
+        await techTeamDB.deleteSkill(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete skill error:', error.message);
+        res.status(500).json({ error: 'Failed to delete skill' });
+    }
+});
+
+// Member self: OKRs
+app.get('/api/tech-team/my-okrs', authenticateTeamMember, async (req, res) => {
+    try {
+        const filters = { memberId: req.teamMember.memberId };
+        if (req.query.period) filters.period = req.query.period;
+        if (req.query.status) filters.status = req.query.status;
+        const okrs = await techTeamDB.listOkrs(filters);
+        res.json({ success: true, okrs });
+    } catch (error) {
+        console.error('[TechTeam] My OKRs error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch OKRs' });
+    }
+});
+
+app.post('/api/tech-team/my-okrs', authenticateTeamMember, async (req, res) => {
+    try {
+        req.body.memberId = req.teamMember.memberId;
+        const okr = await techTeamDB.createOkr(req.body);
+        res.json({ success: true, okr });
+    } catch (error) {
+        console.error('[TechTeam] Create OKR error:', error.message);
+        res.status(500).json({ error: 'Failed to create OKR' });
+    }
+});
+
+app.put('/api/tech-team/my-okrs/:id', authenticateTeamMember, async (req, res) => {
+    try {
+        const okr = await techTeamDB.updateOkr(req.params.id, req.body);
+        res.json({ success: true, okr });
+    } catch (error) {
+        console.error('[TechTeam] Update OKR error:', error.message);
+        res.status(500).json({ error: 'Failed to update OKR' });
+    }
+});
+
+// Member self: Goals
+app.get('/api/tech-team/my-goals', authenticateTeamMember, async (req, res) => {
+    try {
+        const filters = { memberId: req.teamMember.memberId };
+        if (req.query.category) filters.category = req.query.category;
+        if (req.query.status) filters.status = req.query.status;
+        const goals = await techTeamDB.listGoals(filters);
+        res.json({ success: true, goals });
+    } catch (error) {
+        console.error('[TechTeam] My goals error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch goals' });
+    }
+});
+
+app.post('/api/tech-team/my-goals', authenticateTeamMember, async (req, res) => {
+    try {
+        req.body.memberId = req.teamMember.memberId;
+        const goal = await techTeamDB.createGoal(req.body);
+        res.json({ success: true, goal });
+    } catch (error) {
+        console.error('[TechTeam] Create goal error:', error.message);
+        res.status(500).json({ error: 'Failed to create goal' });
+    }
+});
+
+app.put('/api/tech-team/my-goals/:id', authenticateTeamMember, async (req, res) => {
+    try {
+        const goal = await techTeamDB.updateGoal(req.params.id, req.body);
+        res.json({ success: true, goal });
+    } catch (error) {
+        console.error('[TechTeam] Update goal error:', error.message);
+        res.status(500).json({ error: 'Failed to update goal' });
+    }
+});
+
+app.delete('/api/tech-team/my-goals/:id', authenticateTeamMember, async (req, res) => {
+    try {
+        await techTeamDB.deleteGoal(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[TechTeam] Delete goal error:', error.message);
+        res.status(500).json({ error: 'Failed to delete goal' });
+    }
+});
+
+// Member self: Reviews (received)
+app.get('/api/tech-team/my-reviews', authenticateTeamMember, async (req, res) => {
+    try {
+        const reviews = await techTeamDB.listReviews({ memberId: req.teamMember.memberId });
+        res.json({ success: true, reviews });
+    } catch (error) {
+        console.error('[TechTeam] My reviews error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch reviews' });
+    }
+});
+
+// Member self: submit review (self-assessment)
+app.post('/api/tech-team/my-reviews', authenticateTeamMember, async (req, res) => {
+    try {
+        req.body.memberId = req.teamMember.memberId;
+        req.body.reviewerId = req.teamMember.memberId;
+        req.body.reviewType = 'self';
+        const review = await techTeamDB.createReview(req.body);
+        res.json({ success: true, review });
+    } catch (error) {
+        console.error('[TechTeam] Submit self-review error:', error.message);
+        res.status(500).json({ error: 'Failed to submit review' });
+    }
+});
+
+// Member self: Achievements
+app.get('/api/tech-team/my-achievements', authenticateTeamMember, async (req, res) => {
+    try {
+        const achievements = await techTeamDB.listAchievements({ memberId: req.teamMember.memberId });
+        res.json({ success: true, achievements });
+    } catch (error) {
+        console.error('[TechTeam] My achievements error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch achievements' });
+    }
+});
+
+// Member self: Meetings
+app.get('/api/tech-team/my-meetings', authenticateTeamMember, async (req, res) => {
+    try {
+        const meetings = await techTeamDB.listMeetings({ memberId: req.teamMember.memberId });
+        res.json({ success: true, meetings });
+    } catch (error) {
+        console.error('[TechTeam] My meetings error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch meetings' });
+    }
+});
+
+// Member self: update profile
+app.put('/api/tech-team/me', authenticateTeamMember, async (req, res) => {
+    try {
+        const allowed = ['bio', 'location', 'timezone', 'avatarUrl'];
+        const updates = {};
+        for (const key of allowed) {
+            if (req.body[key] !== undefined) updates[key] = req.body[key];
+        }
+        const member = await techTeamDB.updateTeamMember(req.teamMember.memberId, updates);
+        res.json({ success: true, member });
+    } catch (error) {
+        console.error('[TechTeam] Update profile error:', error.message);
+        res.status(500).json({ error: 'Failed to update profile' });
+    }
+});
+
+// Member self: premium dashboard stats
+app.get('/api/tech-team/my-stats', authenticateTeamMember, async (req, res) => {
+    try {
+        const memberId = req.teamMember.memberId;
+        const [tasks, reviews, skills, okrs, goals, achievements] = await Promise.all([
+            techTeamDB.getMemberTasks(memberId),
+            techTeamDB.listReviews({ memberId }),
+            techTeamDB.listSkills({ memberId }),
+            techTeamDB.listOkrs({ memberId }),
+            techTeamDB.listGoals({ memberId }),
+            techTeamDB.listAchievements({ memberId })
+        ]);
+        const completed = tasks.filter(t => t.status === 'done').length;
+        const overdue = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done').length;
+        const member = await techTeamDB.getTeamMember(memberId);
+        res.json({ success: true, stats: {
+            totalTasks: tasks.length, completed, overdue,
+            avgRating: member ? member.overallRating : 0,
+            reviewCount: reviews.length,
+            skillCount: skills.length,
+            activeOkrs: okrs.filter(o => o.status === 'active').length,
+            activeGoals: goals.filter(g => g.status === 'active').length,
+            achievementCount: achievements.length,
+            tasks
+        }});
+    } catch (error) {
+        console.error('[TechTeam] My stats error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+});
+
 // ==================== ERROR HANDLING ====================
 
 // 404 handler

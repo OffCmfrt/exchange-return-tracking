@@ -25,7 +25,14 @@ const TABLES = {
             reports_to: 'text',
             skills: 'json',
             avatar_url: 'text',
-            active: 'bool'
+            active: 'bool',
+            join_date: 'date',
+            location: 'text',
+            timezone: 'text',
+            bio: 'text',
+            overall_rating: 'text',
+            review_count: 'int',
+            achievement_count: 'int'
         }
     },
     tasks: {
@@ -47,7 +54,89 @@ const TABLES = {
             parent_task_id: 'text',
             sort_order: 'int',
             tags: 'json',
-            notes: 'json'
+            notes: 'json',
+            subtasks: 'json',
+            depends_on: 'json',
+            time_logged: 'int',
+            quality_rating: 'int'
+        }
+    },
+    reviews: {
+        table: 'tech_performance_reviews',
+        columns: {
+            member_id: 'text',
+            reviewer_id: 'text',
+            review_period: 'text',
+            overall_rating: 'text',
+            timeliness: 'int',
+            quality: 'int',
+            communication: 'int',
+            collaboration: 'int',
+            initiative: 'int',
+            problem_solving: 'int',
+            strengths: 'text',
+            improvements: 'text',
+            comments: 'text',
+            review_type: 'text'
+        }
+    },
+    skills: {
+        table: 'tech_member_skills',
+        columns: {
+            member_id: 'text',
+            skill_name: 'text',
+            category: 'text',
+            proficiency: 'int',
+            years_experience: 'text',
+            last_used: 'date',
+            notes: 'text'
+        }
+    },
+    okrs: {
+        table: 'tech_okrs',
+        columns: {
+            member_id: 'text',
+            objective_text: 'text',
+            period: 'text',
+            key_results: 'json',
+            status: 'text',
+            progress: 'int'
+        }
+    },
+    meetings: {
+        table: 'tech_meetings',
+        columns: {
+            member_id: 'text',
+            meeting_type: 'text',
+            title: 'text',
+            notes: 'text',
+            action_items: 'json',
+            attendees: 'json',
+            scheduled_at: 'text',
+            duration_minutes: 'int'
+        }
+    },
+    achievements: {
+        table: 'tech_achievements',
+        columns: {
+            member_id: 'text',
+            title: 'text',
+            description: 'text',
+            category: 'text',
+            awarded_by: 'text',
+            badge_icon: 'text'
+        }
+    },
+    goals: {
+        table: 'tech_goals',
+        columns: {
+            member_id: 'text',
+            goal_text: 'text',
+            category: 'text',
+            target_date: 'date',
+            status: 'text',
+            progress: 'int',
+            milestones: 'json'
         }
     }
 };
@@ -293,6 +382,369 @@ async function getStats() {
     };
 }
 
+// ===========================================================================
+// PREMIUM FEATURES — Performance Reviews
+// ===========================================================================
+async function listReviews(filters = {}) {
+    let query = supabase.from('tech_performance_reviews').select('*');
+    if (filters.memberId) query = query.eq('member_id', filters.memberId);
+    if (filters.period) query = query.eq('review_period', filters.period);
+    if (filters.reviewType) query = query.eq('review_type', filters.reviewType);
+    if (filters.reviewerId) query = query.eq('reviewer_id', filters.reviewerId);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
+    if (error) throw error;
+    return (data || []).map(r => toUi(r, 'reviews'));
+}
+
+async function getReview(id) {
+    const { data, error } = await supabase.from('tech_performance_reviews').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return toUi(data, 'reviews');
+}
+
+async function createReview(record) {
+    const row = toDb('reviews', record);
+    const { data, error } = await supabase.from('tech_performance_reviews').insert(row).select().single();
+    if (error) throw error;
+    // Update member's overall rating and review count
+    await updateMemberRating(row.member_id);
+    return toUi(data, 'reviews');
+}
+
+async function updateReview(id, record) {
+    const row = toDb('reviews', record, { partial: true });
+    const { data, error } = await supabase.from('tech_performance_reviews').update(row).eq('id', id).select().single();
+    if (error) throw error;
+    if (row.member_id) await updateMemberRating(row.member_id);
+    return toUi(data, 'reviews');
+}
+
+async function deleteReview(id) {
+    const review = await getReview(id);
+    const { error } = await supabase.from('tech_performance_reviews').delete().eq('id', id);
+    if (error) throw error;
+    if (review && review.memberId) await updateMemberRating(review.memberId);
+}
+
+async function updateMemberRating(memberId) {
+    const { data: reviews } = await supabase
+        .from('tech_performance_reviews')
+        .select('overall_rating')
+        .eq('member_id', memberId)
+        .eq('review_type', 'manager');
+    const { data: achievements } = await supabase
+        .from('tech_achievements')
+        .select('id', { count: 'exact', head: true })
+        .eq('member_id', memberId);
+    const avg = reviews && reviews.length
+        ? (reviews.reduce((s, r) => s + parseFloat(r.overall_rating || 0), 0) / reviews.length).toFixed(2)
+        : 0;
+    await supabase.from('tech_team_members')
+        .update({ overall_rating: avg, review_count: reviews ? reviews.length : 0, achievement_count: (achievements || 0) })
+        .eq('id', memberId);
+}
+
+// ===========================================================================
+// PREMIUM FEATURES — Skills Matrix
+// ===========================================================================
+async function listSkills(filters = {}) {
+    let query = supabase.from('tech_member_skills').select('*');
+    if (filters.memberId) query = query.eq('member_id', filters.memberId);
+    if (filters.category) query = query.eq('category', filters.category);
+    if (filters.skillName) query = query.ilike('skill_name', '%' + filters.skillName + '%');
+    const { data, error } = await query.order('skill_name').limit(1000);
+    if (error) throw error;
+    return (data || []).map(r => toUi(r, 'skills'));
+}
+
+async function getSkill(id) {
+    const { data, error } = await supabase.from('tech_member_skills').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return toUi(data, 'skills');
+}
+
+async function createSkill(record) {
+    const row = toDb('skills', record);
+    if (row.years_experience != null) row.years_experience = parseFloat(row.years_experience) || 0;
+    const { data, error } = await supabase.from('tech_member_skills').insert(row).select().single();
+    if (error) throw error;
+    return toUi(data, 'skills');
+}
+
+async function updateSkill(id, record) {
+    const row = toDb('skills', record, { partial: true });
+    if (row.years_experience != null) row.years_experience = parseFloat(row.years_experience) || 0;
+    row.updated_at = new Date().toISOString();
+    const { data, error } = await supabase.from('tech_member_skills').update(row).eq('id', id).select().single();
+    if (error) throw error;
+    return toUi(data, 'skills');
+}
+
+async function deleteSkill(id) {
+    const { error } = await supabase.from('tech_member_skills').delete().eq('id', id);
+    if (error) throw error;
+}
+
+async function getSkillMatrix() {
+    const { data: skills, error } = await supabase.from('tech_member_skills').select('*').order('skill_name');
+    if (error) throw error;
+    const members = await listTeamMembers({ activeOnly: true });
+    const matrix = {};
+    for (const m of members) {
+        matrix[m.id] = { member: m, skills: {} };
+    }
+    for (const s of (skills || [])) {
+        if (matrix[s.member_id]) {
+            matrix[s.member_id].skills[s.skill_name] = {
+                category: s.category,
+                proficiency: s.proficiency,
+                yearsExperience: s.years_experience
+            };
+        }
+    }
+    return Object.values(matrix);
+}
+
+// ===========================================================================
+// PREMIUM FEATURES — OKRs
+// ===========================================================================
+async function listOkrs(filters = {}) {
+    let query = supabase.from('tech_okrs').select('*');
+    if (filters.memberId) query = query.eq('member_id', filters.memberId);
+    if (filters.period) query = query.eq('period', filters.period);
+    if (filters.status) query = query.eq('status', filters.status);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
+    if (error) throw error;
+    return (data || []).map(r => toUi(r, 'okrs'));
+}
+
+async function getOkr(id) {
+    const { data, error } = await supabase.from('tech_okrs').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return toUi(data, 'okrs');
+}
+
+async function createOkr(record) {
+    const row = toDb('okrs', record);
+    row.updated_at = new Date().toISOString();
+    const { data, error } = await supabase.from('tech_okrs').insert(row).select().single();
+    if (error) throw error;
+    return toUi(data, 'okrs');
+}
+
+async function updateOkr(id, record) {
+    const row = toDb('okrs', record, { partial: true });
+    row.updated_at = new Date().toISOString();
+    const { data, error } = await supabase.from('tech_okrs').update(row).eq('id', id).select().single();
+    if (error) throw error;
+    return toUi(data, 'okrs');
+}
+
+async function deleteOkr(id) {
+    const { error } = await supabase.from('tech_okrs').delete().eq('id', id);
+    if (error) throw error;
+}
+
+// ===========================================================================
+// PREMIUM FEATURES — Meetings
+// ===========================================================================
+async function listMeetings(filters = {}) {
+    let query = supabase.from('tech_meetings').select('*');
+    if (filters.memberId) query = query.eq('member_id', filters.memberId);
+    if (filters.meetingType) query = query.eq('meeting_type', filters.meetingType);
+    if (filters.fromDate) query = query.gte('scheduled_at', filters.fromDate);
+    if (filters.toDate) query = query.lte('scheduled_at', filters.toDate);
+    const { data, error } = await query.order('scheduled_at', { ascending: false }).limit(500);
+    if (error) throw error;
+    return (data || []).map(r => toUi(r, 'meetings'));
+}
+
+async function getMeeting(id) {
+    const { data, error } = await supabase.from('tech_meetings').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return toUi(data, 'meetings');
+}
+
+async function createMeeting(record) {
+    const row = toDb('meetings', record);
+    const { data, error } = await supabase.from('tech_meetings').insert(row).select().single();
+    if (error) throw error;
+    return toUi(data, 'meetings');
+}
+
+async function updateMeeting(id, record) {
+    const row = toDb('meetings', record, { partial: true });
+    const { data, error } = await supabase.from('tech_meetings').update(row).eq('id', id).select().single();
+    if (error) throw error;
+    return toUi(data, 'meetings');
+}
+
+async function deleteMeeting(id) {
+    const { error } = await supabase.from('tech_meetings').delete().eq('id', id);
+    if (error) throw error;
+}
+
+// ===========================================================================
+// PREMIUM FEATURES — Achievements
+// ===========================================================================
+async function listAchievements(filters = {}) {
+    let query = supabase.from('tech_achievements').select('*');
+    if (filters.memberId) query = query.eq('member_id', filters.memberId);
+    if (filters.category) query = query.eq('category', filters.category);
+    if (filters.awardedBy) query = query.eq('awarded_by', filters.awardedBy);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
+    if (error) throw error;
+    return (data || []).map(r => toUi(r, 'achievements'));
+}
+
+async function createAchievement(record) {
+    const row = toDb('achievements', record);
+    const { data, error } = await supabase.from('tech_achievements').insert(row).select().single();
+    if (error) throw error;
+    if (row.member_id) await updateMemberRating(row.member_id);
+    return toUi(data, 'achievements');
+}
+
+async function deleteAchievement(id) {
+    const ach = await (async () => {
+        const { data } = await supabase.from('tech_achievements').select('member_id').eq('id', id).maybeSingle();
+        return data;
+    })();
+    const { error } = await supabase.from('tech_achievements').delete().eq('id', id);
+    if (error) throw error;
+    if (ach && ach.member_id) await updateMemberRating(ach.member_id);
+}
+
+// ===========================================================================
+// PREMIUM FEATURES — Goals
+// ===========================================================================
+async function listGoals(filters = {}) {
+    let query = supabase.from('tech_goals').select('*');
+    if (filters.memberId) query = query.eq('member_id', filters.memberId);
+    if (filters.category) query = query.eq('category', filters.category);
+    if (filters.status) query = query.eq('status', filters.status);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
+    if (error) throw error;
+    return (data || []).map(r => toUi(r, 'goals'));
+}
+
+async function getGoal(id) {
+    const { data, error } = await supabase.from('tech_goals').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return toUi(data, 'goals');
+}
+
+async function createGoal(record) {
+    const row = toDb('goals', record);
+    row.updated_at = new Date().toISOString();
+    const { data, error } = await supabase.from('tech_goals').insert(row).select().single();
+    if (error) throw error;
+    return toUi(data, 'goals');
+}
+
+async function updateGoal(id, record) {
+    const row = toDb('goals', record, { partial: true });
+    row.updated_at = new Date().toISOString();
+    const { data, error } = await supabase.from('tech_goals').update(row).eq('id', id).select().single();
+    if (error) throw error;
+    return toUi(data, 'goals');
+}
+
+async function deleteGoal(id) {
+    const { error } = await supabase.from('tech_goals').delete().eq('id', id);
+    if (error) throw error;
+}
+
+// ===========================================================================
+// PREMIUM STATS — Enhanced analytics
+// ===========================================================================
+async function getPremiumStats() {
+    const [members, tasks, reviews, skills, okrs, meetings, achievements, goals] = await Promise.all([
+        listTeamMembers({ activeOnly: true }),
+        listTasks(),
+        listReviews(),
+        listSkills(),
+        listOkrs(),
+        listMeetings(),
+        listAchievements(),
+        listGoals()
+    ]);
+
+    // Velocity: tasks completed per week (last 8 weeks)
+    const now = new Date();
+    const weeks = [];
+    for (let i = 7; i >= 0; i--) {
+        const start = new Date(now);
+        start.setDate(start.getDate() - (i * 7));
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 7);
+        const count = tasks.filter(t => t.status === 'done' && t.completedAt && new Date(t.completedAt) >= start && new Date(t.completedAt) < end).length;
+        weeks.push({ week: start.toISOString().slice(0, 10), count });
+    }
+
+    // On-time delivery rate
+    const doneTasks = tasks.filter(t => t.status === 'done');
+    const onTime = doneTasks.filter(t => t.dueDate && t.completedAt && new Date(t.completedAt) <= new Date(t.dueDate)).length;
+    const onTimeRate = doneTasks.length ? Math.round((onTime / doneTasks.length) * 100) : 0;
+
+    // Avg rating across all members
+    const ratedMembers = members.filter(m => m.reviewCount > 0);
+    const avgRating = ratedMembers.length
+        ? (ratedMembers.reduce((s, m) => s + parseFloat(m.overallRating || 0), 0) / ratedMembers.length).toFixed(2)
+        : 0;
+
+    // OKR achievement rate
+    const activeOkrs = okrs.filter(o => o.status === 'active' || o.status === 'achieved');
+    const achievedOkrs = okrs.filter(o => o.status === 'achieved').length;
+    const okrRate = activeOkrs.length ? Math.round((achievedOkrs / activeOkrs.length) * 100) : 0;
+
+    // Skill coverage: count unique skills
+    const uniqueSkills = [...new Set(skills.map(s => s.skillName))];
+
+    // Upcoming meetings (next 7 days)
+    const nextWeek = new Date(now);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    const upcomingMeetings = meetings.filter(m => m.scheduledAt && new Date(m.scheduledAt) >= now && new Date(m.scheduledAt) <= nextWeek);
+
+    return {
+        totalMembers: members.length,
+        totalTasks: tasks.length,
+        totalReviews: reviews.length,
+        totalSkills: skills.length,
+        uniqueSkills: uniqueSkills.length,
+        totalOkrs: okrs.length,
+        totalMeetings: meetings.length,
+        totalAchievements: achievements.length,
+        totalGoals: goals.length,
+        avgRating: parseFloat(avgRating),
+        onTimeRate,
+        okrAchievementRate: okrRate,
+        velocity: weeks,
+        upcomingMeetings: upcomingMeetings.length,
+        byDepartment: (() => {
+            const dept = {};
+            for (const m of members) {
+                const d = m.department || 'engineering';
+                if (!dept[d]) dept[d] = { members: 0, tasks: 0, done: 0, avgRating: 0, ratings: [] };
+                dept[d].members++;
+                if (m.overallRating) dept[d].ratings.push(parseFloat(m.overallRating));
+            }
+            for (const t of tasks) {
+                const d = t.department || 'engineering';
+                if (!dept[d]) dept[d] = { members: 0, tasks: 0, done: 0, avgRating: 0, ratings: [] };
+                dept[d].tasks++;
+                if (t.status === 'done') dept[d].done++;
+            }
+            for (const d of Object.values(dept)) {
+                d.avgRating = d.ratings.length ? (d.ratings.reduce((a, b) => a + b, 0) / d.ratings.length).toFixed(2) : 0;
+                delete d.ratings;
+            }
+            return dept;
+        })()
+    };
+}
+
 module.exports = {
     TABLES,
     toUi,
@@ -310,5 +762,19 @@ module.exports = {
     updateTask,
     addTaskNote,
     deleteTask,
-    getStats
+    getStats,
+    // Premium: Reviews
+    listReviews, getReview, createReview, updateReview, deleteReview,
+    // Premium: Skills
+    listSkills, getSkill, createSkill, updateSkill, deleteSkill, getSkillMatrix,
+    // Premium: OKRs
+    listOkrs, getOkr, createOkr, updateOkr, deleteOkr,
+    // Premium: Meetings
+    listMeetings, getMeeting, createMeeting, updateMeeting, deleteMeeting,
+    // Premium: Achievements
+    listAchievements, createAchievement, deleteAchievement,
+    // Premium: Goals
+    listGoals, getGoal, createGoal, updateGoal, deleteGoal,
+    // Premium: Stats
+    getPremiumStats
 };

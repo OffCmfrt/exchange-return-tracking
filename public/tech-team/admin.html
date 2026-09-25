@@ -10,142 +10,119 @@
 :root{--black:#000;--white:#fff;--g50:#fafafa;--g100:#f5f5f5;--g200:#e5e5e5;--g300:#d4d4d4;--g400:#a3a3a3;--g500:#737373;--g600:#525252;--g700:#404040;--g800:#262626;--g900:#171717;--g950:#0a0a0a}
 body{font-family:'Archivo',sans-serif;background:var(--g950);color:var(--g200);min-height:100vh;overflow-x:hidden}
 a{color:inherit;text-decoration:none}
-/* Animations */
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+@keyframes slideRight{from{opacity:0;transform:translateX(100%)}to{opacity:1;transform:translateX(0)}}
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
 @keyframes countUp{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
-@keyframes drawLine{from{height:0}to{height:100%}}
 @keyframes toastIn{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
 .fade-in{animation:fadeIn .4s ease both}
 .stagger-1{animation-delay:.05s}.stagger-2{animation-delay:.1s}.stagger-3{animation-delay:.15s}
 .stagger-4{animation-delay:.2s}.stagger-5{animation-delay:.25s}.stagger-6{animation-delay:.3s}
-/* Layout */
-.app{display:flex;min-height:100vh}
-.app.hidden{display:none}
-/* Login page */
+.app{display:flex;min-height:100vh}.app.hidden{display:none}
 .login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;animation:fadeIn .5s ease both}
 .login-card{background:var(--g900);border:1px solid var(--g800);border-radius:12px;padding:40px;width:100%;max-width:380px;animation:slideUp .4s ease both}
 .login-card h2{font-size:18px;font-weight:600;color:var(--white);margin-bottom:4px}
 .login-card .subtitle{font-size:12px;color:var(--g500);margin-bottom:24px}
-.login-card .form-group{margin-bottom:16px}
 .login-card .btn-primary{width:100%;justify-content:center;padding:10px 16px;margin-top:8px}
-.sidebar{width:240px;background:var(--g900);border-right:1px solid var(--g800);padding:24px 0;position:fixed;height:100vh;display:flex;flex-direction:column}
-.sidebar-brand{padding:0 24px 24px;border-bottom:1px solid var(--g800);margin-bottom:16px}
-.sidebar-brand h1{font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--white)}
-.sidebar-brand p{font-size:11px;color:var(--g500);margin-top:4px;letter-spacing:.04em;text-transform:uppercase}
-.nav-item{display:flex;align-items:center;gap:12px;padding:10px 24px;cursor:pointer;transition:all .2s;font-size:13px;color:var(--g400);letter-spacing:.02em;position:relative}
+.sidebar{width:220px;background:var(--g900);border-right:1px solid var(--g800);padding:20px 0;position:fixed;height:100vh;display:flex;flex-direction:column;overflow-y:auto}
+.sidebar-brand{padding:0 20px 16px;border-bottom:1px solid var(--g800);margin-bottom:12px}
+.sidebar-brand h1{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--white)}
+.sidebar-brand p{font-size:10px;color:var(--g500);margin-top:3px;letter-spacing:.04em;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;transition:all .2s;font-size:12px;color:var(--g400);letter-spacing:.02em;position:relative}
 .nav-item:hover{color:var(--white);background:var(--g800)}
 .nav-item.active{color:var(--white);background:var(--g800)}
-.nav-item.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--white);transition:all .2s}
-.nav-item svg{width:16px;height:16px;flex-shrink:0}
-.main{margin-left:240px;flex:1;padding:32px 40px}
-/* Header */
-.page-header{margin-bottom:32px;animation:fadeIn .4s ease both}
-.page-header h2{font-size:24px;font-weight:600;color:var(--white);letter-spacing:-.02em}
-.page-header p{font-size:13px;color:var(--g500);margin-top:4px}
-/* Cards */
-.card{background:var(--g900);border:1px solid var(--g800);border-radius:8px;padding:20px;transition:all .25s cubic-bezier(.4,0,.2,1)}
-.card:hover{border-color:var(--g700);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.3)}
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:32px}
+.nav-item.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--white)}
+.nav-item svg{width:15px;height:15px;flex-shrink:0}
+.main{margin-left:220px;flex:1;padding:28px 32px;min-height:100vh}
+.page-header{margin-bottom:24px;animation:fadeIn .4s ease both}
+.page-header h2{font-size:22px;font-weight:600;color:var(--white);letter-spacing:-.02em}
+.page-header p{font-size:12px;color:var(--g500);margin-top:3px}
+.page-header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;animation:fadeIn .4s ease both}
+.card{background:var(--g900);border:1px solid var(--g800);border-radius:8px;padding:18px;transition:all .25s cubic-bezier(.4,0,.2,1)}
+.card:hover{border-color:var(--g700);transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,0,0,.3)}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px}
 .kpi-card{text-align:center}
-.kpi-value{font-size:32px;font-weight:700;color:var(--white);animation:countUp .5s ease both}
-.kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-top:4px}
-/* Status bars */
-.status-bar-container{margin-bottom:32px}
-.status-bar-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
-.status-bar-label{width:80px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--g400);text-align:right}
-.status-bar-track{flex:1;height:24px;background:var(--g800);border-radius:4px;overflow:hidden;position:relative}
-.status-bar-fill{height:100%;border-radius:4px;transition:width .8s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden}
-.status-bar-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);background-size:200% 100%;animation:shimmer 2s infinite}
-.status-bar-count{width:32px;font-size:12px;color:var(--g400);text-align:right}
-/* Badges */
-.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;transition:all .2s}
-.badge-todo{background:var(--g800);color:var(--g400)}
-.badge-in_progress{background:var(--g700);color:var(--g200)}
-.badge-review{background:var(--g600);color:var(--white)}
-.badge-done{background:var(--white);color:var(--black)}
-.badge-blocked{background:#333;color:#ccc}
-.badge-low{background:var(--g800);color:var(--g500)}
-.badge-medium{background:var(--g700);color:var(--g300)}
-.badge-high{background:var(--g600);color:var(--white)}
-.badge-critical{background:var(--white);color:var(--black)}
-/* Buttons */
-.btn{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border:1px solid var(--g700);background:var(--g900);color:var(--g200);transition:all .2s}
-.btn:hover{background:var(--g800);border-color:var(--g600);transform:translateY(-1px)}
+.kpi-value{font-size:28px;font-weight:700;color:var(--white);animation:countUp .5s ease both}
+.kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-top:3px}
+.kpi-sub{font-size:10px;color:var(--g600);margin-top:2px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border:1px solid var(--g700);background:var(--g900);color:var(--g200);transition:all .2s}
+.btn:hover{background:var(--g800);border-color:var(--g600)}
 .btn-primary{background:var(--white);color:var(--black);border-color:var(--white)}
-.btn-primary:hover{background:var(--g200);transform:translateY(-1px)}
-.btn-sm{padding:5px 10px;font-size:10px}
-.btn-danger{border-color:#444;color:#aaa}
-.btn-danger:hover{background:#1a1a1a;border-color:#555;color:#fff}
-/* Table */
+.btn-primary:hover{background:var(--g200)}
+.btn-sm{padding:4px 10px;font-size:10px}
+.btn-danger{border-color:#444;color:#aaa}.btn-danger:hover{background:#1a1a1a;border-color:#555;color:#fff}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+.badge-todo{background:var(--g800);color:var(--g400)}.badge-in_progress{background:var(--g700);color:var(--g200)}
+.badge-review{background:var(--g600);color:var(--white)}.badge-done{background:var(--white);color:var(--black)}
+.badge-blocked{background:#333;color:#ccc}.badge-low{background:var(--g800);color:var(--g500)}
+.badge-medium{background:var(--g700);color:var(--g300)}.badge-high{background:var(--g600);color:var(--white)}
+.badge-critical{background:var(--white);color:var(--black)}
+.badge-1on1{background:var(--g700);color:var(--white)}.badge-team{background:var(--g600);color:var(--white)}
+.badge-retro{background:var(--g800);color:var(--g300)}.badge-review-m{background:var(--g600);color:var(--white)}
 .table-wrap{overflow-x:auto;border:1px solid var(--g800);border-radius:8px}
 table{width:100%;border-collapse:collapse}
-th{padding:12px 16px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);background:var(--g900);border-bottom:1px solid var(--g800);position:sticky;top:0}
-td{padding:12px 16px;font-size:13px;border-bottom:1px solid var(--g800);color:var(--g300)}
-tr{transition:background .15s}
-tr:hover td{background:var(--g900)}
-/* Progress bar */
-.progress-bar{width:100%;height:6px;background:var(--g800);border-radius:3px;overflow:hidden;position:relative}
-.progress-fill{height:100%;background:linear-gradient(90deg,var(--g600),var(--g400));border-radius:3px;transition:width .6s cubic-bezier(.4,0,.2,1);position:relative}
-.progress-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);background-size:200% 100%;animation:shimmer 2.5s infinite}
-/* Modal / Drawer */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);z-index:100;display:none;align-items:center;justify-content:center;animation:fadeIn .2s ease}
-.modal-overlay.open{display:flex}
-.modal{background:var(--g900);border:1px solid var(--g800);border-radius:12px;width:90%;max-width:560px;max-height:85vh;overflow-y:auto;animation:slideUp .3s cubic-bezier(.4,0,.2,1)}
-.modal-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--g800)}
-.modal-header h3{font-size:16px;font-weight:600;color:var(--white)}
-.modal-body{padding:24px}
-.modal-footer{padding:16px 24px;border-top:1px solid var(--g800);display:flex;justify-content:flex-end;gap:8px}
-.close-btn{background:none;border:none;color:var(--g500);cursor:pointer;padding:4px;transition:color .2s}
-.close-btn:hover{color:var(--white)}
-/* Form */
-.form-group{margin-bottom:16px}
-.form-label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:6px}
-.form-input,.form-select,.form-textarea{width:100%;padding:10px 12px;background:var(--g950);border:1px solid var(--g800);border-radius:6px;color:var(--g200);font-size:13px;font-family:'Archivo',sans-serif;transition:border-color .2s}
+th{padding:10px 14px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);background:var(--g900);border-bottom:1px solid var(--g800);position:sticky;top:0}
+td{padding:10px 14px;font-size:12px;border-bottom:1px solid var(--g800);color:var(--g300)}
+tr{transition:background .15s}tr:hover td{background:var(--g900)}
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:5px}
+.form-input,.form-select,.form-textarea{width:100%;padding:9px 11px;background:var(--g950);border:1px solid var(--g800);border-radius:6px;color:var(--g200);font-size:12px;font-family:'Archivo',sans-serif;transition:border-color .2s}
 .form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--g600)}
-.form-textarea{min-height:80px;resize:vertical}
-.form-select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23737373' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-/* Filters */
-.filters{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
-.filter-pill{padding:6px 14px;border-radius:20px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border:1px solid var(--g800);background:transparent;color:var(--g500);transition:all .2s}
+.form-textarea{min-height:70px;resize:vertical}
+.form-select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23737373' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.filters{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.filter-pill{padding:5px 12px;border-radius:20px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border:1px solid var(--g800);background:transparent;color:var(--g500);transition:all .2s}
 .filter-pill:hover{border-color:var(--g600);color:var(--g300)}
 .filter-pill.active{background:var(--white);color:var(--black);border-color:var(--white)}
-/* Team grid */
-.team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-.member-card{display:flex;flex-direction:column;gap:12px}
-.member-header{display:flex;align-items:center;gap:12px}
-.avatar{width:40px;height:40px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--g300);flex-shrink:0}
-.member-info h4{font-size:14px;font-weight:500;color:var(--white)}
-.member-info p{font-size:11px;color:var(--g500)}
-.member-meta{display:flex;gap:8px;flex-wrap:wrap}
-/* Timeline */
-.timeline{position:relative;padding-left:24px}
-.timeline::before{content:'';position:absolute;left:8px;top:0;bottom:0;width:1px;background:var(--g800);animation:drawLine .6s ease both}
-.timeline-item{position:relative;padding-bottom:20px;animation:fadeIn .4s ease both}
-.timeline-item::before{content:'';position:absolute;left:-20px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--g600);border:2px solid var(--g900)}
-.timeline-item .time{font-size:10px;color:var(--g500);text-transform:uppercase;letter-spacing:.04em}
-.timeline-item .content{font-size:13px;color:var(--g300);margin-top:4px}
-.timeline-item .author{font-size:11px;color:var(--g600);margin-top:2px}
-/* Toast */
-.toast{position:fixed;top:20px;right:20px;padding:12px 20px;background:var(--g800);border:1px solid var(--g700);border-radius:8px;font-size:13px;color:var(--g200);z-index:200;animation:toastIn .3s ease both;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);z-index:100;display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--g900);border:1px solid var(--g800);border-radius:12px;width:90%;max-width:540px;max-height:85vh;overflow-y:auto;animation:slideUp .3s cubic-bezier(.4,0,.2,1)}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--g800)}
+.modal-header h3{font-size:15px;font-weight:600;color:var(--white)}
+.modal-body{padding:20px}.modal-footer{padding:14px 20px;border-top:1px solid var(--g800);display:flex;justify-content:flex-end;gap:8px}
+.close-btn{background:none;border:none;color:var(--g500);cursor:pointer;padding:4px;font-size:18px;transition:color .2s}
+.close-btn:hover{color:var(--white)}
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);z-index:90;display:none}
+.drawer-overlay.open{display:block}
+.drawer{position:fixed;right:0;top:0;bottom:0;width:460px;max-width:100%;background:var(--g900);border-left:1px solid var(--g800);z-index:91;overflow-y:auto;animation:slideRight .3s cubic-bezier(.4,0,.2,1);padding:24px}
+.toast{position:fixed;top:16px;right:16px;padding:10px 18px;background:var(--g800);border:1px solid var(--g700);border-radius:8px;font-size:12px;color:var(--g200);z-index:200;animation:toastIn .3s ease both;box-shadow:0 6px 24px rgba(0,0,0,.4)}
 .toast.error{border-color:#444}
-/* Department tags */
-.dept-tag{display:inline-flex;padding:2px 8px;border-radius:4px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;background:var(--g800);color:var(--g400)}
-/* Responsive */
-@media(max-width:768px){.sidebar{width:60px;padding:16px 0}.sidebar-brand h1,.sidebar-brand p,.nav-item span{display:none}.nav-item{justify-content:center;padding:12px}.main{margin-left:60px;padding:20px}}
+.progress-bar{width:100%;height:5px;background:var(--g800);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--g600),var(--g400));border-radius:3px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+.rating-stars{display:flex;gap:2px}
+.rating-star{color:var(--g700);font-size:14px;cursor:default}
+.rating-star.filled{color:var(--white)}
+.skill-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.skill-dot-1{background:var(--g700)}.skill-dot-2{background:var(--g600)}
+.skill-dot-3{background:var(--g500)}.skill-dot-4{background:var(--g400)}.skill-dot-5{background:var(--white)}
+.timeline{position:relative;padding-left:20px}
+.timeline::before{content:'';position:absolute;left:6px;top:0;bottom:0;width:1px;background:var(--g800)}
+.timeline-item{position:relative;padding-bottom:16px}
+.timeline-item::before{content:'';position:absolute;left:-17px;top:3px;width:7px;height:7px;border-radius:50%;background:var(--g600);border:2px solid var(--g900)}
+.timeline-item .time{font-size:9px;color:var(--g500);text-transform:uppercase;letter-spacing:.04em}
+.timeline-item .content{font-size:12px;color:var(--g300);margin-top:3px}
+.timeline-item .author{font-size:10px;color:var(--g600);margin-top:2px}
+.dept-tag{display:inline-flex;padding:2px 7px;border-radius:4px;font-size:9px;letter-spacing:.04em;text-transform:uppercase;background:var(--g800);color:var(--g400)}
+.health-score{font-size:48px;font-weight:700;color:var(--white);text-align:center}
+.health-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--g500);text-align:center;margin-top:4px}
+.chart-bar{display:flex;align-items:flex-end;gap:4px;height:120px;padding-top:8px}
+.chart-bar-col{flex:1;background:var(--g700);border-radius:3px 3px 0 0;transition:height .6s cubic-bezier(.4,0,.2,1);position:relative;min-height:4px}
+.chart-bar-col:hover{background:var(--g500)}
+.chart-bar-label{font-size:8px;color:var(--g600);text-align:center;margin-top:4px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+@media(max-width:768px){.sidebar{width:56px;padding:12px 0}.sidebar-brand h1,.sidebar-brand p,.nav-item span{display:none}.nav-item{justify-content:center;padding:10px}.main{margin-left:56px;padding:16px}.grid-2,.grid-3{grid-template-columns:1fr}.drawer{width:100%}}
 </style>
 </head>
 <body>
 <div class="app hidden" id="app">
 <aside class="sidebar">
-<div class="sidebar-brand">
-<h1>Tech Team</h1>
-<p>Admin Panel</p>
-</div>
+<div class="sidebar-brand"><h1>Tech Team</h1><p>Admin Panel</p></div>
 <nav id="nav"></nav>
 </aside>
 <main class="main" id="main"></main>
@@ -158,421 +135,514 @@ tr:hover td{background:var(--g900)}
 <button class="btn btn-primary" id="loginBtn">Login</button>
 </div>
 </div>
-<div class="modal-overlay" id="modalOverlay">
-<div class="modal" id="modal"></div>
-</div>
+<div class="modal-overlay" id="modalOverlay"><div class="modal" id="modal"></div></div>
+<div class="drawer-overlay" id="drawerOverlay"></div>
+<div class="drawer" id="drawer" style="display:none"></div>
 <script>
-const API = '/api/tech-team';
-const TABS = [
-    { id: 'dashboard', label: 'Dashboard', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' },
-    { id: 'tasks', label: 'Tasks', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>' },
-    { id: 'team', label: 'Team', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>' },
-    { id: 'activity', label: 'Activity', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' }
+const API='/api/tech-team';
+const TABS=[
+{id:'dashboard',label:'Dashboard',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'},
+{id:'tasks',label:'Tasks',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>'},
+{id:'team',label:'Team',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>'},
+{id:'performance',label:'Performance',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>'},
+{id:'skills',label:'Skills',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'},
+{id:'okrs',label:'OKRs',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>'},
+{id:'meetings',label:'Meetings',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>'},
+{id:'recognition',label:'Recognition',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>'},
+{id:'analytics',label:'Analytics',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
+{id:'activity',label:'Activity',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'}
 ];
-const DEPARTMENTS = ['engineering','frontend','backend','devops','design','qa','product','data'];
-const HIERARCHIES = ['intern','junior','mid','senior','lead','manager','head','director'];
-const ROLES = ['developer','lead','admin','intern','qa','designer'];
-const STATUSES = ['todo','in_progress','review','done','blocked'];
-const PRIORITIES = ['low','medium','high','critical'];
-const CATEGORIES = ['feature','bug','maintenance','infra','documentation','testing'];
+const DEPARTMENTS=['engineering','frontend','backend','devops','design','qa','product','data'];
+const HIERARCHIES=['intern','junior','mid','senior','lead','manager','head','director'];
+const ROLES=['developer','lead','admin','intern','qa','designer'];
+const STATUSES=['todo','in_progress','review','done','blocked'];
+const PRIORITIES=['low','medium','high','critical'];
+const CATEGORIES=['feature','bug','maintenance','infra','documentation','testing'];
+const SKILL_CATS=['technical','soft','domain','tool'];
+const REVIEW_PERIODS=['2026-Q1','2026-Q2','2026-Q3','2026-Q4'];
+const OKR_PERIODS=['2026-Q1','2026-Q2','2026-Q3','2026-Q4'];
+const MEETING_TYPES=['1on1','team','review','retro'];
+const ACHIEVE_CATS=['milestone','award','certification','shoutout'];
+const GOAL_CATS=['career','learning','performance','personal'];
+const PROFICIENCY_LABELS=['','Beginner','Intermediate','Advanced','Expert','Master'];
 
-let state = { tab: 'dashboard', members: [], tasks: [], stats: null, filters: {} };
+let state={tab:'dashboard',members:[],tasks:[],stats:null,premiumStats:null,filters:{},reviews:[],skills:[],okrs:[],meetings:[],achievements:[],goals:[]};
 
-// ---- API helper ----
-async function api(path, opts = {}) {
-    const token = localStorage.getItem('admin_token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = 'Bearer ' + token;
-    // For admin, use the main admin auth
-    const adminToken = localStorage.getItem('admin_jwt') || localStorage.getItem('token');
-    if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken;
-    const res = await fetch(API + path, { ...opts, headers });
-    if (res.status === 401) {
-        localStorage.removeItem('admin_jwt');
-        localStorage.removeItem('admin_token');
-        localStorage.removeItem('token');
-        showLoginPage();
-        throw new Error('Session expired. Please login again.');
-    }
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
-    return data;
+async function api(path,opts={}){
+const headers={'Content-Type':'application/json'};
+const adminToken=localStorage.getItem('admin_jwt')||localStorage.getItem('token');
+if(adminToken)headers['Authorization']='Bearer '+adminToken;
+const res=await fetch(API+path,{...opts,headers});
+if(res.status===401){localStorage.removeItem('admin_jwt');localStorage.removeItem('admin_token');localStorage.removeItem('token');showLoginPage();throw new Error('Session expired');}
+const data=await res.json();
+if(!res.ok)throw new Error(data.error||'Request failed');
+return data;
 }
 
-// ---- Toast ----
-function toast(msg, isError = false) {
-    const el = document.createElement('div');
-    el.className = 'toast' + (isError ? ' error' : '');
-    el.textContent = msg;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 3000);
+function toast(msg,isError=false){const el=document.createElement('div');el.className='toast'+(isError?' error':'');el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3000);}
+
+function renderNav(){document.getElementById('nav').innerHTML=TABS.map(t=>`<div class="nav-item${state.tab===t.id?' active':''}" data-tab="${t.id}">${t.icon}<span>${t.label}</span></div>`).join('');
+document.querySelectorAll('.nav-item').forEach(el=>el.addEventListener('click',()=>switchTab(el.dataset.tab)));}
+
+function switchTab(tab){state.tab=tab;renderNav();loadTab();}
+
+async function loadTab(){const main=document.getElementById('main');main.innerHTML='<div style="text-align:center;padding:60px;color:var(--g500)">Loading...</div>';
+try{
+if(state.tab==='dashboard')await renderDashboard(main);
+else if(state.tab==='tasks')await renderTasks(main);
+else if(state.tab==='team')await renderTeam(main);
+else if(state.tab==='performance')await renderPerformance(main);
+else if(state.tab==='skills')await renderSkills(main);
+else if(state.tab==='okrs')await renderOkrs(main);
+else if(state.tab==='meetings')await renderMeetings(main);
+else if(state.tab==='recognition')await renderRecognition(main);
+else if(state.tab==='analytics')await renderAnalytics(main);
+else if(state.tab==='activity')await renderActivity(main);
+}catch(e){toast(e.message,true);}}
+
+// ---- LOGIN ----
+function showLoginPage(){document.getElementById('app').classList.add('hidden');document.getElementById('loginPage').style.display='flex';document.getElementById('login_pass').value='';document.getElementById('login_pass').focus();}
+function hideLoginPage(){document.getElementById('app').classList.remove('hidden');document.getElementById('loginPage').style.display='none';}
+document.getElementById('loginBtn').addEventListener('click',doLogin);
+document.getElementById('login_pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+async function doLogin(){const pass=document.getElementById('login_pass').value;if(!pass)return;const btn=document.getElementById('loginBtn');btn.textContent='Logging in...';btn.disabled=true;
+try{const res=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass})});const data=await res.json();if(!res.ok)throw new Error(data.error||'Login failed');localStorage.setItem('admin_jwt',data.token);hideLoginPage();loadTab();}
+catch(e){toast(e.message,true);btn.textContent='Login';btn.disabled=false;}}
+
+// ---- HELPERS ----
+function ratingStars(r){r=parseFloat(r)||0;let s='';for(let i=1;i<=5;i++)s+=`<span class="rating-star${i<=Math.round(r)?' filled':''}">\u2605</span>`;return s;}
+function statusColor(s){return{todo:'#525252',in_progress:'#737373',review:'#a3a3a3',done:'#fff',blocked:'#404040'}[s]||'#525252';}
+function fmtDate(d){if(!d)return'\u2014';return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+function fmtDateTime(d){if(!d)return'\u2014';return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
+function initials(name){return name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();}
+
+// ---- DRAWER ----
+function openDrawer(html){document.getElementById('drawer').innerHTML=html;document.getElementById('drawer').style.display='block';document.getElementById('drawerOverlay').classList.add('open');}
+function closeDrawer(){document.getElementById('drawer').style.display='none';document.getElementById('drawerOverlay').classList.remove('open');}
+document.getElementById('drawerOverlay').addEventListener('click',closeDrawer);
+
+// ---- MODAL ----
+function openModal(html){document.getElementById('modal').innerHTML=html;document.getElementById('modalOverlay').classList.add('open');}
+function closeModal(){document.getElementById('modalOverlay').classList.remove('open');}
+document.getElementById('modalOverlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
+
+// ==================== TAB 1: DASHBOARD ====================
+async function renderDashboard(el){
+const[statsRes,membersRes]=await Promise.all([api('/admin/premium-stats'),api('/admin/members')]);
+state.premiumStats=statsRes.stats;state.members=membersRes.members;
+const s=state.premiumStats;
+const healthScore=Math.min(100,Math.round((s.onTimeRate*0.3)+(s.okrAchievementRate*0.3)+(parseFloat(s.avgRating)/5*100*0.2)+((s.totalTasks?s.totalTasks/(s.totalTasks+s.overdue||1):0)*100*0.2)));
+el.innerHTML=`
+<div class="page-header"><h2>Dashboard</h2><p>Team overview, health & performance metrics</p></div>
+<div class="grid-2" style="margin-bottom:24px">
+<div class="card fade-in" style="text-align:center">
+<div class="health-score">${healthScore}</div>
+<div class="health-label">Team Health Score</div>
+<div style="margin-top:12px;display:flex;justify-content:center;gap:16px;font-size:10px;color:var(--g500)">
+<span>On-time: ${s.onTimeRate}%</span><span>OKR: ${s.okrAchievementRate}%</span><span>Rating: ${s.avgRating}/5</span>
+</div></div>
+<div class="card fade-in stagger-1">
+<h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Quick Stats</h3>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
+<div><span style="color:var(--g500)">Members</span><br><strong style="color:var(--white);font-size:20px">${s.totalMembers}</strong></div>
+<div><span style="color:var(--g500)">Tasks</span><br><strong style="color:var(--white);font-size:20px">${s.totalTasks}</strong></div>
+<div><span style="color:var(--g500)">Reviews</span><br><strong style="color:var(--white);font-size:20px">${s.totalReviews}</strong></div>
+<div><span style="color:var(--g500)">Skills</span><br><strong style="color:var(--white);font-size:20px">${s.uniqueSkills}</strong></div>
+<div><span style="color:var(--g500)">OKRs</span><br><strong style="color:var(--white);font-size:20px">${s.totalOkrs}</strong></div>
+<div><span style="color:var(--g500)">Upcoming</span><br><strong style="color:var(--white);font-size:20px">${s.upcomingMeetings}</strong></div>
+</div></div></div>
+<div class="kpi-grid">
+<div class="card kpi-card fade-in stagger-1"><div class="kpi-value">${s.avgRating}</div><div class="kpi-label">Avg Rating</div><div class="kpi-sub">out of 5.00</div></div>
+<div class="card kpi-card fade-in stagger-2"><div class="kpi-value">${s.onTimeRate}%</div><div class="kpi-label">On-Time Rate</div><div class="kpi-sub">delivery</div></div>
+<div class="card kpi-card fade-in stagger-3"><div class="kpi-value">${s.okrAchievementRate}%</div><div class="kpi-label">OKR Rate</div><div class="kpi-sub">achieved</div></div>
+<div class="card kpi-card fade-in stagger-4"><div class="kpi-value">${s.totalAchievements}</div><div class="kpi-label">Achievements</div><div class="kpi-sub">total</div></div>
+<div class="card kpi-card fade-in stagger-5"><div class="kpi-value">${s.totalGoals}</div><div class="kpi-label">Active Goals</div><div class="kpi-sub">team-wide</div></div>
+<div class="card kpi-card fade-in stagger-6"><div class="kpi-value">${s.totalMeetings}</div><div class="kpi-label">Meetings</div><div class="kpi-sub">total</div></div>
+</div>
+<div class="grid-2">
+<div class="card fade-in" style="animation-delay:.3s">
+<h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:14px">Velocity (Last 8 Weeks)</h3>
+<div class="chart-bar">${s.velocity.map(w=>`<div style="flex:1;text-align:center"><div class="chart-bar-col" style="height:${Math.max(w.count*20,4)}px" title="${w.count} tasks"></div><div class="chart-bar-label">${w.week.slice(5)}</div></div>`).join('')}</div>
+</div>
+<div class="card fade-in stagger-1" style="animation-delay:.35s">
+<h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:14px">Department Performance</h3>
+${Object.entries(s.byDepartment).map(([d,v])=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="text-transform:capitalize;color:var(--g300)">${d}</span><span style="color:var(--g500)">${v.done}/${v.tasks} tasks \u00b7 ${v.avgRating}/5</span></div><div class="progress-bar"><div class="progress-fill" style="width:${v.tasks?v.done/v.tasks*100:0}%"></div></div></div>`).join('')}
+</div></div>
+<div class="card fade-in" style="animation-delay:.4s;margin-top:16px">
+<h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:14px">Top Performers</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
+${state.members.filter(m=>m.overallRating>0).sort((a,b)=>parseFloat(b.overallRating)-parseFloat(a.overallRating)).slice(0,6).map((m,i)=>`<div style="padding:10px;background:var(--g950);border-radius:6px;border:1px solid var(--g800);display:flex;align-items:center;gap:10px">
+<div style="width:32px;height:32px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--g300)">${initials(m.fullName)}</div>
+<div><div style="font-size:12px;font-weight:500;color:var(--white)">${m.fullName}</div><div style="font-size:10px;color:var(--g500)">${ratingStars(m.overallRating)} ${m.overallRating}/5</div></div>
+</div>`).join('')||'<p style="color:var(--g600);font-size:12px">No reviews yet</p>'}
+</div></div>`;
 }
 
-// ---- Render nav ----
-function renderNav() {
-    document.getElementById('nav').innerHTML = TABS.map(t =>
-        `<div class="nav-item${state.tab===t.id?' active':''}" onclick="switchTab('${t.id}')">${t.icon}<span>${t.label}</span></div>`
-    ).join('');
+// ==================== TAB 2: TASKS ====================
+async function renderTasks(el){
+const{tasks}=await api('/admin/tasks');state.tasks=tasks;
+el.innerHTML=`<div class="page-header-row"><div><h2>Tasks</h2><p>Manage and assign tasks across the team</p></div><button class="btn btn-primary" id="newTaskBtn">+ New Task</button></div>
+<div class="filters"><div class="filter-pill${!state.filters.status?' active':''}" data-f="status" data-v="">All</div>${STATUSES.map(s=>`<div class="filter-pill${state.filters.status===s?' active':''}" data-f="status" data-v="${s}">${s.replace('_',' ')}</div>`).join('')}</div>
+<div class="filters">${DEPARTMENTS.map(d=>`<div class="filter-pill${state.filters.department===d?' active':''}" data-f="department" data-v="${d}">${d}</div>`).join('')}</div>
+<div class="table-wrap fade-in"><table><thead><tr><th>Task</th><th>Project</th><th>Dept</th><th>Assignee</th><th>Status</th><th>Priority</th><th>Progress</th><th>Due</th><th>Time</th><th></th></tr></thead><tbody>
+${tasks.filter(t=>!state.filters.status||t.status===state.filters.status).filter(t=>!state.filters.department||t.department===state.filters.department).map((t,i)=>{
+const m=state.members.find(x=>x.id===t.assignedTo);
+const subtasks=Array.isArray(t.subtasks)?t.subtasks:[];const doneSubs=subtasks.filter(s=>s.done).length;
+return`<tr class="fade-in" style="animation-delay:${i*.02}s"><td style="color:var(--white);font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.title}${subtasks.length?`<div style="font-size:9px;color:var(--g600);margin-top:2px">${doneSubs}/${subtasks.length} subtasks</div>`:''}</td>
+<td>${t.project||'\u2014'}</td><td><span class="dept-tag">${t.department||'\u2014'}</span></td><td>${m?m.fullName:'\u2014'}</td>
+<td><span class="badge badge-${t.status}">${t.status.replace('_',' ')}</span></td><td><span class="badge badge-${t.priority}">${t.priority}</span></td>
+<td style="min-width:70px"><div class="progress-bar"><div class="progress-fill" style="width:${t.progress}%"></div></div><span style="font-size:9px;color:var(--g500)">${t.progress}%</span></td>
+<td style="font-size:11px;color:var(--g400)">${t.dueDate||'\u2014'}</td><td style="font-size:11px;color:var(--g500)">${t.timeLogged?Math.round(t.timeLogged/60)+'h':'\u2014'}</td>
+<td><button class="btn btn-sm" data-edit="${t.id}">Edit</button></td></tr>`;}).join('')}
+</tbody></table></div>`;
+document.getElementById('newTaskBtn').addEventListener('click',()=>openTaskModal());
+document.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openTaskModal(b.dataset.edit)));
+document.querySelectorAll('.filter-pill').forEach(p=>p.addEventListener('click',()=>{state.filters[p.dataset.f]=p.dataset.v;loadTab();}));
 }
 
-function switchTab(tab) { state.tab = tab; renderNav(); loadTab(); }
-
-// ---- Load tab ----
-async function loadTab() {
-    const main = document.getElementById('main');
-    try {
-        if (state.tab === 'dashboard') await renderDashboard(main);
-        else if (state.tab === 'tasks') await renderTasks(main);
-        else if (state.tab === 'team') await renderTeam(main);
-        else if (state.tab === 'activity') await renderActivity(main);
-    } catch (e) { toast(e.message, true); }
+async function openTaskModal(id){
+const task=id?state.tasks.find(t=>t.id===id):null;
+const{members}=await api('/admin/members');
+openModal(`<div class="modal-header"><h3>${task?'Edit Task':'New Task'}</h3><button class="close-btn" id="closeModalBtn">&times;</button></div>
+<div class="modal-body">
+<div class="form-group"><label class="form-label">Title</label><input class="form-input" id="f_title" value="${task?task.title:''}"></div>
+<div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="f_desc">${task?task.description||'':''}</textarea></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Project</label><input class="form-input" id="f_project" value="${task?task.project||'':''}"></div>
+<div class="form-group"><label class="form-label">Department</label><select class="form-select" id="f_dept">${DEPARTMENTS.map(d=>`<option value="${d}"${task&&task.department===d?' selected':''}>${d}</option>`).join('')}</select></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Category</label><select class="form-select" id="f_category">${CATEGORIES.map(c=>`<option value="${c}"${task&&task.category===c?' selected':''}>${c}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Priority</label><select class="form-select" id="f_priority">${PRIORITIES.map(p=>`<option value="${p}"${task&&task.priority===p?' selected':''}>${p}</option>`).join('')}</select></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Status</label><select class="form-select" id="f_status">${STATUSES.map(s=>`<option value="${s}"${task&&task.status===s?' selected':''}>${s.replace('_',' ')}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Assignee</label><select class="form-select" id="f_assignee"><option value="">Unassigned</option>${members.map(m=>`<option value="${m.id}"${task&&task.assignedTo===m.id?' selected':''}>${m.fullName}</option>`).join('')}</select></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Due Date</label><input type="date" class="form-input" id="f_due" value="${task?task.dueDate||'':''}"></div>
+<div class="form-group"><label class="form-label">Progress (%)</label><input type="number" class="form-input" id="f_progress" min="0" max="100" value="${task?task.progress:0}"></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Est. Hours</label><input type="number" class="form-input" id="f_est" value="${task?task.estimatedHours||'':''}"></div>
+<div class="form-group"><label class="form-label">Time Logged (min)</label><input type="number" class="form-input" id="f_timelog" value="${task?task.timeLogged||0:0}"></div></div>
+<div class="form-group"><label class="form-label">Quality Rating (1-5)</label><input type="number" class="form-input" id="f_quality" min="1" max="5" value="${task?task.qualityRating||'':''}"></div>
+<div class="form-group"><label class="form-label">Tags (comma-separated)</label><input class="form-input" id="f_tags" value="${Array.isArray(task&&task.tags)?task.tags.join(', '):''}"></div>
+</div><div class="modal-footer">${task?'<button class="btn btn-danger" id="delTaskBtn">Delete</button>':''}<button class="btn" id="cancelBtn">Cancel</button><button class="btn btn-primary" id="saveTaskBtn">Save</button></div>`);
+document.getElementById('closeModalBtn').addEventListener('click',closeModal);
+document.getElementById('cancelBtn').addEventListener('click',closeModal);
+document.getElementById('saveTaskBtn').addEventListener('click',()=>saveTask(id));
+if(task)document.getElementById('delTaskBtn').addEventListener('click',()=>deleteTask(id));
 }
 
-// ---- Dashboard ----
-async function renderDashboard(el) {
-    const { stats } = await api('/admin/stats');
-    state.stats = stats;
-    const maxStatus = Math.max(...Object.values(stats.byStatus), 1);
-    el.innerHTML = `
-        <div class="page-header"><h2>Dashboard</h2><p>Team overview and task distribution</p></div>
-        <div class="kpi-grid">
-            <div class="card kpi-card fade-in stagger-1"><div class="kpi-value">${stats.totalTasks}</div><div class="kpi-label">Total Tasks</div></div>
-            <div class="card kpi-card fade-in stagger-2"><div class="kpi-value">${stats.totalMembers}</div><div class="kpi-label">Team Members</div></div>
-            <div class="card kpi-card fade-in stagger-3"><div class="kpi-value">${stats.byStatus.in_progress}</div><div class="kpi-label">In Progress</div></div>
-            <div class="card kpi-card fade-in stagger-4"><div class="kpi-value">${stats.overdue}</div><div class="kpi-label">Overdue</div></div>
-            <div class="card kpi-card fade-in stagger-5"><div class="kpi-value">${stats.totalEstimated || 0}h</div><div class="kpi-label">Estimated Hours</div></div>
-            <div class="card kpi-card fade-in stagger-6"><div class="kpi-value">${stats.totalActual || 0}h</div><div class="kpi-label">Actual Hours</div></div>
-        </div>
-        <div class="card status-bar-container fade-in" style="animation-delay:.3s">
-            <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:16px">Task Status Distribution</h3>
-            ${Object.entries(stats.byStatus).map(([s, v]) => `
-                <div class="status-bar-row">
-                    <div class="status-bar-label">${s.replace('_',' ')}</div>
-                    <div class="status-bar-track"><div class="status-bar-fill" style="width:${(v/maxStatus)*100}%;background:${statusColor(s)}"></div></div>
-                    <div class="status-bar-count">${v}</div>
-                </div>
-            `).join('')}
-        </div>
-        <div class="card fade-in" style="animation-delay:.4s;margin-top:16px">
-            <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:16px">Department Breakdown</h3>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
-                ${Object.entries(stats.byDepartment).map(([d, v]) => `
-                    <div style="padding:12px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)">
-                        <div style="font-size:12px;font-weight:500;color:var(--white);text-transform:capitalize">${d}</div>
-                        <div style="font-size:11px;color:var(--g500);margin-top:4px">${v.members} members · ${v.tasks} tasks</div>
-                        <div class="progress-bar" style="margin-top:8px"><div class="progress-fill" style="width:${v.tasks?v.done/v.tasks*100:0}%"></div></div>
-                        <div style="font-size:10px;color:var(--g600);margin-top:4px">${v.done}/${v.tasks} done</div>
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-        <div class="card fade-in" style="animation-delay:.5s;margin-top:16px">
-            <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:16px">Member Workload</h3>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
-                ${stats.byMember.map(m => `
-                    <div style="padding:12px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)">
-                        <div style="font-size:12px;font-weight:500;color:var(--white)">${m.name}</div>
-                        <div style="font-size:10px;color:var(--g600);text-transform:capitalize">${m.hierarchy || ''} · ${m.department || ''}</div>
-                        <div style="display:flex;gap:4px;margin-top:8px">
-                            ${STATUSES.map(s => `<div style="flex:${Math.max(stats.byStatus[s]||1,1)};height:4px;border-radius:2px;background:${statusColor(s)};opacity:${m[s]?1:.2}" title="${s}: ${m[s]||0}"></div>`).join('')}
-                        </div>
-                        <div style="font-size:10px;color:var(--g500);margin-top:4px">${m.total} tasks</div>
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-    `;
+async function saveTask(id){
+const body={title:document.getElementById('f_title').value,description:document.getElementById('f_desc').value,project:document.getElementById('f_project').value,department:document.getElementById('f_dept').value,category:document.getElementById('f_category').value,priority:document.getElementById('f_priority').value,status:document.getElementById('f_status').value,assignedTo:document.getElementById('f_assignee').value||null,dueDate:document.getElementById('f_due').value||null,progress:parseInt(document.getElementById('f_progress').value)||0,estimatedHours:parseInt(document.getElementById('f_est').value)||null,timeLogged:parseInt(document.getElementById('f_timelog').value)||0,qualityRating:parseInt(document.getElementById('f_quality').value)||null,tags:document.getElementById('f_tags').value.split(',').map(s=>s.trim()).filter(Boolean)};
+try{if(id)await api('/admin/tasks/'+id,{method:'PUT',body:JSON.stringify(body)});else await api('/admin/tasks',{method:'POST',body:JSON.stringify(body)});toast(id?'Task updated':'Task created');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+
+async function deleteTask(id){if(!confirm('Delete this task?'))return;try{await api('/admin/tasks/'+id,{method:'DELETE'});toast('Task deleted');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+
+// ==================== TAB 3: TEAM ====================
+async function renderTeam(el){
+const{members}=await api('/admin/members');state.members=members;
+el.innerHTML=`<div class="page-header-row"><div><h2>Team</h2><p>Manage members, departments & hierarchy</p></div><button class="btn btn-primary" id="addMemberBtn">+ Add Member</button></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+${members.map((m,i)=>`<div class="card fade-in" style="animation-delay:${i*.04}s;cursor:pointer" data-member="${m.id}">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+<div style="width:36px;height:36px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--g300)">${initials(m.fullName)}</div>
+<div><div style="font-size:13px;font-weight:500;color:var(--white)">${m.fullName}</div><div style="font-size:10px;color:var(--g500)">@${m.username}</div></div></div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><span class="badge badge-in_progress">${m.role}</span><span class="dept-tag">${m.department}</span><span class="dept-tag">${m.hierarchy}</span></div>
+<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--g400)">${ratingStars(m.overallRating)}<span style="color:var(--g500)">${m.overallRating||0}/5</span><span style="color:var(--g700)">\u00b7</span><span>${m.reviewCount||0} reviews</span></div>
+<div style="font-size:10px;color:var(--g600);margin-top:6px">${m.email||m.mobile||''}${m.active?'':' \u00b7 Inactive'}</div>
+</div>`).join('')}
+</div>`;
+document.getElementById('addMemberBtn').addEventListener('click',()=>openMemberModal());
+document.querySelectorAll('[data-member]').forEach(c=>c.addEventListener('click',()=>openMemberDrawer(c.dataset.member)));
 }
 
-function statusColor(s) {
-    return { todo: '#525252', in_progress: '#737373', review: '#a3a3a3', done: '#fff', blocked: '#404040' }[s] || '#525252';
+async function openMemberDrawer(id){
+const m=state.members.find(x=>x.id===id);if(!m)return;
+const[reviewsRes,skillsRes,okrsRes,achRes]=await Promise.all([api('/admin/reviews?memberId='+id),api('/admin/skills?memberId='+id),api('/admin/okrs?memberId='+id),api('/admin/achievements?memberId='+id)]);
+const reviews=reviewsRes.reviews,skills=skillsRes.skills,okrs=okrsRes.okrs,achs=achRes.achievements;
+openDrawer(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div style="display:flex;align-items:center;gap:12px"><div style="width:44px;height:44px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--g300)">${initials(m.fullName)}</div><div><div style="font-size:16px;font-weight:600;color:var(--white)">${m.fullName}</div><div style="font-size:11px;color:var(--g500)">@${m.username} \u00b7 ${m.department} \u00b7 ${m.hierarchy}</div></div></div><button class="close-btn" id="closeDrawerBtn">&times;</button></div>
+${m.bio?`<div style="font-size:12px;color:var(--g400);margin-bottom:16px;padding:10px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)">${m.bio}</div>`:''}
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:20px"><div style="text-align:center;padding:8px;background:var(--g950);border-radius:6px"><div style="font-size:18px;font-weight:700;color:var(--white)">${m.overallRating||0}</div><div style="font-size:9px;color:var(--g500);text-transform:uppercase">Rating</div></div><div style="text-align:center;padding:8px;background:var(--g950);border-radius:6px"><div style="font-size:18px;font-weight:700;color:var(--white)">${m.reviewCount||0}</div><div style="font-size:9px;color:var(--g500);text-transform:uppercase">Reviews</div></div><div style="text-align:center;padding:8px;background:var(--g950);border-radius:6px"><div style="font-size:18px;font-weight:700;color:var(--white)">${achs.length}</div><div style="font-size:9px;color:var(--g500);text-transform:uppercase">Awards</div></div></div>
+${m.joinDate?`<div style="font-size:10px;color:var(--g600);margin-bottom:16px">Joined ${fmtDate(m.joinDate)}${m.location?' \u00b7 '+m.location:''}${m.timezone?' \u00b7 '+m.timezone:''}</div>`:''}
+<div style="margin-bottom:16px"><h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:8px">Skills (${skills.length})</h4>${skills.length?skills.map(s=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11px"><span style="color:var(--g300);width:100px">${s.skillName}</span><span class="skill-dot skill-dot-${s.proficiency}"></span><span style="color:var(--g500);font-size:9px">${PROFICIENCY_LABELS[s.proficiency]}</span></div>`).join(''):'<p style="font-size:11px;color:var(--g600)">No skills added</p>'}</div>
+<div style="margin-bottom:16px"><h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:8px">Active OKRs (${okrs.filter(o=>o.status==='active').length})</h4>${okrs.filter(o=>o.status==='active').map(o=>`<div style="margin-bottom:6px"><div style="font-size:11px;color:var(--g300)">${o.objectiveText}</div><div class="progress-bar" style="margin-top:4px"><div class="progress-fill" style="width:${o.progress}%"></div></div></div>`).join('')||'<p style="font-size:11px;color:var(--g600)">No active OKRs</p>'}</div>
+<div><h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:8px">Recent Reviews (${reviews.length})</h4>${reviews.slice(0,5).map(r=>`<div style="padding:8px;background:var(--g950);border-radius:4px;margin-bottom:6px;font-size:11px"><div style="display:flex;justify-content:space-between"><span style="color:var(--g400)">${r.reviewPeriod} \u00b7 ${r.reviewType}</span><span style="color:var(--white)">${r.overallRating}/5</span></div></div>`).join('')||'<p style="font-size:11px;color:var(--g600)">No reviews yet</p>'}</div>
+<div style="margin-top:16px;display:flex;gap:8px"><button class="btn btn-sm" id="editMemberBtn">Edit</button><button class="btn btn-sm btn-danger" id="delMemberBtn">Deactivate</button></div>`);
+document.getElementById('closeDrawerBtn').addEventListener('click',closeDrawer);
+document.getElementById('editMemberBtn').addEventListener('click',()=>{closeDrawer();openMemberModal(id);});
+document.getElementById('delMemberBtn').addEventListener('click',async()=>{if(confirm('Deactivate '+m.fullName+'?')){try{await api('/admin/members/'+id,{method:'DELETE'});toast('Member deactivated');closeDrawer();loadTab();}catch(e){toast(e.message,true);}}});
 }
 
-// ---- Tasks ----
-async function renderTasks(el) {
-    const { tasks } = await api('/admin/tasks');
-    const { members } = await api('/admin/members');
-    state.tasks = tasks; state.members = members;
-    el.innerHTML = `
-        <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
-            <div><h2>Tasks</h2><p>Manage and assign tasks across the team</p></div>
-            <button class="btn btn-primary" onclick="openTaskModal()">+ New Task</button>
-        </div>
-        <div class="filters">
-            <div class="filter-pill${!state.filters.status?' active':''}" onclick="setFilter('status','')">All</div>
-            ${STATUSES.map(s => `<div class="filter-pill${state.filters.status===s?' active':''}" onclick="setFilter('status','${s}')">${s.replace('_',' ')}</div>`).join('')}
-        </div>
-        <div class="filters">
-            ${DEPARTMENTS.map(d => `<div class="filter-pill${state.filters.department===d?' active':''}" onclick="setFilter('department','${d}')">${d}</div>`).join('')}
-        </div>
-        <div class="table-wrap fade-in">
-            <table>
-                <thead><tr><th>Task</th><th>Project</th><th>Department</th><th>Assignee</th><th>Status</th><th>Priority</th><th>Progress</th><th>Due</th><th></th></tr></thead>
-                <tbody>
-                    ${tasks.filter(t => !state.filters.status || t.status === state.filters.status)
-                            .filter(t => !state.filters.department || t.department === state.filters.department)
-                            .map((t, i) => {
-                        const assignee = members.find(m => m.id === t.assignedTo);
-                        return `<tr class="fade-in" style="animation-delay:${i*.03}s">
-                            <td style="color:var(--white);font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.title}</td>
-                            <td>${t.project || '—'}</td>
-                            <td><span class="dept-tag">${t.department || '—'}</span></td>
-                            <td>${assignee ? assignee.fullName : '—'}</td>
-                            <td><span class="badge badge-${t.status}">${t.status.replace('_',' ')}</span></td>
-                            <td><span class="badge badge-${t.priority}">${t.priority}</span></td>
-                            <td style="min-width:80px"><div class="progress-bar"><div class="progress-fill" style="width:${t.progress}%"></div></div><span style="font-size:10px;color:var(--g500)">${t.progress}%</span></td>
-                            <td style="font-size:12px;color:var(--g400)">${t.dueDate || '—'}</td>
-                            <td><button class="btn btn-sm" onclick="openTaskModal('${t.id}')">Edit</button></td>
-                        </tr>`;
-                    }).join('')}
-                </tbody>
-            </table>
-        </div>
-    `;
+async function openMemberModal(id){
+const member=id?state.members.find(m=>m.id===id):null;
+openModal(`<div class="modal-header"><h3>${member?'Edit Member':'Add Member'}</h3><button class="close-btn" id="closeMM">&times;</button></div>
+<div class="modal-body">
+<div class="form-row"><div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="m_name" value="${member?member.fullName:''}"></div><div class="form-group"><label class="form-label">Username</label><input class="form-input" id="m_username" value="${member?member.username:''}"></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Mobile</label><input class="form-input" id="m_mobile" value="${member?member.mobile||'':''}"></div><div class="form-group"><label class="form-label">Email</label><input class="form-input" id="m_email" value="${member?member.email||'':''}"></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Role</label><select class="form-select" id="m_role">${ROLES.map(r=>`<option value="${r}"${member&&member.role===r?' selected':''}>${r}</option>`).join('')}</select></div><div class="form-group"><label class="form-label">Department</label><select class="form-select" id="m_dept">${DEPARTMENTS.map(d=>`<option value="${d}"${member&&member.department===d?' selected':''}>${d}</option>`).join('')}</select></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Hierarchy</label><select class="form-select" id="m_hierarchy">${HIERARCHIES.map(h=>`<option value="${h}"${member&&member.hierarchy===h?' selected':''}>${h}</option>`).join('')}</select></div><div class="form-group"><label class="form-label">Join Date</label><input type="date" class="form-input" id="m_join" value="${member?member.joinDate||'':''}"></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Location</label><input class="form-input" id="m_location" value="${member?member.location||'':''}"></div><div class="form-group"><label class="form-label">Timezone</label><input class="form-input" id="m_tz" value="${member?member.timezone||'UTC':''}"></div></div>
+<div class="form-group"><label class="form-label">Bio</label><textarea class="form-textarea" id="m_bio">${member?member.bio||'':''}</textarea></div>
+</div><div class="modal-footer"><button class="btn" id="cancelMM">Cancel</button><button class="btn btn-primary" id="saveMM">Save</button></div>`);
+document.getElementById('closeMM').addEventListener('click',closeModal);
+document.getElementById('cancelMM').addEventListener('click',closeModal);
+document.getElementById('saveMM').addEventListener('click',()=>saveMember(id));
 }
 
-function setFilter(key, val) { state.filters[key] = val; loadTab(); }
+async function saveMember(id){
+const body={fullName:document.getElementById('m_name').value,username:document.getElementById('m_username').value,mobile:document.getElementById('m_mobile').value,email:document.getElementById('m_email').value,role:document.getElementById('m_role').value,department:document.getElementById('m_dept').value,hierarchy:document.getElementById('m_hierarchy').value,joinDate:document.getElementById('m_join').value||null,location:document.getElementById('m_location').value||null,timezone:document.getElementById('m_tz').value||'UTC',bio:document.getElementById('m_bio').value||null};
+try{if(id)await api('/admin/members/'+id,{method:'PUT',body:JSON.stringify(body)});else await api('/admin/members',{method:'POST',body:JSON.stringify(body)});toast(id?'Member updated':'Member added');closeModal();loadTab();}catch(e){toast(e.message,true);}}
 
-// ---- Task Modal ----
-async function openTaskModal(id) {
-    const task = id ? state.tasks.find(t => t.id === id) : null;
-    const { members } = state.members.length ? { members: state.members } : await api('/admin/members');
-    if (!state.members.length) state.members = members;
-    const m = document.getElementById('modal');
-    m.innerHTML = `
-        <div class="modal-header"><h3>${task ? 'Edit Task' : 'New Task'}</h3><button class="close-btn" onclick="closeModal()">&times;</button></div>
-        <div class="modal-body">
-            <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="f_title" value="${task?.title||''}"></div>
-            <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="f_desc">${task?.description||''}</textarea></div>
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Project</label><input class="form-input" id="f_project" value="${task?.project||''}"></div>
-                <div class="form-group"><label class="form-label">Department</label><select class="form-select" id="f_dept">${DEPARTMENTS.map(d=>`<option value="${d}"${task?.department===d?' selected':''}>${d}</option>`).join('')}</select></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Category</label><select class="form-select" id="f_category">${CATEGORIES.map(c=>`<option value="${c}"${task?.category===c?' selected':''}>${c}</option>`).join('')}</select></div>
-                <div class="form-group"><label class="form-label">Priority</label><select class="form-select" id="f_priority">${PRIORITIES.map(p=>`<option value="${p}"${task?.priority===p?' selected':''}>${p}</option>`).join('')}</select></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="f_status">${STATUSES.map(s=>`<option value="${s}"${task?.status===s?' selected':''}>${s.replace('_',' ')}</option>`).join('')}</select></div>
-                <div class="form-group"><label class="form-label">Assignee</label><select class="form-select" id="f_assignee"><option value="">Unassigned</option>${members.map(mb=>`<option value="${mb.id}"${task?.assignedTo===mb.id?' selected':''}>${mb.fullName} (${mb.department})</option>`).join('')}</select></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Due Date</label><input type="date" class="form-input" id="f_due" value="${task?.dueDate||''}"></div>
-                <div class="form-group"><label class="form-label">Progress (%)</label><input type="number" class="form-input" id="f_progress" min="0" max="100" value="${task?.progress||0}"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Estimated Hours</label><input type="number" class="form-input" id="f_est" value="${task?.estimatedHours||''}"></div>
-                <div class="form-group"><label class="form-label">Actual Hours</label><input type="number" class="form-input" id="f_actual" value="${task?.actualHours||''}"></div>
-            </div>
-            <div class="form-group"><label class="form-label">Tags (comma-separated)</label><input class="form-input" id="f_tags" value="${Array.isArray(task?.tags)?task.tags.join(', '):''}"></div>
-        </div>
-        <div class="modal-footer">
-            ${task ? '<button class="btn btn-danger" onclick="deleteTask(\''+task.id+'\')">Delete</button>' : ''}
-            <button class="btn" onclick="closeModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="saveTask('${id||''}')">Save</button>
-        </div>
-    `;
-    document.getElementById('modalOverlay').classList.add('open');
+// ==================== TAB 4: PERFORMANCE ====================
+async function renderPerformance(el){
+const[reviewsRes,membersRes]=await Promise.all([api('/admin/reviews'),api('/admin/members')]);
+state.reviews=reviewsRes.reviews;state.members=membersRes.members;
+const period=state.filters.period||'2026-Q3';
+const periodReviews=state.reviews.filter(r=>r.reviewPeriod===period&&r.reviewType==='manager');
+el.innerHTML=`<div class="page-header-row"><div><h2>Performance</h2><p>Reviews, ratings & performance tracking</p></div><button class="btn btn-primary" id="newReviewBtn">+ New Review</button></div>
+<div class="filters"><div style="font-size:10px;color:var(--g500);margin-right:8px;line-height:24px">Period:</div>${REVIEW_PERIODS.map(p=>`<div class="filter-pill${period===p?' active':''}" data-period="${p}">${p}</div>`).join('')}</div>
+<div class="table-wrap fade-in"><table><thead><tr><th>Member</th><th>Rating</th><th>Timeliness</th><th>Quality</th><th>Communication</th><th>Collaboration</th><th>Initiative</th><th>Problem Solving</th><th>Reviews</th><th></th></tr></thead><tbody>
+${state.members.filter(m=>m.active!==false).map((m,i)=>{
+const mr=periodReviews.filter(r=>r.memberId===m.id);const avg=mr.length?(mr.reduce((s,r)=>s+parseFloat(r.overallRating),0)/mr.length).toFixed(2):'—';
+return`<tr class="fade-in" style="animation-delay:${i*.02}s;cursor:pointer" data-review="${m.id}"><td style="color:var(--white);font-weight:500">${m.fullName}</td><td>${ratingStars(avg)}<span style="font-size:11px;margin-left:4px;color:var(--g400)">${avg}</span></td>
+${['timeliness','quality','communication','collaboration','initiative','problemSolving'].map(k=>{const v=mr.length?Math.round(mr.reduce((s,r)=>s+(r[k]||3),0)/mr.length):'—';return`<td style="font-size:11px;color:${typeof v==='number'?(v>=4?'var(--white)':v>=3?'var(--g300)':'var(--g500)'):'var(--g600)'}">${v}</td>`;}).join('')}
+<td style="font-size:11px;color:var(--g500)">${mr.length}</td><td><button class="btn btn-sm" data-reviewbtn="${m.id}">Review</button></td></tr>`;}).join('')}
+</tbody></table></div>`;
+document.getElementById('newReviewBtn').addEventListener('click',()=>openReviewModal());
+document.querySelectorAll('[data-period]').forEach(p=>p.addEventListener('click',()=>{state.filters.period=p.dataset.period;loadTab();}));
+document.querySelectorAll('[data-reviewbtn]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();openReviewModal(null,b.dataset.reviewbtn);}));
+document.querySelectorAll('[data-review]').forEach(r=>r.addEventListener('click',()=>openMemberReviewDrawer(r.dataset.review)));
 }
 
-async function saveTask(id) {
-    const body = {
-        title: document.getElementById('f_title').value,
-        description: document.getElementById('f_desc').value,
-        project: document.getElementById('f_project').value,
-        department: document.getElementById('f_dept').value,
-        category: document.getElementById('f_category').value,
-        priority: document.getElementById('f_priority').value,
-        status: document.getElementById('f_status').value,
-        assignedTo: document.getElementById('f_assignee').value || null,
-        dueDate: document.getElementById('f_due').value || null,
-        progress: parseInt(document.getElementById('f_progress').value) || 0,
-        estimatedHours: parseInt(document.getElementById('f_est').value) || null,
-        actualHours: parseInt(document.getElementById('f_actual').value) || null,
-        tags: document.getElementById('f_tags').value.split(',').map(s=>s.trim()).filter(Boolean)
-    };
-    try {
-        if (id) await api('/admin/tasks/' + id, { method: 'PUT', body: JSON.stringify(body) });
-        else await api('/admin/tasks', { method: 'POST', body: JSON.stringify(body) });
-        toast(id ? 'Task updated' : 'Task created');
-        closeModal(); loadTab();
-    } catch (e) { toast(e.message, true); }
+async function openReviewModal(id,memberId){
+const review=id?state.reviews.find(r=>r.id===id):null;
+const{members}=await api('/admin/members');
+openModal(`<div class="modal-header"><h3>${review?'Edit Review':'New Review'}</h3><button class="close-btn" id="closeRM">&times;</button></div>
+<div class="modal-body">
+<div class="form-row"><div class="form-group"><label class="form-label">Member</label><select class="form-select" id="r_member">${members.map(m=>`<option value="${m.id}"${review&&review.memberId===m.id?' selected':''}${memberId&&memberId===m.id?' selected':''}>${m.fullName}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Period</label><select class="form-select" id="r_period">${REVIEW_PERIODS.map(p=>`<option value="${p}"${review&&review.reviewPeriod===p?' selected':''}>${p}</option>`).join('')}</select></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Type</label><select class="form-select" id="r_type"><option value="manager"${review&&review.reviewType==='manager'?' selected':''}>Manager</option><option value="peer"${review&&review.reviewType==='peer'?' selected':''}>Peer</option><option value="self"${review&&review.reviewType==='self'?' selected':''}>Self</option></select></div>
+<div class="form-group"><label class="form-label">Overall Rating (1-5)</label><input type="number" class="form-input" id="r_overall" min="1" max="5" step="0.1" value="${review?review.overallRating:'3'}"></div></div>
+<h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin:12px 0 8px">Sub-Scores (1-5)</h4>
+<div class="form-row">${[['timeliness','Timeliness'],['quality','Quality'],['communication','Communication'],['collaboration','Collaboration'],['initiative','Initiative'],['problemSolving','Problem Solving']].map(([k,l])=>`<div class="form-group"><label class="form-label">${l}</label><input type="number" class="form-input" id="r_${k}" min="1" max="5" value="${review?review[k]||3:3}"></div>`).join('')}</div>
+<div class="form-group"><label class="form-label">Strengths</label><textarea class="form-textarea" id="r_strengths">${review?review.strengths||'':''}</textarea></div>
+<div class="form-group"><label class="form-label">Areas for Improvement</label><textarea class="form-textarea" id="r_improvements">${review?review.improvements||'':''}</textarea></div>
+<div class="form-group"><label class="form-label">Comments</label><textarea class="form-textarea" id="r_comments">${review?review.comments||'':''}</textarea></div>
+</div><div class="modal-footer">${review?'<button class="btn btn-danger" id="delReviewBtn">Delete</button>':''}<button class="btn" id="cancelRM">Cancel</button><button class="btn btn-primary" id="saveReviewBtn">Save</button></div>`);
+document.getElementById('closeRM').addEventListener('click',closeModal);
+document.getElementById('cancelRM').addEventListener('click',closeModal);
+document.getElementById('saveReviewBtn').addEventListener('click',()=>saveReview(id));
+if(review)document.getElementById('delReviewBtn').addEventListener('click',()=>deleteReview(id));
 }
 
-async function deleteTask(id) {
-    if (!confirm('Delete this task?')) return;
-    try { await api('/admin/tasks/' + id, { method: 'DELETE' }); toast('Task deleted'); closeModal(); loadTab(); } catch (e) { toast(e.message, true); }
+async function saveReview(id){
+const body={memberId:document.getElementById('r_member').value,reviewPeriod:document.getElementById('r_period').value,reviewType:document.getElementById('r_type').value,overallRating:parseFloat(document.getElementById('r_overall').value),timeliness:parseInt(document.getElementById('r_timeliness').value),quality:parseInt(document.getElementById('r_quality').value),communication:parseInt(document.getElementById('r_communication').value),collaboration:parseInt(document.getElementById('r_collaboration').value),initiative:parseInt(document.getElementById('r_initiative').value),problemSolving:parseInt(document.getElementById('r_problemSolving').value),strengths:document.getElementById('r_strengths').value,improvements:document.getElementById('r_improvements').value,comments:document.getElementById('r_comments').value};
+try{if(id)await api('/admin/reviews/'+id,{method:'PUT',body:JSON.stringify(body)});else await api('/admin/reviews',{method:'POST',body:JSON.stringify(body)});toast(id?'Review updated':'Review created');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+
+async function deleteReview(id){if(!confirm('Delete this review?'))return;try{await api('/admin/reviews/'+id,{method:'DELETE'});toast('Review deleted');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+
+async function openMemberReviewDrawer(memberId){
+const m=state.members.find(x=>x.id===memberId);if(!m)return;
+const{reviews}=await api('/admin/reviews?memberId='+memberId);
+openDrawer(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><div style="font-size:16px;font-weight:600;color:var(--white)">${m.fullName}</div><div style="font-size:11px;color:var(--g500)">Performance History \u00b7 ${reviews.length} reviews</div></div><button class="close-btn" id="closeRD">&times;</button></div>
+<div style="text-align:center;margin-bottom:20px;padding:16px;background:var(--g950);border-radius:8px;border:1px solid var(--g800)"><div style="font-size:36px;font-weight:700;color:var(--white)">${m.overallRating||0}</div><div style="font-size:12px;color:var(--g500)">${ratingStars(m.overallRating)} Average Rating</div></div>
+<div class="timeline">${reviews.map(r=>`<div class="timeline-item"><div class="time">${r.reviewPeriod} \u00b7 ${r.reviewType} \u00b7 ${fmtDateTime(r.createdAt)}</div><div class="content"><strong style="color:var(--white)">${r.overallRating}/5</strong> \u2014 T:${r.timeliness} Q:${r.quality} C:${r.communication} Co:${r.collaboration} I:${r.initiative} P:${r.problemSolving}</div>${r.strengths?`<div class="author" style="color:var(--g400)">Strengths: ${r.strengths}</div>`:''}${r.improvements?`<div class="author" style="color:var(--g400)">Improve: ${r.improvements}</div>`:''}</div>`).join('')||'<p style="color:var(--g600);font-size:12px">No reviews yet</p>'}</div>`);
+document.getElementById('closeRD').addEventListener('click',closeDrawer);
 }
 
-// ---- Team ----
-async function renderTeam(el) {
-    const { members } = await api('/admin/members');
-    state.members = members;
-    el.innerHTML = `
-        <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
-            <div><h2>Team</h2><p>Manage team members, departments, and hierarchy</p></div>
-            <button class="btn btn-primary" onclick="openMemberModal()">+ Add Member</button>
-        </div>
-        <div class="team-grid">
-            ${members.map((m, i) => `
-                <div class="card member-card fade-in" style="animation-delay:${i*.05}s">
-                    <div class="member-header">
-                        <div class="avatar">${m.fullName.split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
-                        <div class="member-info">
-                            <h4>${m.fullName}</h4>
-                            <p>@${m.username}</p>
-                        </div>
-                    </div>
-                    <div class="member-meta">
-                        <span class="badge badge-in_progress">${m.role}</span>
-                        <span class="dept-tag">${m.department}</span>
-                        <span class="dept-tag">${m.hierarchy}</span>
-                    </div>
-                    <div style="font-size:11px;color:var(--g500)">
-                        ${m.email || m.mobile}
-                        ${m.active ? '' : ' · <span style="color:#666">Inactive</span>'}
-                    </div>
-                    ${Array.isArray(m.skills) && m.skills.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${m.skills.map(s=>`<span style="font-size:9px;padding:2px 6px;background:var(--g800);border-radius:3px;color:var(--g500)">${s}</span>`).join('')}</div>` : ''}
-                    <div style="display:flex;gap:8px;margin-top:auto">
-                        <button class="btn btn-sm" onclick="openMemberModal('${m.id}')">Edit</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteMember('${m.id}')">Remove</button>
-                    </div>
-                </div>
-            `).join('')}
-        </div>
-    `;
+// ==================== TAB 5: SKILLS MATRIX ====================
+async function renderSkills(el){
+const[matrixRes,skillsRes]=await Promise.all([api('/admin/skill-matrix'),api('/admin/skills')]);
+state.skills=skillsRes.skills;
+const cat=state.filters.skillCat||'technical';
+const filteredSkills=state.skills.filter(s=>s.category===cat);
+const allSkillNames=[...new Set(state.skills.map(s=>s.skillName))].sort();
+el.innerHTML=`<div class="page-header-row"><div><h2>Skills Matrix</h2><p>Team skill coverage & proficiency tracking</p></div><button class="btn btn-primary" id="addSkillBtn">+ Add Skill</button></div>
+<div class="filters"><div style="font-size:10px;color:var(--g500);margin-right:8px;line-height:24px">Category:</div>${SKILL_CATS.map(c=>`<div class="filter-pill${cat===c?' active':''}" data-scat="${c}">${c}</div>`).join('')}</div>
+<div class="card fade-in" style="margin-bottom:16px"><h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Skill Coverage (${allSkillNames.length} unique skills)</h3>
+<div style="display:flex;flex-wrap:wrap;gap:6px">${allSkillNames.map(s=>{const count=state.skills.filter(x=>x.skillName===s).length;return`<span class="dept-tag" style="${count===0?'opacity:.4':''}">${s} (${count})</span>`;}).join('')}</div></div>
+<div class="table-wrap fade-in"><table><thead><tr><th>Member</th>${allSkillNames.slice(0,12).map(s=>`<th style="font-size:8px;writing-mode:vertical-rl;text-orientation:mixed;min-width:20px">${s}</th>`).join('')}</tr></thead><tbody>
+${matrixRes.matrix.map((row,i)=>`<tr class="fade-in" style="animation-delay:${i*.02}s"><td style="color:var(--white);font-weight:500;font-size:11px">${row.member.fullName}</td>${allSkillNames.slice(0,12).map(s=>{const sk=row.skills[s];return`<td style="text-align:center">${sk?`<span class="skill-dot skill-dot-${sk.proficiency}" title="${sk.proficiency}/5"></span>`:'<span style="color:var(--g700)">\u2014</span>'}</td>`;}).join('')}</tr>`).join('')}
+</tbody></table></div>
+<div class="card fade-in" style="margin-top:16px"><h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">All Skills (${filteredSkills.length})</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">${filteredSkills.map(s=>{const m=state.members.find(x=>x.id===s.memberId);return`<div style="padding:8px;background:var(--g950);border-radius:4px;border:1px solid var(--g800);display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:11px;color:var(--g300)">${s.skillName}</div><div style="font-size:9px;color:var(--g600)">${m?m.fullName:'Unknown'}</div></div><div style="display:flex;align-items:center;gap:4px"><span class="skill-dot skill-dot-${s.proficiency}"></span><span style="font-size:9px;color:var(--g500)">${PROFICIENCY_LABELS[s.proficiency]}</span></div></div>`;}).join('')}</div></div>`;
+document.getElementById('addSkillBtn').addEventListener('click',()=>openSkillModal());
+document.querySelectorAll('[data-scat]').forEach(p=>p.addEventListener('click',()=>{state.filters.skillCat=p.dataset.scat;loadTab();}));
 }
 
-async function openMemberModal(id) {
-    const member = id ? state.members.find(m => m.id === id) : null;
-    const m = document.getElementById('modal');
-    m.innerHTML = `
-        <div class="modal-header"><h3>${member ? 'Edit Member' : 'Add Member'}</h3><button class="close-btn" onclick="closeModal()">&times;</button></div>
-        <div class="modal-body">
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="m_name" value="${member?.fullName||''}"></div>
-                <div class="form-group"><label class="form-label">Username</label><input class="form-input" id="m_username" value="${member?.username||''}"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Mobile</label><input class="form-input" id="m_mobile" value="${member?.mobile||''}"></div>
-                <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="m_email" value="${member?.email||''}"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Role</label><select class="form-select" id="m_role">${ROLES.map(r=>`<option value="${r}"${member?.role===r?' selected':''}>${r}</option>`).join('')}</select></div>
-                <div class="form-group"><label class="form-label">Department</label><select class="form-select" id="m_dept">${DEPARTMENTS.map(d=>`<option value="${d}"${member?.department===d?' selected':''}>${d}</option>`).join('')}</select></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Hierarchy</label><select class="form-select" id="m_hierarchy">${HIERARCHIES.map(h=>`<option value="${h}"${member?.hierarchy===h?' selected':''}>${h}</option>`).join('')}</select></div>
-                <div class="form-group"><label class="form-label">Reports To</label><select class="form-select" id="m_reports"><option value="">None</option>${state.members.filter(x=>x.id!==id).map(x=>`<option value="${x.id}"${member?.reportsTo===x.id?' selected':''}>${x.fullName}</option>`).join('')}</select></div>
-            </div>
-            <div class="form-group"><label class="form-label">Skills (comma-separated)</label><input class="form-input" id="m_skills" value="${Array.isArray(member?.skills)?member.skills.join(', '):''}"></div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn" onclick="closeModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="saveMember('${id||''}')">Save</button>
-        </div>
-    `;
-    document.getElementById('modalOverlay').classList.add('open');
+async function openSkillModal(id){
+const skill=id?state.skills.find(s=>s.id===id):null;
+const{members}=await api('/admin/members');
+openModal(`<div class="modal-header"><h3>${skill?'Edit Skill':'Add Skill'}</h3><button class="close-btn" id="closeSM">&times;</button></div>
+<div class="modal-body">
+<div class="form-row"><div class="form-group"><label class="form-label">Member</label><select class="form-select" id="s_member">${members.map(m=>`<option value="${m.id}"${skill&&skill.memberId===m.id?' selected':''}>${m.fullName}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Category</label><select class="form-select" id="s_cat">${SKILL_CATS.map(c=>`<option value="${c}"${skill&&skill.category===c?' selected':''}>${c}</option>`).join('')}</select></div></div>
+<div class="form-group"><label class="form-label">Skill Name</label><input class="form-input" id="s_name" value="${skill?skill.skillName:''}"></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Proficiency (1-5)</label><select class="form-select" id="s_prof">${[1,2,3,4,5].map(p=>`<option value="${p}"${skill&&skill.proficiency===p?' selected':''}>${PROFICIENCY_LABELS[p]}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Years Experience</label><input type="number" class="form-input" id="s_years" min="0" step="0.5" value="${skill?skill.yearsExperience||0:0}"></div></div>
+<div class="form-group"><label class="form-label">Notes</label><input class="form-input" id="s_notes" value="${skill?skill.notes||'':''}"></div>
+</div><div class="modal-footer">${skill?'<button class="btn btn-danger" id="delSkillBtn">Delete</button>':''}<button class="btn" id="cancelSM">Cancel</button><button class="btn btn-primary" id="saveSkillBtn">Save</button></div>`);
+document.getElementById('closeSM').addEventListener('click',closeModal);document.getElementById('cancelSM').addEventListener('click',closeModal);
+document.getElementById('saveSkillBtn').addEventListener('click',()=>saveSkill(id));
+if(skill)document.getElementById('delSkillBtn').addEventListener('click',()=>deleteSkill(id));
 }
 
-async function saveMember(id) {
-    const body = {
-        fullName: document.getElementById('m_name').value,
-        username: document.getElementById('m_username').value,
-        mobile: document.getElementById('m_mobile').value,
-        email: document.getElementById('m_email').value,
-        role: document.getElementById('m_role').value,
-        department: document.getElementById('m_dept').value,
-        hierarchy: document.getElementById('m_hierarchy').value,
-        reportsTo: document.getElementById('m_reports').value || null,
-        skills: document.getElementById('m_skills').value.split(',').map(s=>s.trim()).filter(Boolean)
-    };
-    try {
-        if (id) await api('/admin/members/' + id, { method: 'PUT', body: JSON.stringify(body) });
-        else await api('/admin/members', { method: 'POST', body: JSON.stringify(body) });
-        toast(id ? 'Member updated' : 'Member added');
-        closeModal(); loadTab();
-    } catch (e) { toast(e.message, true); }
+async function saveSkill(id){const body={memberId:document.getElementById('s_member').value,skillName:document.getElementById('s_name').value,category:document.getElementById('s_cat').value,proficiency:parseInt(document.getElementById('s_prof').value),yearsExperience:parseFloat(document.getElementById('s_years').value),notes:document.getElementById('s_notes').value};try{if(id)await api('/admin/skills/'+id,{method:'PUT',body:JSON.stringify(body)});else await api('/admin/skills',{method:'POST',body:JSON.stringify(body)});toast(id?'Skill updated':'Skill added');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+async function deleteSkill(id){if(!confirm('Delete?'))return;try{await api('/admin/skills/'+id,{method:'DELETE'});toast('Deleted');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+
+// ==================== TAB 6: OKRs ====================
+async function renderOkrs(el){
+const{okrs}=await api('/admin/okrs');state.okrs=okrs;
+const period=state.filters.okrPeriod||'2026-Q3';
+const periodOkrs=okrs.filter(o=>o.period===period);
+el.innerHTML=`<div class="page-header-row"><div><h2>OKRs</h2><p>Objectives & Key Results tracking</p></div><button class="btn btn-primary" id="newOkrBtn">+ New OKR</button></div>
+<div class="filters">${OKR_PERIODS.map(p=>`<div class="filter-pill${period===p?' active':''}" data-operiod="${p}">${p}</div>`).join('')}</div>
+<div class="kpi-grid" style="margin-bottom:20px"><div class="card kpi-card"><div class="kpi-value">${periodOkrs.length}</div><div class="kpi-label">Total OKRs</div></div><div class="card kpi-card"><div class="kpi-value">${periodOkrs.filter(o=>o.status==='achieved').length}</div><div class="kpi-label">Achieved</div></div><div class="card kpi-card"><div class="kpi-value">${periodOkrs.filter(o=>o.status==='active').length}</div><div class="kpi-label">Active</div></div><div class="card kpi-card"><div class="kpi-value">${periodOkrs.length?Math.round(periodOkrs.reduce((s,o)=>s+o.progress,0)/periodOkrs.length):0}%</div><div class="kpi-label">Avg Progress</div></div></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">
+${periodOkrs.map((o,i)=>{const m=state.members.find(x=>x.id===o.memberId);const krs=Array.isArray(o.keyResults)?o.keyResults:[];
+return`<div class="card fade-in" style="animation-delay:${i*.04}s;cursor:pointer" data-okr="${o.id}"><div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px"><div><div style="font-size:12px;font-weight:500;color:var(--white);margin-bottom:2px">${o.objectiveText}</div><div style="font-size:10px;color:var(--g500)">${m?m.fullName:'Unknown'} \u00b7 ${o.period}</div></div><span class="badge badge-${o.status}">${o.status}</span></div>
+<div class="progress-bar" style="margin-bottom:6px"><div class="progress-fill" style="width:${o.progress}%"></div></div><div style="font-size:10px;color:var(--g500)">${o.progress}% complete</div>
+${krs.length?`<div style="margin-top:8px">${krs.map(kr=>`<div style="font-size:10px;color:var(--g400);margin-bottom:3px;display:flex;justify-content:space-between"><span>${kr.text||kr}</span><span>${kr.current||0}/${kr.target||'?'} ${kr.unit||''}</span></div>`).join('')}</div>`:''}</div>`;}).join('')||'<p style="color:var(--g600);font-size:12px">No OKRs for this period</p>'}
+</div>`;
+document.getElementById('newOkrBtn').addEventListener('click',()=>openOkrModal());
+document.querySelectorAll('[data-operiod]').forEach(p=>p.addEventListener('click',()=>{state.filters.okrPeriod=p.dataset.operiod;loadTab();}));
+document.querySelectorAll('[data-okr]').forEach(c=>c.addEventListener('click',()=>openOkrModal(c.dataset.okr)));
 }
 
-async function deleteMember(id) {
-    if (!confirm('Deactivate this member?')) return;
-    try { await api('/admin/members/' + id, { method: 'DELETE' }); toast('Member deactivated'); loadTab(); } catch (e) { toast(e.message, true); }
+async function openOkrModal(id){
+const okr=id?state.okrs.find(o=>o.id===id):null;
+const{members}=await api('/admin/members');
+const krs=okr&&Array.isArray(okr.keyResults)?okr.keyResults:[{text:'',target:'',current:0,unit:''}];
+openModal(`<div class="modal-header"><h3>${okr?'Edit OKR':'New OKR'}</h3><button class="close-btn" id="closeOM">&times;</button></div>
+<div class="modal-body">
+<div class="form-row"><div class="form-group"><label class="form-label">Member</label><select class="form-select" id="o_member">${members.map(m=>`<option value="${m.id}"${okr&&okr.memberId===m.id?' selected':''}>${m.fullName}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Period</label><select class="form-select" id="o_period">${OKR_PERIODS.map(p=>`<option value="${p}"${okr&&okr.period===p?' selected':''}>${p}</option>`).join('')}</select></div></div>
+<div class="form-group"><label class="form-label">Objective</label><input class="form-input" id="o_objective" value="${okr?okr.objectiveText:''}"></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Status</label><select class="form-select" id="o_status"><option value="draft"${okr&&okr.status==='draft'?' selected':''}>Draft</option><option value="active"${okr&&okr.status==='active'?' selected':''}>Active</option><option value="achieved"${okr&&okr.status==='achieved'?' selected':''}>Achieved</option><option value="missed"${okr&&okr.status==='missed'?' selected':''}>Missed</option></select></div>
+<div class="form-group"><label class="form-label">Progress (%)</label><input type="number" class="form-input" id="o_progress" min="0" max="100" value="${okr?okr.progress:0}"></div></div>
+<h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin:12px 0 8px">Key Results</h4>
+<div id="krList">${krs.map((kr,i)=>`<div class="form-row" style="margin-bottom:6px"><div class="form-group"><input class="form-input" placeholder="Key result description" value="${kr.text||''}" data-kr-text="${i}"></div><div class="form-group" style="display:flex;gap:4px"><input class="form-input" placeholder="Target" value="${kr.target||''}" data-kr-target="${i}" style="width:60px"><input class="form-input" placeholder="Current" value="${kr.current||0}" data-kr-current="${i}" type="number" style="width:60px"><input class="form-input" placeholder="Unit" value="${kr.unit||''}" data-kr-unit="${i}" style="width:50px"></div></div>`).join('')}</div>
+<button class="btn btn-sm" id="addKrBtn">+ Add Key Result</button>
+</div><div class="modal-footer">${okr?'<button class="btn btn-danger" id="delOkrBtn">Delete</button>':''}<button class="btn" id="cancelOM">Cancel</button><button class="btn btn-primary" id="saveOkrBtn">Save</button></div>`);
+document.getElementById('closeOM').addEventListener('click',closeModal);document.getElementById('cancelOM').addEventListener('click',closeModal);
+document.getElementById('saveOkrBtn').addEventListener('click',()=>saveOkr(id));
+document.getElementById('addKrBtn').addEventListener('click',()=>{const list=document.getElementById('krList');const idx=list.children.length;const div=document.createElement('div');div.className='form-row';div.style.marginBottom='6px';div.innerHTML=`<div class="form-group"><input class="form-input" placeholder="Key result description" data-kr-text="${idx}"></div><div class="form-group" style="display:flex;gap:4px"><input class="form-input" placeholder="Target" data-kr-target="${idx}" style="width:60px"><input class="form-input" placeholder="Current" data-kr-current="${idx}" type="number" style="width:60px"><input class="form-input" placeholder="Unit" data-kr-unit="${idx}" style="width:50px"></div>`;list.appendChild(div);});
+if(okr)document.getElementById('delOkrBtn').addEventListener('click',()=>deleteOkr(id));
 }
 
-// ---- Activity ----
-async function renderActivity(el) {
-    const { tasks } = await api('/admin/tasks');
-    const allNotes = [];
-    tasks.forEach(t => {
-        if (Array.isArray(t.notes)) {
-            t.notes.forEach(n => allNotes.push({ ...n, taskTitle: t.title, taskId: t.id }));
-        }
-    });
-    allNotes.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    el.innerHTML = `
-        <div class="page-header"><h2>Activity</h2><p>Recent updates and progress notes across all tasks</p></div>
-        <div class="card fade-in">
-            ${allNotes.length ? `<div class="timeline">${allNotes.slice(0, 50).map((n, i) => `
-                <div class="timeline-item" style="animation-delay:${i*.05}s">
-                    <div class="time">${new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
-                    <div class="content"><strong style="color:var(--white)">${n.taskTitle}</strong> — ${n.text}</div>
-                    <div class="author">by ${n.author || 'Unknown'}</div>
-                </div>
-            `).join('')}</div>` : '<p style="color:var(--g500);font-size:13px">No activity yet. Notes added to tasks will appear here.</p>'}
-        </div>
-    `;
+async function saveOkr(id){const krs=[];document.querySelectorAll('[data-kr-text]').forEach((el,i)=>{krs.push({text:el.value,target:document.querySelector(`[data-kr-target="${i}"]`).value,current:parseFloat(document.querySelector(`[data-kr-current="${i}"]`).value)||0,unit:document.querySelector(`[data-kr-unit="${i}"]`).value});});
+const body={memberId:document.getElementById('o_member').value,period:document.getElementById('o_period').value,objectiveText:document.getElementById('o_objective').value,status:document.getElementById('o_status').value,progress:parseInt(document.getElementById('o_progress').value)||0,keyResults:krs};
+try{if(id)await api('/admin/okrs/'+id,{method:'PUT',body:JSON.stringify(body)});else await api('/admin/okrs',{method:'POST',body:JSON.stringify(body)});toast(id?'OKR updated':'OKR created');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+async function deleteOkr(id){if(!confirm('Delete?'))return;try{await api('/admin/okrs/'+id,{method:'DELETE'});toast('Deleted');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+
+// ==================== TAB 7: MEETINGS ====================
+async function renderMeetings(el){
+const{meetings}=await api('/admin/meetings');state.meetings=meetings;
+const type=state.filters.meetingType||'';
+const filtered=type?meetings.filter(m=>m.meetingType===type):meetings;
+el.innerHTML=`<div class="page-header-row"><div><h2>Meetings</h2><p>1-on-1s, team meetings & retrospectives</p></div><button class="btn btn-primary" id="newMeetingBtn">+ New Meeting</button></div>
+<div class="filters"><div class="filter-pill${!type?' active':''}" data-mtype="">All</div>${MEETING_TYPES.map(t=>`<div class="filter-pill${type===t?' active':''}" data-mtype="${t}">${t}</div>`).join('')}</div>
+<div class="table-wrap fade-in"><table><thead><tr><th>Title</th><th>Type</th><th>Member</th><th>Scheduled</th><th>Duration</th><th>Actions</th><th></th></tr></thead><tbody>
+${filtered.map((m,i)=>{const member=state.members.find(x=>x.id===m.memberId);const actions=Array.isArray(m.actionItems)?m.actionItems:[];const doneActions=actions.filter(a=>a.done).length;
+return`<tr class="fade-in" style="animation-delay:${i*.02}s;cursor:pointer" data-meeting="${m.id}"><td style="color:var(--white);font-weight:500">${m.title}</td><td><span class="badge badge-${m.meetingType}">${m.meetingType}</span></td><td>${member?member.fullName:'\u2014'}</td><td style="font-size:11px;color:var(--g400)">${m.scheduledAt?fmtDateTime(m.scheduledAt):'\u2014'}</td><td style="font-size:11px;color:var(--g500)">${m.durationMinutes||30}min</td><td style="font-size:10px;color:var(--g500)">${doneActions}/${actions.length} done</td><td><button class="btn btn-sm" data-meetingbtn="${m.id}">View</button></td></tr>`;}).join('')}
+</tbody></table></div>`;
+document.getElementById('newMeetingBtn').addEventListener('click',()=>openMeetingModal());
+document.querySelectorAll('[data-mtype]').forEach(p=>p.addEventListener('click',()=>{state.filters.meetingType=p.dataset.mtype;loadTab();}));
+document.querySelectorAll('[data-meetingbtn]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();openMeetingModal(b.dataset.meetingbtn);}));
+document.querySelectorAll('[data-meeting]').forEach(r=>r.addEventListener('click',()=>openMeetingDrawer(r.dataset.meeting)));
 }
 
-// ---- Modal helpers ----
-function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
-document.getElementById('modalOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
-
-// ---- Admin login page ----
-function showLoginPage() {
-    document.getElementById('app').classList.add('hidden');
-    const lp = document.getElementById('loginPage');
-    lp.style.display = 'flex';
-    const input = document.getElementById('login_pass');
-    input.value = '';
-    input.focus();
+async function openMeetingModal(id){
+const meeting=id?state.meetings.find(m=>m.id===id):null;
+const{members}=await api('/admin/members');
+const actions=meeting&&Array.isArray(meeting.actionItems)?meeting.actionItems:[];
+openModal(`<div class="modal-header"><h3>${meeting?'Edit Meeting':'New Meeting'}</h3><button class="close-btn" id="closeMMt">&times;</button></div>
+<div class="modal-body">
+<div class="form-row"><div class="form-group"><label class="form-label">Type</label><select class="form-select" id="mt_type">${MEETING_TYPES.map(t=>`<option value="${t}"${meeting&&meeting.meetingType===t?' selected':''}>${t}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Member (for 1on1)</label><select class="form-select" id="mt_member"><option value="">Team Meeting</option>${members.map(m=>`<option value="${m.id}"${meeting&&meeting.memberId===m.id?' selected':''}>${m.fullName}</option>`).join('')}</select></div></div>
+<div class="form-group"><label class="form-label">Title</label><input class="form-input" id="mt_title" value="${meeting?meeting.title:''}"></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Scheduled</label><input type="datetime-local" class="form-input" id="mt_scheduled" value="${meeting&&meeting.scheduledAt?meeting.scheduledAt.slice(0,16):''}"></div>
+<div class="form-group"><label class="form-label">Duration (min)</label><input type="number" class="form-input" id="mt_duration" value="${meeting?meeting.durationMinutes||30:30}"></div></div>
+<div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="mt_notes">${meeting?meeting.notes||'':''}</textarea></div>
+<h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin:12px 0 8px">Action Items</h4>
+<div id="actionList">${actions.map((a,i)=>`<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center"><input type="checkbox" ${a.done?'checked':''} data-ai-done="${i}"><input class="form-input" value="${a.text||''}" data-ai-text="${i}" placeholder="Action item" style="flex:1"><input class="form-input" value="${a.assignee||''}" data-ai-assignee="${i}" placeholder="Assignee" style="width:100px"></div>`).join('')}</div>
+<button class="btn btn-sm" id="addActionBtn">+ Add Action Item</button>
+</div><div class="modal-footer">${meeting?'<button class="btn btn-danger" id="delMeetingBtn">Delete</button>':''}<button class="btn" id="cancelMMt">Cancel</button><button class="btn btn-primary" id="saveMeetingBtn">Save</button></div>`);
+document.getElementById('closeMMt').addEventListener('click',closeModal);document.getElementById('cancelMMt').addEventListener('click',closeModal);
+document.getElementById('saveMeetingBtn').addEventListener('click',()=>saveMeeting(id));
+document.getElementById('addActionBtn').addEventListener('click',()=>{const list=document.getElementById('actionList');const idx=list.children.length;const div=document.createElement('div');div.style.cssText='display:flex;gap:6px;margin-bottom:6px;align-items:center';div.innerHTML=`<input type="checkbox" data-ai-done="${idx}"><input class="form-input" data-ai-text="${idx}" placeholder="Action item" style="flex:1"><input class="form-input" data-ai-assignee="${idx}" placeholder="Assignee" style="width:100px">`;list.appendChild(div);});
+if(meeting)document.getElementById('delMeetingBtn').addEventListener('click',()=>deleteMeeting(id));
 }
 
-function hideLoginPage() {
-    document.getElementById('app').classList.remove('hidden');
-    document.getElementById('loginPage').style.display = 'none';
+async function saveMeeting(id){const actions=[];document.querySelectorAll('[data-ai-text]').forEach((el,i)=>{actions.push({text:el.value,done:document.querySelector(`[data-ai-done="${i}"]`).checked,assignee:document.querySelector(`[data-ai-assignee="${i}"]`).value});});
+const body={meetingType:document.getElementById('mt_type').value,memberId:document.getElementById('mt_member').value||null,title:document.getElementById('mt_title').value,scheduledAt:document.getElementById('mt_scheduled').value||null,durationMinutes:parseInt(document.getElementById('mt_duration').value)||30,notes:document.getElementById('mt_notes').value,actionItems:actions};
+try{if(id)await api('/admin/meetings/'+id,{method:'PUT',body:JSON.stringify(body)});else await api('/admin/meetings',{method:'POST',body:JSON.stringify(body)});toast(id?'Meeting updated':'Meeting created');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+async function deleteMeeting(id){if(!confirm('Delete?'))return;try{await api('/admin/meetings/'+id,{method:'DELETE'});toast('Deleted');closeModal();loadTab();}catch(e){toast(e.message,true);}}
+
+async function openMeetingDrawer(id){const m=state.meetings.find(x=>x.id===id);if(!m)return;const actions=Array.isArray(m.actionItems)?m.actionItems:[];
+openDrawer(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><div style="font-size:16px;font-weight:600;color:var(--white)">${m.title}</div><div style="font-size:11px;color:var(--g500)">${m.meetingType} \u00b7 ${m.scheduledAt?fmtDateTime(m.scheduledAt):'\u2014'} \u00b7 ${m.durationMinutes||30}min</div></div><button class="close-btn" id="closeMD">&times;</button></div>
+${m.notes?`<div style="margin-bottom:20px"><h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:8px">Notes</h4><div style="font-size:12px;color:var(--g300);line-height:1.6;padding:12px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)">${m.notes}</div></div>`:''}
+<div><h4 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:8px">Action Items (${actions.filter(a=>a.done).length}/${actions.length} done)</h4>
+${actions.map(a=>`<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--g950);border-radius:4px;margin-bottom:6px;border:1px solid var(--g800)"><span style="font-size:12px;color:${a.done?'var(--g500)':'var(--g300)'};${a.done?'text-decoration:line-through':''}">${a.text}</span>${a.assignee?`<span class="dept-tag" style="margin-left:auto">${a.assignee}</span>`:''}</div>`).join('')||'<p style="font-size:11px;color:var(--g600)">No action items</p>'}</div>`);
+document.getElementById('closeMD').addEventListener('click',closeDrawer);
 }
 
-document.getElementById('loginBtn').addEventListener('click', doLogin);
-document.getElementById('login_pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-
-async function doLogin() {
-    const pass = document.getElementById('login_pass').value;
-    if (!pass) return;
-    const btn = document.getElementById('loginBtn');
-    btn.textContent = 'Logging in...';
-    btn.disabled = true;
-    try {
-        const res = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pass }) });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Login failed');
-        localStorage.setItem('admin_jwt', data.token);
-        hideLoginPage();
-        loadTab();
-    } catch (e) {
-        toast(e.message, true);
-        btn.textContent = 'Login';
-        btn.disabled = false;
-    }
+// ==================== TAB 8: RECOGNITION ====================
+async function renderRecognition(el){
+const{achievements}=await api('/admin/achievements');state.achievements=achievements;
+const cat=state.filters.achieveCat||'';
+const filtered=cat?achievements.filter(a=>a.category===cat):achievements;
+el.innerHTML=`<div class="page-header-row"><div><h2>Recognition</h2><p>Achievements, awards & team shoutouts</p></div><button class="btn btn-primary" id="newAchBtn">+ Give Recognition</button></div>
+<div class="filters"><div class="filter-pill${!cat?' active':''}" data-acat="">All</div>${ACHIEVE_CATS.map(c=>`<div class="filter-pill${cat===c?' active':''}" data-acat="${c}">${c}</div>`).join('')}</div>
+<div class="kpi-grid" style="margin-bottom:20px"><div class="card kpi-card"><div class="kpi-value">${achievements.length}</div><div class="kpi-label">Total</div></div>${ACHIEVE_CATS.map(c=>`<div class="card kpi-card"><div class="kpi-value">${achievements.filter(a=>a.category===c).length}</div><div class="kpi-label">${c}</div></div>`).join('')}</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+${filtered.map((a,i)=>{const m=state.members.find(x=>x.id===a.memberId);const giver=state.members.find(x=>x.id===a.awardedBy);
+return`<div class="card fade-in" style="animation-delay:${i*.04}s"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><div style="width:36px;height:36px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:18px">${a.badgeIcon==='star'?'\u2b50':a.badgeIcon==='trophy'?'\ud83c\udfc6':a.badgeIcon==='certificate'?'\ud83d\udcdc':'\ud83c\udf89'}</div><div><div style="font-size:13px;font-weight:500;color:var(--white)">${a.title}</div><div style="font-size:10px;color:var(--g500)">${m?m.fullName:'Unknown'} \u00b7 ${fmtDate(a.createdAt)}</div></div></div>
+${a.description?`<div style="font-size:11px;color:var(--g400);margin-bottom:8px">${a.description}</div>`:''}<div style="display:flex;justify-content:space-between;align-items:center"><span class="badge badge-${a.category}">${a.category}</span>${giver?`<span style="font-size:9px;color:var(--g600)">by ${giver.fullName}</span>`:''}</div></div>`;}).join('')||'<p style="color:var(--g600);font-size:12px">No achievements yet</p>'}
+</div>`;
+document.getElementById('newAchBtn').addEventListener('click',()=>openAchieveModal());
+document.querySelectorAll('[data-acat]').forEach(p=>p.addEventListener('click',()=>{state.filters.achieveCat=p.dataset.acat;loadTab();}));
 }
 
-// ---- Init ----
-function init() {
-    renderNav();
-    const token = localStorage.getItem('admin_jwt') || localStorage.getItem('token');
-    if (!token) { showLoginPage(); }
-    else { hideLoginPage(); loadTab(); }
+async function openAchieveModal(){
+const{members}=await api('/admin/members');
+openModal(`<div class="modal-header"><h3>Give Recognition</h3><button class="close-btn" id="closeAM">&times;</button></div>
+<div class="modal-body">
+<div class="form-row"><div class="form-group"><label class="form-label">Member</label><select class="form-select" id="a_member">${members.map(m=>`<option value="${m.id}">${m.fullName}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Category</label><select class="form-select" id="a_cat">${ACHIEVE_CATS.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div>
+<div class="form-group"><label class="form-label">Title</label><input class="form-input" id="a_title"></div>
+<div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="a_desc"></textarea></div>
+<div class="form-group"><label class="form-label">Badge Icon</label><select class="form-select" id="a_icon"><option value="star">\u2b50 Star</option><option value="trophy">\ud83c\udfc6 Trophy</option><option value="certificate">\ud83d\udcdc Certificate</option><option value="celebration">\ud83c\udf89 Celebration</option></select></div>
+</div><div class="modal-footer"><button class="btn" id="cancelAM">Cancel</button><button class="btn btn-primary" id="saveAchBtn">Award</button></div>`);
+document.getElementById('closeAM').addEventListener('click',closeModal);document.getElementById('cancelAM').addEventListener('click',closeModal);
+document.getElementById('saveAchBtn').addEventListener('click',async()=>{const body={memberId:document.getElementById('a_member').value,category:document.getElementById('a_cat').value,title:document.getElementById('a_title').value,description:document.getElementById('a_desc').value,badgeIcon:document.getElementById('a_icon').value};try{await api('/admin/achievements',{method:'POST',body:JSON.stringify(body)});toast('Achievement awarded!');closeModal();loadTab();}catch(e){toast(e.message,true);}});
 }
+
+// ==================== TAB 9: ANALYTICS ====================
+async function renderAnalytics(el){
+const s=state.premiumStats||{};const[statsRes]=await Promise.all([api('/admin/premium-stats')]);
+const ps=statsRes.stats;
+el.innerHTML=`<div class="page-header"><h2>Analytics</h2><p>Deep insights into team performance & trends</p></div>
+<div class="grid-2">
+<div class="card fade-in"><h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:14px">Task Velocity (8 Weeks)</h3><div class="chart-bar" style="height:140px">${ps.velocity.map(w=>`<div style="flex:1;text-align:center"><div class="chart-bar-col" style="height:${Math.max(w.count*18,4)}px;background:${w.count>3?'var(--g500)':'var(--g700)'}" title="${w.count} tasks"></div><div class="chart-bar-label">${w.week.slice(5)}</div></div>`).join('')}</div></div>
+<div class="card fade-in stagger-1"><h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:14px">On-Time Delivery</h3><div style="text-align:center;padding:20px"><div style="font-size:48px;font-weight:700;color:${ps.onTimeRate>=80?'var(--white)':ps.onTimeRate>=60?'var(--g400)':'var(--g600)'}">${ps.onTimeRate}%</div><div style="font-size:11px;color:var(--g500);margin-top:4px">of tasks delivered on time</div></div></div></div>
+<div class="grid-3" style="margin-top:16px">
+<div class="card fade-in stagger-2"><h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:10px">OKR Achievement</h3><div style="text-align:center"><div style="font-size:36px;font-weight:700;color:var(--white)">${ps.okrAchievementRate}%</div><div style="font-size:10px;color:var(--g500)">achieved</div></div></div>
+<div class="card fade-in stagger-3"><h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:10px">Avg Rating</h3><div style="text-align:center"><div style="font-size:36px;font-weight:700;color:var(--white)">${ps.avgRating}</div><div style="font-size:10px;color:var(--g500)">out of 5.00</div></div></div>
+<div class="card fade-in stagger-4"><h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:10px">Skill Coverage</h3><div style="text-align:center"><div style="font-size:36px;font-weight:700;color:var(--white)">${ps.uniqueSkills}</div><div style="font-size:10px;color:var(--g500)">unique skills</div></div></div></div>
+<div class="card fade-in" style="margin-top:16px"><h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:14px">Department Comparison</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">${Object.entries(ps.byDepartment).map(([d,v])=>`<div style="padding:12px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)"><div style="font-size:12px;font-weight:500;color:var(--white);text-transform:capitalize;margin-bottom:6px">${d}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px;color:var(--g500)"><span>Tasks: ${v.done}/${v.tasks}</span><span>Rating: ${v.avgRating}/5</span></div><div class="progress-bar" style="margin-top:6px"><div class="progress-fill" style="width:${v.tasks?v.done/v.tasks*100:0}%"></div></div></div>`).join('')}</div></div>`;
+}
+
+// ==================== TAB 10: ACTIVITY ====================
+async function renderActivity(el){
+const{tasks}=await api('/admin/tasks');
+const allNotes=[];
+tasks.forEach(t=>{if(Array.isArray(t.notes))t.notes.forEach(n=>allNotes.push({...n,taskTitle:t.title,taskId:t.id}));});
+allNotes.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+const typeFilter=state.filters.activityType||'';
+el.innerHTML=`<div class="page-header"><h2>Activity</h2><p>Recent updates across all tasks</p></div>
+<div class="filters"><div class="filter-pill${!typeFilter?' active':''}" data-atype="">All</div><div class="filter-pill${typeFilter==='task'?' active':''}" data-atype="task">Tasks</div><div class="filter-pill${typeFilter==='review'?' active':''}" data-atype="review">Reviews</div><div class="filter-pill${typeFilter==='skill'?' active':''}" data-atype="skill">Skills</div><div class="filter-pill${typeFilter==='okr'?' active':''}" data-atype="okr">OKRs</div><div class="filter-pill${typeFilter==='meeting'?' active':''}" data-atype="meeting">Meetings</div><div class="filter-pill${typeFilter==='achievement'?' active':''}" data-atype="achievement">Achievements</div></div>
+<div class="card fade-in">${allNotes.length?`<div class="timeline">${allNotes.slice(0,80).map((n,i)=>`<div class="timeline-item" style="animation-delay:${i*.03}s"><div class="time">${fmtDateTime(n.created_at)}</div><div class="content"><strong style="color:var(--white)">${n.taskTitle}</strong> \u2014 ${n.text}</div><div class="author">by ${n.author||'Unknown'}</div></div>`).join('')}</div>`:'<p style="color:var(--g500);font-size:12px">No activity yet. Notes added to tasks will appear here.</p>'}</div>`;
+document.querySelectorAll('[data-atype]').forEach(p=>p.addEventListener('click',()=>{state.filters.activityType=p.dataset.atype;loadTab();}));
+}
+
+// ---- INIT ----
+function init(){renderNav();const token=localStorage.getItem('admin_jwt')||localStorage.getItem('token');if(!token){showLoginPage();}else{hideLoginPage();loadTab();}}
 init();
 </script>
 </body>

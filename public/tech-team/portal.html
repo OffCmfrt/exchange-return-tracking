@@ -9,14 +9,13 @@
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--black:#000;--white:#fff;--g50:#fafafa;--g100:#f5f5f5;--g200:#e5e5e5;--g300:#d4d4d4;--g400:#a3a3a3;--g500:#737373;--g600:#525252;--g700:#404040;--g800:#262626;--g900:#171717;--g950:#0a0a0a}
 body{font-family:'Archivo',sans-serif;background:var(--g950);color:var(--g200);min-height:100vh;overflow-x:hidden}
-/* Animations */
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideRight{from{opacity:0;transform:translateX(100%)}to{opacity:1;transform:translateX(0)}}
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 @keyframes pulse{0%,100%{border-color:var(--g700)}50%{border-color:var(--g500)}}
 @keyframes toastIn{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
-@keyframes breathe{0%,100%{opacity:.4}50%{opacity:1}}
-@keyframes expandIn{from{opacity:0;max-height:0}to{opacity:1;max-height:600px}}
+@keyframes countUp{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
 .fade-in{animation:fadeIn .4s ease both}
 .stagger-1{animation-delay:.05s}.stagger-2{animation-delay:.1s}.stagger-3{animation-delay:.15s}
 .stagger-4{animation-delay:.2s}.stagger-5{animation-delay:.25s}.stagger-6{animation-delay:.3s}
@@ -27,423 +26,492 @@ body{font-family:'Archivo',sans-serif;background:var(--g950);color:var(--g200);m
 .login-brand{text-align:center;margin-bottom:32px}
 .login-brand h1{font-size:18px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--white)}
 .login-brand p{font-size:11px;color:var(--g500);margin-top:6px;letter-spacing:.06em;text-transform:uppercase}
-.form-group{margin-bottom:20px}
-.form-label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--g500);margin-bottom:8px}
-.form-input{width:100%;padding:12px 0;background:transparent;border:none;border-bottom:1px solid var(--g700);color:var(--white);font-size:14px;font-family:'Archivo',sans-serif;transition:border-color .3s,border-width .3s}
-.form-input:focus{outline:none;border-bottom:2px solid var(--white)}
+.form-group{margin-bottom:18px}
+.form-label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--g500);margin-bottom:6px}
+.form-input,.form-select,.form-textarea{width:100%;padding:10px 0;background:transparent;border:none;border-bottom:1px solid var(--g700);color:var(--white);font-size:13px;font-family:'Archivo',sans-serif;transition:border-color .3s}
+.form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-bottom:2px solid var(--white)}
 .form-input::placeholder{color:var(--g600)}
-.btn-login{width:100%;padding:14px;background:var(--white);color:var(--black);border:none;border-radius:6px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:all .2s;font-family:'Archivo',sans-serif;margin-top:8px}
+.form-textarea{min-height:70px;resize:vertical;border:1px solid var(--g800);border-radius:6px;padding:10px 12px;background:var(--g950)}
+.form-select{appearance:none;border:1px solid var(--g800);border-radius:6px;padding:10px 12px;background:var(--g950)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn-login{width:100%;padding:13px;background:var(--white);color:var(--black);border:none;border-radius:6px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:all .2s;font-family:'Archivo',sans-serif;margin-top:8px}
 .btn-login:hover{background:var(--g200);transform:translateY(-1px);box-shadow:0 4px 16px rgba(255,255,255,.1)}
-.btn-login:active{transform:translateY(0)}
-.login-error{color:var(--g400);font-size:12px;text-align:center;margin-top:12px;min-height:18px}
+.login-error{color:var(--g400);font-size:11px;text-align:center;margin-top:10px;min-height:16px}
 /* Portal */
-.portal{display:none;min-height:100vh}
-.portal.active{display:block}
-.topbar{background:var(--g900);border-bottom:1px solid var(--g800);padding:16px 32px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
-.topbar-left{display:flex;align-items:center;gap:16px}
-.topbar-left h1{font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--white)}
-.topbar-right{display:flex;align-items:center;gap:16px}
-.user-badge{display:flex;align-items:center;gap:10px}
-.user-avatar{width:32px;height:32px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--g300)}
-.user-info{font-size:12px;color:var(--g400)}
-.user-info strong{color:var(--white);font-weight:500;display:block}
-.btn-logout{background:none;border:1px solid var(--g800);color:var(--g500);padding:6px 12px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;transition:all .2s;font-family:'Archivo',sans-serif}
+.portal{display:none;min-height:100vh}.portal.active{display:block}
+.topbar{background:var(--g900);border-bottom:1px solid var(--g800);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.topbar-left{display:flex;align-items:center;gap:14px}
+.topbar-left h1{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--white)}
+.topbar-nav{display:flex;gap:2px;overflow-x:auto}
+.topbar-nav-item{padding:6px 12px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;color:var(--g500);transition:all .2s;white-space:nowrap}
+.topbar-nav-item:hover{color:var(--white);background:var(--g800)}
+.topbar-nav-item.active{color:var(--white);background:var(--g800)}
+.topbar-right{display:flex;align-items:center;gap:14px}
+.user-badge{display:flex;align-items:center;gap:8px}
+.user-avatar{width:30px;height:30px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--g300)}
+.user-info{font-size:11px;color:var(--g400)}
+.user-info strong{color:var(--white);font-weight:500;display:block;font-size:12px}
+.btn-logout{background:none;border:1px solid var(--g800);color:var(--g500);padding:5px 10px;border-radius:4px;font-size:9px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;transition:all .2s;font-family:'Archivo',sans-serif}
 .btn-logout:hover{border-color:var(--g600);color:var(--white)}
-/* Content */
-.content{padding:32px}
-/* Stats */
-.stats-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:32px}
-.stat-card{background:var(--g900);border:1px solid var(--g800);border-radius:8px;padding:16px;text-align:center;transition:all .25s}
-.stat-card:hover{border-color:var(--g700);transform:translateY(-2px)}
-.stat-value{font-size:28px;font-weight:700;color:var(--white)}
-.stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-top:4px}
-/* View toggle */
-.view-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.content{padding:24px 28px}
+.card{background:var(--g900);border:1px solid var(--g800);border-radius:8px;padding:16px;transition:all .25s}
+.card:hover{border-color:var(--g700)}
+.stats-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:24px}
+.stat-card{background:var(--g900);border:1px solid var(--g800);border-radius:8px;padding:14px;text-align:center;transition:all .25s}
+.stat-card:hover{border-color:var(--g700);transform:translateY(-1px)}
+.stat-value{font-size:24px;font-weight:700;color:var(--white);animation:countUp .5s ease both}
+.stat-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-top:3px}
+.view-controls{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
 .view-toggle{display:flex;gap:4px}
-.view-btn{padding:6px 14px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;border:1px solid var(--g800);background:transparent;color:var(--g500);transition:all .2s;font-family:'Archivo',sans-serif}
+.view-btn{padding:5px 12px;border-radius:4px;font-size:9px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;border:1px solid var(--g800);background:transparent;color:var(--g500);transition:all .2s;font-family:'Archivo',sans-serif}
 .view-btn.active{background:var(--white);color:var(--black);border-color:var(--white)}
-/* Kanban */
-.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;min-height:400px}
-.kanban-col{background:var(--g900);border:1px solid var(--g800);border-radius:8px;padding:16px;display:flex;flex-direction:column}
-.kanban-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--g800)}
-.kanban-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--g400);font-weight:500}
-.kanban-count{font-size:10px;color:var(--g600);background:var(--g800);padding:2px 8px;border-radius:10px}
-.kanban-cards{flex:1;display:flex;flex-direction:column;gap:10px;overflow-y:auto}
-/* Task card */
-.task-card{background:var(--g950);border:1px solid var(--g800);border-radius:6px;padding:14px;cursor:pointer;transition:all .2s}
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;min-height:300px}
+.kanban-col{background:var(--g900);border:1px solid var(--g800);border-radius:8px;padding:14px;display:flex;flex-direction:column}
+.kanban-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--g800)}
+.kanban-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g400);font-weight:500}
+.kanban-count{font-size:9px;color:var(--g600);background:var(--g800);padding:2px 7px;border-radius:10px}
+.kanban-cards{flex:1;display:flex;flex-direction:column;gap:8px;overflow-y:auto}
+.task-card{background:var(--g950);border:1px solid var(--g800);border-radius:6px;padding:12px;cursor:pointer;transition:all .2s}
 .task-card:hover{border-color:var(--g700);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.3)}
-.task-card-title{font-size:13px;font-weight:500;color:var(--white);margin-bottom:8px;line-height:1.4}
-.task-card-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-.task-tag{font-size:9px;padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em;background:var(--g800);color:var(--g500)}
-.task-priority{font-size:9px;padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em}
-.priority-low{background:var(--g800);color:var(--g600)}
-.priority-medium{background:var(--g700);color:var(--g400)}
-.priority-high{background:var(--g600);color:var(--g200)}
-.priority-critical{background:var(--white);color:var(--black)}
-.task-progress{margin-top:8px}
-.progress-track{width:100%;height:4px;background:var(--g800);border-radius:2px;overflow:hidden}
-.progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--g600),var(--g400));border-radius:2px;transition:width .6s cubic-bezier(.4,0,.2,1);position:relative}
-.progress-bar-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);background-size:200% 100%;animation:shimmer 2.5s infinite}
-.task-due{font-size:10px;color:var(--g600);margin-top:6px}
-.task-due.overdue{color:var(--g400)}
-/* List view */
-.list-view{display:flex;flex-direction:column;gap:8px}
-.list-item{display:grid;grid-template-columns:1fr 120px 100px 100px 80px 60px;align-items:center;gap:12px;padding:14px 16px;background:var(--g900);border:1px solid var(--g800);border-radius:6px;cursor:pointer;transition:all .2s}
+.task-card-title{font-size:12px;font-weight:500;color:var(--white);margin-bottom:6px;line-height:1.4}
+.task-card-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:6px}
+.task-tag{font-size:8px;padding:2px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em;background:var(--g800);color:var(--g500)}
+.task-priority{font-size:8px;padding:2px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em}
+.priority-low{background:var(--g800);color:var(--g600)}.priority-medium{background:var(--g700);color:var(--g400)}
+.priority-high{background:var(--g600);color:var(--g200)}.priority-critical{background:var(--white);color:var(--black)}
+.task-progress{margin-top:6px}.progress-track{width:100%;height:4px;background:var(--g800);border-radius:2px;overflow:hidden}
+.progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--g600),var(--g400));border-radius:2px;transition:width .6s}
+.task-due{font-size:9px;color:var(--g600);margin-top:4px}.task-due.overdue{color:var(--g400)}
+.list-view{display:flex;flex-direction:column;gap:6px}
+.list-item{display:grid;grid-template-columns:1fr 100px 80px 80px 60px 50px;align-items:center;gap:10px;padding:12px 14px;background:var(--g900);border:1px solid var(--g800);border-radius:6px;cursor:pointer;transition:all .2s}
 .list-item:hover{border-color:var(--g700);transform:translateX(2px)}
-.list-item-title{font-size:13px;font-weight:500;color:var(--white);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* Badge */
-.badge{display:inline-flex;padding:3px 8px;border-radius:12px;font-size:9px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
-.badge-todo{background:var(--g800);color:var(--g500)}
-.badge-in_progress{background:var(--g700);color:var(--g300)}
-.badge-review{background:var(--g600);color:var(--white)}
-.badge-done{background:var(--white);color:var(--black)}
+.list-item-title{font-size:12px;font-weight:500;color:var(--white);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{display:inline-flex;padding:2px 7px;border-radius:12px;font-size:8px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+.badge-todo{background:var(--g800);color:var(--g500)}.badge-in_progress{background:var(--g700);color:var(--g300)}
+.badge-review{background:var(--g600);color:var(--white)}.badge-done{background:var(--white);color:var(--black)}
 .badge-blocked{background:#333;color:#999}
-/* Task detail panel */
-.detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);z-index:50;display:none;animation:fadeIn .2s ease}
+.badge-1on1{background:var(--g700);color:var(--white)}.badge-team{background:var(--g600);color:var(--white)}
+.badge-retro{background:var(--g800);color:var(--g300)}.badge-review-m{background:var(--g600);color:var(--white)}
+.detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);z-index:50;display:none}
 .detail-overlay.open{display:block}
-.detail-panel{position:fixed;right:0;top:0;bottom:0;width:480px;max-width:100%;background:var(--g900);border-left:1px solid var(--g800);z-index:51;overflow-y:auto;animation:slideIn .3s cubic-bezier(.4,0,.2,1);padding:32px}
-@keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
-.detail-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px}
-.detail-header h2{font-size:18px;font-weight:600;color:var(--white);line-height:1.4;flex:1;margin-right:16px}
-.close-detail{background:none;border:none;color:var(--g500);cursor:pointer;font-size:20px;padding:4px;transition:color .2s}
+.detail-panel{position:fixed;right:0;top:0;bottom:0;width:440px;max-width:100%;background:var(--g900);border-left:1px solid var(--g800);z-index:51;overflow-y:auto;animation:slideRight .3s cubic-bezier(.4,0,.2,1);padding:24px}
+.detail-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
+.detail-header h2{font-size:16px;font-weight:600;color:var(--white);line-height:1.4;flex:1;margin-right:12px}
+.close-detail{background:none;border:none;color:var(--g500);cursor:pointer;font-size:18px;padding:4px;transition:color .2s}
 .close-detail:hover{color:var(--white)}
-.detail-section{margin-bottom:24px}
-.detail-section h4{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:8px}
-.detail-desc{font-size:13px;color:var(--g300);line-height:1.6}
-.detail-meta{display:flex;gap:8px;flex-wrap:wrap}
-.detail-meta-item{background:var(--g950);border:1px solid var(--g800);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--g400)}
-.detail-meta-item strong{color:var(--white);display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
-/* Progress slider */
-.slider-wrap{display:flex;align-items:center;gap:12px}
-.slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;background:var(--g800);border-radius:2px;outline:none;transition:background .2s}
-.slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--white);cursor:pointer;transition:transform .2s}
-.slider::-webkit-slider-thumb:hover{transform:scale(1.2)}
-.slider-val{font-size:14px;font-weight:600;color:var(--white);min-width:36px;text-align:right}
-/* Status selector */
+.detail-section{margin-bottom:20px}
+.detail-section h4{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:6px}
+.detail-desc{font-size:12px;color:var(--g300);line-height:1.6}
+.detail-meta{display:flex;gap:6px;flex-wrap:wrap}
+.detail-meta-item{background:var(--g950);border:1px solid var(--g800);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--g400)}
+.detail-meta-item strong{color:var(--white);display:block;font-size:9px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.slider-wrap{display:flex;align-items:center;gap:10px}
+.slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;background:var(--g800);border-radius:2px;outline:none}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--white);cursor:pointer}
+.slider-val{font-size:13px;font-weight:600;color:var(--white);min-width:32px;text-align:right}
 .status-select{display:flex;gap:4px}
-.status-opt{padding:6px 12px;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;border:1px solid var(--g800);background:transparent;color:var(--g500);transition:all .2s;font-family:'Archivo',sans-serif}
+.status-opt{padding:5px 10px;border-radius:4px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;border:1px solid var(--g800);background:transparent;color:var(--g500);transition:all .2s;font-family:'Archivo',sans-serif}
 .status-opt:hover{border-color:var(--g600);color:var(--g300)}
 .status-opt.active{background:var(--white);color:var(--black);border-color:var(--white)}
-/* Notes timeline */
-.notes-list{position:relative;padding-left:16px}
-.notes-list::before{content:'';position:absolute;left:4px;top:0;bottom:0;width:1px;background:var(--g800)}
-.note-item{position:relative;padding-bottom:16px;animation:fadeIn .3s ease both}
-.note-item::before{content:'';position:absolute;left:-14px;top:4px;width:6px;height:6px;border-radius:50%;background:var(--g600)}
-.note-time{font-size:9px;color:var(--g600);text-transform:uppercase;letter-spacing:.04em}
-.note-text{font-size:12px;color:var(--g300);margin-top:2px}
-.note-author{font-size:10px;color:var(--g500)}
-/* Add note */
-.note-input-wrap{display:flex;gap:8px;margin-top:12px}
-.note-input{flex:1;padding:8px 12px;background:var(--g950);border:1px solid var(--g800);border-radius:4px;color:var(--g200);font-size:12px;font-family:'Archivo',sans-serif;transition:border-color .2s}
+.notes-list{position:relative;padding-left:14px}
+.notes-list::before{content:'';position:absolute;left:3px;top:0;bottom:0;width:1px;background:var(--g800)}
+.note-item{position:relative;padding-bottom:12px}
+.note-item::before{content:'';position:absolute;left:-12px;top:3px;width:5px;height:5px;border-radius:50%;background:var(--g600)}
+.note-time{font-size:8px;color:var(--g600);text-transform:uppercase;letter-spacing:.04em}
+.note-text{font-size:11px;color:var(--g300);margin-top:2px}
+.note-author{font-size:9px;color:var(--g500)}
+.note-input-wrap{display:flex;gap:6px;margin-top:10px}
+.note-input{flex:1;padding:7px 10px;background:var(--g950);border:1px solid var(--g800);border-radius:4px;color:var(--g200);font-size:11px;font-family:'Archivo',sans-serif}
 .note-input:focus{outline:none;border-color:var(--g600)}
-.note-submit{padding:8px 14px;background:var(--white);color:var(--black);border:none;border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;transition:all .2s;font-family:'Archivo',sans-serif}
-.note-submit:hover{background:var(--g200)}
-/* Toast */
-.toast{position:fixed;top:20px;right:20px;padding:12px 20px;background:var(--g800);border:1px solid var(--g700);border-radius:8px;font-size:13px;color:var(--g200);z-index:200;animation:toastIn .3s ease both}
-/* Responsive */
-@media(max-width:768px){.kanban{grid-template-columns:1fr 1fr}.list-item{grid-template-columns:1fr 80px 60px}.detail-panel{width:100%}.content{padding:16px}}
+.note-submit{padding:7px 12px;background:var(--white);color:var(--black);border:none;border-radius:4px;font-size:9px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;font-family:'Archivo',sans-serif}
+.toast{position:fixed;top:16px;right:16px;padding:10px 18px;background:var(--g800);border:1px solid var(--g700);border-radius:8px;font-size:12px;color:var(--g200);z-index:200;animation:toastIn .3s ease both}
+.rating-stars{display:flex;gap:2px}.rating-star{color:var(--g700);font-size:13px}.rating-star.filled{color:var(--white)}
+.skill-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.skill-dot-1{background:var(--g700)}.skill-dot-2{background:var(--g600)}.skill-dot-3{background:var(--g500)}.skill-dot-4{background:var(--g400)}.skill-dot-5{background:var(--white)}
+.progress-bar{width:100%;height:5px;background:var(--g800);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--g600),var(--g400));border-radius:3px;transition:width .6s}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;font-size:10px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border:1px solid var(--g700);background:var(--g900);color:var(--g200);transition:all .2s;font-family:'Archivo',sans-serif}
+.btn:hover{background:var(--g800);border-color:var(--g600)}
+.btn-primary{background:var(--white);color:var(--black);border-color:var(--white)}.btn-primary:hover{background:var(--g200)}
+.btn-sm{padding:4px 10px;font-size:9px}
+.btn-danger{border-color:#444;color:#aaa}.btn-danger:hover{background:#1a1a1a;border-color:#555;color:#fff}
+.timeline{position:relative;padding-left:16px}
+.timeline::before{content:'';position:absolute;left:5px;top:0;bottom:0;width:1px;background:var(--g800)}
+.timeline-item{position:relative;padding-bottom:14px}
+.timeline-item::before{content:'';position:absolute;left:-13px;top:3px;width:6px;height:6px;border-radius:50%;background:var(--g600);border:2px solid var(--g900)}
+.timeline-item .time{font-size:8px;color:var(--g600);text-transform:uppercase;letter-spacing:.04em}
+.timeline-item .content{font-size:11px;color:var(--g300);margin-top:2px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+@media(max-width:768px){.kanban{grid-template-columns:1fr 1fr}.list-item{grid-template-columns:1fr 80px 60px}.detail-panel{width:100%}.content{padding:14px}.grid-2,.grid-3{grid-template-columns:1fr}.topbar-nav{display:none}}
 @media(max-width:480px){.kanban{grid-template-columns:1fr}.stats-bar{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
-
-<!-- Login Screen -->
 <div class="login-wrap" id="loginScreen">
 <div class="login-card">
-<div class="login-brand">
-<h1>Tech Team</h1>
-<p>Member Portal</p>
-</div>
-<div class="form-group">
-<label class="form-label">Username</label>
-<input type="text" class="form-input" id="loginUser" placeholder="Enter your username" autocomplete="username">
-</div>
-<div class="form-group">
-<label class="form-label">Mobile Number</label>
-<input type="tel" class="form-input" id="loginMobile" placeholder="Enter your mobile number" autocomplete="tel">
-</div>
-<button class="btn-login" onclick="doLogin()">Sign In</button>
+<div class="login-brand"><h1>Tech Team</h1><p>Member Portal</p></div>
+<div class="form-group"><label class="form-label">Username</label><input type="text" class="form-input" id="loginUser" placeholder="Enter your username" autocomplete="username"></div>
+<div class="form-group"><label class="form-label">Mobile Number</label><input type="tel" class="form-input" id="loginMobile" placeholder="Enter your mobile number" autocomplete="tel"></div>
+<button class="btn-login" id="loginBtn">Sign In</button>
 <div class="login-error" id="loginError"></div>
 </div>
 </div>
-
-<!-- Portal -->
 <div class="portal" id="portal">
 <div class="topbar">
-<div class="topbar-left">
-<h1>Tech Team</h1>
-</div>
+<div class="topbar-left"><h1>Tech Team</h1>
+<div class="topbar-nav" id="topbarNav"></div></div>
 <div class="topbar-right">
-<div class="user-badge">
-<div class="user-avatar" id="userAvatar"></div>
-<div class="user-info"><strong id="userName"></strong><span id="userDept"></span></div>
+<div class="user-badge"><div class="user-avatar" id="userAvatar"></div><div class="user-info"><strong id="userName"></strong><span id="userDept"></span></div></div>
+<button class="btn-logout" id="logoutBtn">Logout</button></div></div>
+<div class="content" id="content"></div>
 </div>
-<button class="btn-logout" onclick="logout()">Logout</button>
-</div>
-</div>
-<div class="content">
-<div class="stats-bar" id="statsBar"></div>
-<div class="view-controls">
-<div style="font-size:12px;color:var(--g500);text-transform:uppercase;letter-spacing:.06em">My Tasks</div>
-<div class="view-toggle">
-<button class="view-btn active" onclick="setView('kanban')">Board</button>
-<button class="view-btn" onclick="setView('list')">List</button>
-</div>
-</div>
-<div id="taskArea"></div>
-</div>
-</div>
-
-<!-- Task Detail Panel -->
-<div class="detail-overlay" id="detailOverlay" onclick="closeDetail()"></div>
+<div class="detail-overlay" id="detailOverlay"></div>
 <div class="detail-panel" id="detailPanel" style="display:none"></div>
-
 <script>
-const API = '/api/tech-team';
-let member = null;
-let tasks = [];
-let view = 'kanban';
-let selectedTask = null;
+const API='/api/tech-team';
+const SECTIONS=[
+{id:'dashboard',label:'Dashboard'},
+{id:'tasks',label:'My Tasks'},
+{id:'assessment',label:'Self Assessment'},
+{id:'skills',label:'My Skills'},
+{id:'okrs',label:'My OKRs'},
+{id:'feedback',label:'Feedback'},
+{id:'goals',label:'My Goals'},
+{id:'achievements',label:'Achievements'},
+{id:'meetings',label:'Meetings'},
+{id:'profile',label:'Profile'}
+];
+const STATUSES=['todo','in_progress','review','done','blocked'];
+const PRIORITIES=['low','medium','high','critical'];
+const SKILL_CATS=['technical','soft','domain','tool'];
+const PROFICIENCY_LABELS=['','Beginner','Intermediate','Advanced','Expert','Master'];
+const GOAL_CATS=['career','learning','performance','personal'];
+const ACHIEVE_CATS=['milestone','award','certification','shoutout'];
 
-// ---- API ----
-async function api(path, opts = {}) {
-    const token = localStorage.getItem('team_token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = 'Bearer ' + token;
-    const res = await fetch(API + path, { ...opts, headers });
-    if (res.status === 401) {
-        localStorage.removeItem('team_token');
-        localStorage.removeItem('team_member');
-        location.reload();
-        throw new Error('Session expired. Please login again.');
-    }
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
-    return data;
+let member=null,tasks=[],section='dashboard',view='kanban',selectedTask=null;
+let mySkills=[],myOkrs=[],myGoals=[],myReviews=[],myAchievements=[],myMeetings=[],myStats=null;
+
+async function api(path,opts={}){
+const token=localStorage.getItem('team_token');
+const headers={'Content-Type':'application/json'};
+if(token)headers['Authorization']='Bearer '+token;
+const res=await fetch(API+path,{...opts,headers});
+if(res.status===401){localStorage.removeItem('team_token');localStorage.removeItem('team_member');location.reload();throw new Error('Session expired');}
+const data=await res.json();
+if(!res.ok)throw new Error(data.error||'Request failed');
+return data;
 }
 
-function toast(msg) {
-    const el = document.createElement('div');
-    el.className = 'toast';
-    el.textContent = msg;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 3000);
+function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3000);}
+function ratingStars(r){r=parseFloat(r)||0;let s='';for(let i=1;i<=5;i++)s+=`<span class="rating-star${i<=Math.round(r)?' filled':''}">\u2605</span>`;return s;}
+function fmtDate(d){if(!d)return'\u2014';return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+function fmtDateTime(d){if(!d)return'\u2014';return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
+function initials(name){return name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();}
+
+// Login
+document.getElementById('loginBtn').addEventListener('click',doLogin);
+document.getElementById('loginMobile').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+document.getElementById('loginUser').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginMobile').focus();});
+async function doLogin(){
+const username=document.getElementById('loginUser').value.trim();
+const mobile=document.getElementById('loginMobile').value.trim();
+const errEl=document.getElementById('loginError');
+if(!username||!mobile){errEl.textContent='Please enter both username and mobile';return;}
+const btn=document.getElementById('loginBtn');btn.textContent='Signing in...';btn.disabled=true;
+try{const res=await fetch(API+'/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,mobile})});const data=await res.json();if(!res.ok)throw new Error(data.error||'Invalid credentials');
+localStorage.setItem('team_token',data.token);localStorage.setItem('team_member',JSON.stringify(data.member));member=data.member;showPortal();}
+catch(e){errEl.textContent=e.message;btn.textContent='Sign In';btn.disabled=false;}}
+
+document.getElementById('logoutBtn').addEventListener('click',()=>{localStorage.removeItem('team_token');localStorage.removeItem('team_member');location.reload();});
+
+function showPortal(){
+document.getElementById('loginScreen').style.display='none';
+document.getElementById('portal').classList.add('active');
+document.getElementById('userName').textContent=member.fullName;
+document.getElementById('userDept').textContent=(member.department||'')+' \u00b7 '+(member.hierarchy||'');
+document.getElementById('userAvatar').textContent=initials(member.fullName);
+renderNav();loadSection();}
+
+function renderNav(){document.getElementById('topbarNav').innerHTML=SECTIONS.map(s=>`<div class="topbar-nav-item${section===s.id?' active':''}" data-section="${s.id}">${s.label}</div>`).join('');
+document.querySelectorAll('.topbar-nav-item').forEach(el=>el.addEventListener('click',()=>{section=el.dataset.section;renderNav();loadSection();}));}
+
+async function loadSection(){const c=document.getElementById('content');c.innerHTML='<div style="text-align:center;padding:40px;color:var(--g500)">Loading...</div>';
+try{
+if(section==='dashboard')await renderDashboard(c);
+else if(section==='tasks')await renderTasks(c);
+else if(section==='assessment')await renderAssessment(c);
+else if(section==='skills')await renderSkills(c);
+else if(section==='okrs')await renderOkrs(c);
+else if(section==='feedback')await renderFeedback(c);
+else if(section==='goals')await renderGoals(c);
+else if(section==='achievements')await renderAchievements(c);
+else if(section==='meetings')await renderMeetings(c);
+else if(section==='profile')await renderProfile(c);
+}catch(e){toast(e.message);}}
+
+// ---- DASHBOARD ----
+async function renderDashboard(el){
+const{stats}=await api('/my-stats');myStats=stats;
+const s=stats;
+el.innerHTML=`<div style="margin-bottom:20px"><h2 style="font-size:20px;font-weight:600;color:var(--white)">Welcome back, ${member.fullName.split(' ')[0]}</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">Here's your performance overview</p></div>
+<div class="stats-bar">
+<div class="stat-card fade-in"><div class="stat-value">${s.totalTasks}</div><div class="stat-label">Total Tasks</div></div>
+<div class="stat-card fade-in stagger-1"><div class="stat-value">${s.completed}</div><div class="stat-label">Completed</div></div>
+<div class="stat-card fade-in stagger-2"><div class="stat-value">${s.avgRating}</div><div class="stat-label">Avg Rating</div></div>
+<div class="stat-card fade-in stagger-3"><div class="stat-value">${s.onTimeRate||0}%</div><div class="stat-label">On-Time</div></div>
+<div class="stat-card fade-in stagger-4"><div class="stat-value">${s.skillCount}</div><div class="stat-label">Skills</div></div>
+<div class="stat-card fade-in stagger-5"><div class="stat-value">${s.achievementCount}</div><div class="stat-label">Awards</div></div>
+</div>
+<div class="grid-2">
+<div class="card fade-in"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Active OKRs (${s.activeOkrs})</h3>
+${s.activeOkrs?`<div style="font-size:12px;color:var(--g400)">You have ${s.activeOkrs} active OKR${s.activeOkrs>1?'s':''} this period</div>`:'<div style="font-size:11px;color:var(--g600)">No active OKRs</div>'}</div>
+<div class="card fade-in stagger-1"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Active Goals (${s.activeGoals})</h3>
+${s.activeGoals?`<div style="font-size:12px;color:var(--g400)">You have ${s.activeGoals} active goal${s.activeGoals>1?'s':''}</div>`:'<div style="font-size:11px;color:var(--g600)">No active goals</div>'}</div></div>
+<div class="card fade-in" style="margin-top:14px"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Recent Tasks</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+${(s.tasks||[]).slice(0,6).map(t=>`<div style="padding:10px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)"><div style="font-size:11px;font-weight:500;color:var(--white);margin-bottom:4px">${t.title}</div><div style="display:flex;justify-content:space-between;align-items:center"><span class="badge badge-${t.status}">${t.status.replace('_',' ')}</span><span style="font-size:9px;color:var(--g500)">${t.progress}%</span></div></div>`).join('')||'<div style="font-size:11px;color:var(--g600)">No tasks yet</div>'}
+</div></div>`;
 }
 
-// ---- Login ----
-async function doLogin() {
-    const username = document.getElementById('loginUser').value.trim();
-    const mobile = document.getElementById('loginMobile').value.trim();
-    const errEl = document.getElementById('loginError');
-    if (!username || !mobile) { errEl.textContent = 'Please enter both username and mobile'; return; }
-    try {
-        const res = await fetch(API + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, mobile }) });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Invalid credentials');
-        localStorage.setItem('team_token', data.token);
-        localStorage.setItem('team_member', JSON.stringify(data.member));
-        member = data.member;
-        showPortal();
-    } catch (e) { errEl.textContent = e.message; }
+// ---- TASKS ----
+async function renderTasks(el){
+const{tasks:t}=await api('/my-tasks');tasks=t;
+el.innerHTML=`<div class="view-controls"><div style="font-size:11px;color:var(--g500);text-transform:uppercase;letter-spacing:.06em">My Tasks (${tasks.length})</div><div class="view-toggle"><button class="view-btn${view==='kanban'?' active':''}" id="kanbanBtn">Board</button><button class="view-btn${view==='list'?' active':''}" id="listBtn">List</button></div></div>
+<div id="taskArea"></div>`;
+document.getElementById('kanbanBtn').addEventListener('click',()=>{view='kanban';renderTasks(document.getElementById('content'));});
+document.getElementById('listBtn').addEventListener('click',()=>{view='list';renderTasks(document.getElementById('content'));});
+renderTaskArea();}
+
+function renderTaskArea(){
+const area=document.getElementById('taskArea');if(!area)return;
+if(view==='kanban'){
+const cols=['todo','in_progress','review','done'];
+area.innerHTML=`<div class="kanban">${cols.map(s=>{const colTasks=tasks.filter(t=>t.status===s);
+return`<div class="kanban-col fade-in"><div class="kanban-header"><span class="kanban-title">${s.replace('_',' ')}</span><span class="kanban-count">${colTasks.length}</span></div><div class="kanban-cards">${colTasks.map((t,i)=>taskCard(t,i)).join('')}</div></div>`;}).join('')}</div>`;
+}else{
+area.innerHTML=`<div class="list-view">${tasks.map((t,i)=>`<div class="list-item fade-in" style="animation-delay:${i*.02}s" data-task="${t.id}"><div class="list-item-title">${t.title}</div><div><span class="task-tag">${t.project||t.department||'\u2014'}</span></div><div><span class="badge badge-${t.status}">${t.status.replace('_',' ')}</span></div><div><span class="task-priority priority-${t.priority}">${t.priority}</span></div><div style="min-width:40px"><div class="progress-track"><div class="progress-bar-fill" style="width:${t.progress}%"></div></div></div><div style="font-size:9px;color:var(--g500)">${t.progress}%</div></div>`).join('')}</div>`;
+}
+area.querySelectorAll('[data-task]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.task)));
+area.querySelectorAll('.task-card').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.taskid)));
 }
 
-function logout() {
-    localStorage.removeItem('team_token');
-    localStorage.removeItem('team_member');
-    location.reload();
+function taskCard(t,i){
+const isOverdue=t.dueDate&&new Date(t.dueDate)<new Date()&&t.status!=='done';
+const subtasks=Array.isArray(t.subtasks)?t.subtasks:[];const doneSubs=subtasks.filter(s=>s.done).length;
+return`<div class="task-card fade-in" style="animation-delay:${i*.04}s" data-taskid="${t.id}"><div class="task-card-title">${t.title}</div>
+<div class="task-card-meta">${t.project?`<span class="task-tag">${t.project}</span>`:''}${t.department?`<span class="task-tag">${t.department}</span>`:''}<span class="task-priority priority-${t.priority}">${t.priority}</span></div>
+${subtasks.length?`<div style="font-size:8px;color:var(--g600);margin-bottom:4px">${doneSubs}/${subtasks.length} subtasks</div>`:''}
+<div class="task-progress"><div class="progress-track"><div class="progress-bar-fill" style="width:${t.progress}%"></div></div></div>
+<div class="task-due${isOverdue?' overdue':''}">${t.dueDate?(isOverdue?'Overdue: ':'Due: ')+t.dueDate:''}</div></div>`;}
+
+// Task Detail
+function openDetail(id){
+selectedTask=tasks.find(t=>t.id===id);if(!selectedTask)return;
+const t=selectedTask;const notes=Array.isArray(t.notes)?t.notes:[];const subtasks=Array.isArray(t.subtasks)?t.subtasks:[];
+const panel=document.getElementById('detailPanel');
+panel.innerHTML=`<div class="detail-header"><h2>${t.title}</h2><button class="close-detail" id="closeDetail">&times;</button></div>
+${t.description?`<div class="detail-section"><h4>Description</h4><div class="detail-desc">${t.description}</div></div>`:''}
+<div class="detail-section"><h4>Details</h4><div class="detail-meta">
+${t.project?`<div class="detail-meta-item"><strong>Project</strong>${t.project}</div>`:''}${t.department?`<div class="detail-meta-item"><strong>Department</strong>${t.department}</div>`:''}
+${t.category?`<div class="detail-meta-item"><strong>Category</strong>${t.category}</div>`:''}${t.dueDate?`<div class="detail-meta-item"><strong>Due Date</strong>${t.dueDate}</div>`:''}
+${t.estimatedHours?`<div class="detail-meta-item"><strong>Est. Hours</strong>${t.estimatedHours}h</div>`:''}${t.actualHours?`<div class="detail-meta-item"><strong>Actual Hours</strong>${t.actualHours}h</div>`:''}
+${t.timeLogged?`<div class="detail-meta-item"><strong>Time Logged</strong>${Math.round(t.timeLogged/60)}h</div>`:''}
+</div></div>
+<div class="detail-section"><h4>Subtasks (${subtasks.filter(s=>s.done).length}/${subtasks.length})</h4>
+${subtasks.length?subtasks.map((s,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:11px;color:${s.done?'var(--g500)':'var(--g300)'}"><input type="checkbox" ${s.done?'checked':''} data-sub="${i}"><span style="${s.done?'text-decoration:line-through':''}">${s.title}</span></div>`).join(''):'<p style="font-size:11px;color:var(--g600)">No subtasks</p>'}
+<div style="display:flex;gap:6px;margin-top:8px"><input class="form-input" id="newSubtask" placeholder="Add subtask..." style="flex:1;font-size:11px;padding:6px 10px"><button class="btn btn-sm" id="addSubBtn">Add</button></div></div>
+<div class="detail-section"><h4>Status</h4><div class="status-select">${STATUSES.map(s=>`<div class="status-opt${t.status===s?' active':''}" data-status="${s}">${s.replace('_',' ')}</div>`).join('')}</div></div>
+<div class="detail-section"><h4>Progress</h4><div class="slider-wrap"><input type="range" class="slider" min="0" max="100" value="${t.progress}" id="progressSlider"><span class="slider-val" id="pVal">${t.progress}%</span></div><button class="btn-login" style="margin-top:10px;font-size:9px;padding:7px" id="updateProgressBtn">Update Progress</button></div>
+<div class="detail-section"><h4>Time Logged (minutes)</h4><div style="display:flex;gap:8px;align-items:center"><input type="number" class="form-input" id="timeLogInput" value="${t.timeLogged||0}" style="width:100px;font-size:12px;padding:6px 10px"><button class="btn btn-sm" id="updateTimeBtn">Update</button></div></div>
+<div class="detail-section"><h4>Activity Notes</h4>
+${notes.length?`<div class="notes-list">${notes.slice().reverse().map((n,i)=>`<div class="note-item"><div class="note-time">${fmtDateTime(n.created_at)}</div><div class="note-text">${n.text}</div><div class="note-author">\u2014 ${n.author||'Unknown'}</div></div>`).join('')}</div>`:'<p style="font-size:11px;color:var(--g600)">No notes yet</p>'}
+<div class="note-input-wrap"><input class="note-input" id="noteInput" placeholder="Add a progress note..."><button class="note-submit" id="addNoteBtn">Add</button></div></div>`;
+panel.style.display='block';document.getElementById('detailOverlay').classList.add('open');
+document.getElementById('closeDetail').addEventListener('click',closeDetail);
+document.getElementById('detailOverlay').addEventListener('click',closeDetail);
+document.getElementById('progressSlider').addEventListener('input',e=>{document.getElementById('pVal').textContent=e.target.value+'%';});
+document.getElementById('updateProgressBtn').addEventListener('click',async()=>{const val=parseInt(document.getElementById('progressSlider').value);try{await api('/my-tasks/'+t.id,{method:'PUT',body:JSON.stringify({progress:val})});toast('Progress: '+val+'%');loadSection();openDetail(t.id);}catch(e){toast(e.message);}});
+document.getElementById('updateTimeBtn').addEventListener('click',async()=>{const val=parseInt(document.getElementById('timeLogInput').value)||0;try{await api('/my-tasks/'+t.id,{method:'PUT',body:JSON.stringify({timeLogged:val})});toast('Time logged: '+Math.round(val/60)+'h');loadSection();openDetail(t.id);}catch(e){toast(e.message);}});
+document.querySelectorAll('[data-status]').forEach(s=>s.addEventListener('click',async()=>{try{await api('/my-tasks/'+t.id,{method:'PUT',body:JSON.stringify({status:s.dataset.status})});toast('Status updated');loadSection();openDetail(t.id);}catch(e){toast(e.message);}}));
+document.getElementById('addNoteBtn').addEventListener('click',async()=>{const input=document.getElementById('noteInput');const text=input.value.trim();if(!text)return;try{await api('/my-tasks/'+t.id+'/notes',{method:'POST',body:JSON.stringify({text})});input.value='';toast('Note added');loadSection();openDetail(t.id);}catch(e){toast(e.message);}});
+document.getElementById('addSubBtn').addEventListener('click',async()=>{const input=document.getElementById('newSubtask');const text=input.value.trim();if(!text)return;const subs=Array.isArray(t.subtasks)?[...t.subtasks]:[];subs.push({title:text,done:false});try{await api('/my-tasks/'+t.id,{method:'PUT',body:JSON.stringify({subtasks:subs})});toast('Subtask added');loadSection();openDetail(t.id);}catch(e){toast(e.message);}});
+}
+function closeDetail(){document.getElementById('detailPanel').style.display='none';document.getElementById('detailOverlay').classList.remove('open');selectedTask=null;}
+
+// ---- SELF ASSESSMENT ----
+async function renderAssessment(el){
+const{reviews}=await api('/my-reviews');myReviews=reviews;
+const selfReviews=reviews.filter(r=>r.reviewType==='self');
+const managerReviews=reviews.filter(r=>r.reviewType==='manager');
+const latestSelf=selfReviews[0];const latestManager=managerReviews[0];
+el.innerHTML=`<div style="margin-bottom:20px"><h2 style="font-size:20px;font-weight:600;color:var(--white)">Self Assessment</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">Rate yourself and compare with manager feedback</p></div>
+<div class="card fade-in" style="margin-bottom:16px"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:14px">Submit Self Assessment</h3>
+<div class="form-row">${[['sa_timeliness','Timeliness'],['sa_quality','Quality'],['sa_communication','Communication'],['sa_collaboration','Collaboration'],['sa_initiative','Initiative'],['sa_problemSolving','Problem Solving']].map(([k,l])=>`<div class="form-group"><label class="form-label">${l}</label><select class="form-select" id="${k}">${[1,2,3,4,5].map(p=>`<option value="${p}">${p} - ${PROFICIENCY_LABELS[p]}</option>`).join('')}</select></div>`).join('')}</div>
+<div class="form-group"><label class="form-label">Strengths</label><textarea class="form-textarea" id="sa_strengths" placeholder="What are your key strengths this period?"></textarea></div>
+<div class="form-group"><label class="form-label">Areas for Improvement</label><textarea class="form-textarea" id="sa_improvements" placeholder="What would you like to improve?"></textarea></div>
+<div class="form-group"><label class="form-label">Period</label><select class="form-select" id="sa_period"><option>2026-Q1</option><option>2026-Q2</option><option selected>2026-Q3</option><option>2026-Q4</option></select></div>
+<button class="btn btn-primary" id="submitAssessmentBtn">Submit Assessment</button></div>
+${latestManager?`<div class="card fade-in stagger-1"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Latest Manager Review (${latestManager.reviewPeriod})</h3>
+<div class="grid-2">${[['timeliness','Timeliness'],['quality','Quality'],['communication','Communication'],['collaboration','Collaboration'],['initiative','Initiative'],['problemSolving','Problem Solving']].map(([k,l])=>`<div style="font-size:11px"><span style="color:var(--g500)">${l}:</span> <strong style="color:var(--white)">${latestManager[k]||3}/5</strong></div>`).join('')}</div>
+<div style="margin-top:10px;font-size:11px;color:var(--g400)"><strong style="color:var(--g300)">Strengths:</strong> ${latestManager.strengths||'N/A'}</div>
+<div style="font-size:11px;color:var(--g400)"><strong style="color:var(--g300)">Improve:</strong> ${latestManager.improvements||'N/A'}</div></div>`:''}
+<div class="card fade-in stagger-2" style="margin-top:16px"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Assessment History (${selfReviews.length})</h3>
+${selfReviews.length?`<div class="timeline">${selfReviews.map(r=>`<div class="timeline-item"><div class="time">${r.reviewPeriod} \u2014 Self Assessment</div><div class="content">Overall: <strong style="color:var(--white)">${r.overallRating}/5</strong></div></div>`).join('')}</div>`:'<p style="font-size:11px;color:var(--g600)">No self assessments yet</p>'}</div>`;
+document.getElementById('submitAssessmentBtn').addEventListener('click',async()=>{
+const body={reviewPeriod:document.getElementById('sa_period').value,reviewType:'self',overallRating:parseFloat((parseInt(document.getElementById('sa_timeliness').value)+parseInt(document.getElementById('sa_quality').value)+parseInt(document.getElementById('sa_communication').value)+parseInt(document.getElementById('sa_collaboration').value)+parseInt(document.getElementById('sa_initiative').value)+parseInt(document.getElementById('sa_problemSolving').value))/6).toFixed(1),timeliness:parseInt(document.getElementById('sa_timeliness').value),quality:parseInt(document.getElementById('sa_quality').value),communication:parseInt(document.getElementById('sa_communication').value),collaboration:parseInt(document.getElementById('sa_collaboration').value),initiative:parseInt(document.getElementById('sa_initiative').value),problemSolving:parseInt(document.getElementById('sa_problemSolving').value),strengths:document.getElementById('sa_strengths').value,improvements:document.getElementById('sa_improvements').value};
+try{await api('/my-reviews',{method:'POST',body:JSON.stringify(body)});toast('Assessment submitted!');loadSection();}catch(e){toast(e.message);}});
 }
 
-function showPortal() {
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('portal').classList.add('active');
-    document.getElementById('userName').textContent = member.fullName;
-    document.getElementById('userDept').textContent = (member.department || '') + ' · ' + (member.hierarchy || '');
-    document.getElementById('userAvatar').textContent = member.fullName.split(' ').map(n => n[0]).join('').slice(0, 2);
-    loadTasks();
+// ---- SKILLS ----
+async function renderSkills(el){
+const{skills}=await api('/my-skills');mySkills=skills;
+const cat=state_filters_skillCat||'technical';
+const filtered=mySkills.filter(s=>s.category===cat);
+el.innerHTML=`<div style="margin-bottom:20px"><h2 style="font-size:20px;font-weight:600;color:var(--white)">My Skills</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">Track and grow your skill set</p></div>
+<div class="filters" style="margin-bottom:16px">${SKILL_CATS.map(c=>`<div class="view-btn${cat===c?' active':''}" data-scat="${c}">${c}</div>`).join('')}</div>
+<div class="card fade-in" style="margin-bottom:16px"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Add New Skill</h3>
+<div class="form-row"><div class="form-group"><label class="form-label">Skill Name</label><input class="form-input" id="newSkillName" placeholder="e.g. React, Python, Leadership"></div>
+<div class="form-group"><label class="form-label">Category</label><select class="form-select" id="newSkillCat">${SKILL_CATS.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Proficiency</label><select class="form-select" id="newSkillProf">${[1,2,3,4,5].map(p=>`<option value="${p}">${PROFICIENCY_LABELS[p]}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Years Experience</label><input type="number" class="form-input" id="newSkillYears" min="0" step="0.5" value="0"></div></div>
+<button class="btn btn-primary" id="addSkillBtn">Add Skill</button></div>
+<div class="card fade-in stagger-1"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">My Skills (${filtered.length})</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+${filtered.map(s=>`<div style="padding:10px;background:var(--g950);border-radius:6px;border:1px solid var(--g800);display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:12px;color:var(--g300)">${s.skillName}</div><div style="font-size:9px;color:var(--g600)">${s.yearsExperience||0} yrs exp</div></div><div style="display:flex;align-items:center;gap:4px"><span class="skill-dot skill-dot-${s.proficiency}"></span><span style="font-size:9px;color:var(--g500)">${PROFICIENCY_LABELS[s.proficiency]}</span></div></div>`).join('')||'<p style="font-size:11px;color:var(--g600)">No skills added yet</p>'}
+</div></div>`;
+document.querySelectorAll('[data-scat]').forEach(b=>b.addEventListener('click',()=>{state_filters_skillCat=b.dataset.scat;loadSection();}));
+document.getElementById('addSkillBtn').addEventListener('click',async()=>{const body={skillName:document.getElementById('newSkillName').value.trim(),category:document.getElementById('newSkillCat').value,proficiency:parseInt(document.getElementById('newSkillProf').value),yearsExperience:parseFloat(document.getElementById('newSkillYears').value)};if(!body.skillName)return toast('Enter skill name');try{await api('/my-skills',{method:'POST',body:JSON.stringify(body)});toast('Skill added');loadSection();}catch(e){toast(e.message);}});
+}
+let state_filters_skillCat='technical';
+
+// ---- OKRs ----
+async function renderOkrs(el){
+const{okrs}=await api('/my-okrs');myOkrs=okrs;
+const period=state_filters_okrPeriod||'2026-Q3';
+const periodOkrs=okrs.filter(o=>o.period===period);
+el.innerHTML=`<div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center"><div><h2 style="font-size:20px;font-weight:600;color:var(--white)">My OKRs</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">Objectives & Key Results</p></div><button class="btn btn-primary" id="newOkrBtn">+ New OKR</button></div>
+<div class="filters">${['2026-Q1','2026-Q2','2026-Q3','2026-Q4'].map(p=>`<div class="view-btn${period===p?' active':''}" data-operiod="${p}">${p}</div>`).join('')}</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+${periodOkrs.map((o,i)=>{const krs=Array.isArray(o.keyResults)?o.keyResults:[];
+return`<div class="card fade-in" style="animation-delay:${i*.04}s"><div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px"><div style="font-size:13px;font-weight:500;color:var(--white)">${o.objectiveText}</div><span class="badge badge-${o.status}">${o.status}</span></div>
+<div class="progress-bar" style="margin-bottom:6px"><div class="progress-fill" style="width:${o.progress}%"></div></div><div style="font-size:10px;color:var(--g500);margin-bottom:8px">${o.progress}% complete</div>
+${krs.length?krs.map(kr=>`<div style="font-size:10px;color:var(--g400);margin-bottom:4px;display:flex;justify-content:space-between"><span>${kr.text||kr}</span><span>${kr.current||0}/${kr.target||'?'} ${kr.unit||''}</span></div>`).join(''):''}</div>`;}).join('')||'<p style="color:var(--g600);font-size:12px">No OKRs for this period</p>'}
+</div>`;
+document.querySelectorAll('[data-operiod]').forEach(b=>b.addEventListener('click',()=>{state_filters_okrPeriod=b.dataset.operiod;loadSection();}));
+document.getElementById('newOkrBtn').addEventListener('click',()=>openOkrModal());
+}
+let state_filters_okrPeriod='2026-Q3';
+
+function openOkrModal(){
+const panel=document.getElementById('detailPanel');
+panel.innerHTML=`<div class="detail-header"><h2>New OKR</h2><button class="close-detail" id="closeOkrModal">&times;</button></div>
+<div class="detail-section"><div class="form-group"><label class="form-label">Objective</label><input class="form-input" id="okr_objective" placeholder="What do you want to achieve?"></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Period</label><select class="form-select" id="okr_period"><option>2026-Q1</option><option>2026-Q2</option><option selected>2026-Q3</option><option>2026-Q4</option></select></div>
+<div class="form-group"><label class="form-label">Status</label><select class="form-select" id="okr_status"><option value="draft">Draft</option><option value="active" selected>Active</option></select></div></div>
+<h4 style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin:12px 0 8px">Key Results</h4>
+<div id="okrKrList"><div class="form-row" style="margin-bottom:6px"><div class="form-group"><input class="form-input" placeholder="Key result" data-kr-text="0"></div><div class="form-group" style="display:flex;gap:4px"><input class="form-input" placeholder="Target" data-kr-target="0" style="width:60px"><input class="form-input" placeholder="Current" data-kr-current="0" type="number" value="0" style="width:60px"><input class="form-input" placeholder="Unit" data-kr-unit="0" style="width:50px"></div></div></div>
+<button class="btn btn-sm" id="addOkrKrBtn">+ Add Key Result</button></div>
+<button class="btn btn-primary" id="saveOkrBtn" style="width:100%;justify-content:center">Create OKR</button>`;
+panel.style.display='block';document.getElementById('detailOverlay').classList.add('open');
+document.getElementById('closeOkrModal').addEventListener('click',closeDetail);document.getElementById('detailOverlay').addEventListener('click',closeDetail);
+document.getElementById('addOkrKrBtn').addEventListener('click',()=>{const list=document.getElementById('okrKrList');const idx=list.children.length;const div=document.createElement('div');div.className='form-row';div.style.marginBottom='6px';div.innerHTML=`<div class="form-group"><input class="form-input" placeholder="Key result" data-kr-text="${idx}"></div><div class="form-group" style="display:flex;gap:4px"><input class="form-input" placeholder="Target" data-kr-target="${idx}" style="width:60px"><input class="form-input" placeholder="Current" data-kr-current="${idx}" type="number" value="0" style="width:60px"><input class="form-input" placeholder="Unit" data-kr-unit="${idx}" style="width:50px"></div>`;list.appendChild(div);});
+document.getElementById('saveOkrBtn').addEventListener('click',async()=>{const krs=[];document.querySelectorAll('[data-kr-text]').forEach((el,i)=>{krs.push({text:el.value,target:document.querySelector(`[data-kr-target="${i}"]`).value,current:parseFloat(document.querySelector(`[data-kr-current="${i}"]`).value)||0,unit:document.querySelector(`[data-kr-unit="${i}"]`).value});});
+const body={objectiveText:document.getElementById('okr_objective').value,period:document.getElementById('okr_period').value,status:document.getElementById('okr_status').value,keyResults:krs,progress:0};if(!body.objectiveText)return toast('Enter objective');try{await api('/my-okrs',{method:'POST',body:JSON.stringify(body)});toast('OKR created');closeDetail();loadSection();}catch(e){toast(e.message);}});
 }
 
-// ---- Tasks ----
-async function loadTasks() {
-    try {
-        const data = await api('/my-tasks');
-        tasks = data.tasks;
-        renderStats();
-        renderTasks();
-    } catch (e) { toast(e.message); }
+// ---- FEEDBACK ----
+async function renderFeedback(el){
+const{reviews}=await api('/my-reviews');myReviews=reviews;
+const managerReviews=reviews.filter(r=>r.reviewType==='manager');
+el.innerHTML=`<div style="margin-bottom:20px"><h2 style="font-size:20px;font-weight:600;color:var(--white)">Feedback</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">Reviews and ratings from your manager</p></div>
+${managerReviews.length?`<div class="card fade-in" style="margin-bottom:16px"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Latest Review (${managerReviews[0].reviewPeriod})</h3>
+<div style="text-align:center;margin-bottom:16px"><div style="font-size:36px;font-weight:700;color:var(--white)">${managerReviews[0].overallRating}</div><div style="font-size:12px;color:var(--g500)">${ratingStars(managerReviews[0].overallRating)} Overall Rating</div></div>
+<div class="grid-2">${[['timeliness','Timeliness'],['quality','Quality'],['communication','Communication'],['collaboration','Collaboration'],['initiative','Initiative'],['problemSolving','Problem Solving']].map(([k,l])=>`<div style="padding:8px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)"><div style="font-size:9px;color:var(--g500);text-transform:uppercase;letter-spacing:.06em">${l}</div><div style="font-size:18px;font-weight:700;color:var(--white);margin-top:4px">${managerReviews[0][k]||3}<span style="font-size:11px;color:var(--g500)">/5</span></div></div>`).join('')}</div>
+${managerReviews[0].strengths?`<div style="margin-top:12px;padding:10px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)"><div style="font-size:9px;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Strengths</div><div style="font-size:12px;color:var(--g300)">${managerReviews[0].strengths}</div></div>`:''}
+${managerReviews[0].improvements?`<div style="margin-top:8px;padding:10px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)"><div style="font-size:9px;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Areas to Improve</div><div style="font-size:12px;color:var(--g300)">${managerReviews[0].improvements}</div></div>`:''}</div>`:'<div class="card fade-in"><p style="font-size:12px;color:var(--g600);text-align:center;padding:20px">No manager reviews yet</p></div>'}
+<div class="card fade-in stagger-1"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:12px">Review History (${managerReviews.length})</h3>
+${managerReviews.length?`<div class="timeline">${managerReviews.map(r=>`<div class="timeline-item"><div class="time">${r.reviewPeriod}</div><div class="content">Rating: <strong style="color:var(--white)">${r.overallRating}/5</strong> \u2014 T:${r.timeliness} Q:${r.quality} C:${r.communication}</div></div>`).join('')}</div>`:'<p style="font-size:11px;color:var(--g600)">No reviews yet</p>'}</div>`;
 }
 
-function renderStats() {
-    const counts = { todo: 0, in_progress: 0, review: 0, done: 0, blocked: 0 };
-    tasks.forEach(t => { if (counts[t.status] != null) counts[t.status]++; });
-    const overdue = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done').length;
-    document.getElementById('statsBar').innerHTML = `
-        <div class="stat-card fade-in stagger-1"><div class="stat-value">${tasks.length}</div><div class="stat-label">Total</div></div>
-        <div class="stat-card fade-in stagger-2"><div class="stat-value">${counts.in_progress}</div><div class="stat-label">In Progress</div></div>
-        <div class="stat-card fade-in stagger-3"><div class="stat-value">${counts.review}</div><div class="stat-label">In Review</div></div>
-        <div class="stat-card fade-in stagger-4"><div class="stat-value">${counts.done}</div><div class="stat-label">Done</div></div>
-        <div class="stat-card fade-in stagger-5"><div class="stat-value">${overdue}</div><div class="stat-label">Overdue</div></div>
-    `;
+// ---- GOALS ----
+async function renderGoals(el){
+const{goals}=await api('/my-goals');myGoals=goals;
+const cat=state_filters_goalCat||'';
+const filtered=cat?goals.filter(g=>g.category===cat):goals;
+el.innerHTML=`<div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center"><div><h2 style="font-size:20px;font-weight:600;color:var(--white)">My Goals</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">Personal & professional goals</p></div><button class="btn btn-primary" id="newGoalBtn">+ New Goal</button></div>
+<div class="filters">${['','career','learning','performance','personal'].map(c=>`<div class="view-btn${cat===c?' active':''}" data-gcat="${c}">${c||'All'}</div>`).join('')}</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+${filtered.map((g,i)=>`<div class="card fade-in" style="animation-delay:${i*.04}s"><div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px"><div style="font-size:13px;font-weight:500;color:var(--white)">${g.goalText}</div><span class="badge badge-${g.status==='achieved'?'done':g.status==='active'?'in_progress':'todo'}">${g.status}</span></div>
+<div style="font-size:9px;color:var(--g600);margin-bottom:8px;text-transform:uppercase">${g.category}${g.targetDate?' \u00b7 Due: '+g.targetDate:''}</div>
+<div class="progress-bar" style="margin-bottom:4px"><div class="progress-fill" style="width:${g.progress}%"></div></div><div style="font-size:10px;color:var(--g500)">${g.progress}% complete</div></div>`).join('')||'<p style="color:var(--g600);font-size:12px">No goals yet</p>'}
+</div>`;
+document.querySelectorAll('[data-gcat]').forEach(b=>b.addEventListener('click',()=>{state_filters_goalCat=b.dataset.gcat;loadSection();}));
+document.getElementById('newGoalBtn').addEventListener('click',()=>openGoalModal());
+}
+let state_filters_goalCat='';
+
+function openGoalModal(){
+const panel=document.getElementById('detailPanel');
+panel.innerHTML=`<div class="detail-header"><h2>New Goal</h2><button class="close-detail" id="closeGoalModal">&times;</button></div>
+<div class="detail-section"><div class="form-group"><label class="form-label">Goal</label><input class="form-input" id="goal_text" placeholder="What do you want to achieve?"></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Category</label><select class="form-select" id="goal_cat">${GOAL_CATS.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
+<div class="form-group"><label class="form-label">Target Date</label><input type="date" class="form-input" id="goal_date"></div></div>
+<div class="form-group"><label class="form-label">Progress (%)</label><input type="number" class="form-input" id="goal_progress" min="0" max="100" value="0"></div></div>
+<button class="btn btn-primary" id="saveGoalBtn" style="width:100%;justify-content:center">Create Goal</button>`;
+panel.style.display='block';document.getElementById('detailOverlay').classList.add('open');
+document.getElementById('closeGoalModal').addEventListener('click',closeDetail);document.getElementById('detailOverlay').addEventListener('click',closeDetail);
+document.getElementById('saveGoalBtn').addEventListener('click',async()=>{const body={goalText:document.getElementById('goal_text').value,category:document.getElementById('goal_cat').value,targetDate:document.getElementById('goal_date').value||null,progress:parseInt(document.getElementById('goal_progress').value)||0,status:'active'};if(!body.goalText)return toast('Enter goal');try{await api('/my-goals',{method:'POST',body:JSON.stringify(body)});toast('Goal created');closeDetail();loadSection();}catch(e){toast(e.message);}});
 }
 
-function renderTasks() {
-    const area = document.getElementById('taskArea');
-    if (view === 'kanban') {
-        const cols = ['todo', 'in_progress', 'review', 'done'];
-        area.innerHTML = `<div class="kanban">${cols.map(s => {
-            const colTasks = tasks.filter(t => t.status === s);
-            return `<div class="kanban-col fade-in">
-                <div class="kanban-header">
-                    <span class="kanban-title">${s.replace('_', ' ')}</span>
-                    <span class="kanban-count">${colTasks.length}</span>
-                </div>
-                <div class="kanban-cards">
-                    ${colTasks.map((t, i) => taskCard(t, i)).join('')}
-                </div>
-            </div>`;
-        }).join('')}</div>`;
-    } else {
-        area.innerHTML = `<div class="list-view">${tasks.map((t, i) => `
-            <div class="list-item fade-in" style="animation-delay:${i * .03}s" onclick="openDetail('${t.id}')">
-                <div class="list-item-title">${t.title}</div>
-                <div><span class="task-tag">${t.project || t.department || '—'}</span></div>
-                <div><span class="badge badge-${t.status}">${t.status.replace('_',' ')}</span></div>
-                <div><span class="task-priority priority-${t.priority}">${t.priority}</span></div>
-                <div style="min-width:50px"><div class="progress-track"><div class="progress-bar-fill" style="width:${t.progress}%"></div></div></div>
-                <div style="font-size:10px;color:var(--g500)">${t.progress}%</div>
-            </div>
-        `).join('')}</div>`;
-    }
+// ---- ACHIEVEMENTS ----
+async function renderAchievements(el){
+const{achievements}=await api('/my-achievements');myAchievements=achievements;
+el.innerHTML=`<div style="margin-bottom:20px"><h2 style="font-size:20px;font-weight:600;color:var(--white)">Achievements</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">${achievements.length} recognition${achievements.length!==1?'s':''} received</p></div>
+<div class="stats-bar" style="margin-bottom:20px">${ACHIEVE_CATS.map(c=>`<div class="stat-card"><div class="stat-value">${achievements.filter(a=>a.category===c).length}</div><div class="stat-label">${c}</div></div>`).join('')}</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+${achievements.map((a,i)=>`<div class="card fade-in" style="animation-delay:${i*.04}s"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="width:32px;height:32px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:16px">${a.badgeIcon==='star'?'\u2b50':a.badgeIcon==='trophy'?'\ud83c\udfc6':a.badgeIcon==='certificate'?'\ud83d\udcdc':'\ud83c\udf89'}</div><div><div style="font-size:13px;font-weight:500;color:var(--white)">${a.title}</div><div style="font-size:9px;color:var(--g500)">${fmtDate(a.createdAt)}</div></div></div>
+${a.description?`<div style="font-size:11px;color:var(--g400)">${a.description}</div>`:''}<span class="badge badge-${a.category}" style="margin-top:6px">${a.category}</span></div>`).join('')||'<p style="color:var(--g600);font-size:12px">No achievements yet. Keep up the great work!</p>'}
+</div>`;
 }
 
-function taskCard(t, i) {
-    const isOverdue = t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done';
-    return `<div class="task-card fade-in" style="animation-delay:${i * .05}s" onclick="openDetail('${t.id}')">
-        <div class="task-card-title">${t.title}</div>
-        <div class="task-card-meta">
-            ${t.project ? `<span class="task-tag">${t.project}</span>` : ''}
-            ${t.department ? `<span class="task-tag">${t.department}</span>` : ''}
-            <span class="task-priority priority-${t.priority}">${t.priority}</span>
-        </div>
-        <div class="task-progress">
-            <div class="progress-track"><div class="progress-bar-fill" style="width:${t.progress}%"></div></div>
-        </div>
-        <div class="task-due${isOverdue ? ' overdue' : ''}">${t.dueDate ? (isOverdue ? 'Overdue: ' : 'Due: ') + t.dueDate : ''}</div>
-    </div>`;
+// ---- MEETINGS ----
+async function renderMeetings(el){
+const{meetings}=await api('/my-meetings');myMeetings=meetings;
+el.innerHTML=`<div style="margin-bottom:20px"><h2 style="font-size:20px;font-weight:600;color:var(--white)">Meetings</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">1-on-1s and meeting notes</p></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+${meetings.map((m,i)=>{const actions=Array.isArray(m.actionItems)?m.actionItems:[];const doneActions=actions.filter(a=>a.done).length;
+return`<div class="card fade-in" style="animation-delay:${i*.04}s"><div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px"><div style="font-size:13px;font-weight:500;color:var(--white)">${m.title}</div><span class="badge badge-${m.meetingType}">${m.meetingType}</span></div>
+<div style="font-size:10px;color:var(--g500);margin-bottom:8px">${m.scheduledAt?fmtDateTime(m.scheduledAt):'\u2014'} \u00b7 ${m.durationMinutes||30}min</div>
+${m.notes?`<div style="font-size:11px;color:var(--g400);margin-bottom:8px;line-height:1.5">${m.notes}</div>`:''}
+${actions.length?`<div style="font-size:10px;color:var(--g500);margin-bottom:4px">Action Items: ${doneActions}/${actions.length}</div>${actions.map(a=>`<div style="font-size:10px;color:${a.done?'var(--g500)':'var(--g300)'};padding:3px 0;${a.done?'text-decoration:line-through':''}">\u2022 ${a.text}</div>`).join('')}`:''}</div>`;}).join('')||'<p style="color:var(--g600);font-size:12px">No meetings yet</p>'}
+</div>`;
 }
 
-function setView(v) {
-    view = v;
-    document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === v));
-    renderTasks();
+// ---- PROFILE ----
+async function renderProfile(el){
+const{member:m}=await api('/me');
+const[skillsRes,okrsRes,achRes]=await Promise.all([api('/my-skills'),api('/my-okrs'),api('/my-achievements')]);
+el.innerHTML=`<div style="margin-bottom:20px"><h2 style="font-size:20px;font-weight:600;color:var(--white)">Profile</h2><p style="font-size:11px;color:var(--g500);margin-top:3px">Your professional profile</p></div>
+<div class="card fade-in" style="margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+<div style="width:56px;height:56px;border-radius:50%;background:var(--g800);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600;color:var(--g300)">${initials(m.fullName)}</div>
+<div><div style="font-size:18px;font-weight:600;color:var(--white)">${m.fullName}</div><div style="font-size:11px;color:var(--g500)">@${m.username} \u00b7 ${m.role} \u00b7 ${m.department} \u00b7 ${m.hierarchy}</div></div></div>
+<div class="grid-3" style="margin-bottom:16px"><div style="text-align:center;padding:10px;background:var(--g950);border-radius:6px"><div style="font-size:20px;font-weight:700;color:var(--white)">${m.overallRating||0}</div><div style="font-size:9px;color:var(--g500);text-transform:uppercase">Rating</div></div><div style="text-align:center;padding:10px;background:var(--g950);border-radius:6px"><div style="font-size:20px;font-weight:700;color:var(--white)">${skillsRes.skills.length}</div><div style="font-size:9px;color:var(--g500);text-transform:uppercase">Skills</div></div><div style="text-align:center;padding:10px;background:var(--g950);border-radius:6px"><div style="font-size:20px;font-weight:700;color:var(--white)">${achRes.achievements.length}</div><div style="font-size:9px;color:var(--g500);text-transform:uppercase">Awards</div></div></div>
+${m.bio?`<div style="font-size:12px;color:var(--g400);margin-bottom:12px;padding:10px;background:var(--g950);border-radius:6px;border:1px solid var(--g800)">${m.bio}</div>`:''}
+<div style="font-size:11px;color:var(--g500)">${m.email||''}${m.mobile?' \u00b7 '+m.mobile:''}${m.joinDate?' \u00b7 Joined '+fmtDate(m.joinDate):''}${m.location?' \u00b7 '+m.location:''}</div></div>
+<div class="grid-2">
+<div class="card fade-in stagger-1"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:10px">Skills (${skillsRes.skills.length})</h3>${skillsRes.skills.slice(0,8).map(s=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px"><span style="color:var(--g300)">${s.skillName}</span><span class="skill-dot skill-dot-${s.proficiency}"></span><span style="color:var(--g500);font-size:9px">${PROFICIENCY_LABELS[s.proficiency]}</span></div>`).join('')||'<p style="font-size:11px;color:var(--g600)">No skills</p>'}</div>
+<div class="card fade-in stagger-2"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:10px">Active OKRs (${okrsRes.okrs.filter(o=>o.status==='active').length})</h3>${okrsRes.okrs.filter(o=>o.status==='active').map(o=>`<div style="margin-bottom:6px"><div style="font-size:11px;color:var(--g300)">${o.objectiveText}</div><div class="progress-bar" style="margin-top:3px"><div class="progress-fill" style="width:${o.progress}%"></div></div></div>`).join('')||'<p style="font-size:11px;color:var(--g600)">No active OKRs</p>'}</div></div>
+<div class="card fade-in" style="margin-top:16px"><h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--g500);margin-bottom:10px">Edit Profile</h3>
+<div class="form-row"><div class="form-group"><label class="form-label">Bio</label><textarea class="form-textarea" id="prof_bio">${m.bio||''}</textarea></div><div class="form-group"><label class="form-label">Location</label><input class="form-input" id="prof_location" value="${m.location||''}"></div></div>
+<div class="form-row"><div class="form-group"><label class="form-label">Timezone</label><input class="form-input" id="prof_tz" value="${m.timezone||'UTC'}"></div><div></div></div>
+<button class="btn btn-primary" id="saveProfileBtn">Save Profile</button></div>`;
+document.getElementById('saveProfileBtn').addEventListener('click',async()=>{const body={bio:document.getElementById('prof_bio').value,location:document.getElementById('prof_location').value,timezone:document.getElementById('prof_tz').value};try{await api('/me',{method:'PUT',body:JSON.stringify(body)});toast('Profile updated');loadSection();}catch(e){toast(e.message);}});
 }
 
-// ---- Task Detail ----
-function openDetail(id) {
-    selectedTask = tasks.find(t => t.id === id);
-    if (!selectedTask) return;
-    const t = selectedTask;
-    const panel = document.getElementById('detailPanel');
-    const notes = Array.isArray(t.notes) ? t.notes : [];
-    panel.innerHTML = `
-        <div class="detail-header">
-            <h2>${t.title}</h2>
-            <button class="close-detail" onclick="closeDetail()">&times;</button>
-        </div>
-        ${t.description ? `<div class="detail-section"><h4>Description</h4><div class="detail-desc">${t.description}</div></div>` : ''}
-        <div class="detail-section">
-            <h4>Details</h4>
-            <div class="detail-meta">
-                ${t.project ? `<div class="detail-meta-item"><strong>Project</strong>${t.project}</div>` : ''}
-                ${t.department ? `<div class="detail-meta-item"><strong>Department</strong>${t.department}</div>` : ''}
-                ${t.category ? `<div class="detail-meta-item"><strong>Category</strong>${t.category}</div>` : ''}
-                ${t.dueDate ? `<div class="detail-meta-item"><strong>Due Date</strong>${t.dueDate}</div>` : ''}
-                ${t.estimatedHours ? `<div class="detail-meta-item"><strong>Est. Hours</strong>${t.estimatedHours}h</div>` : ''}
-                ${t.actualHours ? `<div class="detail-meta-item"><strong>Actual Hours</strong>${t.actualHours}h</div>` : ''}
-            </div>
-        </div>
-        <div class="detail-section">
-            <h4>Status</h4>
-            <div class="status-select">
-                ${['todo','in_progress','review','done','blocked'].map(s => `<div class="status-opt${t.status===s?' active':''}" onclick="updateStatus('${t.id}','${s}')">${s.replace('_',' ')}</div>`).join('')}
-            </div>
-        </div>
-        <div class="detail-section">
-            <h4>Progress</h4>
-            <div class="slider-wrap">
-                <input type="range" class="slider" min="0" max="100" value="${t.progress}" oninput="document.getElementById('pVal').textContent=this.value+'%'">
-                <span class="slider-val" id="pVal">${t.progress}%</span>
-            </div>
-            <button class="btn-login" style="margin-top:12px;font-size:10px;padding:8px" onclick="updateProgress('${t.id}')">Update Progress</button>
-        </div>
-        <div class="detail-section">
-            <h4>Activity Notes</h4>
-            ${notes.length ? `<div class="notes-list">${notes.slice().reverse().map((n, i) => `
-                <div class="note-item" style="animation-delay:${i * .05}s">
-                    <div class="note-time">${new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
-                    <div class="note-text">${n.text}</div>
-                    <div class="note-author">— ${n.author || 'Unknown'}</div>
-                </div>
-            `).join('')}</div>` : '<p style="font-size:12px;color:var(--g600)">No notes yet</p>'}
-            <div class="note-input-wrap">
-                <input class="note-input" id="noteInput" placeholder="Add a progress note...">
-                <button class="note-submit" onclick="addNote('${t.id}')">Add</button>
-            </div>
-        </div>
-    `;
-    panel.style.display = 'block';
-    document.getElementById('detailOverlay').classList.add('open');
-}
-
-function closeDetail() {
-    document.getElementById('detailPanel').style.display = 'none';
-    document.getElementById('detailOverlay').classList.remove('open');
-    selectedTask = null;
-}
-
-async function updateStatus(id, status) {
-    try {
-        await api('/my-tasks/' + id, { method: 'PUT', body: JSON.stringify({ status }) });
-        toast('Status updated');
-        loadTasks();
-        openDetail(id);
-    } catch (e) { toast(e.message); }
-}
-
-async function updateProgress(id) {
-    const val = parseInt(document.querySelector('.slider').value);
-    try {
-        await api('/my-tasks/' + id, { method: 'PUT', body: JSON.stringify({ progress: val }) });
-        toast('Progress updated to ' + val + '%');
-        loadTasks();
-    } catch (e) { toast(e.message); }
-}
-
-async function addNote(id) {
-    const input = document.getElementById('noteInput');
-    const text = input.value.trim();
-    if (!text) return;
-    try {
-        await api('/my-tasks/' + id + '/notes', { method: 'POST', body: JSON.stringify({ text }) });
-        input.value = '';
-        toast('Note added');
-        loadTasks();
-        openDetail(id);
-    } catch (e) { toast(e.message); }
-}
-
-// ---- Init ----
-function init() {
-    const saved = localStorage.getItem('team_member');
-    const token = localStorage.getItem('team_token');
-    if (saved && token) {
-        try {
-            member = JSON.parse(saved);
-            showPortal();
-        } catch (e) { logout(); }
-    }
-    // Enter key on login
-    document.getElementById('loginMobile').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-    document.getElementById('loginUser').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginMobile').focus(); });
+// Init
+function init(){const saved=localStorage.getItem('team_member');const token=localStorage.getItem('team_token');if(saved&&token){try{member=JSON.parse(saved);showPortal();}catch(e){localStorage.removeItem('team_token');localStorage.removeItem('team_member');}}
 }
 init();
 </script>
