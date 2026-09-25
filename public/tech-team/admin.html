@@ -187,6 +187,13 @@ async function api(path, opts = {}) {
     const adminToken = localStorage.getItem('admin_jwt') || localStorage.getItem('token');
     if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken;
     const res = await fetch(API + path, { ...opts, headers });
+    if (res.status === 401) {
+        localStorage.removeItem('admin_jwt');
+        localStorage.removeItem('admin_token');
+        localStorage.removeItem('token');
+        showLoginPage();
+        throw new Error('Session expired. Please login again.');
+    }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
     return data;
