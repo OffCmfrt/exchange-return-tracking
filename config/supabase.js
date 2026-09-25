@@ -19,6 +19,10 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_ANON_KEY) {
     console.warn('   Please configure SUPABASE_SERVICE_ROLE_KEY to securely bypass RLS.');
 }
 
-const supabase = createClient(supabaseUrl || '', supabaseKey || '');
+const supabase = createClient(
+    supabaseUrl || 'https://placeholder.supabase.co',
+    supabaseKey || 'placeholder-anon-key'
+);
 
 module.exports = supabase;
+

@@ -2061,7 +2061,7 @@
         </div>
 
         <div id="modalActions" class="hidden" style="margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem;">
-            <button onclick="approveRequest()" class="btn btn-primary" style="flex: 1; background: #111827; min-width: 150px; border: 1px solid #111827;">
+            <button id="approveBtn" onclick="approveRequest()" class="btn btn-primary" style="flex: 1; background: #111827; min-width: 150px; border: 1px solid #111827;">
                 Approve
             </button>
             <button id="modifyBeforeDispatchBtn" onclick="openModifyModal()" class="btn btn-warning hidden" style="flex: 1; min-width: 150px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);">
@@ -2074,7 +2074,7 @@
             <button id="markDeliveredBtn" onclick="markDelivered()" class="btn btn-secondary" style="flex: 1; background: white; color: #111827; border: 1px solid #111827; min-width: 150px;">
                 Mark as Received
             </button>
-            <button onclick="rejectRequest()" class="btn btn-primary" style="flex: 1; background: white; color: #111827; border: 1px solid #111827; min-width: 150px;">
+            <button id="rejectBtn" onclick="rejectRequest()" class="btn btn-primary" style="flex: 1; background: white; color: #111827; border: 1px solid #111827; min-width: 150px;">
                 Reject
             </button>
         </div>
@@ -2129,6 +2129,11 @@
                     <option value="permission_denied">Permission Denied</option>
                     <option value="Approve Request">Approvals</option>
                     <option value="Reject Request">Rejections</option>
+                    <option value="Generate Payment Link">Payment Links</option>
+                    <option value="Modify Exchange Address">Modify Exchange Address</option>
+                    <option value="Create Duplicate Pickup">Duplicate Pickups</option>
+                    <option value="Carrier for Re-dispatch">Re-dispatches</option>
+                    <option value="Choose Resolution">Choose Resolution</option>
                     <option value="Update Settings">Settings Changes</option>
                     <option value="Delete Requests">Deletions</option>
                 </select>
@@ -3224,7 +3229,7 @@
             </div>
 
             ${data.type === 'exchange' && !['shipped', 'delivered', 'resolved'].includes(data.status) ? `
-            <button onclick="openModifyModal()" class="btn btn-warning" style="margin-top: 1rem; width: 100%; padding: 0.875rem; font-weight: 600; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3); transition: all 0.3s ease;">
+            <button onclick="openModifyModal()" id="modifyExchangeDetailsBtn" class="btn btn-warning" style="margin-top: 1rem; width: 100%; padding: 0.875rem; font-weight: 600; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3); transition: all 0.3s ease;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
@@ -3424,11 +3429,15 @@
                             warningTextEl.textContent = 'This will create a NEW pickup booking. Previous booking remains active in carrier system.';
                         }
                     } else if (data.status === 'cancelled' || data.status === 'failed') {
-                        if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Re-dispatch';
-                        if (descEl) descEl.textContent = `This order is ${data.status.toUpperCase()}. Select carrier for re-dispatch.`;
-                        if (warningDiv && warningTextEl) {
-                            warningDiv.classList.remove('hidden');
-                            warningTextEl.textContent = 'Re-dispatching will reset to pending and allow fresh carrier booking.';
+                        if (sessionRole === 'operator' && !can('carrier_redispatch')) {
+                            carrierOverrideSection.classList.add('hidden');
+                        } else {
+                            if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Re-dispatch';
+                            if (descEl) descEl.textContent = `This order is ${data.status.toUpperCase()}. Select carrier for re-dispatch.`;
+                            if (warningDiv && warningTextEl) {
+                                warningDiv.classList.remove('hidden');
+                                warningTextEl.textContent = 'Re-dispatching will reset to pending and allow fresh carrier booking.';
+                            }
                         }
                     } else if (isApprovedExchange) {
                         if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Duplicate Forward Order';
@@ -3438,11 +3447,15 @@
                             warningTextEl.textContent = 'This creates a fresh carrier booking with a new AWB. The previous booking may still exist in the carrier system.';
                         }
                     } else if (['scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'approved'].includes(data.status)) {
-                        if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Duplicate Pickup';
-                        if (descEl) descEl.textContent = 'Select carrier for creating a duplicate pickup. Useful when original pickup was cancelled.';
-                        if (warningDiv && warningTextEl) {
-                            warningDiv.classList.remove('hidden');
-                            warningTextEl.textContent = 'This books a fresh pickup. Any previous booking may still exist in carrier system.';
+                        if (sessionRole === 'operator' && !can('duplicate_pickup')) {
+                            carrierOverrideSection.classList.add('hidden');
+                        } else {
+                            if (labelEl) labelEl.querySelector('span').textContent = 'Carrier for Duplicate Pickup';
+                            if (descEl) descEl.textContent = 'Select carrier for creating a duplicate pickup. Useful when original pickup was cancelled.';
+                            if (warningDiv && warningTextEl) {
+                                warningDiv.classList.remove('hidden');
+                                warningTextEl.textContent = 'This books a fresh pickup. Any previous booking may still exist in carrier system.';
+                            }
                         }
                     }
                 } else {
@@ -3450,8 +3463,19 @@
                 }
             }
             
-            const approveBtn = modalActions.querySelector('button.btn-primary[onclick="approveRequest()"]');
-            const rejectBtn = modalActions.querySelector('button.btn-primary[onclick="rejectRequest()"]');
+            // Clean up any stray duplicate buttons created across requests
+            const dynamicButtonIds = ['dupPickupBtn', 'revertPickupBtn', 'dupForwardBtn', 'redispatchBtn', 'convertBtn', 'undoRejectionBtn'];
+            modalActions.querySelectorAll('button').forEach(btn => {
+                if (btn.id && dynamicButtonIds.includes(btn.id)) {
+                    // Known dynamic button — keep for reuse
+                } else if (!['approveBtn', 'modifyBeforeDispatchBtn', 'markDeliveredBtn', 'rejectBtn'].includes(btn.id)) {
+                    // Stray or untracked button — remove
+                    btn.remove();
+                }
+            });
+
+            const approveBtn = document.getElementById('approveBtn');
+            const rejectBtn = document.getElementById('rejectBtn');
             const manualReceivedBtn = document.getElementById('markDeliveredBtn');
             console.log('Buttons found:', { approveBtn: !!approveBtn, rejectBtn: !!rejectBtn, manualReceivedBtn: !!manualReceivedBtn });
             
@@ -3462,23 +3486,27 @@
                     approveBtn.textContent = 'Approve & Initiate Pickup';
                     approveBtn.style.background = '#2563eb'; // Blue
                     approveBtn.setAttribute('onclick', 'approveRequest()');
+                    approveBtn.onclick = () => approveRequest();
                 } else if (data.status === 'pickup_pending') {
                     // Show Re-initiate button for pickup_pending
                     approveBtn.classList.remove('hidden');
                     approveBtn.textContent = 'Re-initiate Pickup with Selected Carrier';
                     approveBtn.style.background = '#f59e0b'; // Orange warning color
                     approveBtn.setAttribute('onclick', 'approveRequest()');
-                } else if (data.status === 'delivered' || data.status === 'inspected') {
+                    approveBtn.onclick = () => approveRequest();
+                } else if (data.status === 'delivered' || data.status === 'inspected' || data.status === 'delivered (pending insp.)') {
                     approveBtn.classList.remove('hidden');
                     if (data.type === 'exchange') {
                         // Exchange at delivered/inspected: show resolution chooser
                         approveBtn.textContent = 'Choose Resolution';
                         approveBtn.style.background = '#111827';
                         approveBtn.setAttribute('onclick', 'openResolutionModal()');
+                        approveBtn.onclick = () => openResolutionModal();
                     } else {
                         approveBtn.textContent = 'Approve (QC Passed)';
                         approveBtn.style.background = '#22c55e';
                         approveBtn.setAttribute('onclick', 'approveRequest()');
+                        approveBtn.onclick = () => approveRequest();
                     }
                 } else {
                     approveBtn.classList.add('hidden');
@@ -3498,12 +3526,13 @@
             }
 
             // Convert to Exchange button: shown for return requests in active (non-terminal) statuses
-            let convertBtn = modalActions.querySelector('button[onclick="openConvertToExchangeModal()"]');
-            const convertibleReturnStatuses = ['delivered', 'inspected', 'picked_up', 'in_transit', 'out_for_delivery', 'pickup_booked', 'scheduled', 'pending', 'pickup_pending'];
+            let convertBtn = document.getElementById('convertBtn');
+            const convertibleReturnStatuses = ['delivered', 'inspected', 'picked_up', 'in_transit', 'out_for_delivery', 'pickup_booked', 'scheduled', 'pending', 'pickup_pending', 'delivered (pending insp.)'];
             const isConvertibleReturn = data.type === 'return' && convertibleReturnStatuses.includes(data.status);
             if (isConvertibleReturn) {
                 if (!convertBtn) {
                     convertBtn = document.createElement('button');
+                    convertBtn.id = 'convertBtn';
                     convertBtn.setAttribute('onclick', 'openConvertToExchangeModal()');
                     convertBtn.onclick = () => openConvertToExchangeModal();
                     convertBtn.textContent = '🔄 Convert to Exchange';
@@ -3521,32 +3550,25 @@
             if (manualReceivedBtn) {
                 const statusArr = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery'];
                 const shouldShow = statusArr.includes(data.status);
-                console.log('Mark as Received - checking status:', data.status, 'is in array:', shouldShow);
-                console.log('Mark as Received button element:', manualReceivedBtn);
-                console.log('Mark as Received button classes:', manualReceivedBtn.className);
-                console.log('Mark as Received button computed display:', window.getComputedStyle(manualReceivedBtn).display);
-                console.log('Mark as Received button offsetWidth:', manualReceivedBtn.offsetWidth, 'offsetHeight:', manualReceivedBtn.offsetHeight);
-                
                 if (shouldShow) {
                     manualReceivedBtn.classList.remove('hidden');
-                    console.log('Mark as Received button SHOWN');
                 } else {
                     manualReceivedBtn.classList.add('hidden');
-                    console.log('Mark as Received button HIDDEN');
                 }
             }
 
             // Pickup management buttons: available on every request so admins can
             // create a fresh (duplicate) pickup or revert a pickup when a carrier
             // booking gets cancelled. Shown for all pickup-flow statuses.
-            const pickupActionStatuses = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'approved'];
+            const pickupActionStatuses = ['pending', 'pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'failed', 'approved', 'delivered (pending insp.)'];
             const showPickupActions = pickupActionStatuses.includes(data.status);
 
             // Create Duplicate Pickup button (books a brand new carrier pickup)
-            let dupPickupBtn = modalActions.querySelector('button[onclick="createDuplicatePickup()"]');
+            let dupPickupBtn = document.getElementById('dupPickupBtn');
             if (showPickupActions) {
                 if (!dupPickupBtn) {
                     dupPickupBtn = document.createElement('button');
+                    dupPickupBtn.id = 'dupPickupBtn';
                     dupPickupBtn.setAttribute('onclick', 'createDuplicatePickup()');
                     dupPickupBtn.onclick = () => createDuplicatePickup();
                     dupPickupBtn.textContent = '📦 Create Duplicate Pickup';
@@ -3559,12 +3581,13 @@
             }
 
             // Revert Pickup button (clears carrier booking and resets to pending)
-            let revertPickupBtn = modalActions.querySelector('button[onclick="revertPickup()"]');
+            let revertPickupBtn = document.getElementById('revertPickupBtn');
             // Reverting only makes sense once a pickup has actually been booked/attempted
             const revertableFrontStatuses = ['pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'cancelled', 'failed'];
             if (revertableFrontStatuses.includes(data.status)) {
                 if (!revertPickupBtn) {
                     revertPickupBtn = document.createElement('button');
+                    revertPickupBtn.id = 'revertPickupBtn';
                     revertPickupBtn.setAttribute('onclick', 'revertPickup()');
                     revertPickupBtn.onclick = () => revertPickup();
                     revertPickupBtn.textContent = '↩ Revert Pickup';
@@ -3578,10 +3601,11 @@
 
             // Duplicate Forward Order button (dispatches a brand new replacement shipment)
             // Shown after an exchange is approved, when a forward order was already created.
-            let dupForwardBtn = modalActions.querySelector('button[onclick="createDuplicateForwardOrder()"]');
+            let dupForwardBtn = document.getElementById('dupForwardBtn');
             if (isApprovedExchange) {
                 if (!dupForwardBtn) {
                     dupForwardBtn = document.createElement('button');
+                    dupForwardBtn.id = 'dupForwardBtn';
                     dupForwardBtn.setAttribute('onclick', 'createDuplicateForwardOrder()');
                     dupForwardBtn.onclick = () => createDuplicateForwardOrder();
                     dupForwardBtn.textContent = '🚚 Duplicate Forward Order';
@@ -3593,30 +3617,34 @@
                 dupForwardBtn.classList.add('hidden');
             }
 
-            // Add re-dispatch button for cancelled/failed orders
-            let redispatchBtn = modalActions.querySelector('button[onclick="redispatchOrder()"]');
+            // Add re-dispatch button for cancelled/failed orders ONLY
+            let redispatchBtn = document.getElementById('redispatchBtn');
             if (data.status === 'cancelled' || data.status === 'failed') {
                 if (!redispatchBtn) {
                     redispatchBtn = document.createElement('button');
+                    redispatchBtn.id = 'redispatchBtn';
+                    redispatchBtn.setAttribute('onclick', 'redispatchOrder()');
                     redispatchBtn.onclick = () => redispatchOrder();
-                    redispatchBtn.textContent = data.status === 'cancelled' ? 'Re-dispatch Cancelled Order' : 'Re-dispatch Failed Order';
                     redispatchBtn.style.cssText = 'flex: 1; background: #f59e0b; color: white; border: 1px solid #f59e0b; min-width: 150px; font-weight: 600;';
                     modalActions.appendChild(redispatchBtn);
                 }
+                redispatchBtn.textContent = data.status === 'cancelled' ? 'Re-dispatch Cancelled Order' : 'Re-dispatch Failed Order';
                 redispatchBtn.classList.remove('hidden');
                 
                 // Show carrier override for re-dispatch
                 if (carrierOverrideSection) {
-                    carrierOverrideSection.classList.remove('hidden');
-                    const warningText = carrierOverrideSection.querySelector('p');
-                    if (warningText) {
-                        warningText.textContent = `This order is ${data.status.toUpperCase()}. Re-dispatching will reset it to pending status and allow you to approve it again with a fresh carrier booking.`;
+                    if (sessionRole === 'operator' && !can('carrier_redispatch')) {
+                        carrierOverrideSection.classList.add('hidden');
+                    } else {
+                        carrierOverrideSection.classList.remove('hidden');
+                        const warningText = carrierOverrideSection.querySelector('p');
+                        if (warningText) {
+                            warningText.textContent = `This order is ${data.status.toUpperCase()}. Re-dispatching will reset it to pending status and allow you to approve it again with a fresh carrier booking.`;
+                        }
                     }
                 }
-            } else {
-                if (redispatchBtn) {
-                    redispatchBtn.classList.add('hidden');
-                }
+            } else if (redispatchBtn) {
+                redispatchBtn.classList.add('hidden');
             }
 
             if (rejectBtn) {
@@ -3629,10 +3657,12 @@
             }
 
             // Add undo rejection button for rejected requests
-            let undoBtn = modalActions.querySelector('button[onclick="undoRejection()"]');
+            let undoBtn = document.getElementById('undoRejectionBtn');
             if (data.status === 'rejected') {
                 if (!undoBtn) {
                     undoBtn = document.createElement('button');
+                    undoBtn.id = 'undoRejectionBtn';
+                    undoBtn.setAttribute('onclick', 'undoRejection()');
                     undoBtn.onclick = () => undoRejection();
                     undoBtn.textContent = '↩ Undo Rejection';
                     undoBtn.style.cssText = 'flex: 1; background: #3b82f6; color: white; border: 1px solid #3b82f6; min-width: 150px; font-weight: 600;';
@@ -3650,16 +3680,19 @@
                 if (manualReceivedBtn) {
                     manualReceivedBtn.classList.add('hidden');
                 }
-            } else {
-                if (undoBtn) {
-                    undoBtn.classList.add('hidden');
-                }
+            } else if (undoBtn) {
+                undoBtn.classList.add('hidden');
             }
 
             // ── Operator permission gating (Team & Permissions feature) ──
             // Cosmetic layer; the server enforces permissions regardless.
             if (sessionRole === 'operator') {
-                if (!can('approve') && approveBtn) approveBtn.classList.add('hidden');
+                const isChooseResolutionBtn = approveBtn && data.type === 'exchange' && (['delivered', 'inspected', 'delivered (pending insp.)'].includes(data.status));
+                if (isChooseResolutionBtn) {
+                    if (!can('choose_resolution') && approveBtn) approveBtn.classList.add('hidden');
+                } else {
+                    if (!can('approve') && approveBtn) approveBtn.classList.add('hidden');
+                }
                 const couponBtn = document.getElementById('sendCouponBtn');
                 if (!can('approve') && couponBtn) couponBtn.style.display = 'none';
                 else if (couponBtn) couponBtn.style.display = '';
@@ -3667,14 +3700,39 @@
                 if (!can('reject') && undoBtn) undoBtn.classList.add('hidden');
                 if (!can('book_pickups')) {
                     if (manualReceivedBtn) manualReceivedBtn.classList.add('hidden');
-                    if (dupPickupBtn) dupPickupBtn.classList.add('hidden');
                     if (revertPickupBtn) revertPickupBtn.classList.add('hidden');
                     if (dupForwardBtn) dupForwardBtn.classList.add('hidden');
+                }
+                if (!can('duplicate_pickup')) {
+                    if (dupPickupBtn) dupPickupBtn.classList.add('hidden');
+                    if (carrierOverrideSection && ['scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'approved'].includes(data.status) && !isApprovedExchange) {
+                        carrierOverrideSection.classList.add('hidden');
+                    }
+                }
+                if (!can('carrier_redispatch')) {
                     if (redispatchBtn) redispatchBtn.classList.add('hidden');
+                    if (carrierOverrideSection && (data.status === 'cancelled' || data.status === 'failed')) {
+                        carrierOverrideSection.classList.add('hidden');
+                    }
                 }
                 if (!can('edit_requests')) {
+                    // General edit requests gating
+                }
+                if (!can('modify_exchange_address')) {
                     const modifyBtn = document.getElementById('modifyBeforeDispatchBtn');
                     if (modifyBtn) modifyBtn.classList.add('hidden');
+                    const modExBtn = document.getElementById('modifyExchangeDetailsBtn');
+                    if (modExBtn) modExBtn.style.display = 'none';
+                }
+                if (!can('payment_links')) {
+                    const payPanel = document.getElementById('agentPaymentPanel');
+                    if (payPanel) {
+                        if (data.agentPaymentStatus === 'paid') {
+                            // Paid receipt remains visible as read-only record
+                        } else {
+                            payPanel.style.display = 'none';
+                        }
+                    }
                 }
                 // Hide the whole action bar if nothing is permitted
                 const visibleActions = modalActions.querySelectorAll('button:not(.hidden)');
@@ -4327,6 +4385,10 @@
     // ── Resolution Modal (exchange / refund / store_credit) ─────────────────
     function openResolutionModal() {
         if (!currentRequest) return;
+        if (sessionRole === 'operator' && !can('choose_resolution')) {
+            alert('Permission denied: You do not have permission to choose resolution.');
+            return;
+        }
         const existing = document.getElementById('resolutionModal');
         if (existing) existing.remove();
 
@@ -4465,6 +4527,10 @@
     async function confirmResolution() {
         const resolution = window._selectedResolution;
         if (!resolution || !currentRequest) return;
+        if (sessionRole === 'operator' && !can('choose_resolution')) {
+            alert('Permission denied: You do not have permission to choose resolution.');
+            return;
+        }
 
         const notes = document.getElementById('resAdminNotes')?.value || '';
         const btn = document.getElementById('confirmResolutionBtn');
@@ -4710,6 +4776,10 @@
     // current status. Useful when the original pickup was cancelled by the carrier.
     async function createDuplicatePickup() {
         if (!currentRequest) return;
+        if (sessionRole === 'operator' && !can('duplicate_pickup')) {
+            alert('Permission denied: You do not have permission to create duplicate pickups.');
+            return;
+        }
         const carrierOverride = document.getElementById('carrierOverride')?.value || null;
         if (!confirm(`Create a NEW (duplicate) pickup for this request?\n\n⚠️ This books a fresh pickup with the carrier and generates a new AWB. Any previous booking may still remain in the carrier system. Use this when the original pickup was cancelled.`)) return;
 
@@ -4800,6 +4870,11 @@
     }
 
     async function redispatchOrder() {
+        if (!currentRequest) return;
+        if (sessionRole === 'operator' && !can('carrier_redispatch')) {
+            alert('Permission denied: You do not have permission to re-dispatch orders.');
+            return;
+        }
         const statusText = currentRequest.status === 'cancelled' ? 'cancelled' : 'failed';
         if (!confirm(`Are you sure you want to re-dispatch this ${statusText} order? This will reset it to pending status so you can approve it again with a fresh carrier booking.`)) return;
 
@@ -4906,6 +4981,11 @@
 
     // ── Agent Payment Link Functions ──
     async function generatePaymentLink(requestId) {
+        if (!can('payment_links')) {
+            alert('You do not have permission to generate payment links.');
+            return;
+        }
+
         const amountInput = document.getElementById('paymentLinkAmount');
         const amount = amountInput ? parseFloat(amountInput.value) : 0;
 
@@ -4952,6 +5032,11 @@
     }
 
     async function resendPaymentLinkWhatsapp(requestId) {
+        if (!can('payment_links')) {
+            alert('You do not have permission to manage payment links.');
+            return;
+        }
+
         // Re-generate the link with same amount and send WhatsApp
         const currentData = window.currentRequestData;
         if (!currentData || !currentData.agentPaymentAmount) {
@@ -5481,12 +5566,18 @@
                 // Store the new request ID for Step 3
                 window._crNewRequestId = data.requestId;
                 document.getElementById('cr-new-requestId').textContent = data.requestId;
-                // Transition to Step 3 (payment link)
-                document.getElementById('cr-step2').style.display = 'none';
-                document.getElementById('cr-step3').style.display = '';
-                document.getElementById('cr-payLink-result').style.display = 'none';
-                document.getElementById('cr-payLink-error').style.display = 'none';
                 loadRequests(); // Refresh table
+
+                if (can('payment_links')) {
+                    // Transition to Step 3 (payment link)
+                    document.getElementById('cr-step2').style.display = 'none';
+                    document.getElementById('cr-step3').style.display = '';
+                    document.getElementById('cr-payLink-result').style.display = 'none';
+                    document.getElementById('cr-payLink-error').style.display = 'none';
+                } else {
+                    crCloseAfterSuccess();
+                    alert(`✅ Request ${data.requestId} created successfully!`);
+                }
             } else {
                 errEl.textContent = data.error || 'Failed to create request';
                 errEl.style.display = '';
@@ -5502,6 +5593,12 @@
 
     // Step 3: Generate payment link for newly created request
     async function crGeneratePayLink() {
+        if (!can('payment_links')) {
+            document.getElementById('cr-payLink-error').textContent = 'You do not have permission to generate payment links.';
+            document.getElementById('cr-payLink-error').style.display = '';
+            return;
+        }
+
         const requestId = window._crNewRequestId;
         if (!requestId) return;
 
@@ -6142,6 +6239,10 @@
     function debounce(fn, ms) { let t; return function() { var a = arguments, s = this; clearTimeout(t); t = setTimeout(function() { fn.apply(s, a); }, ms); }; }
 
     function openModifyModal() {
+        if (!can('modify_exchange_address')) {
+            showToast('You do not have permission to modify exchange address.', 'error');
+            return;
+        }
         if (!currentRequest) return;
         modifyModalData = JSON.parse(JSON.stringify(currentRequest));
         
@@ -6500,6 +6601,10 @@
     }
 
     async function confirmSaveModifications() {
+        if (!can('modify_exchange_address')) {
+            showToast('You do not have permission to modify exchange address.', 'error');
+            return;
+        }
         var saveBtn = document.getElementById('saveModifyBtn');
         var originalText = saveBtn.textContent;
         try {
@@ -7224,15 +7329,20 @@
     // ════════════════════════════════════════════════════════════════════
 
     const PERMISSION_META = [
-        { key: 'approve',             label: 'Approve Requests',        group: 'Request Management' },
-        { key: 'reject',              label: 'Reject / Undo Rejection', group: 'Request Management' },
-        { key: 'edit_requests',       label: 'Edit / Create Requests',  group: 'Request Management' },
-        { key: 'delete_requests',     label: 'Delete Requests',         group: 'Request Management' },
-        { key: 'book_pickups',        label: 'Pickups & Dispatch',      group: 'Request Management' },
-        { key: 'view_analytics',      label: 'View Analytics',          group: 'Insights' },
-        { key: 'manage_settings',     label: 'Store Settings & Sync',   group: 'System' },
-        { key: 'manage_influencers',  label: 'Influencer Management',   group: 'System' },
-        { key: 'manage_marketing',    label: 'Marketing Dashboard',     group: 'System' }
+        { key: 'approve',                  label: 'Approve Requests',                 group: 'Request Management' },
+        { key: 'reject',                   label: 'Reject / Undo Rejection',          group: 'Request Management' },
+        { key: 'edit_requests',            label: 'Edit / Create Requests',           group: 'Request Management' },
+        { key: 'delete_requests',          label: 'Delete Requests',                  group: 'Request Management' },
+        { key: 'book_pickups',             label: 'Pickups & Dispatch',               group: 'Request Management' },
+        { key: 'payment_links',            label: 'Payment Links (Generate & Send)',  group: 'Request Management' },
+        { key: 'modify_exchange_address',  label: 'Modify Exchange Address',          group: 'Request Management' },
+        { key: 'duplicate_pickup',         label: 'Carrier for Duplicate Pickup',     group: 'Request Management' },
+        { key: 'carrier_redispatch',       label: 'Carrier for Re-dispatch',          group: 'Request Management' },
+        { key: 'choose_resolution',        label: 'Choose Resolution',                group: 'Request Management' },
+        { key: 'view_analytics',           label: 'View Analytics',                   group: 'Insights' },
+        { key: 'manage_settings',          label: 'Store Settings & Sync',            group: 'System' },
+        { key: 'manage_influencers',       label: 'Influencer Management',            group: 'System' },
+        { key: 'manage_marketing',         label: 'Marketing Dashboard',              group: 'System' }
     ];
 
     const PERM_LABEL_MAP = Object.fromEntries(PERMISSION_META.map(p => [p.key, p.label]));
