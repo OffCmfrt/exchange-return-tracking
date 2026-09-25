@@ -314,7 +314,7 @@ return`<div class="task-card fade-in" style="animation-delay:${i*.04}s" data-tas
 <div class="task-card-meta">${t.project?`<span class="task-tag">${t.project}</span>`:''}${t.department?`<span class="task-tag">${t.department}</span>`:''}<span class="task-priority priority-${t.priority}">${t.priority}</span></div>
 ${subtasks.length?`<div style="font-size:8px;color:var(--g600);margin-bottom:4px">${doneSubs}/${subtasks.length} subtasks</div>`:''}
 <div class="task-progress"><div class="progress-track"><div class="progress-bar-fill" style="width:${t.progress}%"></div></div></div>
-<div class="task-due${isOverdue?' overdue':''}">${t.dueDate?(isOverdue?'Overdue: ':'Due: ')+t.dueDate:''}</div></div>`;}
+<div class="task-due${isOverdue?' overdue':''}">${t.dueDate?(isOverdue?'<span style="display:inline-block;padding:1px 5px;border-radius:3px;background:#dc2626;color:#fff;font-size:8px;font-weight:600;margin-right:4px">DELAYED</span>Delayed: ':'Due: ')+t.dueDate:''}</div></div>`;}
 
 // Task Detail
 function openDetail(id){

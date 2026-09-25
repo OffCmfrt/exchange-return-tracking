@@ -58,7 +58,7 @@ a{color:inherit;text-decoration:none}
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
 .badge-todo{background:var(--g800);color:var(--g400)}.badge-in_progress{background:var(--g700);color:var(--g200)}
 .badge-review{background:var(--g600);color:var(--white)}.badge-done{background:var(--white);color:var(--black)}
-.badge-blocked{background:#333;color:#ccc}.badge-low{background:var(--g800);color:var(--g500)}
+.badge-delayed{background:#dc2626;color:#fff;font-weight:600;animation:pulse 2s ease infinite}.badge-low{background:var(--g800);color:var(--g500)}
 .badge-medium{background:var(--g700);color:var(--g300)}.badge-high{background:var(--g600);color:var(--white)}
 .badge-critical{background:var(--white);color:var(--black)}
 .badge-1on1{background:var(--g700);color:var(--white)}.badge-team{background:var(--g600);color:var(--white)}
@@ -130,7 +130,32 @@ tr{transition:background .15s}tr:hover td{background:var(--g900)}
 .chart-bar-label{font-size:8px;color:var(--g600);text-align:center;margin-top:4px}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
-@media(max-width:768px){.sidebar{width:56px;padding:12px 0}.sidebar-brand h1,.sidebar-brand p,.nav-item span{display:none}.nav-item{justify-content:center;padding:10px}.main{margin-left:56px;padding:16px}.grid-2,.grid-3{grid-template-columns:1fr}.drawer{width:100%}}
+@media(max-width:768px){.sidebar{width:56px;padding:12px 0}.sidebar-brand h1,.sidebar-brand p,.nav-item span{display:none}.nav-item{justify-content:center;padding:10px}.main{margin-left:56px;padding:16px}.grid-2,.grid-3{grid-template-columns:1fr}.drawer{width:100%}.ai-panel{width:100%!important}}
+.ai-fab{position:fixed;bottom:20px;right:20px;width:48px;height:48px;border-radius:50%;background:var(--white);color:var(--black);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.4);z-index:80;transition:all .2s}
+.ai-fab:hover{transform:scale(1.08);box-shadow:0 6px 24px rgba(255,255,255,.15)}
+.ai-fab svg{width:22px;height:22px}
+.ai-panel{position:fixed;right:0;bottom:0;width:400px;max-width:100%;height:70vh;max-height:600px;background:var(--g900);border:1px solid var(--g800);border-radius:12px 0 0 0;z-index:81;display:flex;flex-direction:column;animation:slideRight .3s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.4)}
+.ai-panel.hidden{display:none}
+.ai-panel-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--g800)}
+.ai-panel-header h3{font-size:13px;font-weight:600;color:var(--white);display:flex;align-items:center;gap:8px}
+.ai-panel-header h3 span{font-size:9px;padding:2px 6px;border-radius:4px;background:var(--g800);color:var(--g500);text-transform:uppercase;letter-spacing:.06em}
+.ai-panel-body{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.ai-msg{max-width:90%;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.6;animation:fadeIn .3s ease both}
+.ai-msg.user{align-self:flex-end;background:var(--white);color:var(--black);border-bottom-right-radius:3px}
+.ai-msg.assistant{align-self:flex-start;background:var(--g800);color:var(--g200);border-bottom-left-radius:3px}
+.ai-msg.system{align-self:center;background:transparent;color:var(--g600);font-size:10px;text-align:center;padding:4px 8px}
+.ai-msg pre{background:var(--g950);padding:8px;border-radius:4px;font-size:10px;overflow-x:auto;margin:6px 0;white-space:pre-wrap}
+.ai-panel-input{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--g800)}
+.ai-panel-input input{flex:1;padding:9px 12px;background:var(--g950);border:1px solid var(--g800);border-radius:6px;color:var(--g200);font-size:12px;font-family:'Archivo',sans-serif}
+.ai-panel-input input:focus{outline:none;border-color:var(--g600)}
+.ai-panel-input button{padding:9px 14px;background:var(--white);color:var(--black);border:none;border-radius:6px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;font-family:'Archivo',sans-serif}
+.ai-quick-actions{display:flex;gap:4px;padding:8px 16px;flex-wrap:wrap;border-top:1px solid var(--g800)}
+.ai-quick-btn{padding:4px 10px;border-radius:12px;font-size:9px;border:1px solid var(--g800);background:transparent;color:var(--g500);cursor:pointer;transition:all .2s;font-family:'Archivo',sans-serif}
+.ai-quick-btn:hover{border-color:var(--g600);color:var(--g300)}
+.ai-typing{display:flex;gap:4px;padding:8px 14px;align-self:flex-start}
+.ai-typing span{width:6px;height:6px;border-radius:50%;background:var(--g600);animation:pulse 1.2s ease infinite}
+.ai-typing span:nth-child(2){animation-delay:.2s}
+.ai-typing span:nth-child(3){animation-delay:.4s}
 </style>
 </head>
 <body>
@@ -152,6 +177,8 @@ tr{transition:background .15s}tr:hover td{background:var(--g900)}
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modal"></div></div>
 <div class="drawer-overlay" id="drawerOverlay"></div>
 <div class="drawer" id="drawer" style="display:none"></div>
+<button class="ai-fab" id="aiFab" title="AI Assistant"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 014 4v2a4 4 0 01-8 0V6a4 4 0 014-4z"/><path d="M9 14h6"/><path d="M12 14v8"/><path d="M8 22h8"/><circle cx="12" cy="6" r="1"/></svg></button>
+<div class="ai-panel hidden" id="aiPanel"><div class="ai-panel-header"><h3>AI Assistant <span>Tech Team</span></h3><button class="close-btn" id="aiClose">&times;</button></div><div class="ai-panel-body" id="aiBody"><div class="ai-msg system">Ask me anything about your team — performance, tasks, reviews, or generate text.</div></div><div class="ai-quick-actions" id="aiQuick"><button class="ai-quick-btn" data-q="Show me all delayed tasks">Delayed Tasks</button><button class="ai-quick-btn" data-q="Give me a team performance overview">Team Overview</button><button class="ai-quick-btn" data-q="Show department-wise analytics">Dept Analytics</button><button class="ai-quick-btn" data-q="Generate a performance review for the lowest-rated member">Generate Review</button><button class="ai-quick-btn" data-q="Show me members with the most active tasks">Workload Analysis</button></div><div class="ai-panel-input"><input type="text" id="aiInput" placeholder="Ask about your team..."><button id="aiSend">Send</button></div></div>
 <script>
 const API='/api/tech-team';
 const TABS=[
@@ -306,7 +333,7 @@ return`<tr class="fade-in" style="animation-delay:${i*.02}s"><td style="color:va
 <td>${t.project||'\u2014'}</td><td><span class="dept-tag">${t.department||'\u2014'}</span></td><td>${m?m.fullName:'\u2014'}</td>
 <td><span class="badge badge-${t.status}">${t.status.replace('_',' ')}</span></td><td><span class="badge badge-${t.priority}">${t.priority}</span></td>
 <td style="min-width:70px"><div class="progress-bar"><div class="progress-fill" style="width:${t.progress}%"></div></div><span style="font-size:9px;color:var(--g500)">${t.progress}%</span></td>
-<td style="font-size:11px;color:var(--g400)">${t.dueDate||'\u2014'}</td><td style="font-size:11px;color:var(--g500)">${t.timeLogged?Math.round(t.timeLogged/60)+'h':'\u2014'}</td>
+<td style="font-size:11px;color:var(--g400)">${t.dueDate?(t.dueDate&&new Date(t.dueDate)<new Date()&&t.status!=='done'?`<span class="badge badge-delayed" style="margin-right:4px">DELAYED</span>`:'')+t.dueDate:'\u2014'}</td><td style="font-size:11px;color:var(--g500)">${t.timeLogged?Math.round(t.timeLogged/60)+'h':'\u2014'}</td>
 <td><button class="btn btn-sm" data-edit="${t.id}">Edit</button></td></tr>`;}).join('')}
 </tbody></table></div>`;
 document.getElementById('newTaskBtn').addEventListener('click',()=>openTaskModal());
@@ -674,6 +701,54 @@ el.innerHTML=`<div class="page-header"><h2>Activity</h2><p>Recent updates across
 <div class="filters"><div class="filter-pill${!typeFilter?' active':''}" data-atype="">All</div><div class="filter-pill${typeFilter==='task'?' active':''}" data-atype="task">Tasks</div><div class="filter-pill${typeFilter==='review'?' active':''}" data-atype="review">Reviews</div><div class="filter-pill${typeFilter==='skill'?' active':''}" data-atype="skill">Skills</div><div class="filter-pill${typeFilter==='okr'?' active':''}" data-atype="okr">OKRs</div><div class="filter-pill${typeFilter==='meeting'?' active':''}" data-atype="meeting">Meetings</div><div class="filter-pill${typeFilter==='achievement'?' active':''}" data-atype="achievement">Achievements</div></div>
 <div class="card fade-in">${allNotes.length?`<div class="timeline">${allNotes.slice(0,80).map((n,i)=>`<div class="timeline-item" style="animation-delay:${i*.03}s"><div class="time">${fmtDateTime(n.created_at)}</div><div class="content"><strong style="color:var(--white)">${n.taskTitle}</strong> \u2014 ${n.text}</div><div class="author">by ${n.author||'Unknown'}</div></div>`).join('')}</div>`:'<p style="color:var(--g500);font-size:12px">No activity yet. Notes added to tasks will appear here.</p>'}</div>`;
 document.querySelectorAll('[data-atype]').forEach(p=>p.addEventListener('click',()=>{state.filters.activityType=p.dataset.atype;loadTab();}));
+}
+
+// ==================== AI ASSISTANT ====================
+const aiPanel=document.getElementById('aiPanel');
+const aiBody=document.getElementById('aiBody');
+const aiInput=document.getElementById('aiInput');
+let aiLoading=false;
+
+document.getElementById('aiFab').addEventListener('click',()=>{aiPanel.classList.toggle('hidden');if(!aiPanel.classList.contains('hidden'))aiInput.focus();});
+document.getElementById('aiClose').addEventListener('click',()=>aiPanel.classList.add('hidden'));
+document.getElementById('aiSend').addEventListener('click',sendAiMessage);
+aiInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!aiLoading)sendAiMessage();});
+document.querySelectorAll('.ai-quick-btn').forEach(btn=>btn.addEventListener('click',()=>{aiInput.value=btn.dataset.q;sendAiMessage();}));
+
+function addAiMsg(role,text){
+const div=document.createElement('div');
+div.className='ai-msg '+role;
+div.textContent=text;
+aiBody.appendChild(div);
+aiBody.scrollTop=aiBody.scrollHeight;
+return div;
+}
+function showAiTyping(){
+const div=document.createElement('div');
+div.className='ai-typing';
+div.id='aiTyping';
+div.innerHTML='<span></span><span></span><span></span>';
+aiBody.appendChild(div);
+aiBody.scrollTop=aiBody.scrollHeight;
+}
+function hideAiTyping(){const el=document.getElementById('aiTyping');if(el)el.remove();}
+
+async function sendAiMessage(){
+const text=aiInput.value.trim();
+if(!text||aiLoading)return;
+aiLoading=true;
+aiInput.value='';
+addAiMsg('user',text);
+showAiTyping();
+try{
+const res=await fetch(API+'/admin/ai/chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(localStorage.getItem('admin_jwt')||localStorage.getItem('token'))},body:JSON.stringify({message:text})});
+const data=await res.json();
+hideAiTyping();
+if(!res.ok||!data.success){addAiMsg('assistant',data.error||'Something went wrong. Please try again.');}
+else{addAiMsg('assistant',data.reply);}
+}catch(e){hideAiTyping();addAiMsg('assistant','Network error. Please check your connection and try again.');}
+aiLoading=false;
+aiInput.focus();
 }
 
 // ---- INIT ----

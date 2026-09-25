@@ -16197,6 +16197,91 @@ app.delete('/api/tech-team/admin/goals/:id', authenticateAdmin, async (req, res)
     }
 });
 
+// ---------- Tech Team AI Assistant ----------
+app.post('/api/tech-team/admin/ai/chat', authenticateAdmin, async (req, res) => {
+    try {
+        const { message } = req.body;
+        if (!message || !String(message).trim()) {
+            return res.status(400).json({ success: false, error: 'Message is required' });
+        }
+        const { chatCompletion, isConfigured, estimateTokens } = require('./config/ai/aiClient');
+        if (!isConfigured()) {
+            return res.json({ success: true, reply: 'AI is not configured. Set AI_API_KEY in the server environment.' });
+        }
+        const techTeamTools = require('./config/ai/techTeamTools');
+        const SYSTEM_PROMPT = `You are the Tech Team Admin AI assistant. You help manage the engineering team by querying team data, analyzing performance, and generating professional text.
+
+Your capabilities:
+- Query team members, tasks, performance reviews, skills, OKRs
+- Analyze team performance, delayed tasks, department metrics
+- Generate professional review text, task descriptions, meeting agendas
+- Provide insights on team velocity, on-time delivery, skill gaps
+
+Rules:
+- Use the provided tools to fetch real data. Never invent member names, task titles, or statistics.
+- Keep answers concise and formatted for a chat panel: short paragraphs, dashes for lists.
+- When generating text (reviews, descriptions, agendas), use the tool data to create specific, actionable content.
+- If asked to generate text, first fetch the relevant data using tools, then write the text based on that data.
+- Be professional, constructive, and specific in all generated content.`;
+        const messages = [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: String(message).trim().substring(0, 4000) }
+        ];
+        const toolSchemas = techTeamTools.getToolSchemas();
+        let reply = null;
+        const MAX_ROUNDS = 4;
+        for (let round = 0; round <= MAX_ROUNDS; round++) {
+            const { message: msg } = await chatCompletion({ messages, tools: toolSchemas, maxTokens: 1024 });
+            const toolCalls = msg.tool_calls || [];
+            if (!toolCalls.length) {
+                reply = msg.content || 'Done.';
+                break;
+            }
+            if (round === MAX_ROUNDS) {
+                reply = 'I hit the tool-call limit. Try asking something more specific.';
+                break;
+            }
+            messages.push(msg);
+            for (const call of toolCalls) {
+                const name = call.function?.name;
+                let args = {};
+                try { args = JSON.parse(call.function?.arguments || '{}'); } catch {}
+                const tool = techTeamTools.getTool(name);
+                let resultJson;
+                if (!tool) {
+                    resultJson = JSON.stringify({ error: `Unknown tool: ${name}` });
+                } else {
+                    try {
+                        const result = await tool.execute(args, {});
+                        resultJson = JSON.stringify(result);
+                        if (resultJson.length > 8000) resultJson = resultJson.substring(0, 8000) + '... (truncated)';
+                    } catch (err) {
+                        resultJson = JSON.stringify({ error: err.message });
+                    }
+                }
+                messages.push({ role: 'tool', tool_call_id: call.id, content: resultJson });
+            }
+        }
+        // If tools returned data with a "prompt" field (text generation), generate the text
+        if (reply && reply.includes('"prompt"')) {
+            try {
+                const { message: genMsg } = await chatCompletion({
+                    messages: [
+                        { role: 'system', content: 'You are a professional tech team manager. Generate the requested text based on the data provided. Be specific, constructive, and professional. Write in clear paragraphs, not bullet points.' },
+                        { role: 'user', content: reply }
+                    ],
+                    maxTokens: 1024
+                });
+                if (genMsg.content) reply = genMsg.content;
+            } catch {}
+        }
+        res.json({ success: true, reply });
+    } catch (error) {
+        console.error('[TechTeam] AI chat error:', error.message);
+        res.status(500).json({ success: false, error: 'AI request failed. Please try again.' });
+    }
+});
+
 // ---------- Premium Team Member Routes ----------
 
 // Member self: skills
