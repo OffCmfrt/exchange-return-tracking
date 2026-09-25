@@ -495,7 +495,7 @@ if(review)document.getElementById('delReviewBtn').addEventListener('click',()=>{
 document.querySelectorAll('.star-rating-stars').forEach(group=>{group.querySelectorAll('.star').forEach(star=>{star.addEventListener('click',()=>{const key=group.dataset.key;const val=parseInt(star.dataset.val);group.querySelectorAll('.star').forEach(s=>{s.classList.toggle('active',parseInt(s.dataset.val)<=val);});document.getElementById('rv_'+key).textContent=val;document.getElementById('rg_'+key).textContent=RATING_GUIDELINES[val];updateOverall();});});});
 function updateOverall(){let sum=0;RATING_CRITERIA.forEach(c=>{sum+=parseInt(document.getElementById('rv_'+c.key).textContent);});const avg=(sum/6).toFixed(1);document.getElementById('r_overall_display').textContent=avg;const idx=Math.round(parseFloat(avg));document.getElementById('r_overall_label').textContent=RATING_LABELS[idx]||'';}
 updateOverall();
-console.log('Review modal opened successfully');
+document.getElementById('modalOverlay').classList.add('open');
 }catch(e){
 document.getElementById('modal').classList.remove('modal-wide');
 toast('Failed to open review form: '+e.message,true);
