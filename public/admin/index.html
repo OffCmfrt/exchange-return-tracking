@@ -2403,6 +2403,19 @@
         applyRoleUI();
         loadRequests();
         if (typeof resetInactivityTimer === 'function') resetInactivityTimer();
+        
+        // Check URL hash for specific request to open
+        const hash = window.location.hash;
+        if (hash && hash.startsWith('#requestId=')) {
+            const requestId = decodeURIComponent(hash.substring(11));
+            // Wait for requests to load, then open the details
+            setTimeout(() => {
+                if (requestId) {
+                    console.log('Opening request from URL hash:', requestId);
+                    viewDetails(requestId);
+                }
+            }, 1500);
+        }
     }
 
     function logout() {
