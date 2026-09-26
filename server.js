@@ -2440,7 +2440,7 @@ async function getCarrierMode(operationType = 'pickup') {
 let shiprocketToken = null;
 let shiprocketTokenExpiry = null;
 
-async function getShiprocketToken() {
+async function getShiprocketToken(signal) {
     // Return cached token if still valid
     if (shiprocketToken && shiprocketTokenExpiry && Date.now() < shiprocketTokenExpiry) {
         return shiprocketToken;
@@ -2448,8 +2448,8 @@ async function getShiprocketToken() {
 
     // Get new token
     try {
-        const response = await fetchWithRetry('https://apiv2.shiprocket.in/v1/external/auth/login', {
-            method: 'POST',
+        const response = await (signal ? fetch : fetchWithRetry)('https://apiv2.shiprocket.in/v1/external/auth/login', {
+            method: 'POST', signal,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 email: process.env.SHIPROCKET_EMAIL,
@@ -3675,7 +3675,7 @@ function ekartConfigured() {
 let ekartToken = null;
 let ekartTokenExpiry = null;
 
-async function getEkartToken() {
+async function getEkartToken(signal) {
     // Return cached token if still valid
     if (ekartToken && ekartTokenExpiry && Date.now() < ekartTokenExpiry) {
         return ekartToken;
@@ -3687,7 +3687,7 @@ async function getEkartToken() {
     const response = await fetch(
         `${EKART_BASE_URL()}/integrations/v2/auth/token/${encodeURIComponent(process.env.EKART_CLIENT_ID)}`,
         {
-            method: 'POST',
+            method: 'POST', signal,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 username: process.env.EKART_USERNAME,
@@ -8064,6 +8064,9 @@ app.post('/api/admin/resolve-exchange', authenticateAdmin, async (req, res) => {
                     : `${carrierUsed === 'ekart' ? 'Ekart' : 'Delhivery'} AWB: ${forwardOrder.waybill}`;
                 adminNotes += `\nResolution: EXCHANGE — Replacement Shipment Created (${carrierUsed}: ${shipmentInfo})`;
                 existingHistory.push(historyEntry);
+                existingHistory.push(exchangeDispatches.dispatchEvent(requestDetails, carrierUsed,
+                    forwardOrder.shipment_id || forwardOrder.order_id,
+                    forwardOrder.awb_code || forwardOrder.waybill, items));
 
                 const request = await updateRequestStatus(requestId, {
                     status: 'approved',
@@ -8760,6 +8763,11 @@ app.post('/api/admin/create-duplicate-forward', authenticateAdmin, async (req, r
             forwardAwbNumber: newAwb,
             forwardStatus: 'scheduled',
             forwardCarrier: carrierUsed,
+            requestHistory: [
+                ...(Array.isArray(requestDetails.requestHistory) ? requestDetails.requestHistory : []),
+                exchangeDispatches.dispatchEvent(requestDetails, carrierUsed,
+                    forwardOrder.shipment_id || forwardOrder.order_id, newAwb, items)
+            ],
             adminNotes
         });
 
@@ -15253,6 +15261,9 @@ app.get('/api/internal/ai-data', async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
+
+const exchangeDispatches = require('./config/exchange-dispatches');
+exchangeDispatches.mount(app, { supabase, getEkartToken, getShiprocketToken });
 
 // Inventory pipeline endpoint for the WhatsApp bot's Inventory Intelligence
 // module: returns OPEN return/exchange requests within a time window — i.e.

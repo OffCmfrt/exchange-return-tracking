@@ -343,10 +343,10 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.inspectedAt) updateData.inspected_at = updates.inspectedAt;
 
     // Forward Tracking
-    if (updates.forwardShipmentId) updateData.forward_shipment_id = updates.forwardShipmentId;
-    if (updates.forwardAwbNumber) updateData.forward_awb_number = updates.forwardAwbNumber;
-    if (updates.forwardStatus) updateData.forward_status = updates.forwardStatus;
-    if (updates.forwardCarrier) updateData.forward_carrier = updates.forwardCarrier;
+    if (updates.forwardShipmentId !== undefined) updateData.forward_shipment_id = updates.forwardShipmentId;
+    if (updates.forwardAwbNumber !== undefined) updateData.forward_awb_number = updates.forwardAwbNumber;
+    if (updates.forwardStatus !== undefined) updateData.forward_status = updates.forwardStatus;
+    if (updates.forwardCarrier !== undefined) updateData.forward_carrier = updates.forwardCarrier;
 
     // Carrier Tracking
     if (updates.carrier !== undefined) updateData.carrier = updates.carrier;
