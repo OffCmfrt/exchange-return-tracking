@@ -4918,6 +4918,37 @@ async function notifyZohoExchange(requestDetails, items) {
     return res.status;
 }
 
+/**
+ * When a pure return is finalized (approved or approved-with-discount),
+ * notify the WhatsApp bot middleware so Zoho Books creates a credit note
+ * mirroring the original invoice. Fire-and-forget: never blocks approval.
+ */
+async function notifyZohoReturn(requestDetails, items) {
+    const botUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:3000';
+    const internalToken = process.env.WHATSAPP_INTERNAL_TOKEN || '';
+    const payload = {
+        order_id: String(requestDetails.orderNumber || ''),
+        return_items: (items || []).map(i => ({
+            title: i.name || i.title || '',
+            sku: i.sku || '',
+            quantity: parseInt(i.quantity || 1),
+            price: parseFloat(i.paidPrice || i.price || 0)
+        }))
+    };
+    try {
+        const res = await fetch(botUrl.replace(/\/$/, '') + '/webhooks/zoho/return', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-internal-token': internalToken },
+            body: JSON.stringify(payload)
+        });
+        console.log('[' + requestDetails.requestId + '] 📒 Zoho return notify → ' + res.status);
+        return res.status;
+    } catch (e) {
+        console.warn('[' + requestDetails.requestId + '] ⚠️ Zoho return notify failed: ' + e.message);
+        return 0;
+    }
+}
+
 // ── Meta Template Definition: Return/Exchange Approval ──
 const RETURN_EXCHANGE_APPROVAL_TEMPLATE = {
     name: 'return_exchange_approved',
@@ -7825,7 +7856,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
             adminNotes: adminNotes
         });
 
-        // Zoho middleware: reflect the real exchanged products (fire-and-forget)
+        // Zoho middleware: reflect the real exchanged/returned products (fire-and-forget)
         if (requestDetails.type === 'exchange') {
             let zohoNotifyItems = requestDetails.items;
             if (typeof zohoNotifyItems === 'string') {
@@ -7833,6 +7864,13 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
             }
             notifyZohoExchange(requestDetails, Array.isArray(zohoNotifyItems) ? zohoNotifyItems : [])
                 .catch(e => console.warn('[' + requestId + '] Zoho exchange notify failed: ' + e.message));
+        } else if (requestDetails.type === 'return' && updates.status === 'approved') {
+            let zohoReturnItems = requestDetails.items;
+            if (typeof zohoReturnItems === 'string') {
+                try { zohoReturnItems = JSON.parse(zohoReturnItems); } catch (e) { zohoReturnItems = []; }
+            }
+            notifyZohoReturn(requestDetails, Array.isArray(zohoReturnItems) ? zohoReturnItems : [])
+                .catch(e => console.warn('[' + requestId + '] Zoho return notify failed: ' + e.message));
         }
 
         res.json({ success: true, message: 'Request approved successfully', request });
@@ -7906,6 +7944,14 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
             discountType: discountType || null,
             approvedAt: new Date().toISOString()
         });
+
+        // Zoho middleware: notify return for credit note (fire-and-forget)
+        let zohoReturnItems = requestDetails.items;
+        if (typeof zohoReturnItems === 'string') {
+            try { zohoReturnItems = JSON.parse(zohoReturnItems); } catch (e) { zohoReturnItems = []; }
+        }
+        notifyZohoReturn(requestDetails, Array.isArray(zohoReturnItems) ? zohoReturnItems : [])
+            .catch(e => console.warn('[' + requestId + '] Zoho return notify failed: ' + e.message));
 
         // 4. Send WhatsApp notification if requested
         let whatsappSent = false;
