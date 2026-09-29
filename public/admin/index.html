@@ -5849,49 +5849,70 @@
     // Carrier drag-and-drop helper functions
     function getCarrierModeFromDropZone(zone) {
         const dropZone = document.getElementById(`${zone}-drop-zone`);
-        if (!dropZone) return 'shiprocket_with_fallback';
+        if (!dropZone) return 'shiprocket_fallback_delhivery';
         
         const items = Array.from(dropZone.querySelectorAll('.carrier-drag-item'));
-        if (items.length === 0) return 'shiprocket_with_fallback';
+        if (items.length === 0) return 'shiprocket_fallback_delhivery';
         
-        const primary = items[0].dataset.carrier;
-        const secondary = items[1].dataset.carrier;
+        const primary = items[0]?.dataset?.carrier || 'shiprocket';
+        const secondary = items[1]?.dataset?.carrier || null;
         
-        // Map to carrier mode
+        // Map to carrier mode with exact primary and secondary fallback
         if (primary && secondary) {
-            return `${primary}_with_fallback`;
+            return `${primary}_fallback_${secondary}`;
         } else if (primary) {
             return `${primary}_only`;
         }
-        return 'shiprocket_with_fallback';
+        return 'shiprocket_fallback_delhivery';
     }
     
     function setCarrierModeToDropZone(zone, carrierMode) {
         const dropZone = document.getElementById(`${zone}-drop-zone`);
         if (!dropZone) return;
         
-        // Parse carrier mode
-        let primary, secondary;
-        if (carrierMode.includes('_with_fallback')) {
-            primary = carrierMode.replace('_with_fallback', '');
-            const fallbackMap = {
-                'shiprocket': 'delhivery',
-                'delhivery': 'shiprocket',
-                'ekart': 'shiprocket'
-            };
-            secondary = fallbackMap[primary] || 'delhivery';
-        } else if (carrierMode.includes('_only')) {
-            primary = carrierMode.replace('_only', '');
-            secondary = null;
-        } else {
-            primary = 'shiprocket';
-            secondary = 'delhivery';
+        // Parse carrier mode (supports primary_fallback_secondary, object, and legacy formats)
+        let primary = 'shiprocket';
+        let secondary = 'delhivery';
+        
+        if (carrierMode) {
+            if (typeof carrierMode === 'object') {
+                primary = carrierMode.primary || 'shiprocket';
+                secondary = carrierMode.secondary || carrierMode.fallback || null;
+            } else {
+                const modeStr = String(carrierMode).trim();
+                if (modeStr.includes('_fallback_')) {
+                    const parts = modeStr.split('_fallback_');
+                    primary = parts[0] || 'shiprocket';
+                    secondary = parts[1] || null;
+                } else if (modeStr.includes('_with_fallback')) {
+                    primary = modeStr.replace('_with_fallback', '');
+                    const fallbackMap = {
+                        'shiprocket': 'delhivery',
+                        'delhivery': 'shiprocket',
+                        'ekart': 'shiprocket'
+                    };
+                    secondary = fallbackMap[primary] || 'delhivery';
+                } else if (modeStr.includes('_only')) {
+                    primary = modeStr.replace('_only', '');
+                    secondary = null;
+                } else if (['shiprocket', 'delhivery', 'ekart'].includes(modeStr)) {
+                    primary = modeStr;
+                    secondary = modeStr === 'shiprocket' ? 'delhivery' : 'shiprocket';
+                }
+            }
         }
         
-        // Get all carriers
+        // Ensure primary is valid
+        if (!['shiprocket', 'delhivery', 'ekart'].includes(primary)) {
+            primary = 'shiprocket';
+        }
+        
+        // Get all carriers in exact order: 1 = Primary, 2 = Secondary (Fallback), 3 = Disabled
         const allCarriers = ['shiprocket', 'delhivery', 'ekart'];
         const orderedCarriers = [primary];
-        if (secondary) orderedCarriers.push(secondary);
+        if (secondary && secondary !== primary && allCarriers.includes(secondary)) {
+            orderedCarriers.push(secondary);
+        }
         
         // Add remaining carriers as disabled
         allCarriers.forEach(carrier => {
@@ -5926,7 +5947,7 @@
             if (statusEl) statusEl.textContent = 'Primary';
             if (positionBadge) positionBadge.textContent = '1';
         } else if (position === 1) {
-            if (statusEl) statusEl.textContent = 'Secondary';
+            if (statusEl) statusEl.textContent = 'Secondary (Fallback)';
             if (positionBadge) positionBadge.textContent = '2';
         } else {
             if (statusEl) statusEl.textContent = 'Disabled';
@@ -5943,6 +5964,10 @@
             items.forEach((item, index) => {
                 // Set initial position
                 updateCarrierItemPosition(item, index);
+                
+                // Avoid re-attaching duplicate event listeners on reopening settings
+                if (item.dataset.dragBound === 'true') return;
+                item.dataset.dragBound = 'true';
                 
                 // Drag start
                 item.addEventListener('dragstart', (e) => {
