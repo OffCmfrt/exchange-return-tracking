@@ -2312,61 +2312,109 @@ async function activateShopifyDiscountCode(priceRuleId, code) {
 
 /**
  * Resolve which carrier to use based on settings and optional override
- * @param {string} carrierMode - The carrier mode setting (e.g., 'shiprocket_only', 'delhivery_only', 'ekart_only', 'shiprocket_with_fallback', 'delhivery_with_fallback', 'ekart_with_fallback')
+ * @param {string|object} carrierMode - The carrier mode setting (e.g., 'delhivery_fallback_ekart', 'shiprocket_fallback_delhivery', 'shiprocket_only', 'delhivery_with_fallback')
  * @param {string} carrierOverride - Optional per-request override ('shiprocket', 'delhivery' or 'ekart')
  * @param {string} operationType - 'pickup' or 'dispatch' for logging
- * @returns {object} - { primary: 'shiprocket'|'delhivery'|'ekart', useFallback: boolean }
+ * @returns {object} - { primary: 'shiprocket'|'delhivery'|'ekart', fallback: string|null, useFallback: boolean }
  */
-function resolveCarrier(carrierMode, carrierOverride = null, operationType = 'pickup') {
-    // If admin overrides on a per-request basis, use that as primary but still allow fallback
-    if (carrierOverride === 'shiprocket') {
-        console.log(`[${operationType}] Carrier override: Shiprocket (with fallback if enabled)`);
-        // Check if the carrier mode allows fallback
-        const allowsFallback = carrierMode.includes('with_fallback');
-        return { primary: 'shiprocket', useFallback: allowsFallback };
-    }
-    if (carrierOverride === 'delhivery') {
-        console.log(`[${operationType}] Carrier override: Delhivery (with fallback if enabled)`);
-        // Check if the carrier mode allows fallback
-        const allowsFallback = carrierMode.includes('with_fallback');
-        return { primary: 'delhivery', useFallback: allowsFallback };
-    }
-    if (carrierOverride === 'ekart') {
-        console.log(`[${operationType}] Carrier override: Ekart (with fallback if enabled)`);
-        // Check if the carrier mode allows fallback
-        const allowsFallback = carrierMode.includes('with_fallback');
-        return { primary: 'ekart', useFallback: allowsFallback };
+function parseCarrierMode(carrierMode) {
+    if (!carrierMode) {
+        return { primary: 'shiprocket', fallback: 'delhivery', useFallback: true };
     }
 
-    // Resolve based on carrier mode setting
-    const validModes = ['shiprocket_only', 'delhivery_only', 'ekart_only', 'shiprocket_with_fallback', 'delhivery_with_fallback', 'ekart_with_fallback'];
-    if (!validModes.includes(carrierMode)) {
-        console.warn(`[${operationType}] Invalid carrier mode '${carrierMode}', defaulting to shiprocket_with_fallback`);
-        carrierMode = 'shiprocket_with_fallback';
+    if (typeof carrierMode === 'object') {
+        const primary = carrierMode.primary || 'shiprocket';
+        const fallback = carrierMode.secondary || carrierMode.fallback || null;
+        return {
+            primary,
+            fallback: (fallback && fallback !== 'none' && fallback !== primary) ? fallback : null,
+            useFallback: !!(fallback && fallback !== 'none' && fallback !== primary)
+        };
     }
 
-    switch (carrierMode) {
-        case 'shiprocket_only':
-            return { primary: 'shiprocket', useFallback: false };
-        case 'delhivery_only':
-            return { primary: 'delhivery', useFallback: false };
-        case 'ekart_only':
-            return { primary: 'ekart', useFallback: false };
-        case 'shiprocket_with_fallback':
-            return { primary: 'shiprocket', useFallback: true };
-        case 'delhivery_with_fallback':
-            return { primary: 'delhivery', useFallback: true };
-        case 'ekart_with_fallback':
-            return { primary: 'ekart', useFallback: true };
-        default:
-            return { primary: 'shiprocket', useFallback: true };
+    const modeStr = String(carrierMode).trim();
+
+    // Check explicit primary_fallback_secondary format (e.g. delhivery_fallback_ekart, shiprocket_fallback_delhivery)
+    if (modeStr.includes('_fallback_')) {
+        const parts = modeStr.split('_fallback_');
+        const primary = parts[0] || 'shiprocket';
+        const fallback = parts[1] || null;
+        return {
+            primary,
+            fallback: (fallback && fallback !== 'none' && fallback !== primary) ? fallback : null,
+            useFallback: !!(fallback && fallback !== 'none' && fallback !== primary)
+        };
     }
+
+    // Check single carrier mode (_only)
+    if (modeStr.endsWith('_only')) {
+        const primary = modeStr.replace('_only', '');
+        return { primary, fallback: null, useFallback: false };
+    }
+
+    // Legacy _with_fallback format (e.g. delhivery_with_fallback)
+    if (modeStr.includes('with_fallback') || modeStr.endsWith('_with_fallback')) {
+        const primary = modeStr.replace('_with_fallback', '').replace('with_fallback', '');
+        const validPrimary = ['shiprocket', 'delhivery', 'ekart'].includes(primary) ? primary : 'shiprocket';
+        const defaultFallback = validPrimary === 'shiprocket' ? 'delhivery' : 'shiprocket';
+        return { primary: validPrimary, fallback: defaultFallback, useFallback: true };
+    }
+
+    // Simple carrier name (e.g. 'delhivery', 'shiprocket', 'ekart')
+    if (['shiprocket', 'delhivery', 'ekart'].includes(modeStr)) {
+        const defaultFallback = modeStr === 'shiprocket' ? 'delhivery' : 'shiprocket';
+        return { primary: modeStr, fallback: defaultFallback, useFallback: true };
+    }
+
+    return { primary: 'shiprocket', fallback: 'delhivery', useFallback: true };
 }
 
-// Fallback partner for a failed primary. Shiprocket falls back to Delhivery;
-// Delhivery and Ekart fall back to Shiprocket.
-function getFallbackCarrier(primaryCarrier) {
-    return primaryCarrier === 'shiprocket' ? 'delhivery' : 'shiprocket';
+function resolveCarrier(carrierMode, carrierOverride = null, operationType = 'pickup') {
+    const parsed = parseCarrierMode(carrierMode);
+
+    // If admin overrides on a per-request basis, use override as primary
+    if (carrierOverride && ['shiprocket', 'delhivery', 'ekart'].includes(carrierOverride)) {
+        console.log(`[${operationType}] Carrier override: ${carrierOverride} (configured fallback: ${parsed.fallback || 'none'})`);
+        let fallback = null;
+        if (parsed.useFallback) {
+            // Keep configured fallback if different from override; otherwise fallback to configured primary
+            if (parsed.fallback && parsed.fallback !== carrierOverride) {
+                fallback = parsed.fallback;
+            } else if (parsed.primary && parsed.primary !== carrierOverride) {
+                fallback = parsed.primary;
+            } else {
+                fallback = getFallbackCarrier(carrierOverride);
+            }
+        }
+        return {
+            primary: carrierOverride,
+            fallback: fallback,
+            useFallback: parsed.useFallback && !!fallback && fallback !== carrierOverride
+        };
+    }
+
+    console.log(`[${operationType}] Resolved carrier: primary=${parsed.primary}, fallback=${parsed.fallback || 'none'}, useFallback=${parsed.useFallback}`);
+    return {
+        primary: parsed.primary,
+        fallback: parsed.fallback,
+        useFallback: parsed.useFallback && !!parsed.fallback
+    };
+}
+
+// Fallback partner for a failed primary carrier. Respects carrierMode setting when provided,
+// falling back to safe default partner rules.
+function getFallbackCarrier(primaryCarrier, carrierMode = null) {
+    if (carrierMode) {
+        const parsed = parseCarrierMode(carrierMode);
+        if (parsed.fallback && parsed.fallback !== primaryCarrier) {
+            return parsed.fallback;
+        }
+    }
+    // Safe default partner rules
+    if (primaryCarrier === 'shiprocket') return 'delhivery';
+    if (primaryCarrier === 'delhivery') return 'shiprocket';
+    if (primaryCarrier === 'ekart') return 'shiprocket';
+    return 'delhivery';
 }
 
 // ── Unified per-carrier return pickup booking ──
@@ -4113,7 +4161,7 @@ async function schedulePickup(token, requestId, order, items, type, carrierOverr
             booking = await returnBookingAttempt(carrierResolution.primary, requestData, order);
         } catch (primaryError) {
             if (!carrierResolution.useFallback) throw primaryError;
-            const fallbackCarrier = getFallbackCarrier(carrierResolution.primary);
+            const fallbackCarrier = carrierResolution.fallback || getFallbackCarrier(carrierResolution.primary, carrierMode);
             fallbackReason = `${carrierResolution.primary} failed: ${primaryError.message}`;
             console.warn(`[${requestId}] ⚠️ ${carrierResolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
             booking = await returnBookingAttempt(fallbackCarrier, requestData, order);
@@ -5367,7 +5415,7 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                         allCarriersUnserviceable = false;
                     }
                     if (!carrierResolution.useFallback) throw primaryError;
-                    const fallbackCarrier = getFallbackCarrier(carrierResolution.primary);
+                    const fallbackCarrier = carrierResolution.fallback || getFallbackCarrier(carrierResolution.primary, carrierMode);
                     fallbackReason = `${carrierResolution.primary} failed: ${primaryError.message}`;
                     console.warn(`[${requestId}] ⚠️ ${carrierResolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
                     try {
@@ -5697,7 +5745,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                         allCarriersUnserviceable = false;
                     }
                     if (!resolution.useFallback) throw primaryError;
-                    const fallbackCarrier = getFallbackCarrier(resolution.primary);
+                    const fallbackCarrier = resolution.fallback || getFallbackCarrier(resolution.primary, carrierMode);
                     fallbackReason = `${resolution.primary} failed: ${primaryError.message}`;
                     console.warn(`[${requestId}] ⚠️ ${resolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
                     try {
@@ -6017,7 +6065,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                         allCarriersUnserviceable = false;
                     }
                     if (!resolution.useFallback) throw primaryError;
-                    const fallbackCarrier = getFallbackCarrier(resolution.primary);
+                    const fallbackCarrier = resolution.fallback || getFallbackCarrier(resolution.primary, carrierMode);
                     fallbackReason = `${resolution.primary} failed: ${primaryError.message}`;
                     console.warn(`[${requestId}] ⚠️ ${resolution.primary} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
                     try {
@@ -7679,7 +7727,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
             let fallbackReason = null;
 
             try {
-                const { primary: carrierToUse, useFallback } = carrierResolution;
+                const { primary: carrierToUse, fallback: configuredFallback, useFallback } = carrierResolution;
 
                 // Try the resolved primary carrier, then the fallback partner if enabled
                 const bookingData = {
@@ -7697,7 +7745,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                     // If fallback is enabled, try the fallback carrier
                     if (!useFallback) throw primaryError;
 
-                    const fallbackCarrier = getFallbackCarrier(carrierToUse);
+                    const fallbackCarrier = configuredFallback || getFallbackCarrier(carrierToUse, carrierMode);
                     fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
                     console.warn(`[${requestId}] ⚠️ ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
 
@@ -7806,7 +7854,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                 
                 // Try fallback if enabled
                 if (useFallback) {
-                    const fallbackCarrier = getFallbackCarrier(primaryCarrier);
+                    const fallbackCarrier = carrierResolution.fallback || getFallbackCarrier(primaryCarrier, carrierMode);
                     try {
                         console.log(`[${requestId}] ⚠️ Falling back to ${fallbackCarrier}...`);
                         const fallbackResult = await forwardBookingAttempt(fallbackCarrier, { ...requestDetails, items });
@@ -8091,7 +8139,7 @@ app.post('/api/admin/resolve-exchange', authenticateAdmin, async (req, res) => {
                 carrierUsed = primaryResult.carrierUsed;
             } catch (primaryError) {
                 if (useFallback) {
-                    const fallbackCarrier = getFallbackCarrier(primaryCarrier);
+                    const fallbackCarrier = carrierResolution.fallback || getFallbackCarrier(primaryCarrier, carrierMode);
                     try {
                         const fallbackResult = await forwardBookingAttempt(fallbackCarrier, { ...requestDetails, items });
                         forwardOrder = fallbackResult.forwardOrder;
@@ -8647,8 +8695,8 @@ async function bookReturnPickup(requestDetails, requestId, carrierOverride = nul
         console.warn(`[${requestId}] bookReturnPickup Shopify fetch failed, using stored data:`, err.message);
     }
 
-    const { primary: carrierToUse, useFallback } = carrierResolution;
-    const fallbackCarrier = getFallbackCarrier(carrierToUse);
+    const { primary: carrierToUse, fallback: configuredFallback, useFallback } = carrierResolution;
+    const fallbackCarrier = configuredFallback || getFallbackCarrier(carrierToUse, carrierMode);
 
     const attempt = (carrier) => returnBookingAttempt(carrier, {
         ...requestDetails,
@@ -8787,7 +8835,7 @@ app.post('/api/admin/create-duplicate-forward', authenticateAdmin, async (req, r
             result = await attempt(primaryCarrier);
         } catch (primaryError) {
             if (!useFallback) throw primaryError;
-            const fallbackCarrier = getFallbackCarrier(primaryCarrier);
+            const fallbackCarrier = carrierResolution.fallback || getFallbackCarrier(primaryCarrier, carrierMode);
             fallbackReason = `${primaryCarrier} failed: ${primaryError.message}`;
             console.warn(`[${requestId}] ⚠️ ${primaryCarrier} failed for duplicate forward, falling back to ${fallbackCarrier}:`, primaryError.message);
             try {
@@ -9523,7 +9571,7 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
                 }
 
                 // Use carrier resolution to determine which carrier to use
-                const { primary: carrierToUse, useFallback } = carrierResolution;
+                const { primary: carrierToUse, fallback: configuredFallback, useFallback } = carrierResolution;
                 let carrierUsed = null;
                 let awbNumber = null;
                 let shipmentId = null;
@@ -9546,7 +9594,7 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
                     // If fallback is enabled, try the fallback carrier
                     if (!useFallback) throw primaryError;
 
-                    const fallbackCarrier = getFallbackCarrier(carrierToUse);
+                    const fallbackCarrier = configuredFallback || getFallbackCarrier(carrierToUse, carrierMode);
                     fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
                     console.warn(`[${requestId}] ⚠️ Bulk ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
 
