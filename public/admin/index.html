@@ -5849,21 +5849,21 @@
     // Carrier drag-and-drop helper functions
     function getCarrierModeFromDropZone(zone) {
         const dropZone = document.getElementById(`${zone}-drop-zone`);
-        if (!dropZone) return 'shiprocket_with_fallback';
+        if (!dropZone) return 'shiprocket_with_delhivery';
         
         const items = Array.from(dropZone.querySelectorAll('.carrier-drag-item'));
-        if (items.length === 0) return 'shiprocket_with_fallback';
+        if (items.length === 0) return 'shiprocket_with_delhivery';
         
         const primary = items[0].dataset.carrier;
-        const secondary = items[1].dataset.carrier;
+        const secondary = items[1] ? items[1].dataset.carrier : null;
         
-        // Map to carrier mode
+        // Map to carrier mode - store actual secondary carrier name
         if (primary && secondary) {
-            return `${primary}_with_fallback`;
+            return `${primary}_with_${secondary}`;
         } else if (primary) {
             return `${primary}_only`;
         }
-        return 'shiprocket_with_fallback';
+        return 'shiprocket_with_delhivery';
     }
     
     function setCarrierModeToDropZone(zone, carrierMode) {
@@ -5872,18 +5872,31 @@
         
         // Parse carrier mode
         let primary, secondary;
-        if (carrierMode.includes('_with_fallback')) {
+        
+        // New format: "primary_with_secondary" (e.g., "delhivery_with_ekart")
+        const newFormatMatch = carrierMode.match(/^(shiprocket|delhivery|ekart)_with_(shiprocket|delhivery|ekart)$/);
+        if (newFormatMatch) {
+            primary = newFormatMatch[1];
+            secondary = newFormatMatch[2];
+        }
+        // Legacy format: "primary_with_fallback" (e.g., "delhivery_with_fallback")
+        else if (carrierMode.includes('_with_fallback')) {
             primary = carrierMode.replace('_with_fallback', '');
+            // Use hardcoded fallback map for legacy compatibility
             const fallbackMap = {
                 'shiprocket': 'delhivery',
                 'delhivery': 'shiprocket',
                 'ekart': 'shiprocket'
             };
             secondary = fallbackMap[primary] || 'delhivery';
-        } else if (carrierMode.includes('_only')) {
+        }
+        // Only mode: "primary_only"
+        else if (carrierMode.includes('_only')) {
             primary = carrierMode.replace('_only', '');
             secondary = null;
-        } else {
+        }
+        // Default
+        else {
             primary = 'shiprocket';
             secondary = 'delhivery';
         }
