@@ -7765,7 +7765,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
 
             // Get carrier mode for dispatch (forward shipment)
             const carrierMode = await getCarrierMode('dispatch');
-            const carrierResolution = resolveCarrier(carrierMode, null, 'dispatch');
+            const carrierResolution = resolveCarrier(carrierMode, carrierOverride || null, 'dispatch');
             
             console.log(`[${requestId}] 🚀 Creating Forward Shipment for Exchange with carrier: ${carrierResolution.primary}${carrierResolution.useFallback ? ' (with fallback)' : ''}`);
             
@@ -8072,7 +8072,7 @@ app.post('/api/admin/resolve-exchange', authenticateAdmin, async (req, res) => {
             console.log(`[${requestId}] Resolving exchange: dispatching replacement...`);
 
             const carrierMode = await getCarrierMode('dispatch');
-            const carrierResolution = resolveCarrier(carrierMode, null, 'dispatch');
+            const carrierResolution = resolveCarrier(carrierMode, carrierOverride || null, 'dispatch');
             console.log(`[${requestId}] Forward carrier: ${carrierResolution.primary}${carrierResolution.useFallback ? ' (with fallback)' : ''}`);
 
             let items = requestDetails.items;
