@@ -8955,7 +8955,7 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
     console.log(`[ADMIN CREATE] ${requestId} — Manual request creation started`);
 
     try {
-        const { orderNumber, type, reason, comments, items, overrideExisting } = req.body;
+        const { orderNumber, type, reason, comments, items, overrideExisting, customAddress, customCity, customState, customPincode } = req.body;
 
         if (!orderNumber || !type || !reason) {
             return res.status(400).json({ error: 'orderNumber, type, and reason are required' });
@@ -9026,14 +9026,23 @@ app.post('/api/admin/create-request', authenticateAdmin, async (req, res) => {
         }
 
         // ── Insert into DB ────────────────────────────────────────────────────
-        // Use shipping_address (primary) or fulfillment destination (fallback)
-        const addr = order.shipping_address || (order.fulfillments && order.fulfillments[0] && order.fulfillments[0].destination);
-        const shippingAddress = addr
-            ? [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country].filter(Boolean).join(', ')
-            : '';
-        const shippingCity = addr ? (addr.city || '') : '';
-        const shippingState = addr ? (addr.province || '') : '';
-        const shippingPincode = addr ? (addr.zip || '') : '';
+        // Use custom premium address if provided, otherwise fall back to Shopify order address
+        let shippingAddress, shippingCity, shippingState, shippingPincode;
+        if (customAddress && customCity && customState && customPincode) {
+            shippingAddress = customAddress;
+            shippingCity = customCity;
+            shippingState = customState;
+            shippingPincode = customPincode;
+            console.log(`[ADMIN CREATE] ${requestId} Using custom premium address: ${customAddress}, ${customCity}, ${customState} ${customPincode}`);
+        } else {
+            const addr = order.shipping_address || (order.fulfillments && order.fulfillments[0] && order.fulfillments[0].destination);
+            shippingAddress = addr
+                ? [addr.address1, addr.address2, addr.city, addr.province, addr.zip, addr.country].filter(Boolean).join(', ')
+                : '';
+            shippingCity = addr ? (addr.city || '') : '';
+            shippingState = addr ? (addr.province || '') : '';
+            shippingPincode = addr ? (addr.zip || '') : '';
+        }
 
         await createRequest({
             requestId,
