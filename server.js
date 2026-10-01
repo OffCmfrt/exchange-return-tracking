@@ -15343,8 +15343,10 @@ app.get('/api/internal/inventory-open-requests', async (req, res) => {
         const windowDays = Math.max(0, Math.min(parseInt(req.query.window, 10) || 90, 730));
         // Statuses where the items are still out with the customer (not yet
         // received back at the warehouse). delivered/inspected = received,
-        // rejected/cancelled = never coming back.
-        const OPEN_STATUSES = ['pending', 'approved', 'scheduled', 'waiting_payment', 'pickup_pending', 'pickup_booked', 'picked_up', 'in_transit'];
+        // rejected/cancelled = never coming back. out_for_delivery = the
+        // replacement shipment is still en route to the customer, so the
+        // exchange is NOT closed yet.
+        const OPEN_STATUSES = ['pending', 'approved', 'scheduled', 'waiting_payment', 'pickup_pending', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery'];
 
         let query = supabase.from('requests')
             .select('request_id, order_number, type, status, items, created_at')
