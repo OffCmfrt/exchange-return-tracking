@@ -155,7 +155,7 @@ async function retrieveLabel(dispatch, { getEkartToken, getShiprocketToken }, si
     if (dispatch.carrier === 'delhivery') {
         if (!process.env.DELHIVERY_API_KEY) throw fail('Delhivery label credentials are not configured', 503);
         const base = 'https://track.delhivery.com';
-        buffer = await call(`${base}/api/p/packing_slip?wbns=${encodeURIComponent(dispatch.awb)}&pdf=true&pdf_size=4R`, { headers: { Authorization: `Token ${process.env.DELHIVERY_API_KEY}` } });
+        buffer = await call(`${base}/api/p/packing_slip?wbns=${encodeURIComponent(dispatch.awb)}&pdf=true`, { headers: { Authorization: `Token ${process.env.DELHIVERY_API_KEY}` } });
         if (!isPdf(buffer)) {
             let data;
             try { data = JSON.parse(buffer.toString()); } catch (_) { throw fail('Delhivery returned an invalid label response', 502); }
