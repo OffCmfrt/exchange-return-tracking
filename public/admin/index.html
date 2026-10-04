@@ -4623,25 +4623,18 @@
             ? currentRequest.items
             : (typeof currentRequest.items === 'string' ? (() => { try { return JSON.parse(currentRequest.items); } catch(e) { return []; } })() : []);
 
-        // Fetch order products from Shopify for replacement selection
+        // Fetch ALL store products from Shopify for replacement selection
         let orderProducts = [];
         try {
-            const orderResp = await fetch(`${API_URL}/shopify/order/${encodeURIComponent(currentRequest.orderNumber)}`, {
+            const prodResp = await fetch(`${API_URL}/admin/products-for-exchange`, {
                 headers: { 'Authorization': `Bearer ${authToken}` }
             });
-            if (orderResp.ok) {
-                const orderData = await orderResp.json();
-                orderProducts = (orderData.line_items || []).map(li => ({
-                    productId: String(li.product_id || ''),
-                    variantId: String(li.variant_id || ''),
-                    variantTitle: li.variant_title || li.title || '',
-                    productTitle: li.title || '',
-                    price: li.price || '0',
-                    image: li.image || ''
-                }));
+            if (prodResp.ok) {
+                const prodData = await prodResp.json();
+                orderProducts = prodData.products || [];
             }
         } catch (e) {
-            console.warn('Could not fetch order products:', e.message);
+            console.warn('Could not fetch store products:', e.message);
         }
 
         const overlay = document.createElement('div');
@@ -4665,8 +4658,9 @@
                         <div style="margin-bottom: 1.25rem; padding: 1rem; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px;">
                             <p style="margin: 0 0 0.5rem 0; font-weight: 600; font-size: 0.85rem; color: #374151;">Original: ${escapeHtml(item.name || '')}</p>
                             <p style="margin: 0 0 0.75rem 0; font-size: 0.8rem; color: #6b7280;">Size: ${escapeHtml(item.variant || '')} · ₹${item.price || '0'}</p>
-                            <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.35rem; font-weight: 500;">Select replacement variant:</label>
-                            <select id="replacementSelect_${idx}" style="width: 100%; padding: 0.625rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; box-sizing: border-box;">
+                            <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 0.35rem; font-weight: 500;">Search & select replacement:</label>
+                            <input type="text" id="replacementSearch_${idx}" placeholder="Type to search products..." oninput="filterReplacementOptions(${idx})" style="width: 100%; padding: 0.5rem 0.625rem; border: 1px solid #d1d5db; border-radius: 8px 8px 0 0; font-size: 0.82rem; box-sizing: border-box; border-bottom: none; background: #fff;">
+                            <select id="replacementSelect_${idx}" size="6" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 0 0 8px 8px; font-size: 0.82rem; box-sizing: border-box; max-height: 180px;">
                                 <option value="">-- Select replacement --</option>
                                 ${orderProducts.map(p => `<option value='${JSON.stringify(p).replace(/'/g, "&#39;")}' data-price="${p.price}" data-image="${p.image}">${escapeHtml(p.productTitle)} — ${escapeHtml(p.variantTitle)} (₹${p.price})</option>`).join('')}
                             </select>
@@ -4685,6 +4679,23 @@
             </div>`;
         document.body.appendChild(overlay);
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    }
+
+    // Filter replacement product options by search text
+    function filterReplacementOptions(idx) {
+        const searchInput = document.getElementById(`replacementSearch_${idx}`);
+        const select = document.getElementById(`replacementSelect_${idx}`);
+        if (!searchInput || !select) return;
+        const query = searchInput.value.toLowerCase().trim();
+        const options = select.querySelectorAll('option');
+        let visibleCount = 0;
+        options.forEach((opt, i) => {
+            if (i === 0) { opt.hidden = false; return; } // keep "-- Select --" visible
+            const text = opt.textContent.toLowerCase();
+            const match = !query || text.includes(query);
+            opt.hidden = !match;
+            if (match) visibleCount++;
+        });
     }
 
     async function confirmConvertToExchange() {

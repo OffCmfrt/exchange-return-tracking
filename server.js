@@ -8402,6 +8402,35 @@ app.get('/api/shopify/order/:orderNumber', authenticateAdmin, async (req, res) =
     }
 });
 
+// ==================== ALL PRODUCTS FOR EXCHANGE SELECTOR ====================
+// Returns all active store products with variants for the convert-to-exchange modal
+app.get('/api/admin/products-for-exchange', authenticateAdmin, async (req, res) => {
+    try {
+        const allProducts = await fetchAllShopifyProducts();
+        const productsWithInventory = filterProductsWithInventory(allProducts);
+
+        // Flatten: each variant becomes a selectable option
+        const options = [];
+        for (const product of productsWithInventory) {
+            for (const variant of (product.variants || [])) {
+                options.push({
+                    productId: String(product.id),
+                    variantId: String(variant.id),
+                    productTitle: product.title || '',
+                    variantTitle: variant.title || '',
+                    price: variant.price || '0',
+                    image: (product.image && product.image.src) || (product.images && product.images[0] && product.images[0].src) || ''
+                });
+            }
+        }
+
+        res.json({ success: true, products: options, total: options.length });
+    } catch (error) {
+        console.error('Products for exchange error:', error);
+        res.status(500).json({ error: 'Failed to fetch products: ' + error.message, products: [] });
+    }
+});
+
 // ── Send Coupon Code (create discount + send WhatsApp message, no status change) ──
 app.post('/api/admin/send-coupon-code', authenticateAdmin, async (req, res) => {
     try {
