@@ -204,6 +204,102 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
 .ah-review-card-meta{display:flex;gap:1rem;margin-top:.5rem;font-size:.65rem;color:var(--muted)}
 .ah-review-card-actions{display:flex;gap:.5rem;margin-top:1rem}
 
+/* TASK FILTER BAR */
+.ah-filter-bar{display:flex;gap:.75rem;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap}
+.ah-filter-bar .ah-input{margin:0;padding:.45rem .75rem;font-size:.7rem;width:220px}
+.ah-filter-bar select.ah-input{width:140px}
+.ah-filter-bar .ah-filter-count{font-family:var(--mono);font-size:.6rem;color:var(--muted);margin-left:auto}
+
+/* TASK STATS ROW */
+.ah-task-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border);margin-bottom:1.25rem}
+.ah-task-stat{background:var(--surface);padding:1rem 1.25rem}
+.ah-task-stat .label{font-size:.48rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;margin-bottom:.35rem}
+.ah-task-stat .value{font-family:var(--mono);font-size:1.3rem;font-weight:800}
+.ah-task-stat .sub{font-size:.55rem;color:var(--muted);margin-top:.15rem}
+
+/* TASK TABLE ENHANCED */
+.ah-table .task-code{font-family:var(--mono);font-size:.65rem;color:var(--text-2);
+  background:var(--surface-3);padding:2px 6px;display:inline-block}
+.ah-table .task-title-cell{max-width:220px}
+.ah-table .task-title-cell strong{display:block;margin-bottom:2px}
+.ah-table .task-title-cell .brief{font-size:.55rem;color:var(--muted);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ah-table .task-meta{display:flex;gap:.5rem;flex-wrap:wrap}
+.ah-table .task-meta .tag{font-size:.45rem;padding:1px 5px;border:1px solid var(--border);
+  color:var(--muted);font-family:var(--mono)}
+.ah-table .task-meta .tag.trial{color:var(--info);border-color:var(--info)}
+.ah-table .task-meta .tag.gate{color:var(--warning);border-color:var(--warning)}
+.ah-table .task-counts{display:flex;gap:.75rem}
+.ah-table .task-counts span{font-family:var(--mono);font-size:.6rem;color:var(--muted)}
+.ah-table .task-counts .active-count{color:var(--warning)}
+.ah-table .task-counts .approved-count{color:var(--success)}
+.ah-table .task-actions{display:flex;gap:.35rem}
+
+/* MODAL */
+.ah-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;
+  display:none;align-items:center;justify-content:center;padding:2rem}
+.ah-modal-overlay.active{display:flex}
+.ah-modal{background:var(--surface);border:1px solid var(--border);width:100%;max-width:680px;
+  max-height:90vh;overflow-y:auto;animation:fadeUp .25s ease both}
+.ah-modal-head{padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;
+  background:var(--surface);z-index:1}
+.ah-modal-head h3{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700}
+.ah-modal-body{padding:1.5rem}
+.ah-modal-foot{padding:1rem 1.5rem;border-top:1px solid var(--border);
+  display:flex;justify-content:flex-end;gap:.5rem;position:sticky;bottom:0;
+  background:var(--surface)}
+
+/* FORM */
+.ah-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.ah-form-grid .full{grid-column:1/-1}
+.ah-form-group{display:flex;flex-direction:column;gap:.35rem}
+.ah-form-group label{font-size:.5rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);font-weight:600}
+.ah-form-group input,.ah-form-group select,.ah-form-group textarea{
+  background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+  padding:.55rem .75rem;font-size:.75rem;font-family:var(--font);outline:none;
+  transition:border-color var(--transition);width:100%}
+.ah-form-group input:focus,.ah-form-group select:focus,.ah-form-group textarea:focus{
+  border-color:var(--border-active)}
+.ah-form-group textarea{resize:vertical;min-height:80px;font-family:var(--font)}
+.ah-form-group select{cursor:pointer;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right .75rem center}
+.ah-form-group select option{background:var(--surface-2);color:var(--text)}
+.ah-form-check{display:flex;align-items:center;gap:.5rem;padding:.4rem 0}
+.ah-form-check input[type="checkbox"]{width:16px;height:16px;accent-color:var(--text);cursor:pointer}
+.ah-form-check label{font-size:.7rem;color:var(--text-2);cursor:pointer;text-transform:none;letter-spacing:0}
+.ah-form-hint{font-size:.5rem;color:var(--faint);margin-top:.15rem}
+.ah-form-divider{grid-column:1/-1;border:none;border-top:1px solid var(--border);margin:.5rem 0}
+
+/* ASSIGN MODAL */
+.ah-assign-list{max-height:300px;overflow-y:auto;border:1px solid var(--border);margin-top:.5rem}
+.ah-assign-item{display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;
+  border-bottom:1px solid var(--border);font-size:.7rem;transition:background var(--transition)}
+.ah-assign-item:hover{background:var(--surface-2)}
+.ah-assign-item input[type="checkbox"]{width:14px;height:14px;accent-color:var(--text);cursor:pointer}
+.ah-assign-item .name{font-weight:600;flex:1}
+.ah-assign-item .meta{font-family:var(--mono);font-size:.55rem;color:var(--muted)}
+
+/* TASK DETAIL DRAWER EXTRAS */
+.ah-drawer-section .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.ah-drawer-section .detail-grid .ah-detail-row{padding:.3rem 0}
+.ah-assign-history{margin-top:1rem}
+.ah-assign-history-item{display:flex;justify-content:space-between;align-items:center;
+  padding:.5rem .75rem;border:1px solid var(--border);margin-bottom:.5rem;font-size:.7rem}
+.ah-assign-history-item .athlete-name{font-weight:600}
+.ah-assign-history-item .status{font-family:var(--mono);font-size:.6rem}
+
+/* TOAST */
+.ah-toast{position:fixed;bottom:2rem;right:2rem;background:var(--surface-3);
+  border:1px solid var(--border);padding:.75rem 1.25rem;font-size:.7rem;z-index:400;
+  animation:fadeUp .3s ease both;max-width:360px}
+.ah-toast.success{border-color:var(--success)}
+.ah-toast.error{border-color:var(--danger)}
+
 /* RESPONSIVE */
 @media(max-width:1024px){
   .ah-sidebar{width:180px}
@@ -211,11 +307,17 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
   .ah-stats{grid-template-columns:repeat(2,1fr)}
   .ah-ladder-row{grid-template-columns:50px 1fr 80px 80px}
   .ah-ladder-row > :nth-child(n+5){display:none}
+  .ah-task-stats{grid-template-columns:repeat(2,1fr)}
+  .ah-form-grid{grid-template-columns:1fr}
 }
 @media(max-width:768px){
   .ah-sidebar{display:none}
   .ah-main{margin-left:0}
   .ah-stats{grid-template-columns:1fr}
+  .ah-task-stats{grid-template-columns:1fr}
+  .ah-filter-bar{flex-direction:column;align-items:stretch}
+  .ah-filter-bar .ah-input,.ah-filter-bar select.ah-input{width:100%}
+  .ah-modal{max-width:100%;margin:0}
 }
 </style>
 </head>
@@ -334,13 +436,46 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
 
       <!-- TASKS -->
       <div class="ah-section" id="sec-tasks">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
-          <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700">Task Templates</h2>
-          <button class="ah-btn ah-btn-sm" onclick="openTaskModal()">+ New Task</button>
+        <!-- Task Stats -->
+        <div class="ah-task-stats">
+          <div class="ah-task-stat"><div class="label">Total Templates</div><div class="value" id="taskStatTotal">0</div><div class="sub">All task definitions</div></div>
+          <div class="ah-task-stat"><div class="label">Active</div><div class="value" id="taskStatActive">0</div><div class="sub">Currently enabled</div></div>
+          <div class="ah-task-stat"><div class="label">Total Assignments</div><div class="value" id="taskStatAssignments">0</div><div class="sub">Across all templates</div></div>
+          <div class="ah-task-stat"><div class="label">Approved Completions</div><div class="value" id="taskStatApproved">0</div><div class="sub">Successfully completed</div></div>
+        </div>
+        <!-- Filter Bar -->
+        <div class="ah-filter-bar">
+          <input type="text" class="ah-input" placeholder="Search by code or title..." id="taskSearch">
+          <select class="ah-input" id="taskTypeFilter">
+            <option value="">All Types</option>
+            <option value="CONTENT_POST">Content Post</option>
+            <option value="UGC_RAW">UGC Raw</option>
+            <option value="REVIEW">Review</option>
+            <option value="SALES">Sales</option>
+            <option value="REFERRAL">Referral</option>
+            <option value="EVENT">Event</option>
+            <option value="SURVEY">Survey</option>
+            <option value="STREAK">Streak</option>
+            <option value="CHALLENGE">Challenge</option>
+          </select>
+          <select class="ah-input" id="taskStatusFilter">
+            <option value="">All Status</option>
+            <option value="true">Active Only</option>
+            <option value="false">Inactive Only</option>
+          </select>
+          <select class="ah-input" id="taskTrialFilter">
+            <option value="">All Levels</option>
+            <option value="true">Trial Tasks</option>
+            <option value="false">Regular Tasks</option>
+          </select>
+          <span class="ah-filter-count" id="taskFilterCount"></span>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.75rem">
+          <button class="ah-btn ah-btn-sm" onclick="openTaskModal()">+ New Task Template</button>
         </div>
         <div class="ah-table-wrap">
           <table class="ah-table">
-            <thead><tr><th>Code</th><th>Title</th><th>Type</th><th>XP</th><th>Coins</th><th>Due Days</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Code</th><th>Title</th><th>Type</th><th>Platform</th><th>XP / Coins</th><th>Due</th><th>Assignments</th><th>Level Gate</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="tasksTable"></tbody>
           </table>
         </div>
@@ -405,6 +540,193 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
   </div>
   <div class="ah-drawer-body" id="drawerBody"></div>
 </div>
+
+<!-- TASK MODAL -->
+<div class="ah-modal-overlay" id="taskModalOverlay">
+  <div class="ah-modal">
+    <div class="ah-modal-head">
+      <h3 id="taskModalTitle">New Task Template</h3>
+      <button class="ah-drawer-close" onclick="closeTaskModal()">&times;</button>
+    </div>
+    <div class="ah-modal-body">
+      <form id="taskForm" class="ah-form-grid">
+        <!-- Identity -->
+        <div class="ah-form-group">
+          <label>Code *</label>
+          <input type="text" id="taskCode" placeholder="e.g. INSTA_REEL_01" required style="text-transform:uppercase">
+          <span class="ah-form-hint">Unique identifier, UPPER_SNAKE_CASE</span>
+        </div>
+        <div class="ah-form-group">
+          <label>Title *</label>
+          <input type="text" id="taskTitle" placeholder="e.g. Instagram Reel — Product Unboxing" required>
+        </div>
+
+        <hr class="ah-form-divider">
+
+        <!-- Classification -->
+        <div class="ah-form-group">
+          <label>Type *</label>
+          <select id="taskType" required>
+            <option value="CONTENT_POST">Content Post</option>
+            <option value="UGC_RAW">UGC Raw</option>
+            <option value="REVIEW">Review</option>
+            <option value="SALES">Sales</option>
+            <option value="REFERRAL">Referral</option>
+            <option value="EVENT">Event</option>
+            <option value="SURVEY">Survey</option>
+            <option value="STREAK">Streak</option>
+            <option value="CHALLENGE">Challenge</option>
+          </select>
+        </div>
+        <div class="ah-form-group">
+          <label>Platform</label>
+          <select id="taskPlatform">
+            <option value="">Any</option>
+            <option value="instagram">Instagram</option>
+            <option value="youtube">YouTube</option>
+            <option value="tiktok">TikTok</option>
+            <option value="twitter">Twitter / X</option>
+            <option value="facebook">Facebook</option>
+            <option value="linkedin">LinkedIn</option>
+          </select>
+        </div>
+
+        <hr class="ah-form-divider">
+
+        <!-- Rewards -->
+        <div class="ah-form-group">
+          <label>XP Value *</label>
+          <input type="number" id="taskXP" value="50" min="0" required>
+        </div>
+        <div class="ah-form-group">
+          <label>Coin Value *</label>
+          <input type="number" id="taskCoins" value="10" min="0" required>
+        </div>
+        <div class="ah-form-group">
+          <label>Due Days *</label>
+          <input type="number" id="taskDueDays" value="7" min="1" required>
+          <span class="ah-form-hint">Days from assignment to deadline</span>
+        </div>
+        <div class="ah-form-group">
+          <label>Proof Type</label>
+          <select id="taskProofType">
+            <option value="URL">URL Only</option>
+            <option value="FILE">File Upload</option>
+            <option value="URL_AND_FILE">URL + File</option>
+          </select>
+        </div>
+
+        <hr class="ah-form-divider">
+
+        <!-- Description -->
+        <div class="ah-form-group full">
+          <label>Brief / Instructions</label>
+          <textarea id="taskBrief" placeholder="Describe what the athlete needs to do. Markdown supported." rows="4"></textarea>
+        </div>
+
+        <hr class="ah-form-divider">
+
+        <!-- Rules -->
+        <div class="ah-form-group full">
+          <div class="ah-form-check">
+            <input type="checkbox" id="taskDisclosure" checked>
+            <label for="taskDisclosure">Requires disclosure (#ad / sponsored tag)</label>
+          </div>
+          <div class="ah-form-check">
+            <input type="checkbox" id="taskRepeatable" checked>
+            <label for="taskRepeatable">Repeatable</label>
+          </div>
+          <div class="ah-form-check">
+            <input type="checkbox" id="taskTrialTask">
+            <label for="taskTrialTask">Trial-level task (visible to CL5 athletes)</label>
+          </div>
+          <div class="ah-form-check">
+            <input type="checkbox" id="taskActive" checked>
+            <label for="taskActive">Active (assignable to athletes)</label>
+          </div>
+        </div>
+
+        <hr class="ah-form-divider">
+
+        <!-- Limits & Gates -->
+        <div class="ah-form-group">
+          <label>Cooldown Days</label>
+          <input type="number" id="taskCooldown" value="0" min="0">
+          <span class="ah-form-hint">Days between repeats (0 = no cooldown)</span>
+        </div>
+        <div class="ah-form-group">
+          <label>Monthly Cap</label>
+          <input type="number" id="taskMonthlyCap" value="" min="0" placeholder="Unlimited">
+          <span class="ah-form-hint">Max completions per month (blank = unlimited)</span>
+        </div>
+        <div class="ah-form-group">
+          <label>Level Gate</label>
+          <select id="taskLevelGate">
+            <option value="">None (all levels)</option>
+          </select>
+          <span class="ah-form-hint">Minimum comfort level required</span>
+        </div>
+      </form>
+    </div>
+    <div class="ah-modal-foot">
+      <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="closeTaskModal()">Cancel</button>
+      <button class="ah-btn ah-btn-sm" id="taskModalSaveBtn" onclick="saveTask()">Create Task</button>
+    </div>
+  </div>
+</div>
+
+<!-- ASSIGN MODAL -->
+<div class="ah-modal-overlay" id="assignModalOverlay">
+  <div class="ah-modal" style="max-width:560px">
+    <div class="ah-modal-head">
+      <h3 id="assignModalTitle">Assign Task</h3>
+      <button class="ah-drawer-close" onclick="closeAssignModal()">&times;</button>
+    </div>
+    <div class="ah-modal-body">
+      <div style="margin-bottom:1rem">
+        <div style="font-size:.5rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:.35rem">Task</div>
+        <div style="font-weight:700;font-size:.85rem" id="assignTaskName"></div>
+        <div style="font-family:var(--mono);font-size:.6rem;color:var(--muted)" id="assignTaskCode"></div>
+      </div>
+      <div class="ah-form-group" style="margin-bottom:1rem">
+        <label>Due Days Override</label>
+        <input type="number" id="assignDueDays" min="1" placeholder="Use template default">
+        <span class="ah-form-hint" id="assignDefaultDue">Default: 7 days</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <div style="font-size:.5rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);font-weight:600">Select Athletes</div>
+        <button class="ah-btn ah-btn-sm ah-btn-outline" style="width:auto;padding:.3rem .6rem;font-size:.5rem" onclick="toggleAllAssignees()">Select All</button>
+      </div>
+      <div class="ah-assign-list" id="assignAthleteList"></div>
+      <div style="margin-top:.75rem;font-size:.6rem;color:var(--muted)" id="assignSelectedCount">0 selected</div>
+    </div>
+    <div class="ah-modal-foot">
+      <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="closeAssignModal()">Cancel</button>
+      <button class="ah-btn ah-btn-sm" onclick="confirmAssign()">Assign Task</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div class="ah-modal-overlay" id="deleteModalOverlay">
+  <div class="ah-modal" style="max-width:420px">
+    <div class="ah-modal-head">
+      <h3>Confirm Delete</h3>
+      <button class="ah-drawer-close" onclick="closeDeleteModal()">&times;</button>
+    </div>
+    <div class="ah-modal-body">
+      <p style="font-size:.8rem;color:var(--text-2);line-height:1.6">Are you sure you want to delete <strong id="deleteTaskName"></strong>? This action cannot be undone.</p>
+      <p style="font-size:.65rem;color:var(--danger);margin-top:.75rem" id="deleteWarning"></p>
+    </div>
+    <div class="ah-modal-foot">
+      <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="closeDeleteModal()">Cancel</button>
+      <button class="ah-btn ah-btn-sm ah-btn-danger" id="deleteConfirmBtn" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toastContainer"></div>
 
 <script>
 const API = 'https://exchange-return-tracking.onrender.com/api/athlete-admin';
@@ -557,18 +879,387 @@ function renderApplications() {
 }
 
 // ── TASKS ──
+let editingTaskId = null;
+let deletingTaskId = null;
+let assigningTaskId = null;
+
 function renderTasks() {
-  document.getElementById('tasksTable').innerHTML = tasks.map(t => `<tr>
-    <td class="mono">${t.code}</td>
-    <td><strong>${esc(t.title)}</strong></td>
-    <td><span class="ah-badge">${t.type.replace(/_/g,' ')}</span></td>
-    <td class="mono">${t.xp_value}</td>
-    <td class="mono">${t.coin_value}</td>
-    <td class="mono">${t.due_days}d</td>
-    <td>${t.is_active ? '<span class="ah-badge active">Active</span>' : '<span class="ah-badge discharged">Inactive</span>'}</td>
-    <td><button class="ah-btn ah-btn-sm ah-btn-outline">Edit</button></td>
-  </tr>`).join('');
+  const search = (document.getElementById('taskSearch')?.value || '').toLowerCase();
+  const typeFilter = document.getElementById('taskTypeFilter')?.value || '';
+  const statusFilter = document.getElementById('taskStatusFilter')?.value || '';
+  const trialFilter = document.getElementById('taskTrialFilter')?.value || '';
+
+  let list = tasks;
+  if (search) list = list.filter(t => (t.title||'').toLowerCase().includes(search) || (t.code||'').toLowerCase().includes(search));
+  if (typeFilter) list = list.filter(t => t.type === typeFilter);
+  if (statusFilter !== '') list = list.filter(t => String(t.is_active) === statusFilter);
+  if (trialFilter !== '') list = list.filter(t => String(t.is_trial_task) === trialFilter);
+
+  // Stats
+  document.getElementById('taskStatTotal').textContent = tasks.length;
+  document.getElementById('taskStatActive').textContent = tasks.filter(t => t.is_active).length;
+  document.getElementById('taskStatAssignments').textContent = tasks.reduce((s, t) => s + (t.assignment_total || 0), 0);
+  document.getElementById('taskStatApproved').textContent = tasks.reduce((s, t) => s + (t.assignment_approved || 0), 0);
+  document.getElementById('taskFilterCount').textContent = list.length + ' of ' + tasks.length + ' templates';
+
+  const tbody = document.getElementById('tasksTable');
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" style="padding:3rem;text-align:center;color:var(--muted);font-size:.75rem">No task templates found</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(t => {
+    const typeLabel = t.type ? t.type.replace(/_/g, ' ') : '';
+    const platformLabel = t.platform ? t.platform.charAt(0).toUpperCase() + t.platform.slice(1) : '—';
+    const gateLabel = t.level_gate_name ? `${t.level_gate_name} (CL${t.level_gate_ordinal || '?'})` : '—';
+    const gateTag = t.level_gate_id ? `<span class="tag gate">CL${t.level_gate_ordinal || '?'}</span>` : '';
+    const trialTag = t.is_trial_task ? '<span class="tag trial">Trial</span>' : '';
+    const proofTag = t.proof_type && t.proof_type !== 'URL' ? `<span class="tag">${t.proof_type}</span>` : '';
+
+    return `<tr>
+      <td><span class="task-code">${esc(t.code)}</span></td>
+      <td class="task-title-cell">
+        <strong>${esc(t.title)}</strong>
+        ${t.brief_md ? `<div class="brief">${esc(t.brief_md)}</div>` : ''}
+        <div class="task-meta" style="margin-top:4px">
+          ${trialTag}${gateTag}${proofTag}
+          ${t.repeatable ? '' : '<span class="tag">One-time</span>'}
+          ${t.monthly_cap ? `<span class="tag">${t.monthly_cap}/mo</span>` : ''}
+          ${t.cooldown_days ? `<span class="tag">${t.cooldown_days}d cool</span>` : ''}
+        </div>
+      </td>
+      <td><span class="ah-badge">${typeLabel}</span></td>
+      <td class="mono" style="font-size:.65rem">${platformLabel}</td>
+      <td><span class="mono" style="font-weight:700">${t.xp_value}</span> <span class="muted" style="font-size:.55rem">XP</span> / <span class="mono" style="font-weight:700">${t.coin_value}</span> <span class="muted" style="font-size:.55rem">C</span></td>
+      <td class="mono">${t.due_days}d</td>
+      <td>
+        <div class="task-counts">
+          <span class="active-count">${t.assignment_active || 0} active</span>
+          <span class="approved-count">${t.assignment_approved || 0} done</span>
+          <span>${t.assignment_total || 0} total</span>
+        </div>
+      </td>
+      <td class="mono" style="font-size:.6rem">${gateLabel}</td>
+      <td>${t.is_active ? '<span class="ah-badge active">Active</span>' : '<span class="ah-badge discharged">Inactive</span>'}</td>
+      <td>
+        <div class="task-actions">
+          <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="openTaskModal(${t.id})" title="Edit">Edit</button>
+          <button class="ah-btn ah-btn-sm" onclick="openAssignModal(${t.id})" title="Assign to athletes">Assign</button>
+          <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="openTaskDrawer(${t.id})" title="View details">View</button>
+          <button class="ah-btn ah-btn-sm ah-btn-danger" onclick="openDeleteModal(${t.id})" title="Delete">Del</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 }
+
+// Filter listeners
+document.getElementById('taskSearch')?.addEventListener('input', renderTasks);
+document.getElementById('taskTypeFilter')?.addEventListener('change', renderTasks);
+document.getElementById('taskStatusFilter')?.addEventListener('change', renderTasks);
+document.getElementById('taskTrialFilter')?.addEventListener('change', renderTasks);
+
+// ── TASK MODAL ──
+function openTaskModal(id) {
+  editingTaskId = id || null;
+  const modal = document.getElementById('taskModalOverlay');
+  const title = document.getElementById('taskModalTitle');
+  const saveBtn = document.getElementById('taskModalSaveBtn');
+
+  // Populate level gate dropdown
+  const gateSelect = document.getElementById('taskLevelGate');
+  gateSelect.innerHTML = '<option value="">None (all levels)</option>';
+  [...levels].sort((a,b) => a.ordinal - b.ordinal).forEach(l => {
+    gateSelect.innerHTML += `<option value="${l.id}">${l.display_name} (CL${l.ordinal})</option>`;
+  });
+
+  if (id) {
+    const t = tasks.find(x => x.id === id);
+    if (!t) return;
+    title.textContent = 'Edit Task Template';
+    saveBtn.textContent = 'Save Changes';
+    document.getElementById('taskCode').value = t.code || '';
+    document.getElementById('taskTitle').value = t.title || '';
+    document.getElementById('taskType').value = t.type || 'CONTENT_POST';
+    document.getElementById('taskPlatform').value = t.platform || '';
+    document.getElementById('taskXP').value = t.xp_value || 0;
+    document.getElementById('taskCoins').value = t.coin_value || 0;
+    document.getElementById('taskDueDays').value = t.due_days || 7;
+    document.getElementById('taskProofType').value = t.proof_type || 'URL';
+    document.getElementById('taskBrief').value = t.brief_md || '';
+    document.getElementById('taskDisclosure').checked = t.requires_disclosure !== false;
+    document.getElementById('taskRepeatable').checked = t.repeatable !== false;
+    document.getElementById('taskTrialTask').checked = t.is_trial_task || false;
+    document.getElementById('taskActive').checked = t.is_active !== false;
+    document.getElementById('taskCooldown').value = t.cooldown_days || 0;
+    document.getElementById('taskMonthlyCap').value = t.monthly_cap || '';
+    document.getElementById('taskLevelGate').value = t.level_gate_id || '';
+  } else {
+    title.textContent = 'New Task Template';
+    saveBtn.textContent = 'Create Task';
+    document.getElementById('taskForm').reset();
+    document.getElementById('taskXP').value = 50;
+    document.getElementById('taskCoins').value = 10;
+    document.getElementById('taskDueDays').value = 7;
+    document.getElementById('taskCooldown').value = 0;
+    document.getElementById('taskDisclosure').checked = true;
+    document.getElementById('taskRepeatable').checked = true;
+    document.getElementById('taskActive').checked = true;
+  }
+
+  modal.classList.add('active');
+}
+
+function closeTaskModal() {
+  document.getElementById('taskModalOverlay').classList.remove('active');
+  editingTaskId = null;
+}
+
+async function saveTask() {
+  const code = document.getElementById('taskCode').value.trim().toUpperCase();
+  const title = document.getElementById('taskTitle').value.trim();
+  if (!code || !title) return showToast('Code and Title are required', 'error');
+
+  const body = {
+    code,
+    title,
+    type: document.getElementById('taskType').value,
+    platform: document.getElementById('taskPlatform').value || null,
+    xp_value: parseInt(document.getElementById('taskXP').value) || 0,
+    coin_value: parseInt(document.getElementById('taskCoins').value) || 0,
+    due_days: parseInt(document.getElementById('taskDueDays').value) || 7,
+    proof_type: document.getElementById('taskProofType').value,
+    brief_md: document.getElementById('taskBrief').value.trim() || null,
+    requires_disclosure: document.getElementById('taskDisclosure').checked,
+    repeatable: document.getElementById('taskRepeatable').checked,
+    is_trial_task: document.getElementById('taskTrialTask').checked,
+    is_active: document.getElementById('taskActive').checked,
+    cooldown_days: parseInt(document.getElementById('taskCooldown').value) || 0,
+    monthly_cap: document.getElementById('taskMonthlyCap').value ? parseInt(document.getElementById('taskMonthlyCap').value) : null,
+    level_gate_id: document.getElementById('taskLevelGate').value ? parseInt(document.getElementById('taskLevelGate').value) : null
+  };
+
+  try {
+    const url = editingTaskId ? `${API}/tasks/${editingTaskId}` : `${API}/tasks`;
+    const method = editingTaskId ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeTaskModal();
+      await refreshData();
+      showToast(editingTaskId ? 'Task template updated' : 'Task template created', 'success');
+    } else {
+      showToast(data.error || 'Failed to save', 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+}
+
+// ── ASSIGN MODAL ──
+function openAssignModal(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  assigningTaskId = id;
+
+  document.getElementById('assignTaskName').textContent = t.title;
+  document.getElementById('assignTaskCode').textContent = t.code;
+  document.getElementById('assignDefaultDue').textContent = `Default: ${t.due_days} days`;
+  document.getElementById('assignDueDays').value = '';
+  document.getElementById('assignDueDays').placeholder = `Default: ${t.due_days} days`;
+
+  // Render athlete list
+  const list = document.getElementById('assignAthleteList');
+  const activeAthletes = athletes.filter(a => ['ACTIVE', 'ON_TRIAL'].includes(a.athlete_status));
+  list.innerHTML = activeAthletes.map(a => `
+    <div class="ah-assign-item">
+      <input type="checkbox" value="${a.id}" class="assign-checkbox" onchange="updateAssignCount()">
+      <span class="name">${esc(a.name)}</span>
+      <span class="meta">${a.athlete_no || ''} · ${a.athlete_status}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('assignSelectedCount').textContent = '0 selected';
+  document.getElementById('assignModalOverlay').classList.add('active');
+}
+
+function closeAssignModal() {
+  document.getElementById('assignModalOverlay').classList.remove('active');
+  assigningTaskId = null;
+}
+
+function toggleAllAssignees() {
+  const checkboxes = document.querySelectorAll('.assign-checkbox');
+  const allChecked = [...checkboxes].every(c => c.checked);
+  checkboxes.forEach(c => c.checked = !allChecked);
+  updateAssignCount();
+}
+
+function updateAssignCount() {
+  const count = document.querySelectorAll('.assign-checkbox:checked').length;
+  document.getElementById('assignSelectedCount').textContent = count + ' selected';
+}
+
+async function confirmAssign() {
+  const selected = [...document.querySelectorAll('.assign-checkbox:checked')].map(c => c.value);
+  if (selected.length === 0) return showToast('Select at least one athlete', 'error');
+
+  const dueOverride = document.getElementById('assignDueDays').value;
+  try {
+    const res = await fetch(`${API}/tasks/${assigningTaskId}/assign`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ athlete_ids: selected, due_days_override: dueOverride || null })
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeAssignModal();
+      await refreshData();
+      showToast(`Assigned to ${data.count} athlete(s)`, 'success');
+    } else {
+      showToast(data.error || 'Assignment failed', 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+}
+
+// ── DELETE MODAL ──
+function openDeleteModal(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  deletingTaskId = id;
+  document.getElementById('deleteTaskName').textContent = t.title;
+  const warning = document.getElementById('deleteWarning');
+  if (t.assignment_total > 0) {
+    warning.textContent = `This template has ${t.assignment_total} assignment(s) and cannot be deleted. Deactivate it instead.`;
+    document.getElementById('deleteConfirmBtn').style.display = 'none';
+  } else {
+    warning.textContent = '';
+    document.getElementById('deleteConfirmBtn').style.display = '';
+  }
+  document.getElementById('deleteModalOverlay').classList.add('active');
+}
+
+function closeDeleteModal() {
+  document.getElementById('deleteModalOverlay').classList.remove('active');
+  deletingTaskId = null;
+}
+
+async function confirmDelete() {
+  if (!deletingTaskId) return;
+  try {
+    const res = await fetch(`${API}/tasks/${deletingTaskId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + adminToken }
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeDeleteModal();
+      await refreshData();
+      showToast('Task template deleted', 'success');
+    } else {
+      showToast(data.error || 'Delete failed', 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+}
+
+// ── TASK DETAIL DRAWER ──
+function openTaskDrawer(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+
+  document.getElementById('drawerTitle').textContent = t.title;
+  document.getElementById('drawerBody').innerHTML = `
+    <div class="ah-drawer-section">
+      <h4>Identity</h4>
+      <div class="ah-detail-row"><span class="label">Code</span><span class="value">${esc(t.code)}</span></div>
+      <div class="ah-detail-row"><span class="label">Type</span><span class="value">${t.type.replace(/_/g,' ')}</span></div>
+      <div class="ah-detail-row"><span class="label">Platform</span><span class="value">${t.platform || 'Any'}</span></div>
+      <div class="ah-detail-row"><span class="label">Proof Type</span><span class="value">${t.proof_type || 'URL'}</span></div>
+    </div>
+    <div class="ah-drawer-section">
+      <h4>Rewards</h4>
+      <div class="detail-grid">
+        <div class="ah-detail-row"><span class="label">XP Value</span><span class="value">${t.xp_value}</span></div>
+        <div class="ah-detail-row"><span class="label">Coin Value</span><span class="value">${t.coin_value}</span></div>
+        <div class="ah-detail-row"><span class="label">Due Days</span><span class="value">${t.due_days}d</span></div>
+        <div class="ah-detail-row"><span class="label">Cooldown</span><span class="value">${t.cooldown_days || 0}d</span></div>
+      </div>
+    </div>
+    <div class="ah-drawer-section">
+      <h4>Rules</h4>
+      <div class="ah-detail-row"><span class="label">Disclosure Required</span><span class="value">${t.requires_disclosure ? 'Yes' : 'No'}</span></div>
+      <div class="ah-detail-row"><span class="label">Repeatable</span><span class="value">${t.repeatable ? 'Yes' : 'No'}</span></div>
+      <div class="ah-detail-row"><span class="label">Monthly Cap</span><span class="value">${t.monthly_cap || 'Unlimited'}</span></div>
+      <div class="ah-detail-row"><span class="label">Trial Task</span><span class="value">${t.is_trial_task ? 'Yes' : 'No'}</span></div>
+      <div class="ah-detail-row"><span class="label">Level Gate</span><span class="value">${t.level_gate_name ? t.level_gate_name + ' (CL' + (t.level_gate_ordinal||'?') + ')' : 'None'}</span></div>
+      <div class="ah-detail-row"><span class="label">Status</span><span class="value">${t.is_active ? '<span class="ah-badge active">Active</span>' : '<span class="ah-badge discharged">Inactive</span>'}</span></div>
+    </div>
+    ${t.brief_md ? `<div class="ah-drawer-section"><h4>Brief</h4><p style="font-size:.75rem;color:var(--text-2);line-height:1.6;white-space:pre-wrap">${esc(t.brief_md)}</p></div>` : ''}
+    <div class="ah-drawer-section">
+      <h4>Assignment Stats</h4>
+      <div class="detail-grid">
+        <div class="ah-detail-row"><span class="label">Total</span><span class="value">${t.assignment_total || 0}</span></div>
+        <div class="ah-detail-row"><span class="label">Active</span><span class="value" style="color:var(--warning)">${t.assignment_active || 0}</span></div>
+        <div class="ah-detail-row"><span class="label">Approved</span><span class="value" style="color:var(--success)">${t.assignment_approved || 0}</span></div>
+        <div class="ah-detail-row"><span class="label">Completion Rate</span><span class="value">${t.assignment_total ? Math.round((t.assignment_approved||0)/(t.assignment_total)*100) : 0}%</span></div>
+      </div>
+    </div>
+    <div class="ah-drawer-section">
+      <h4>Meta</h4>
+      <div class="ah-detail-row"><span class="label">Created</span><span class="value">${new Date(t.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span></div>
+      <div class="ah-detail-row"><span class="label">Updated</span><span class="value">${new Date(t.updated_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span></div>
+    </div>
+    <div class="ah-drawer-section">
+      <h4>Actions</h4>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="closeDrawer();openTaskModal(${t.id})">Edit</button>
+        <button class="ah-btn ah-btn-sm" onclick="closeDrawer();openAssignModal(${t.id})">Assign to Athletes</button>
+        <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="toggleTaskActive(${t.id},${!t.is_active})">${t.is_active ? 'Deactivate' : 'Activate'}</button>
+      </div>
+    </div>`;
+  document.getElementById('drawerOverlay').classList.add('active');
+  document.getElementById('drawer').classList.add('active');
+}
+
+async function toggleTaskActive(id, newState) {
+  try {
+    const res = await fetch(`${API}/tasks/${id}`, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: newState })
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeDrawer();
+      await refreshData();
+      showToast(`Task ${newState ? 'activated' : 'deactivated'}`, 'success');
+    } else {
+      showToast(data.error || 'Failed', 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+}
+
+// ── TOAST ──
+function showToast(msg, type) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'ah-toast ' + (type || '');
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity .3s'; setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+function openTaskModal() { alert('Task creation modal — coming in next iteration'); }
 
 // ── REVIEW ──
 function renderReview() {
@@ -771,7 +1462,14 @@ async function saveSettings() {
   alert('Settings saved');
   await refreshData();
 }
-function openTaskModal() { alert('Task creation modal — coming in next iteration'); }
+
+// ── MODAL OVERLAY CLICK & KEYBOARD ──
+document.getElementById('taskModalOverlay')?.addEventListener('click', e => { if (e.target === e.currentTarget) closeTaskModal(); });
+document.getElementById('assignModalOverlay')?.addEventListener('click', e => { if (e.target === e.currentTarget) closeAssignModal(); });
+document.getElementById('deleteModalOverlay')?.addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeTaskModal(); closeAssignModal(); closeDeleteModal(); }
+});
 </script>
 </body>
 </html>

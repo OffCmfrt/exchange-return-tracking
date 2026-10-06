@@ -205,20 +205,142 @@ module.exports = function mountAthleteRoutes(app) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  // ── Task Templates ──
+  // ─ Task Templates ──
   app.get('/api/athlete-admin/tasks', authAdmin, async (req, res) => {
     try {
-      const { data, error } = await supabase.from('task_templates').select('*').order('created_at', { ascending: false });
+      const { type, is_active, is_trial_task, search } = req.query;
+      let q = supabase.from('task_templates').select('*');
+      if (type) q = q.eq('type', type);
+      if (is_active !== undefined) q = q.eq('is_active', is_active === 'true');
+      if (is_trial_task !== undefined) q = q.eq('is_trial_task', is_trial_task === 'true');
+      if (search) q = q.or(`title.ilike.%${search}%,code.ilike.%${search}%`);
+      const { data, error } = await q.order('created_at', { ascending: false });
       if (error) throw error;
-      res.json({ success: true, data: data || [] });
+
+      // Enrich with level gate names and assignment counts
+      const levelIds = [...new Set((data || []).map(t => t.level_gate_id).filter(Boolean))];
+      let levelsMap = {};
+      if (levelIds.length > 0) {
+        const { data: lvls } = await supabase.from('comfort_levels').select('id, display_name, ordinal').in('id', levelIds);
+        (lvls || []).forEach(l => levelsMap[l.id] = l);
+      }
+
+      const templateIds = (data || []).map(t => t.id);
+      let countsMap = {};
+      if (templateIds.length > 0) {
+        const { data: counts } = await supabase
+          .from('assignments')
+          .select('task_template_id, status')
+          .in('task_template_id', templateIds);
+        (counts || []).forEach(a => {
+          if (!countsMap[a.task_template_id]) countsMap[a.task_template_id] = { total: 0, active: 0, approved: 0 };
+          countsMap[a.task_template_id].total++;
+          if (['ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','CHANGES_REQUESTED'].includes(a.status)) countsMap[a.task_template_id].active++;
+          if (a.status === 'APPROVED') countsMap[a.task_template_id].approved++;
+        });
+      }
+
+      const enriched = (data || []).map(t => ({
+        ...t,
+        level_gate_name: levelsMap[t.level_gate_id]?.display_name || null,
+        level_gate_ordinal: levelsMap[t.level_gate_id]?.ordinal || null,
+        assignment_total: countsMap[t.id]?.total || 0,
+        assignment_active: countsMap[t.id]?.active || 0,
+        assignment_approved: countsMap[t.id]?.approved || 0
+      }));
+
+      res.json({ success: true, data: enriched });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   app.post('/api/athlete-admin/tasks', authAdmin, async (req, res) => {
     try {
-      const { data, error } = await supabase.from('task_templates').insert([req.body]).select().single();
+      const body = { ...req.body };
+      // Normalize booleans from form strings
+      if (body.requires_disclosure === 'true') body.requires_disclosure = true;
+      if (body.requires_disclosure === 'false') body.requires_disclosure = false;
+      if (body.repeatable === 'true') body.repeatable = true;
+      if (body.repeatable === 'false') body.repeatable = false;
+      if (body.is_trial_task === 'true') body.is_trial_task = true;
+      if (body.is_trial_task === 'false') body.is_trial_task = false;
+      if (body.is_active === 'true') body.is_active = true;
+      if (body.is_active === 'false') body.is_active = false;
+      // Normalize nullable integers
+      if (body.monthly_cap === '' || body.monthly_cap === null) body.monthly_cap = null;
+      else body.monthly_cap = parseInt(body.monthly_cap);
+      if (body.cooldown_days === '' || body.cooldown_days === null) body.cooldown_days = 0;
+      else body.cooldown_days = parseInt(body.cooldown_days);
+      if (body.level_gate_id === '' || body.level_gate_id === null) body.level_gate_id = null;
+      else body.level_gate_id = parseInt(body.level_gate_id);
+      body.xp_value = parseInt(body.xp_value) || 0;
+      body.coin_value = parseInt(body.coin_value) || 0;
+      body.due_days = parseInt(body.due_days) || 7;
+
+      const { data, error } = await supabase.from('task_templates').insert([body]).select().single();
       if (error) throw error;
       res.json({ success: true, data });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put('/api/athlete-admin/tasks/:id', authAdmin, async (req, res) => {
+    try {
+      const body = { ...req.body };
+      if (body.requires_disclosure === 'true') body.requires_disclosure = true;
+      if (body.requires_disclosure === 'false') body.requires_disclosure = false;
+      if (body.repeatable === 'true') body.repeatable = true;
+      if (body.repeatable === 'false') body.repeatable = false;
+      if (body.is_trial_task === 'true') body.is_trial_task = true;
+      if (body.is_trial_task === 'false') body.is_trial_task = false;
+      if (body.is_active === 'true') body.is_active = true;
+      if (body.is_active === 'false') body.is_active = false;
+      if (body.monthly_cap === '' || body.monthly_cap === null) body.monthly_cap = null;
+      else body.monthly_cap = parseInt(body.monthly_cap);
+      if (body.cooldown_days === '' || body.cooldown_days === null) body.cooldown_days = 0;
+      else body.cooldown_days = parseInt(body.cooldown_days);
+      if (body.level_gate_id === '' || body.level_gate_id === null) body.level_gate_id = null;
+      else body.level_gate_id = parseInt(body.level_gate_id);
+      body.xp_value = parseInt(body.xp_value) || 0;
+      body.coin_value = parseInt(body.coin_value) || 0;
+      body.due_days = parseInt(body.due_days) || 7;
+
+      const { data, error } = await supabase.from('task_templates').update(body).eq('id', req.params.id).select().single();
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete('/api/athlete-admin/tasks/:id', authAdmin, async (req, res) => {
+    try {
+      // Check for existing assignments
+      const { count } = await supabase.from('assignments').select('*', { count: 'exact', head: true }).eq('task_template_id', req.params.id);
+      if (count > 0) return res.status(409).json({ error: `Cannot delete: ${count} assignment(s) reference this template` });
+      const { error } = await supabase.from('task_templates').delete().eq('id', req.params.id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Assign Task to Athletes ──
+  app.post('/api/athlete-admin/tasks/:id/assign', authAdmin, async (req, res) => {
+    try {
+      const { athlete_ids, due_days_override } = req.body;
+      if (!athlete_ids || !Array.isArray(athlete_ids) || athlete_ids.length === 0) {
+        return res.status(400).json({ error: 'athlete_ids array is required' });
+      }
+      const { data: template } = await supabase.from('task_templates').select('*').eq('id', req.params.id).single();
+      if (!template) return res.status(404).json({ error: 'Task template not found' });
+
+      const dueDays = parseInt(due_days_override) || template.due_days;
+      const assignments = athlete_ids.map(aid => ({
+        influencer_id: parseInt(aid),
+        task_template_id: parseInt(req.params.id),
+        due_at: new Date(Date.now() + dueDays * 86400000).toISOString(),
+        status: 'ASSIGNED'
+      }));
+
+      const { data, error } = await supabase.from('assignments').insert(assignments).select();
+      if (error) throw error;
+      res.json({ success: true, data, count: data.length });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
