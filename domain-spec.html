@@ -1,0 +1,483 @@
+<title>Domain Build Spec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+:root{
+  --ground:#F1F0E9; --surface:#FBFAF5; --surface-2:#E9E8DE;
+  --ink:#1B1E17; --ink-2:#3D4136; --muted:#6C7062; --faint:#8E9283;
+  --line:#D3D2C5; --line-strong:#B6B5A5;
+  --brass:#8A6714; --brass-soft:#EFE4C6;
+  --ok:#3F6B34; --ok-soft:#E2EBDA;
+  --warn:#96650A; --warn-soft:#F5E8CC;
+  --crit:#9B3226; --crit-soft:#F4DFDB;
+  --info:#2A5F72; --info-soft:#DCE9EE;
+  --f-display:"Saira Condensed","Arial Narrow",Helvetica,sans-serif;
+  --f-body:"Public Sans","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --pad:clamp(20px,4vw,48px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#131610; --surface:#1A1E16; --surface-2:#232719;
+    --ink:#E9E8DD; --ink-2:#C6C6B8; --muted:#969A88; --faint:#787C6C;
+    --line:#2F3427; --line-strong:#454B3A;
+    --brass:#D8AC44; --brass-soft:#33290F;
+    --ok:#8FBF7C; --ok-soft:#1E2A18;
+    --warn:#D6A63F; --warn-soft:#2E2410;
+    --crit:#E08776; --crit-soft:#2E1815;
+    --info:#79B6CC; --info-soft:#13252B;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#131610; --surface:#1A1E16; --surface-2:#232719;
+  --ink:#E9E8DD; --ink-2:#C6C6B8; --muted:#969A88; --faint:#787C6C;
+  --line:#2F3427; --line-strong:#454B3A;
+  --brass:#D8AC44; --brass-soft:#33290F;
+  --ok:#8FBF7C; --ok-soft:#1E2A18;
+  --warn:#D6A63F; --warn-soft:#2E2410;
+  --crit:#E08776; --crit-soft:#2E1815;
+  --info:#79B6CC; --info-soft:#13252B;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--f-body);
+  font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:960px;margin:0 auto;padding:0 var(--pad) 110px}
+
+.doc-head{padding:52px 0 28px;border-bottom:3px solid var(--ink)}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--brass);margin:0 0 14px}
+h1{font-family:var(--f-display);font-weight:700;font-size:clamp(36px,6vw,58px);line-height:.98;
+  text-transform:uppercase;margin:0;text-wrap:balance;letter-spacing:-.005em}
+.dek{font-size:17px;color:var(--ink-2);max-width:62ch;margin:18px 0 0}
+.meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);margin-top:26px}
+.meta-grid div{background:var(--surface);padding:10px 13px}
+.meta-grid dt{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 3px}
+.meta-grid dd{margin:0;font-size:13.5px;font-weight:600;font-family:var(--f-display);
+  letter-spacing:.02em;text-transform:uppercase}
+
+section{padding-top:52px;scroll-margin-top:16px}
+h2{font-family:var(--f-display);font-weight:700;text-transform:uppercase;
+  font-size:clamp(23px,3.2vw,31px);line-height:1.06;margin:0 0 6px;
+  display:grid;grid-template-columns:auto 1fr;gap:13px;align-items:baseline;
+  padding-bottom:11px;border-bottom:1px solid var(--line-strong);text-wrap:balance}
+h2 .num{font-family:var(--f-mono);font-size:13px;font-weight:700;color:var(--brass)}
+h3{font-family:var(--f-display);font-weight:600;text-transform:uppercase;letter-spacing:.03em;
+  font-size:18px;margin:32px 0 10px}
+p{margin:0 0 13px;max-width:72ch}
+.lede{font-size:16.5px;color:var(--ink-2);max-width:66ch;margin-top:14px}
+strong{font-weight:700}
+code{font-family:var(--f-mono);font-size:.86em;background:var(--surface-2);
+  padding:1px 5px;border:1px solid var(--line);overflow-wrap:anywhere}
+ul,ol{margin:0 0 15px;padding-left:22px;max-width:72ch}
+li{margin-bottom:5px}
+li::marker{color:var(--brass)}
+
+.tw{overflow-x:auto;margin:0 0 20px;border:1px solid var(--line);background:var(--surface)}
+.seed table{min-width:720px;font-size:12.5px}
+.seed td,.seed th{padding:6px 10px;white-space:nowrap}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:560px}
+caption{text-align:left;font-family:var(--f-mono);font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--faint);padding:9px 13px;border-bottom:1px solid var(--line);
+  background:var(--surface-2)}
+th{text-align:left;font-family:var(--f-display);font-weight:600;text-transform:uppercase;
+  letter-spacing:.05em;font-size:12.5px;padding:8px 12px;border-bottom:1px solid var(--line-strong);
+  vertical-align:bottom;color:var(--ink)}
+td{padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2)}
+tbody tr:last-child td{border-bottom:0}
+td strong{color:var(--ink)}
+td.mono,th.mono{font-family:var(--f-mono);font-size:12px}
+td.num,th.num{text-align:right;font-family:var(--f-mono);font-size:12px;
+  font-variant-numeric:tabular-nums}
+
+pre{font-family:var(--f-mono);font-size:12.5px;line-height:1.6;background:var(--surface);
+  border:1px solid var(--line);border-left:3px solid var(--line-strong);
+  padding:14px 16px;overflow-x:auto;margin:0 0 20px;color:var(--ink-2)}
+pre code{background:none;border:0;padding:0;font-size:inherit;white-space:pre}
+pre .c{color:var(--faint)}
+pre .k{color:var(--brass);font-weight:700}
+
+.note{border-left:3px solid var(--line-strong);background:var(--surface);
+  padding:14px 18px;margin:0 0 20px;max-width:76ch}
+.note > .lbl{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  display:block;margin-bottom:6px;color:var(--muted)}
+.note p:last-child,.note ol:last-child,.note ul:last-child{margin-bottom:0}
+.note.eng{border-left-color:var(--info);background:var(--info-soft)}
+.note.eng > .lbl{color:var(--info)}
+.note.dec{border-left-color:var(--brass);background:var(--brass-soft)}
+.note.dec > .lbl{color:var(--brass)}
+.note.risk{border-left-color:var(--crit);background:var(--crit-soft)}
+.note.risk > .lbl{color:var(--crit)}
+
+.rules{counter-reset:r;list-style:none;padding:0;margin:0 0 18px}
+.rules li{counter-increment:r;display:grid;grid-template-columns:30px 1fr;gap:12px;
+  padding:12px 0;border-bottom:1px solid var(--line);margin:0;max-width:76ch;font-size:14px}
+.rules li:last-child{border-bottom:0}
+.rules li::before{content:counter(r);font-family:var(--f-mono);font-size:12px;color:var(--brass);
+  padding-top:2px}
+.rules b{display:block;margin-bottom:2px}
+
+.foot{margin-top:60px;padding-top:20px;border-top:3px solid var(--ink);
+  font-size:12.5px;color:var(--muted);max-width:70ch}
+:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+<header class="doc-head">
+  <p class="eyebrow">Offcomfrt &middot; Athlete Program &middot; For engineering</p>
+  <h1>Domain Build Spec</h1>
+  <p class="dek">What the system is, not how to build it. The objects, their states, the rules that
+  aren't guessable from outside, and the values that must stay configurable. Stack, infrastructure
+  and patterns are yours to choose.</p>
+  <dl class="meta-grid">
+    <div><dt>Document</dt><dd>FM-OFC-03</dd></div>
+    <div><dt>Companion to</dt><dd>FM-OFC-01</dd></div>
+    <div><dt>Defines</dt><dd>The domain</dd></div>
+    <div><dt>Leaves to you</dt><dd>Everything else</dd></div>
+  </dl>
+</header>
+
+<section id="s0">
+<h2><span class="num">00</span><span>Read this first</span></h2>
+<p class="lede">This document assumes you know how to build a backend. It contains no advice about
+queues, migrations, caching or deployment. What it contains is the part you cannot infer: what an
+Offcomfrt athlete is, what happens to them, and the handful of rules that look arbitrary but are
+not.</p>
+<p>Three things are worth knowing before you read the object model.</p>
+<ul>
+<li><strong>The programme is still being designed.</strong> Every threshold, rate and reward in
+&sect;07 will change, probably more than once. They belong in configuration from the first commit.
+The <em>shape</em> below will not change.</li>
+<li><strong>The ladder counts down.</strong> Athletes go from Comfort Level - 5 to Zero Comfort.
+Seniority <em>ascends</em> as the displayed number <em>descends</em>. See &sect;02 and rule 2 in
+&sect;06.</li>
+<li><strong>Two things are harder than they look</strong> &mdash; the ledger and the level engine.
+Everything else is CRUD over the model below. Build those two first and prove them before anything
+depends on them.</li>
+</ul>
+</section>
+
+<section id="s1">
+<h2><span class="num">01</span><span>The object model</span></h2>
+<p>Fourteen objects carry the domain. Listed below are the fields that mean something &mdash;
+identity, audit and timestamp columns are assumed and omitted.</p>
+
+<h3>People</h3>
+<div class="tw"><table class="tight">
+<thead><tr><th style="width:19%">Object</th><th style="width:26%">What it represents</th><th>Fields that carry meaning</th></tr></thead>
+<tbody>
+<tr><td class="mono"><strong>influencer</strong></td><td>A person in the programme, at any stage from applicant to discharged</td><td class="mono">athlete_no (human-readable, e.g. OFC-0417) &middot; status &middot; level_id &rarr; comfort_level &middot; xp_total &middot; coin_balance &middot; standing_score &middot; manager_id &middot; referred_by_id &middot; joined_at &middot; graduated_at &middot; level_since (drives min_days_in_previous) &middot; benefit_value_fy &middot; leaderboard_opt_out</td></tr>
+<tr><td class="mono"><strong>influencer_social</strong></td><td>One platform handle, with the audience numbers captured at a point in time</td><td class="mono">platform &middot; handle &middot; followers &middot; avg_views &middot; engagement_rate &middot; is_primary &middot; last_synced_at</td></tr>
+<tr><td class="mono"><strong>application</strong></td><td>A request to join, before an influencer record exists</td><td class="mono">payload jsonb &middot; email &middot; phone &middot; primary_handle &middot; auto_score &middot; status &middot; decision_reason &middot; influencer_id (set on approval)</td></tr>
+<tr><td class="mono"><strong>access_token</strong></td><td>Any athlete-facing link. One table, several scopes &mdash; do not build four token systems</td><td class="mono">influencer_id &middot; scope &middot; subject_id (assignment, shipment, or null) &middot; token_hash &middot; expires_at (null = permanent) &middot; single_use &middot; consumed_at &middot; revoked_at</td></tr>
+</tbody></table></div>
+
+<h3>The ladder</h3>
+<div class="tw"><table class="tight">
+<thead><tr><th style="width:19%">Object</th><th style="width:26%">What it represents</th><th>Fields that carry meaning</th></tr></thead>
+<tbody>
+<tr><td class="mono"><strong>comfort_level</strong></td><td>A rung. Reference data &mdash; exactly six rows, seeded in &sect;02</td><td class="mono"><strong>ordinal</strong> (unique, ascends with seniority) &middot; <strong>display_number</strong> (nullable) &middot; display_name &middot; min_xp &middot; min_standing &middot; min_days_in_previous &middot; required_task_codes[] &middot; requires_manual_approval &middot; seat_cap &middot; is_trial_level &middot; dial_segments_lit &middot; perks jsonb</td></tr>
+<tr><td class="mono"><strong>level_history</strong></td><td>Every movement between levels, ever. Append-only</td><td class="mono">influencer_id &middot; from_level_id &middot; to_level_id &middot; direction &middot; reason_code &middot; actor_id (null = engine) &middot; occurred_at</td></tr>
+<tr><td class="mono"><strong>ledger_entry</strong></td><td>The only mechanism by which XP or coins change. Append-only, never updated or deleted</td><td class="mono">influencer_id &middot; currency &middot; amount (signed) &middot; balance_after &middot; source_type &middot; source_id &middot; reason_code &middot; actor_id &middot; reverses_entry_id &middot; <strong>idempotency_key</strong> (unique)</td></tr>
+</tbody></table></div>
+
+<h3>Work</h3>
+<div class="tw"><table class="tight">
+<thead><tr><th style="width:19%">Object</th><th style="width:26%">What it represents</th><th>Fields that carry meaning</th></tr></thead>
+<tbody>
+<tr><td class="mono"><strong>task_template</strong></td><td>A reusable definition of work. Cloned and edited by staff; never created by a deploy</td><td class="mono">code &middot; title &middot; brief_md &middot; type &middot; platform &middot; xp_value &middot; coin_value &middot; due_days &middot; proof_type &middot; requires_disclosure &middot; repeatable &middot; cooldown_days &middot; monthly_cap &middot; level_gate_id &middot; is_trial_task &middot; is_active</td></tr>
+<tr><td class="mono"><strong>assignment</strong></td><td>One athlete's instance of a task template, with its own deadline and outcome</td><td class="mono">influencer_id &middot; task_template_id &middot; campaign_id &middot; status &middot; due_at &middot; submitted_at &middot; reviewed_at &middot; reviewer_id &middot; xp_awarded &middot; coin_awarded &middot; was_on_time &middot; attempt_no &middot; rejection_reason &middot; liveness_check_at</td></tr>
+<tr><td class="mono"><strong>submission</strong></td><td>One attempt at proving an assignment. Multiple per assignment when changes are requested</td><td class="mono">assignment_id &middot; attempt_no &middot; post_url &middot; url_hash (unique) &middot; posted_at &middot; caption (stored at submission time) &middot; file_ids[] &middot; asset_phash &middot; disclosure_found</td></tr>
+<tr><td class="mono"><strong>submission_metric</strong></td><td>One capture of a live post's numbers. Never overwritten &mdash; one row per capture</td><td class="mono">submission_id &middot; captured_at &middot; views &middot; likes &middot; comments &middot; shares &middot; saves &middot; still_live</td></tr>
+</tbody></table></div>
+
+<h3>Goods and money</h3>
+<div class="tw"><table class="tight">
+<thead><tr><th style="width:19%">Object</th><th style="width:26%">What it represents</th><th>Fields that carry meaning</th></tr></thead>
+<tbody>
+<tr><td class="mono"><strong>shipment_request</strong></td><td>An intent to send product. Separate from the physical shipment because the intent can be approved, amended or cancelled before anything moves</td><td class="mono">influencer_id &middot; reason &middot; status &middot; address_id &middot; requested_by &middot; approved_by &middot; declared_value &middot; items[] (variant_id, qty)</td></tr>
+<tr><td class="mono"><strong>shipment</strong></td><td>The physical consignment, once a courier has it</td><td class="mono">shipment_request_id &middot; shopify_order_id &middot; carrier &middot; awb &middot; status &middot; dispatched_at &middot; <strong>delivered_at</strong> (starts the trial clock) &middot; last_scan_at &middot; ndr_reason</td></tr>
+<tr><td class="mono"><strong>discount_code</strong></td><td>One athlete's personal code. Lives in Shopify; mirrored here for attribution</td><td class="mono">influencer_id &middot; code (unique) &middot; shopify_price_rule_id &middot; percent &middot; is_active</td></tr>
+<tr><td class="mono"><strong>attributed_order</strong></td><td>A Shopify order traced to an athlete</td><td class="mono">influencer_id &middot; shopify_order_id (unique) &middot; code_used &middot; attribution_method &middot; net_value &middot; placed_at &middot; is_cancelled &middot; refunded_amount &middot; is_self_purchase &middot; <strong>commission_rate</strong> (frozen at order time) &middot; commission_amount &middot; commission_status</td></tr>
+<tr><td class="mono"><strong>payout_method</strong> / <strong>payout</strong></td><td>Where money goes, and one transfer of it</td><td class="mono">method: upi_vpa &middot; vpa_verified_name &middot; name_match_status &middot; status &nbsp;|&nbsp; payout: period_start &middot; period_end &middot; gross &middot; tds_amount &middot; net &middot; status &middot; <strong>idempotency_key</strong> (unique on influencer + period) &middot; gateway_payout_id &middot; utr_reference</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="s2">
+<h2><span class="num">02</span><span>Reference data &mdash; the six levels</span></h2>
+<p>Seed exactly these six rows. <code>ordinal</code> is what every comparison uses;
+<code>display_number</code> only renders a label.</p>
+<div class="tw seed"><table class="tight">
+<caption>comfort_level &mdash; seed</caption>
+<thead><tr><th class="num">ordinal</th><th class="mono">code</th><th>display_name</th><th class="num">display_number</th><th class="num">min_xp</th><th class="num">min_standing</th><th class="num">min_days</th><th>manual</th><th class="num">seat_cap</th><th>trial</th><th class="num">dial</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="mono">CL5</td><td><strong>Comfort Level - 5</strong></td><td class="num">5</td><td class="num">0</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td>no</td><td class="num">&mdash;</td><td><strong>yes</strong></td><td class="num">5</td></tr>
+<tr><td class="num">2</td><td class="mono">CL4</td><td><strong>Comfort Level - 4</strong></td><td class="num">4</td><td class="num">100</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td>no</td><td class="num">&mdash;</td><td>no</td><td class="num">4</td></tr>
+<tr><td class="num">3</td><td class="mono">CL3</td><td><strong>Comfort Level - 3</strong></td><td class="num">3</td><td class="num">500</td><td class="num">60</td><td class="num">45</td><td>no</td><td class="num">&mdash;</td><td>no</td><td class="num">3</td></tr>
+<tr><td class="num">4</td><td class="mono">CL2</td><td><strong>Comfort Level - 2</strong></td><td class="num">2</td><td class="num">1500</td><td class="num">70</td><td class="num">120</td><td>no</td><td class="num">&mdash;</td><td>no</td><td class="num">2</td></tr>
+<tr><td class="num">5</td><td class="mono">CL1</td><td><strong>Comfort Level - 1</strong></td><td class="num">1</td><td class="num">4000</td><td class="num">75</td><td class="num">180</td><td><strong>yes</strong></td><td class="num">&mdash;</td><td>no</td><td class="num">1</td></tr>
+<tr><td class="num">6</td><td class="mono">ZERO</td><td><strong>Zero Comfort</strong></td><td class="num">NULL</td><td class="num">10000</td><td class="num">80</td><td class="num">365</td><td><strong>yes</strong></td><td class="num">10</td><td>no</td><td class="num">0</td></tr>
+</tbody></table></div>
+<div class="note risk"><span class="lbl">The mistake this table exists to prevent</span>
+<p><code>display_number</code> runs 5&rarr;1 and then goes <code>NULL</code>. <code>ordinal</code> runs
+1&rarr;6. A senior athlete has a <em>higher</em> ordinal and a <em>lower</em> display number. Any
+expression comparing display numbers to establish seniority is inverted and will promote and demote
+the wrong people silently. Put that sentence in the column comment.</p></div>
+</section>
+
+<section id="s3">
+<h2><span class="num">03</span><span>Enumerations</span></h2>
+<pre><code><span class="k">influencer.status</span>
+  APPLIED · SCREENING · REJECTED · ON_TRIAL · TRIAL_LAPSED
+  ACTIVE · RESERVE · SUSPENDED · DISCHARGED · BLACKLISTED
+
+<span class="k">assignment.status</span>
+  ASSIGNED · IN_PROGRESS · SUBMITTED · UNDER_REVIEW · CHANGES_REQUESTED
+  APPROVED · VERIFIED_LIVE · REJECTED · EXPIRED · CLAWED_BACK
+
+<span class="k">shipment_request.status</span>
+  REQUESTED · APPROVED · ADDRESS_CONFIRMED · PACKED · DISPATCHED
+  IN_TRANSIT · DELIVERED · NDR · RTO · LOST · CANCELLED
+
+<span class="k">shipment_request.reason</span>
+  SEEDING · PROMOTION_PRIZE · CAMPAIGN · REDEMPTION · REPLACEMENT
+
+<span class="k">task_template.type</span>
+  CONTENT_POST · UGC_RAW · REVIEW · SALES · REFERRAL
+  EVENT · SURVEY · STREAK · CHALLENGE
+
+<span class="k">ledger_entry.currency</span>      XP · COIN
+<span class="k">ledger_entry.source_type</span>   ASSIGNMENT · ORDER · REFERRAL · MANUAL
+                           REVERSAL · EXPIRY · REDEMPTION
+
+<span class="k">level_history.direction</span>    PROMOTE · DEMOTE · OVERRIDE
+
+<span class="k">access_token.scope</span>         PROGRESS · SUBMISSION · ADDRESS · ONBOARDING
+
+<span class="k">payout_method.status</span>       PENDING · VERIFIED · REJECTED
+<span class="k">payout_method.name_match</span>   MATCH · PARTIAL · MISMATCH
+<span class="k">payout.status</span>              DRAFT · QUEUED · SENT · FAILED · REVERSED
+
+<span class="k">attribution_method</span>         CODE · UTM · LINK
+</code></pre>
+</section>
+
+<section id="s4">
+<h2><span class="num">04</span><span>The three counters</span></h2>
+<p>Three numbers, stored separately, doing different jobs. Merging any two of them breaks the
+programme in a way that is expensive to unpick later.</p>
+<div class="tw"><table class="tight">
+<thead><tr><th style="width:14%">Counter</th><th style="width:20%">Where it lives</th><th style="width:22%">What it drives</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td><strong>XP</strong></td><td class="mono">ledger_entry (XP)<br>cached on influencer</td><td>Comfort Level, and nothing else</td><td>Monotonic except for clawbacks and refund reversals. Spending never reduces it.</td></tr>
+<tr><td><strong>Coins</strong></td><td class="mono">ledger_entry (COIN)<br>cached on influencer</td><td>Redemptions only</td><td>Rises and falls. Same ledger, different currency. Never affects level.</td></tr>
+<tr><td><strong>Standing</strong></td><td class="mono">influencer.standing_score</td><td>Promotion eligibility, seeding priority, campaign selection</td><td>Derived, 0&ndash;100, recomputed from a rolling 90-day window. Never stored in the ledger. Never pushes a level down.</td></tr>
+</tbody></table></div>
+<pre><code><span class="c">// Standing — recompute nightly and on every assignment close</span>
+standing = 100 * ( 0.40*on_time_rate + 0.30*completion_rate
+                 + 0.20*approval_rate + 0.10*response_rate )
+
+<span class="c">// no history      -> 70 (neutral)</span>
+<span class="c">// &lt;3 closed items  -> blend toward 70 to damp small-sample noise</span>
+<span class="c">// zero activity    -> decay 5 per 30 days, floor 0</span>
+</code></pre>
+</section>
+
+<section id="s5">
+<h2><span class="num">05</span><span>Lifecycles</span></h2>
+<p>Three state machines. Every transition is validated; nothing sets a status column directly.</p>
+
+<h3>Influencer</h3>
+<div class="tw"><table class="tight">
+<thead><tr><th class="mono" style="width:21%">From</th><th class="mono" style="width:19%">To</th><th style="width:22%">Trigger</th><th>Side effects</th></tr></thead>
+<tbody>
+<tr><td class="mono">APPLIED</td><td class="mono">SCREENING</td><td>Picked up for review</td><td>&mdash;</td></tr>
+<tr><td class="mono">SCREENING</td><td class="mono">REJECTED</td><td>Declined, with reason code</td><td>Decline message</td></tr>
+<tr><td class="mono">SCREENING</td><td class="mono">ON_TRIAL</td><td>Approved</td><td>Create influencer at ordinal 1 &middot; issue discount code &middot; issue PROGRESS + ONBOARDING tokens &middot; raise starter-kit shipment request &middot; welcome message</td></tr>
+<tr><td class="mono">ON_TRIAL</td><td class="mono">ACTIVE</td><td>All trial tasks approved and XP &ge; threshold</td><td>Promote to ordinal 2 &middot; everything in <code>promote()</code></td></tr>
+<tr><td class="mono">ON_TRIAL</td><td class="mono">TRIAL_LAPSED</td><td>Trial window expired</td><td>Freeze assignments &middot; flag for manager</td></tr>
+<tr><td class="mono">TRIAL_LAPSED</td><td class="mono">ON_TRIAL</td><td>Manager grants an extension &mdash; <strong>once only</strong></td><td>New due dates</td></tr>
+<tr><td class="mono">TRIAL_LAPSED</td><td class="mono">DISCHARGED</td><td>Extension expired or not granted</td><td>Revoke tokens &middot; deactivate code</td></tr>
+<tr><td class="mono">ACTIVE</td><td class="mono">RESERVE</td><td>No approved submission in the inactivity window</td><td>Deactivate code &middot; pause seeding and commission &middot; <strong>retain level</strong></td></tr>
+<tr><td class="mono">RESERVE</td><td class="mono">ACTIVE</td><td>Manual reactivation, or an approved submission</td><td>Reactivate code &middot; level returns unchanged</td></tr>
+<tr><td class="mono">ACTIVE</td><td class="mono">SUSPENDED</td><td>Guideline breach</td><td>Freeze assignments &middot; disable code &middot; retain level</td></tr>
+<tr><td class="mono">SUSPENDED</td><td class="mono">ACTIVE | DISCHARGED</td><td>Review concluded</td><td>Per outcome</td></tr>
+<tr><td class="mono">RESERVE</td><td class="mono">DISCHARGED</td><td>Reserve window exceeded</td><td>Revoke tokens &middot; delete code &middot; freeze XP</td></tr>
+<tr><td class="mono">DISCHARGED</td><td class="mono">BLACKLISTED</td><td>Fraud finding</td><td>Reverse fraudulent XP &middot; withhold commission &middot; block re-application on email, phone and handle</td></tr>
+</tbody></table></div>
+<p><strong>Level drops only for violations, never for silence.</strong> <code>RESERVE</code> and
+<code>SUSPENDED</code> both retain <code>level_id</code> untouched.</p>
+
+<h3>Assignment</h3>
+<div class="tw"><table class="tight">
+<thead><tr><th class="mono" style="width:21%">From</th><th class="mono" style="width:19%">To</th><th style="width:22%">Trigger</th><th>Side effects</th></tr></thead>
+<tbody>
+<tr><td class="mono">ASSIGNED</td><td class="mono">IN_PROGRESS</td><td>Submission token first opened</td><td>&mdash;</td></tr>
+<tr><td class="mono">IN_PROGRESS</td><td class="mono">SUBMITTED</td><td>Proof supplied</td><td>Create submission &middot; duplicate-hash check</td></tr>
+<tr><td class="mono">SUBMITTED</td><td class="mono">UNDER_REVIEW</td><td>Reviewer opens it</td><td>&mdash;</td></tr>
+<tr><td class="mono">UNDER_REVIEW</td><td class="mono">APPROVED</td><td>Reviewer approves</td><td><strong>Award XP via the ledger</strong> &middot; apply on-time bonus or late penalty &middot; enqueue level evaluation &middot; schedule liveness checks &middot; notify</td></tr>
+<tr><td class="mono">UNDER_REVIEW</td><td class="mono">CHANGES_REQUESTED</td><td>Fixable issues</td><td>New due date &middot; reason text sent verbatim to the athlete</td></tr>
+<tr><td class="mono">CHANGES_REQUESTED</td><td class="mono">SUBMITTED</td><td>Resubmitted</td><td>attempt_no + 1 &middot; on-time bonus forfeited</td></tr>
+<tr><td class="mono">UNDER_REVIEW</td><td class="mono">REJECTED</td><td>Unusable</td><td>No XP &middot; Standing affected</td></tr>
+<tr><td class="mono">ASSIGNED | IN_PROGRESS</td><td class="mono">EXPIRED</td><td>Past due with nothing submitted</td><td>Standing affected</td></tr>
+<tr><td class="mono">APPROVED</td><td class="mono">VERIFIED_LIVE</td><td>Still live at the liveness horizon</td><td>XP becomes permanent</td></tr>
+<tr><td class="mono">APPROVED</td><td class="mono">CLAWED_BACK</td><td>Post removed before the horizon</td><td><strong>Reversing ledger entry</strong> &middot; recompute Standing &middot; re-evaluate level</td></tr>
+</tbody></table></div>
+<div class="note eng"><span class="lbl">The only two places XP moves</span>
+<p><code>&rarr; APPROVED</code> creates it; <code>&rarr; CLAWED_BACK</code> reverses it. No other
+transition in this machine touches a balance. The same is true of the order flow: a paid attributed
+order creates, a refund or cancellation reverses.</p></div>
+
+<h3>Shipment request</h3>
+<p>Linear with exceptions: <code>REQUESTED &rarr; APPROVED &rarr; ADDRESS_CONFIRMED &rarr; PACKED
+&rarr; DISPATCHED &rarr; IN_TRANSIT &rarr; DELIVERED</code>, with <code>CANCELLED</code> available
+before dispatch, and <code>NDR &rarr; RTO | DELIVERED</code> and <code>LOST</code> after it.</p>
+<p><strong><code>DELIVERED</code> is load-bearing.</strong> It stamps
+<code>shipment.delivered_at</code>, which starts the trial clock and anchors every trial deadline.
+Approval date is not used for this anywhere &mdash; a slow courier must never shorten an athlete's
+window.</p>
+</section>
+
+<section id="s6">
+<h2><span class="num">06</span><span>Domain invariants</span></h2>
+<p>Eight rules. Each one is nearly free to honour now and expensive to retrofit later. They belong
+in the README and the review checklist.</p>
+<ol class="rules">
+<li><b>XP and coins change only by inserting a ledger row.</b> Cached totals on <code>influencer</code> are written in the same transaction and are reconstructible by replay. Nothing increments them directly.</li>
+<li><b>Compare <code>ordinal</code>, never <code>display_number</code>.</b> Seniority ascends while the label descends. This is the single most likely source of a silent, serious bug in this system.</li>
+<li><b>The ledger is append-only.</b> Corrections are new rows carrying <code>reverses_entry_id</code>. Nothing is edited or deleted, including by an admin.</li>
+<li><b>Level is derived, never assigned.</b> Only the level engine writes <code>influencer.level_id</code>, and every write pairs with a <code>level_history</code> row. Admin overrides use the same path with <code>direction = OVERRIDE</code> and a mandatory reason.</li>
+<li><b>Promote one level per evaluation, then re-enqueue.</b> An athlete who crosses two thresholds at once earns two promotions, two history rows, two prizes and two messages. Jumping swallows one the athlete earned.</li>
+<li><b>Commission is frozen at order time.</b> <code>attributed_order.commission_rate</code> is stored on the row. Recalculating historical commission after a promotion makes reconciliation impossible.</li>
+<li><b>Everything inbound is idempotent on the sender's event id</b> &mdash; enforced by a unique constraint, not a lookup-then-insert. This applies to Shopify, the courier and the payment gateway alike.</li>
+<li><b>Athlete-facing routes serialise through a whitelist.</b> A field added to a model later must not be able to appear on a public page by accident. See &sect;09.</li>
+</ol>
+</section>
+
+<section id="s7">
+<h2><span class="num">07</span><span>Configuration, not code</span></h2>
+<p>Every value below is still under discussion and will change. None of them belong in a source file,
+a constant, or a migration default. Expose them in a settings store with an admin screen.</p>
+<div class="tw"><table class="tight">
+<caption>Settings keys &mdash; values are today's proposal, not a decision</caption>
+<thead><tr><th class="mono" style="width:38%">Key</th><th class="num">Proposed</th><th>Governs</th></tr></thead>
+<tbody>
+<tr><td class="mono">trial.window_days</td><td class="num">30</td><td>Length of the Comfort Level - 5 trial, from delivery</td></tr>
+<tr><td class="mono">trial.extension_days</td><td class="num">15</td><td>Single permitted extension</td></tr>
+<tr><td class="mono">trial.nudge_days</td><td class="num">7,14,21,27</td><td>Reminder schedule</td></tr>
+<tr><td class="mono">xp.&lt;task_type&gt;</td><td class="num">varies</td><td>Base XP per task type &mdash; one key per type</td></tr>
+<tr><td class="mono">xp.on_time_bonus_pct</td><td class="num">+20</td><td>Applied to base XP</td></tr>
+<tr><td class="mono">xp.late_penalty_pct</td><td class="num">&minus;25</td><td>Applied to base XP</td></tr>
+<tr><td class="mono">xp.per_order</td><td class="num">10</td><td>Per verified attributed order</td></tr>
+<tr><td class="mono">xp.per_1000_revenue</td><td class="num">20</td><td>Per &#8377;1,000 net attributed revenue</td></tr>
+<tr><td class="mono">xp.manual_approval_threshold</td><td class="num">100</td><td>Single awards above this need a second admin</td></tr>
+<tr><td class="mono">level.&lt;code&gt;.min_xp</td><td class="num">&sect;02</td><td>Promotion thresholds &mdash; editable per level</td></tr>
+<tr><td class="mono">level.&lt;code&gt;.discount_pct</td><td class="num">15&ndash;45</td><td>Personal discount by level</td></tr>
+<tr><td class="mono">level.&lt;code&gt;.commission_pct</td><td class="num">5&ndash;20</td><td>Commission by level</td></tr>
+<tr><td class="mono">inactivity.at_risk_days</td><td class="num">45</td><td>Comfort Creep flag</td></tr>
+<tr><td class="mono">inactivity.reserve_days</td><td class="num">90</td><td>Move to Reserve</td></tr>
+<tr><td class="mono">inactivity.discharge_days</td><td class="num">180</td><td>Discharge from Reserve</td></tr>
+<tr><td class="mono">liveness.horizon_days</td><td class="num">30</td><td>How long a post must stay up for XP to become permanent</td></tr>
+<tr><td class="mono">leaderboard.visible_count</td><td class="num">10</td><td>Public positions shown</td></tr>
+<tr><td class="mono">leaderboard.period</td><td class="num">monthly</td><td>Reset cadence</td></tr>
+<tr><td class="mono">payout.minimum_amount</td><td class="num">500</td><td>Below this, roll over</td></tr>
+<tr><td class="mono">payout.second_approval_above</td><td class="num">TBD</td><td>Dual-approval threshold</td></tr>
+<tr><td class="mono">messaging.quiet_hours</td><td class="num">21:00&ndash;09:00</td><td>IST. No automated sends inside</td></tr>
+<tr><td class="mono">messaging.daily_cap</td><td class="num">2</td><td>Automated messages per athlete per day</td></tr>
+</tbody></table></div>
+<div class="note dec"><span class="lbl">Test for whether this is done right</span>
+<p>Growth should be able to change the XP for a Reel, move a promotion threshold, and shift the
+inactivity window &mdash; all without a deploy, and with the change recorded against a user in the
+audit log. If any of those needs an engineer, the settings layer is incomplete.</p></div>
+</section>
+
+<section id="s8">
+<h2><span class="num">08</span><span>Service boundaries worth drawing now</span></h2>
+<p>Not a prescription for how to structure the codebase &mdash; just the seams the domain actually
+has. Seven contracts; everything else can be organised however you prefer.</p>
+<pre><code><span class="k">LedgerService</span>
+  award(influencerId, currency, amount, sourceType, sourceId, idempotencyKey) -> Entry | NoOp
+  reverse(entryId, reasonCode, actorId) -> Entry
+  balance(influencerId, currency) -> int
+  replay(influencerId) -> int            <span class="c">// reconciliation + tests</span>
+
+<span class="k">LevelEngine</span>
+  evaluate(influencerId) -> Promoted | Candidate | Unchanged
+  promote(influencerId, toLevelId, reasonCode, actorId?) -> void
+  override(influencerId, toLevelId, reasonCode, actorId) -> void
+
+<span class="k">TransitionService</span>
+  move(entityType, id, toState, actor, reasonCode?) -> void
+  <span class="c">// validates against §05; illegal transition -> 422, never a silent write</span>
+
+<span class="k">TokenService</span>
+  issue(scope, influencerId, subjectId?, ttl?) -> rawToken   <span class="c">// stores hash only</span>
+  resolve(rawToken) -> {scope, influencerId, subjectId} | null
+  rotate(influencerId, scope) -> rawToken
+  revokeAll(influencerId) -> void         <span class="c">// called on discharge, same txn</span>
+
+<span class="k">StandingService</span>
+  recompute(influencerId) -> int
+
+<span class="k">AttributionService</span>
+  ingestOrder(payload) -> AttributedOrder | null
+  reverseOrder(shopifyOrderId, refundedAmount) -> void
+
+<span class="k">PayoutService</span>
+  buildBatch(periodStart, periodEnd) -> Batch   <span class="c">// VERIFIED methods only</span>
+  send(batch) -> void                           <span class="c">// idempotent per (influencer, period)</span>
+</code></pre>
+<div class="note eng"><span class="lbl">Stub these behind interfaces</span>
+<p>Four external dependencies that should not block domain work. Define the interface, return fixtures,
+implement when the accounts are live: <strong>WhatsApp sender</strong> (templates are pending Meta
+approval), <strong>Shopify client</strong> (codes, draft orders, fulfilment), <strong>platform metrics
+fetcher</strong> (Instagram and YouTube), <strong>VPA validator</strong> (gateway onboarding). The
+ledger, the level engine and every state machine can be built and fully tested without any of them.</p></div>
+</section>
+
+<section id="s9">
+<h2><span class="num">09</span><span>Exposure rules for athlete-facing routes</span></h2>
+<p>Athletes reach the system through unguessable links rather than accounts. Three constraints follow
+from that, and they are domain rules rather than infrastructure preferences.</p>
+<div class="tw"><table class="tight">
+<thead><tr><th class="mono" style="width:21%">Scope</th><th style="width:21%">Lifetime</th><th>May expose</th></tr></thead>
+<tbody>
+<tr><td class="mono">PROGRESS</td><td><strong>Permanent</strong>, rotatable, revoked on discharge</td><td>Comfort Level, XP, progress to next level, open task titles and deadlines, the ladder, leaderboard position. <strong>Never</strong>: address, phone, email, bank or UPI detail, KYC, order history, or any rupee amount.</td></tr>
+<tr><td class="mono">SUBMISSION</td><td>Until <code>due_at</code> + 14 days; reusable while the assignment is open</td><td>One assignment's brief, deadline and submission form. Nothing about any other assignment.</td></tr>
+<tr><td class="mono">ADDRESS</td><td>Single use, 7 days</td><td>One shipment request's address and size picker.</td></tr>
+<tr><td class="mono">ONBOARDING</td><td>Single use, 14 days, dies on completion</td><td>Profile, socials, terms, KYC upload.</td></tr>
+</tbody></table></div>
+<p>A token grants exactly its own scope. Possession of one must never reveal another athlete's data,
+another assignment, or a field outside the list above. Implement the PROGRESS payload as an explicit
+field whitelist so that adding a column to <code>influencer</code> later cannot leak it.</p>
+<p><strong>Anything financial requires a step-up</strong> &mdash; a one-time code to the registered
+phone, not a permanent link. That applies whenever earnings, payouts or payout methods become
+visible to athletes.</p>
+</section>
+
+<section id="s10">
+<h2><span class="num">10</span><span>Undecided &mdash; do not model around guesses</span></h2>
+<p>Four open questions. Each one has a shape in the model above that will hold either way, so none of
+them block you &mdash; but do not infer an answer and bake it in.</p>
+<div class="tw"><table class="tight">
+<thead><tr><th style="width:34%">Open</th><th>What to do meanwhile</th></tr></thead>
+<tbody>
+<tr><td><strong>Do coins convert to cash, or only to product?</strong></td><td>Build the coin ledger either way. Leave redemption fulfilment as a shipment request; do not build cash-out until this is settled.</td></tr>
+<tr><td><strong>Commission as a percentage, or flat per order?</strong></td><td><code>commission_rate</code> plus <code>commission_amount</code> on the order row supports both. Store the computed amount; do not derive it at read time.</td></tr>
+<tr><td><strong>Are trial tasks identical for everyone, or scaled by audience size?</strong></td><td><code>task_template.level_gate_id</code> exists; an audience-band variant would be a second nullable gate column. Do not assume a single global trial set in your queries.</td></tr>
+<tr><td><strong>Who reviews, and what is the turnaround promise?</strong></td><td>Affects reviewer seats and routing, not the model. Build the review queue unassigned for now.</td></tr>
+</tbody></table></div>
+</section>
+
+<div class="foot">
+<p><strong>FM-OFC-03 &middot; Domain Build Spec &middot; companion to FM-OFC-01.</strong> Section
+references point at the field manual, which carries the reasoning behind these rules, the admin
+screens, the Shopify and payout flows, and the compliance notes. This document is the structure;
+that one is the why.</p>
+</div>
+
+</div>

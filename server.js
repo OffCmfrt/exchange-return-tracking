@@ -16613,6 +16613,11 @@ app.get('/api/tech-team/my-stats', authenticateTeamMember, async (req, res) => {
 
 // ==================== ERROR HANDLING ====================
 
+// ==================== ATHLETE PROGRAM (FM-OFC-03) ====================
+const mountAthleteRoutes = require('./services/athlete-program/routes');
+mountAthleteRoutes(app);
+console.log('🏅 Athlete Program routes mounted');
+
 // 404 handler
 app.use((req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });

@@ -1,0 +1,323 @@
+{% layout none %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Join the Program — Offcomfrt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#000;--surface:#080808;--surface-2:#0f0f0f;--surface-3:#161616;
+  --border:#1a1a1a;--border-hover:#2a2a2a;
+  --text:#fff;--text-2:#b0b0b0;--muted:#555;--faint:#333;
+  --success:#22c55e;--danger:#ef4444;
+  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --transition:.3s cubic-bezier(.22,.61,.36,1);
+}
+html,body{background:var(--bg);color:var(--text);font-family:var(--font);
+  -webkit-font-smoothing:antialiased;font-size:15px;line-height:1.6;min-height:100vh}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes expand{from{max-height:0;opacity:0}to{max-height:600px;opacity:1}}
+@keyframes barFill{from{width:0}to{width:var(--w)}}
+
+/* SHELL */
+.j-wrap{max-width:880px;margin:0 auto;padding:0 2rem 6rem}
+
+/* HERO */
+.j-hero{padding:5rem 0 3rem;text-align:center;animation:fadeUp .8s ease both}
+.j-eyebrow{font-size:.6rem;letter-spacing:.5em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;margin-bottom:1.5rem}
+.j-hero h1{font-size:clamp(2.5rem,6vw,4.5rem);font-weight:900;line-height:1;
+  letter-spacing:-.03em;margin-bottom:1.5rem}
+.j-hero h1 em{font-style:italic;font-weight:400;color:var(--text-2)}
+.j-hero p{max-width:520px;margin:0 auto;color:var(--muted);font-size:1rem;line-height:1.7}
+
+/* LADDER VISUAL */
+.j-ladder{display:flex;flex-direction:column;gap:2px;margin:3rem 0;
+  animation:fadeUp .8s ease .2s both}
+.j-ladder-row{display:grid;grid-template-columns:40px 1fr 80px;gap:1rem;
+  align-items:center;padding:.85rem 1.25rem;background:var(--surface);
+  border:1px solid var(--border);transition:all var(--transition)}
+.j-ladder-row:hover{border-color:var(--border-hover);background:var(--surface-2)}
+.j-ladder-num{font-family:var(--mono);font-size:1.4rem;font-weight:800;text-align:center;
+  color:var(--text)}
+.j-ladder-name{font-size:.85rem;font-weight:700;letter-spacing:.02em}
+.j-ladder-name .sub{font-size:.6rem;color:var(--muted);font-family:var(--mono);margin-top:.15rem}
+.j-ladder-xp{font-family:var(--mono);font-size:.65rem;color:var(--muted);text-align:right}
+
+/* BENEFITS */
+.j-benefits{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border);margin:3rem 0;
+  animation:fadeUp .8s ease .3s both}
+.j-benefit{background:var(--surface);padding:2rem 1.5rem;text-align:center}
+.j-benefit-icon{font-size:1.5rem;margin-bottom:.75rem;opacity:.6}
+.j-benefit h3{font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;
+  font-weight:700;margin-bottom:.5rem}
+.j-benefit p{font-size:.75rem;color:var(--muted);line-height:1.5}
+
+/* FORM */
+.j-form-section{animation:fadeUp .8s ease .4s both}
+.j-form-section h2{font-size:.6rem;letter-spacing:.25em;text-transform:uppercase;
+  font-weight:700;margin-bottom:1.5rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)}
+.j-form{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.j-field{display:flex;flex-direction:column;gap:.4rem}
+.j-field.full{grid-column:span 2}
+.j-field label{font-size:.55rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--muted);font-weight:600}
+.j-field input,.j-field select,.j-field textarea{
+  background:var(--surface);border:1px solid var(--border);color:var(--text);
+  padding:.75rem 1rem;font-size:.8rem;font-family:var(--font);outline:none;
+  transition:border-color var(--transition)}
+.j-field input:focus,.j-field select:focus,.j-field textarea:focus{border-color:var(--border-hover)}
+.j-field input::placeholder,.j-field textarea::placeholder{color:var(--faint)}
+.j-field textarea{resize:vertical;min-height:80px}
+.j-field select{cursor:pointer}
+.j-field select option{background:var(--surface);color:var(--text)}
+.j-field .hint{font-size:.6rem;color:var(--faint)}
+
+.j-submit-row{grid-column:span 2;display:flex;justify-content:space-between;
+  align-items:center;margin-top:1rem}
+.j-submit-btn{background:var(--text);color:var(--bg);border:none;padding:.85rem 3rem;
+  font-size:.65rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  font-family:var(--font);cursor:pointer;transition:all var(--transition)}
+.j-submit-btn:hover{background:var(--text-2);transform:translateY(-1px)}
+.j-submit-btn:disabled{opacity:.3;cursor:not-allowed;transform:none}
+.j-submit-note{font-size:.6rem;color:var(--faint);max-width:280px}
+
+/* SUCCESS */
+.j-success{display:none;text-align:center;padding:4rem 2rem;animation:fadeUp .6s ease both}
+.j-success.active{display:block}
+.j-success-icon{width:64px;height:64px;border:2px solid var(--success);margin:0 auto 1.5rem;
+  display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:var(--success)}
+.j-success h2{font-size:1.2rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.75rem}
+.j-success p{color:var(--muted);max-width:420px;margin:0 auto 1rem;font-size:.85rem;line-height:1.6}
+.j-success .ref{font-family:var(--mono);font-size:.7rem;color:var(--text-2);
+  padding:.5rem 1rem;border:1px solid var(--border);display:inline-block;margin-top:.5rem}
+
+/* ERROR */
+.j-form-err{grid-column:span 2;font-size:.7rem;color:var(--danger);min-height:1.2em}
+
+/* LOADING */
+.j-loading{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1rem;z-index:999;transition:opacity .4s}
+.j-loading.out{opacity:0;pointer-events:none}
+.j-spinner{width:28px;height:28px;border:1.5px solid var(--border);border-top-color:var(--text);
+  border-radius:50%;animation:spin .7s linear infinite}
+.j-loading p{font-size:.55rem;letter-spacing:.3em;text-transform:uppercase;color:var(--muted)}
+
+/* RESPONSIVE */
+@media(max-width:640px){
+  .j-form{grid-template-columns:1fr}
+  .j-field.full,.j-submit-row{grid-column:span 1}
+  .j-submit-row{flex-direction:column;gap:1rem}
+  .j-benefits{grid-template-columns:1fr}
+  .j-ladder-row{grid-template-columns:30px 1fr 60px}
+}
+</style>
+</head>
+<body>
+
+<div class="j-loading" id="loading">
+  <div class="j-spinner"></div>
+  <p>Loading</p>
+</div>
+
+<div class="j-wrap">
+  <!-- HERO -->
+  <header class="j-hero">
+    <p class="j-eyebrow">Offcomfrt &middot; Athlete Program</p>
+    <h1>Join the <em>Ladder</em></h1>
+    <p>Six levels. One path upward. Complete tasks, earn XP, climb from Comfort Level 5 to Zero Comfort — the highest rank an athlete can achieve.</p>
+  </header>
+
+  <!-- LADDER VISUAL -->
+  <div class="j-ladder">
+    <div class="j-ladder-row">
+      <div class="j-ladder-num">5</div>
+      <div class="j-ladder-name">Comfort Level - 5<div class="sub">Entry — Trial begins here</div></div>
+      <div class="j-ladder-xp">0 XP</div>
+    </div>
+    <div class="j-ladder-row">
+      <div class="j-ladder-num">4</div>
+      <div class="j-ladder-name">Comfort Level - 4<div class="sub">100 XP to unlock</div></div>
+      <div class="j-ladder-xp">100 XP</div>
+    </div>
+    <div class="j-ladder-row">
+      <div class="j-ladder-num">3</div>
+      <div class="j-ladder-name">Comfort Level - 3<div class="sub">500 XP + 60 standing + 45 days</div></div>
+      <div class="j-ladder-xp">500 XP</div>
+    </div>
+    <div class="j-ladder-row">
+      <div class="j-ladder-num">2</div>
+      <div class="j-ladder-name">Comfort Level - 2<div class="sub">1,500 XP + 70 standing + 120 days</div></div>
+      <div class="j-ladder-xp">1,500 XP</div>
+    </div>
+    <div class="j-ladder-row">
+      <div class="j-ladder-num">1</div>
+      <div class="j-ladder-name">Comfort Level - 1<div class="sub">4,000 XP + 75 standing + 180 days</div></div>
+      <div class="j-ladder-xp">4,000 XP</div>
+    </div>
+    <div class="j-ladder-row" style="border-color:var(--border-hover)">
+      <div class="j-ladder-num" style="color:var(--text)">&#8709;</div>
+      <div class="j-ladder-name">Zero Comfort<div class="sub">10,000 XP + 80 standing + 365 days &middot; 10 seats</div></div>
+      <div class="j-ladder-xp">10,000 XP</div>
+    </div>
+  </div>
+
+  <!-- BENEFITS -->
+  <div class="j-benefits">
+    <div class="j-benefit">
+      <div class="j-benefit-icon">&#9670;</div>
+      <h3>Earn XP</h3>
+      <p>Complete tasks, create content, drive sales. Every action earns experience points that push you up the ladder.</p>
+    </div>
+    <div class="j-benefit">
+      <div class="j-benefit-icon">&#9671;</div>
+      <h3>Unlock Perks</h3>
+      <p>Higher levels unlock bigger discounts, better commission rates, and priority access to campaigns and product seeding.</p>
+    </div>
+    <div class="j-benefit">
+      <div class="j-benefit-icon">&#9674;</div>
+      <h3>Build Standing</h3>
+      <p>Consistency matters. On-time delivery, quality submissions, and responsiveness build your standing score — your reputation.</p>
+    </div>
+  </div>
+
+  <!-- APPLICATION FORM -->
+  <div class="j-form-section" id="formSection">
+    <h2>Apply to Join</h2>
+    <form class="j-form" id="applyForm">
+      <div class="j-field">
+        <label>Full Name *</label>
+        <input type="text" name="name" placeholder="Your name" required>
+      </div>
+      <div class="j-field">
+        <label>Phone *</label>
+        <input type="tel" name="phone" placeholder="10-digit number" required pattern="[0-9]{10}">
+      </div>
+      <div class="j-field">
+        <label>Email *</label>
+        <input type="email" name="email" placeholder="you@email.com" required>
+      </div>
+      <div class="j-field">
+        <label>Primary Platform *</label>
+        <select name="platform" required>
+          <option value="">Select</option>
+          <option value="instagram">Instagram</option>
+          <option value="youtube">YouTube</option>
+          <option value="twitter">Twitter / X</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="j-field">
+        <label>Handle *</label>
+        <input type="text" name="handle" placeholder="@yourhandle" required>
+      </div>
+      <div class="j-field">
+        <label>Followers</label>
+        <input type="number" name="followers" placeholder="Approximate count" min="0">
+      </div>
+      <div class="j-field">
+        <label>City *</label>
+        <input type="text" name="city" placeholder="Your city" required>
+      </div>
+      <div class="j-field">
+        <label>Niche</label>
+        <select name="niche">
+          <option value="">Select</option>
+          <option value="fashion">Fashion</option>
+          <option value="lifestyle">Lifestyle</option>
+          <option value="fitness">Fitness</option>
+          <option value="beauty">Beauty</option>
+          <option value="tech">Tech</option>
+          <option value="food">Food</option>
+          <option value="travel">Travel</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="j-field full">
+        <label>Why do you want to join the Offcomfrt Athlete Program?</label>
+        <textarea name="why_join" placeholder="Tell us what excites you about this program..."></textarea>
+      </div>
+      <div class="j-submit-row">
+        <p class="j-submit-note">Your application will be reviewed by our team. We'll reach out within 48 hours.</p>
+        <button type="submit" class="j-submit-btn" id="submitBtn">Submit Application</button>
+      </div>
+      <div class="j-form-err" id="formErr"></div>
+    </form>
+  </div>
+
+  <!-- SUCCESS -->
+  <div class="j-success" id="successView">
+    <div class="j-success-icon">&#10003;</div>
+    <h2>Application Received</h2>
+    <p>Thank you for applying to the Offcomfrt Athlete Program. Our team will review your application and get back to you within 48 hours.</p>
+    <p>Keep an eye on your phone for updates.</p>
+    <div class="ref" id="successRef"></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('loading').classList.add('out');
+
+  document.getElementById('applyForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    const errEl = document.getElementById('formErr');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+    errEl.textContent = '';
+
+    const form = new FormData(e.target);
+    const data = Object.fromEntries(form.entries());
+
+    try {
+      const res = await fetch('/api/athlete/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.name,
+          phone: data.phone,
+          email: data.email,
+          platform: data.platform,
+          handle: data.handle,
+          followers: parseInt(data.followers) || 0,
+          city: data.city,
+          niche: data.niche,
+          why_join: data.why_join
+        })
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        document.getElementById('formSection').style.display = 'none';
+        document.querySelector('.j-ladder').style.display = 'none';
+        document.querySelector('.j-benefits').style.display = 'none';
+        const sv = document.getElementById('successView');
+        sv.classList.add('active');
+        document.getElementById('successRef').textContent = 'Ref: ' + (result.application_id || '—');
+      } else {
+        errEl.textContent = result.error || 'Something went wrong. Please try again.';
+        btn.disabled = false;
+        btn.textContent = 'Submit Application';
+      }
+    } catch (err) {
+      errEl.textContent = 'Network error. Please check your connection and try again.';
+      btn.disabled = false;
+      btn.textContent = 'Submit Application';
+    }
+  });
+});
+</script>
+</body>
+</html>

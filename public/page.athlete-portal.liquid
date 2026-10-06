@@ -1,0 +1,711 @@
+{% layout none %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athlete Portal — Offcomfrt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#000;--surface:#080808;--surface-2:#0f0f0f;--surface-3:#161616;
+  --border:#1a1a1a;--border-hover:#2a2a2a;--border-active:#3a3a3a;
+  --text:#fff;--text-2:#b0b0b0;--muted:#555;--faint:#333;
+  --accent:#fff;--accent-dim:rgba(255,255,255,.06);
+  --success:#22c55e;--danger:#ef4444;--warning:#f59e0b;
+  --xp-bar:#fff;--coin-glow:rgba(255,255,255,.15);
+  --radius:0px;--transition:.25s cubic-bezier(.4,0,.2,1);
+  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+html,body{background:var(--bg);color:var(--text);font-family:var(--font);
+  min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* ── LOADING ── */
+.ap-loading{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1.5rem;z-index:9999;transition:opacity .5s ease}
+.ap-loading.out{opacity:0;pointer-events:none}
+.ap-spinner{width:40px;height:40px;border:1.5px solid var(--border);border-top-color:var(--text);
+  border-radius:50%;animation:spin .8s linear infinite}
+.ap-loading p{font-size:.6rem;letter-spacing:.35em;text-transform:uppercase;color:var(--muted)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes levelUp{0%{transform:scale(1);filter:brightness(1)}
+  50%{transform:scale(1.08);filter:brightness(1.5)}100%{transform:scale(1);filter:brightness(1)}}
+@keyframes xpFill{from{width:0}to{width:var(--fill)}}
+@keyframes countUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes dialGlow{0%,100%{box-shadow:0 0 8px rgba(255,255,255,.1)}50%{box-shadow:0 0 20px rgba(255,255,255,.25)}}
+
+/* ── AUTH ── */
+.ap-auth{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;
+  justify-content:center;padding:2rem;z-index:800}
+.ap-auth-card{background:var(--surface);border:1px solid var(--border);width:100%;max-width:420px;
+  padding:3.5rem 3rem;text-align:center;animation:fadeUp .6s ease both}
+.ap-auth-logo{font-size:.55rem;letter-spacing:.5em;text-transform:uppercase;color:var(--muted);margin-bottom:3rem}
+.ap-auth-card h2{font-size:1.1rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:.75rem}
+.ap-auth-card .sub{font-size:.75rem;color:var(--muted);margin-bottom:2.5rem;line-height:1.6}
+.ap-input-group{text-align:left;margin-bottom:1.25rem}
+.ap-input-group label{display:block;font-size:.6rem;text-transform:uppercase;letter-spacing:.15em;
+  color:var(--muted);margin-bottom:.5rem;font-weight:600}
+.ap-input-group input{width:100%;background:var(--surface-2);border:1px solid var(--border);
+  color:var(--text);padding:.85rem 1rem;font-size:.85rem;font-family:var(--font);
+  transition:border-color var(--transition);outline:none}
+.ap-input-group input:focus{border-color:var(--border-active)}
+.ap-input-group input::placeholder{color:var(--faint)}
+.ap-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;
+  background:var(--text);color:var(--bg);border:none;padding:.85rem 2rem;
+  font-size:.7rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+  font-family:var(--font);cursor:pointer;transition:all var(--transition);width:100%}
+.ap-btn:hover{background:var(--text-2);transform:translateY(-1px)}
+.ap-btn:active{transform:translateY(0)}
+.ap-btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+.ap-btn-outline:hover{border-color:var(--text);background:var(--accent-dim)}
+.ap-auth-err{font-size:.7rem;color:var(--danger);margin-top:1rem;min-height:1.2em}
+.ap-auth-divider{display:flex;align-items:center;gap:1rem;margin:1.5rem 0;
+  font-size:.6rem;color:var(--faint);letter-spacing:.15em;text-transform:uppercase}
+.ap-auth-divider::before,.ap-auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── SHELL ── */
+.ap-shell{display:none;min-height:100vh}
+.ap-shell.active{display:block}
+.ap-nav{position:sticky;top:0;z-index:100;background:rgba(0,0,0,.85);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);padding:0 2rem}
+.ap-nav-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;
+  justify-content:space-between;height:56px}
+.ap-nav-brand{font-size:.55rem;letter-spacing:.45em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.ap-nav-tabs{display:flex;gap:0;height:100%}
+.ap-nav-tab{display:flex;align-items:center;padding:0 1.25rem;font-size:.6rem;font-weight:600;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--muted);cursor:pointer;
+  border-bottom:2px solid transparent;transition:all var(--transition);height:100%}
+.ap-nav-tab:hover{color:var(--text-2)}
+.ap-nav-tab.active{color:var(--text);border-bottom-color:var(--text)}
+.ap-nav-athlete{display:flex;align-items:center;gap:.75rem}
+.ap-nav-athlete-id{font-family:var(--mono);font-size:.65rem;color:var(--muted);letter-spacing:.05em}
+.ap-nav-level{display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;border:1.5px solid var(--border);font-family:var(--mono);
+  font-size:.7rem;font-weight:700;color:var(--text);position:relative}
+.ap-nav-level.lit{border-color:var(--text);animation:dialGlow 3s ease infinite}
+
+/* ── MAIN ── */
+.ap-main{max-width:1200px;margin:0 auto;padding:2rem}
+.ap-section{display:none;animation:fadeUp .4s ease both}
+.ap-section.active{display:block}
+
+/* ── PROGRESS DASHBOARD ── */
+.ap-hero{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:2rem}
+.ap-card{background:var(--surface);border:1px solid var(--border);padding:1.75rem;
+  position:relative;overflow:hidden;transition:border-color var(--transition)}
+.ap-card:hover{border-color:var(--border-hover)}
+.ap-card-label{font-size:.55rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
+.ap-card-label .dot{width:4px;height:4px;background:var(--muted);border-radius:50%}
+
+/* Level Card */
+.ap-level-card{grid-column:span 2;display:grid;grid-template-columns:auto 1fr auto;gap:2rem;align-items:center}
+.ap-level-dial{display:flex;gap:6px}
+.ap-level-seg{width:10px;height:40px;border:1px solid var(--border);transition:all .4s ease}
+.ap-level-seg.lit{background:var(--text);border-color:var(--text)}
+.ap-level-seg.lit:nth-child(1){animation:fadeIn .3s ease .1s both}
+.ap-level-seg.lit:nth-child(2){animation:fadeIn .3s ease .2s both}
+.ap-level-seg.lit:nth-child(3){animation:fadeIn .3s ease .3s both}
+.ap-level-seg.lit:nth-child(4){animation:fadeIn .3s ease .4s both}
+.ap-level-seg.lit:nth-child(5){animation:fadeIn .3s ease .5s both}
+.ap-level-info h3{font-size:1.5rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-bottom:.25rem}
+.ap-level-info .sub{font-size:.7rem;color:var(--muted);font-family:var(--mono)}
+.ap-level-next{text-align:right}
+.ap-level-next .label{font-size:.55rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);margin-bottom:.35rem}
+.ap-level-next .value{font-family:var(--mono);font-size:.85rem;font-weight:700}
+
+/* XP Bar */
+.ap-xp-wrap{margin-top:1.5rem}
+.ap-xp-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.6rem}
+.ap-xp-current{font-family:var(--mono);font-size:1.8rem;font-weight:800;letter-spacing:-.02em}
+.ap-xp-next{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+.ap-xp-bar{height:3px;background:var(--surface-3);position:relative;overflow:hidden}
+.ap-xp-fill{height:100%;background:var(--text);transition:width 1.2s cubic-bezier(.4,0,.2,1);
+  position:relative}
+.ap-xp-fill::after{content:'';position:absolute;right:0;top:-2px;bottom:-2px;width:2px;
+  background:var(--text);box-shadow:0 0 12px rgba(255,255,255,.6)}
+.ap-xp-pct{font-family:var(--mono);font-size:.6rem;color:var(--muted);margin-top:.4rem;text-align:right}
+
+/* Standing Gauge */
+.ap-standing{text-align:center}
+.ap-standing-ring{width:120px;height:120px;margin:0 auto 1rem;position:relative}
+.ap-standing-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ap-standing-ring circle{fill:none;stroke-width:2}
+.ap-standing-ring .track{stroke:var(--surface-3)}
+.ap-standing-ring .fill{stroke:var(--text);stroke-linecap:square;
+  transition:stroke-dashoffset 1.5s cubic-bezier(.4,0,.2,1)}
+.ap-standing-value{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center}
+.ap-standing-value .num{font-family:var(--mono);font-size:1.8rem;font-weight:800;line-height:1}
+.ap-standing-value .unit{font-size:.5rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-top:.25rem}
+
+/* Coin Balance */
+.ap-coins{display:flex;align-items:center;gap:1rem}
+.ap-coin-icon{width:48px;height:48px;border:1.5px solid var(--border);display:flex;
+  align-items:center;justify-content:center;font-family:var(--mono);font-size:1rem;font-weight:700}
+.ap-coin-amount{font-family:var(--mono);font-size:2rem;font-weight:800}
+.ap-coin-label{font-size:.6rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+
+/* ── TASKS ── */
+.ap-tasks-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem}
+.ap-tasks-header h2{font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;font-weight:700}
+.ap-tasks-count{font-family:var(--mono);font-size:.65rem;color:var(--muted)}
+.ap-task-grid{display:grid;gap:1px;background:var(--border);border:1px solid var(--border)}
+.ap-task{background:var(--surface);padding:1.5rem;display:grid;
+  grid-template-columns:1fr auto;gap:1rem;align-items:start;
+  transition:background var(--transition);cursor:pointer}
+.ap-task:hover{background:var(--surface-2)}
+.ap-task-type{font-size:.5rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;margin-bottom:.5rem;display:flex;align-items:center;gap:.5rem}
+.ap-task-type .badge{padding:2px 6px;border:1px solid var(--border);font-size:.45rem;letter-spacing:.15em}
+.ap-task-title{font-size:.95rem;font-weight:700;margin-bottom:.35rem;letter-spacing:.02em}
+.ap-task-brief{font-size:.75rem;color:var(--muted);line-height:1.5;margin-bottom:.75rem;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ap-task-meta{display:flex;gap:1.25rem}
+.ap-task-meta span{font-size:.6rem;color:var(--muted);font-family:var(--mono);
+  display:flex;align-items:center;gap:.35rem}
+.ap-task-meta .xp{color:var(--text);font-weight:700}
+.ap-task-status{text-align:right}
+.ap-task-status .badge{display:inline-block;padding:4px 10px;font-size:.5rem;font-weight:700;
+  letter-spacing:.15em;text-transform:uppercase;border:1px solid var(--border)}
+.ap-task-status .badge.assigned{color:var(--text);border-color:var(--border)}
+.ap-task-status .badge.in_progress{color:var(--warning);border-color:var(--warning)}
+.ap-task-status .badge.submitted{color:var(--text-2);border-color:var(--border-hover)}
+.ap-task-status .badge.approved{color:var(--success);border-color:var(--success)}
+.ap-task-status .badge.overdue{color:var(--danger);border-color:var(--danger)}
+.ap-task-deadline{font-family:var(--mono);font-size:.6rem;color:var(--muted);margin-top:.35rem}
+.ap-task-deadline.urgent{color:var(--danger);animation:pulse 1.5s ease infinite}
+
+/* ── LEADERBOARD ── */
+.ap-lb{border:1px solid var(--border)}
+.ap-lb-header{display:flex;justify-content:space-between;align-items:center;
+  padding:1rem 1.5rem;border-bottom:1px solid var(--border);background:var(--surface)}
+.ap-lb-header h2{font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;font-weight:700}
+.ap-lb-period{font-family:var(--mono);font-size:.6rem;color:var(--muted)}
+.ap-lb-row{display:grid;grid-template-columns:50px 1fr auto auto;gap:1rem;
+  align-items:center;padding:1rem 1.5rem;border-bottom:1px solid var(--border);
+  transition:background var(--transition)}
+.ap-lb-row:hover{background:var(--surface-2)}
+.ap-lb-row:last-child{border-bottom:none}
+.ap-lb-row.self{background:var(--accent-dim);border-left:2px solid var(--text)}
+.ap-lb-rank{font-family:var(--mono);font-size:.85rem;font-weight:700;text-align:center}
+.ap-lb-rank.gold{color:var(--text)}
+.ap-lb-name{font-size:.8rem;font-weight:600}
+.ap-lb-name .no{font-family:var(--mono);font-size:.6rem;color:var(--muted);margin-left:.5rem}
+.ap-lb-xp{font-family:var(--mono);font-size:.8rem;font-weight:700;text-align:right}
+.ap-lb-level{font-family:var(--mono);font-size:.6rem;color:var(--muted);
+  padding:2px 8px;border:1px solid var(--border);text-align:center}
+
+/* ── SUBMISSION MODAL ── */
+.ap-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;
+  display:none;align-items:center;justify-content:center;padding:2rem}
+.ap-modal-overlay.active{display:flex}
+.ap-modal{background:var(--surface);border:1px solid var(--border);width:100%;max-width:520px;
+  animation:fadeUp .3s ease both}
+.ap-modal-head{padding:1.5rem;border-bottom:1px solid var(--border);display:flex;
+  justify-content:space-between;align-items:center}
+.ap-modal-head h3{font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;font-weight:700}
+.ap-modal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.2rem;
+  padding:.25rem;transition:color var(--transition)}
+.ap-modal-close:hover{color:var(--text)}
+.ap-modal-body{padding:1.5rem}
+.ap-modal-body .ap-input-group{margin-bottom:1.25rem}
+.ap-modal-body textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);
+  color:var(--text);padding:.85rem 1rem;font-size:.8rem;font-family:var(--font);
+  resize:vertical;min-height:80px;outline:none;transition:border-color var(--transition)}
+.ap-modal-body textarea:focus{border-color:var(--border-active)}
+.ap-modal-foot{padding:1.25rem 1.5rem;border-top:1px solid var(--border);display:flex;gap:.75rem;justify-content:flex-end}
+
+/* ── EARNINGS (behind step-up) ── */
+.ap-earnings-lock{text-align:center;padding:4rem 2rem}
+.ap-earnings-lock .lock-icon{font-size:2rem;margin-bottom:1.5rem;opacity:.3}
+.ap-earnings-lock p{font-size:.8rem;color:var(--muted);max-width:360px;margin:0 auto 1.5rem;line-height:1.6}
+.ap-earnings-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border);margin-top:2rem}
+.ap-earnings-cell{background:var(--surface);padding:1.5rem;text-align:center}
+.ap-earnings-cell .val{font-family:var(--mono);font-size:1.3rem;font-weight:800;margin-bottom:.25rem}
+.ap-earnings-cell .lbl{font-size:.5rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  .ap-hero{grid-template-columns:1fr}
+  .ap-level-card{grid-template-columns:1fr;text-align:center}
+  .ap-level-dial{justify-content:center}
+  .ap-level-next{text-align:center}
+  .ap-nav-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .ap-nav-tab{padding:0 .75rem;font-size:.55rem;white-space:nowrap}
+  .ap-main{padding:1.25rem}
+  .ap-earnings-grid{grid-template-columns:1fr}
+  .ap-lb-row{grid-template-columns:40px 1fr auto}
+  .ap-lb-level{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="ap-loading" id="loading">
+  <div class="ap-spinner"></div>
+  <p>Initializing</p>
+</div>
+
+<!-- AUTH -->
+<div class="ap-auth" id="auth" style="display:none">
+  <div class="ap-auth-card">
+    <div class="ap-auth-logo">Offcomfrt Athlete Program</div>
+    <h2>Access Portal</h2>
+    <p class="sub">Enter your athlete access link to view your progress, tasks, and standing.</p>
+    <form id="authForm">
+      <div class="ap-input-group">
+        <label>Access Token</label>
+        <input type="password" id="tokenInput" placeholder="Paste your access link" autocomplete="off" required>
+      </div>
+      <button type="submit" class="ap-btn">Enter Portal</button>
+      <div class="ap-auth-err" id="authErr"></div>
+    </form>
+  </div>
+</div>
+
+<!-- SHELL -->
+<div class="ap-shell" id="shell">
+  <!-- NAV -->
+  <nav class="ap-nav">
+    <div class="ap-nav-inner">
+      <div class="ap-nav-brand">Offcomfrt Athletes</div>
+      <div class="ap-nav-tabs">
+        <div class="ap-nav-tab active" data-tab="progress">Progress</div>
+        <div class="ap-nav-tab" data-tab="tasks">Tasks</div>
+        <div class="ap-nav-tab" data-tab="leaderboard">Leaderboard</div>
+        <div class="ap-nav-tab" data-tab="earnings">Earnings</div>
+      </div>
+      <div class="ap-nav-athlete">
+        <span class="ap-nav-athlete-id" id="navAthleteNo"></span>
+        <div class="ap-nav-level" id="navLevelBadge" title=""></div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="ap-main">
+    <!-- ═══ PROGRESS ═══ -->
+    <div class="ap-section active" id="sec-progress">
+      <div class="ap-hero">
+        <!-- Level Card -->
+        <div class="ap-card ap-level-card">
+          <div class="ap-level-dial" id="levelDial"></div>
+          <div class="ap-level-info">
+            <h3 id="levelName">—</h3>
+            <div class="sub" id="levelSub">Ordinal —</div>
+          </div>
+          <div class="ap-level-next">
+            <div class="label">Next Level</div>
+            <div class="value" id="levelNext">—</div>
+          </div>
+        </div>
+
+        <!-- XP Card -->
+        <div class="ap-card">
+          <div class="ap-card-label"><span class="dot"></span> Experience Points</div>
+          <div class="ap-xp-wrap">
+            <div class="ap-xp-header">
+              <span class="ap-xp-current" id="xpCurrent">0</span>
+              <span class="ap-xp-next" id="xpNext">/ 100 XP</span>
+            </div>
+            <div class="ap-xp-bar">
+              <div class="ap-xp-fill" id="xpFill" style="width:0%"></div>
+            </div>
+            <div class="ap-xp-pct" id="xpPct">0%</div>
+          </div>
+        </div>
+
+        <!-- Standing Card -->
+        <div class="ap-card">
+          <div class="ap-card-label"><span class="dot"></span> Standing Score</div>
+          <div class="ap-standing">
+            <div class="ap-standing-ring">
+              <svg viewBox="0 0 120 120">
+                <circle class="track" cx="60" cy="60" r="52"/>
+                <circle class="fill" id="standingArc" cx="60" cy="60" r="52"
+                  stroke-dasharray="326.73" stroke-dashoffset="326.73"/>
+              </svg>
+              <div class="ap-standing-value">
+                <span class="num" id="standingNum">0</span>
+                <span class="unit">/ 100</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Coins Card -->
+        <div class="ap-card">
+          <div class="ap-card-label"><span class="dot"></span> Coin Balance</div>
+          <div class="ap-coins">
+            <div class="ap-coin-icon">C</div>
+            <div>
+              <div class="ap-coin-amount" id="coinAmount">0</div>
+              <div class="ap-coin-label">Available</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TASKS ═══ -->
+    <div class="ap-section" id="sec-tasks">
+      <div class="ap-tasks-header">
+        <h2>Active Assignments</h2>
+        <span class="ap-tasks-count" id="tasksCount">0 tasks</span>
+      </div>
+      <div class="ap-task-grid" id="taskGrid">
+        <!-- Tasks rendered by JS -->
+      </div>
+    </div>
+
+    <!-- ═══ LEADERBOARD ═══ -->
+    <div class="ap-section" id="sec-leaderboard">
+      <div class="ap-lb">
+        <div class="ap-lb-header">
+          <h2>Monthly Leaderboard</h2>
+          <span class="ap-lb-period" id="lbPeriod"></span>
+        </div>
+        <div id="lbRows"></div>
+      </div>
+    </div>
+
+    <!-- ═══ EARNINGS ═══ -->
+    <div class="ap-section" id="sec-earnings">
+      <div class="ap-earnings-lock" id="earningsLock">
+        <div class="lock-icon">&#9951;</div>
+        <p>Financial data requires identity verification. A one-time code will be sent to your registered phone.</p>
+        <button class="ap-btn" style="max-width:280px;margin:0 auto" id="unlockEarnings">Verify &amp; View Earnings</button>
+      </div>
+      <div id="earningsContent" style="display:none">
+        <div class="ap-earnings-grid">
+          <div class="ap-earnings-cell"><div class="val" id="earnTotal">₹0</div><div class="lbl">Total Earned</div></div>
+          <div class="ap-earnings-cell"><div class="val" id="earnPending">₹0</div><div class="lbl">Pending</div></div>
+          <div class="ap-earnings-cell"><div class="val" id="earnPaid">₹0</div><div class="lbl">Paid Out</div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- SUBMISSION MODAL -->
+<div class="ap-modal-overlay" id="submitModal">
+  <div class="ap-modal">
+    <div class="ap-modal-head">
+      <h3>Submit Proof</h3>
+      <button class="ap-modal-close" onclick="closeSubmitModal()">&times;</button>
+    </div>
+    <div class="ap-modal-body">
+      <div class="ap-input-group">
+        <label>Post URL</label>
+        <input type="url" id="submitUrl" placeholder="https://instagram.com/reel/...">
+      </div>
+      <div class="ap-input-group">
+        <label>Caption</label>
+        <textarea id="submitCaption" placeholder="What did you post about?"></textarea>
+      </div>
+      <div class="ap-input-group">
+        <label>Disclosure Included</label>
+        <div style="display:flex;gap:.75rem;margin-top:.25rem">
+          <label style="font-size:.75rem;display:flex;align-items:center;gap:.35rem;cursor:pointer">
+            <input type="checkbox" id="submitDisclosure"> Yes, #ad or sponsored tag included
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="ap-modal-foot">
+      <button class="ap-btn ap-btn-outline" onclick="closeSubmitModal()">Cancel</button>
+      <button class="ap-btn" id="submitBtn">Submit</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/athlete';
+let state = { token: null, athlete: null, assignments: [], leaderboard: [] };
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = sessionStorage.getItem('ap_token');
+  if (saved) { state.token = saved; loadPortal(); }
+  else { showAuth(); }
+  setupTabs();
+  setupAuth();
+  setupEarnings();
+});
+
+function showAuth() {
+  document.getElementById('loading').classList.add('out');
+  document.getElementById('auth').style.display = 'flex';
+}
+
+function setupAuth() {
+  document.getElementById('authForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const token = document.getElementById('tokenInput').value.trim();
+    if (!token) return;
+    state.token = token;
+    sessionStorage.setItem('ap_token', token);
+    await loadPortal();
+  });
+}
+
+async function loadPortal() {
+  try {
+    const res = await fetch(`${API}/${state.token}/progress`);
+    if (!res.ok) throw new Error('Invalid token');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    state.athlete = data.data;
+    showShell();
+  } catch (err) {
+    sessionStorage.removeItem('ap_token');
+    state.token = null;
+    document.getElementById('authErr').textContent = 'Invalid or expired access link';
+    showAuth();
+  }
+}
+
+function showShell() {
+  document.getElementById('auth').style.display = 'none';
+  document.getElementById('loading').classList.add('out');
+  document.getElementById('shell').classList.add('active');
+  renderProgress();
+  loadTasks();
+  loadLeaderboard();
+}
+
+// ── TABS ──
+function setupTabs() {
+  document.querySelectorAll('.ap-nav-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.ap-nav-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.ap-section').forEach(s => s.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('sec-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+}
+
+// ── RENDER PROGRESS ──
+function renderProgress() {
+  const a = state.athlete;
+  if (!a) return;
+
+  // Nav
+  document.getElementById('navAthleteNo').textContent = a.athlete_no || '—';
+  const navBadge = document.getElementById('navLevelBadge');
+  navBadge.textContent = a.level?.display_number ?? '—';
+  if (a.level?.dial_segments_lit > 0) navBadge.classList.add('lit');
+  navBadge.title = a.level?.display_name || '';
+
+  // Level Dial
+  const dial = document.getElementById('levelDial');
+  const segs = a.level?.dial_segments_lit || 0;
+  dial.innerHTML = '';
+  for (let i = 0; i < 5; i++) {
+    const seg = document.createElement('div');
+    seg.className = 'ap-level-seg' + (i < segs ? ' lit' : '');
+    dial.appendChild(seg);
+  }
+
+  // Level Info
+  document.getElementById('levelName').textContent = a.level?.display_name || 'Unranked';
+  document.getElementById('levelSub').textContent = 'Ordinal ' + (a.level?.ordinal || '—');
+
+  // Next Level
+  const nextName = a.next_level?.display_name || 'Max';
+  document.getElementById('levelNext').textContent = nextName;
+
+  // XP
+  const xp = a.xp_total || 0;
+  const nextMinXp = a.next_level?.min_xp || xp + 100;
+  const prevMinXp = a.level?.min_xp || 0;
+  const range = nextMinXp - prevMinXp;
+  const progress = xp - prevMinXp;
+  const pct = Math.min(100, Math.max(0, (progress / range) * 100));
+
+  document.getElementById('xpCurrent').textContent = xp.toLocaleString();
+  document.getElementById('xpNext').textContent = '/ ' + nextMinXp.toLocaleString() + ' XP';
+  setTimeout(() => {
+    document.getElementById('xpFill').style.width = pct.toFixed(1) + '%';
+  }, 300);
+  document.getElementById('xpPct').textContent = pct.toFixed(1) + '% to next level';
+
+  // Standing
+  const standing = parseFloat(a.standing_score) || 0;
+  const circumference = 326.73;
+  const offset = circumference - (standing / 100) * circumference;
+  setTimeout(() => {
+    document.getElementById('standingArc').style.strokeDashoffset = offset;
+  }, 500);
+  animateNumber('standingNum', standing, 0);
+
+  // Coins
+  document.getElementById('coinAmount').textContent = (a.coin_balance || 0).toLocaleString();
+}
+
+function animateNumber(elId, target, duration = 800) {
+  const el = document.getElementById(elId);
+  const start = 0;
+  const startTime = performance.now();
+  function update(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(start + (target - start) * eased);
+    if (progress < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
+// ── TASKS ──
+async function loadTasks() {
+  try {
+    const res = await fetch(`${API}/${state.token}/assignments`);
+    const data = await res.json();
+    state.assignments = data.data || [];
+    renderTasks();
+  } catch (err) { console.error('Tasks load failed:', err); }
+}
+
+function renderTasks() {
+  const grid = document.getElementById('taskGrid');
+  const count = document.getElementById('tasksCount');
+  const tasks = state.assignments;
+  count.textContent = tasks.length + ' task' + (tasks.length !== 1 ? 's' : '');
+
+  if (tasks.length === 0) {
+    grid.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--muted);font-size:.75rem;background:var(--surface)">No active assignments</div>';
+    return;
+  }
+
+  grid.innerHTML = tasks.map(t => {
+    const isOverdue = new Date(t.due_at) < new Date() && !['APPROVED','VERIFIED_LIVE','REJECTED','EXPIRED','CLAWED_BACK'].includes(t.status);
+    const deadlineText = isOverdue ? 'OVERDUE' : formatDeadline(t.due_at);
+    const deadlineClass = isOverdue ? 'urgent' : '';
+    return `
+      <div class="ap-task" onclick="openTask('${t.id}')">
+        <div>
+          <div class="ap-task-type">
+            <span class="badge">${(t.task_type || 'TASK').replace('_',' ')}</span>
+            ${t.platform || ''}
+          </div>
+          <div class="ap-task-title">${esc(t.title)}</div>
+          <div class="ap-task-brief">${esc(t.brief || '')}</div>
+          <div class="ap-task-meta">
+            <span class="xp">+${t.xp_value || 0} XP</span>
+            <span>+${t.coin_value || 0} Coins</span>
+            <span>Attempt ${t.attempt_no || 0}</span>
+          </div>
+        </div>
+        <div class="ap-task-status">
+          <div class="badge ${t.status.toLowerCase()}">${t.status.replace(/_/g,' ')}</div>
+          <div class="ap-task-deadline ${deadlineClass}">${deadlineText}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function formatDeadline(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = Math.ceil((d - now) / (1000 * 60 * 60 * 24));
+  if (diff === 0) return 'Due today';
+  if (diff === 1) return 'Due tomorrow';
+  if (diff < 0) return `${Math.abs(diff)}d overdue`;
+  if (diff <= 7) return `${diff}d left`;
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+let currentTaskId = null;
+function openTask(id) {
+  const task = state.assignments.find(t => t.id === id);
+  if (!task) return;
+  if (['ASSIGNED','IN_PROGRESS','CHANGES_REQUESTED'].includes(task.status)) {
+    currentTaskId = id;
+    document.getElementById('submitModal').classList.add('active');
+  }
+}
+function closeSubmitModal() {
+  document.getElementById('submitModal').classList.remove('active');
+  currentTaskId = null;
+}
+
+document.getElementById('submitBtn').addEventListener('click', async () => {
+  if (!currentTaskId) return;
+  const url = document.getElementById('submitUrl').value.trim();
+  const caption = document.getElementById('submitCaption').value.trim();
+  const disclosure = document.getElementById('submitDisclosure').checked;
+  if (!url) return alert('Post URL is required');
+
+  try {
+    const res = await fetch(`${API}/${state.token}/submissions/${currentTaskId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post_url: url, caption, disclosure_found: disclosure })
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeSubmitModal();
+      loadTasks();
+    } else { alert(data.error || 'Submission failed'); }
+  } catch (err) { alert('Network error'); }
+});
+
+// ── LEADERBOARD ──
+async function loadLeaderboard() {
+  try {
+    const res = await fetch(`${API}/${state.token}/leaderboard`);
+    const data = await res.json();
+    state.leaderboard = data.data || [];
+    renderLeaderboard();
+  } catch (err) { console.error('Leaderboard load failed:', err); }
+}
+
+function renderLeaderboard() {
+  const container = document.getElementById('lbRows');
+  const now = new Date();
+  document.getElementById('lbPeriod').textContent = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
+  if (state.leaderboard.length === 0) {
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--muted);font-size:.75rem">No rankings yet</div>';
+    return;
+  }
+
+  container.innerHTML = state.leaderboard.map((a, i) => {
+    const isSelf = state.athlete && a.id === state.athlete.id;
+    const rankClass = i === 0 ? 'gold' : '';
+    return `
+      <div class="ap-lb-row${isSelf ? ' self' : ''}">
+        <div class="ap-lb-rank ${rankClass}">${i + 1}</div>
+        <div class="ap-lb-name">${esc(a.name)}<span class="no">${a.athlete_no || ''}</span></div>
+        <div class="ap-lb-xp">${(a.xp_total || 0).toLocaleString()} XP</div>
+        <div class="ap-lb-level">${a.level_name || '—'}</div>
+      </div>`;
+  }).join('');
+}
+
+// ── EARNINGS ──
+function setupEarnings() {
+  document.getElementById('unlockEarnings').addEventListener('click', async () => {
+    // Future: step-up OTP flow. For now, show a placeholder.
+    document.getElementById('earningsLock').style.display = 'none';
+    document.getElementById('earningsContent').style.display = 'block';
+  });
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
+</body>
+</html>

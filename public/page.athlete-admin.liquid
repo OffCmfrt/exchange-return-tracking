@@ -1,0 +1,777 @@
+{% layout none %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athlete HQ — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#000;--surface:#080808;--surface-2:#0f0f0f;--surface-3:#161616;
+  --border:#1a1a1a;--border-hover:#2a2a2a;--border-active:#3a3a3a;
+  --text:#fff;--text-2:#b0b0b0;--muted:#555;--faint:#333;
+  --success:#22c55e;--danger:#ef4444;--warning:#f59e0b;--info:#3b82f6;
+  --radius:0px;--transition:.2s cubic-bezier(.4,0,.2,1);
+  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+html,body{background:var(--bg);color:var(--text);font-family:var(--font);
+  min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* LOADING */
+.ah-loading{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1.5rem;z-index:9999;transition:opacity .4s ease}
+.ah-loading.out{opacity:0;pointer-events:none}
+.ah-spinner{width:36px;height:36px;border:2px solid var(--border);border-top-color:var(--text);
+  border-radius:50%;animation:spin .8s linear infinite}
+.ah-loading p{font-size:.6rem;letter-spacing:.3em;text-transform:uppercase;color:var(--muted)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+/* AUTH */
+.ah-auth{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;
+  justify-content:center;z-index:800}
+.ah-auth-card{background:var(--surface);border:1px solid var(--border);width:100%;max-width:380px;
+  padding:3rem;text-align:center;animation:fadeUp .4s ease both}
+.ah-auth-logo{font-size:.55rem;letter-spacing:.5em;text-transform:uppercase;color:var(--muted);margin-bottom:2.5rem}
+.ah-auth-card h2{font-size:1.1rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2rem}
+.ah-input{width:100%;background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+  padding:.75rem 1rem;font-size:.8rem;font-family:var(--font);margin-bottom:1rem;outline:none;
+  transition:border-color var(--transition)}
+.ah-input:focus{border-color:var(--border-active)}
+.ah-input::placeholder{color:var(--faint)}
+.ah-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;
+  background:var(--text);color:var(--bg);border:none;padding:.75rem 1.5rem;
+  font-size:.65rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+  font-family:var(--font);cursor:pointer;transition:all var(--transition);width:100%}
+.ah-btn:hover{background:var(--text-2)}
+.ah-btn-sm{padding:.45rem .85rem;font-size:.55rem;width:auto}
+.ah-btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+.ah-btn-outline:hover{border-color:var(--text);background:rgba(255,255,255,.04)}
+.ah-btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
+.ah-btn-danger:hover{background:rgba(239,68,68,.08)}
+.ah-auth-err{font-size:.7rem;color:var(--danger);margin-top:1rem;min-height:1em}
+
+/* SHELL */
+.ah-shell{display:none;min-height:100vh}
+.ah-shell.active{display:flex}
+
+/* SIDEBAR */
+.ah-sidebar{width:220px;border-right:1px solid var(--border);background:var(--surface);
+  position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:50}
+.ah-sidebar-brand{padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);
+  font-size:.5rem;letter-spacing:.45em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.ah-sidebar-nav{flex:1;padding:.75rem 0;overflow-y:auto}
+.ah-nav-group{margin-bottom:.5rem}
+.ah-nav-group-label{padding:.5rem 1.5rem;font-size:.5rem;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--faint);font-weight:600}
+.ah-nav-item{display:flex;align-items:center;gap:.65rem;padding:.6rem 1.5rem;
+  font-size:.7rem;font-weight:500;color:var(--muted);cursor:pointer;
+  transition:all var(--transition);border-left:2px solid transparent}
+.ah-nav-item:hover{color:var(--text-2);background:var(--surface-2)}
+.ah-nav-item.active{color:var(--text);background:var(--surface-2);border-left-color:var(--text)}
+.ah-nav-item .count{margin-left:auto;font-family:var(--mono);font-size:.55rem;
+  padding:1px 6px;border:1px solid var(--border);color:var(--muted)}
+.ah-sidebar-foot{padding:1rem 1.5rem;border-top:1px solid var(--border);
+  font-size:.55rem;color:var(--faint);letter-spacing:.05em}
+
+/* MAIN */
+.ah-main{margin-left:220px;flex:1;min-height:100vh}
+.ah-topbar{position:sticky;top:0;z-index:40;background:rgba(0,0,0,.9);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);padding:0 2rem;height:52px;
+  display:flex;align-items:center;justify-content:space-between}
+.ah-topbar-title{font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;font-weight:700}
+.ah-topbar-actions{display:flex;gap:.5rem;align-items:center}
+.ah-content{padding:2rem}
+
+/* SECTIONS */
+.ah-section{display:none;animation:fadeUp .3s ease both}
+.ah-section.active{display:block}
+
+/* STATS ROW */
+.ah-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border);margin-bottom:2rem}
+.ah-stat{background:var(--surface);padding:1.25rem 1.5rem}
+.ah-stat-label{font-size:.5rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;margin-bottom:.5rem}
+.ah-stat-value{font-family:var(--mono);font-size:1.5rem;font-weight:800}
+.ah-stat-sub{font-size:.6rem;color:var(--muted);margin-top:.25rem}
+
+/* TABLE */
+.ah-table-wrap{border:1px solid var(--border);overflow-x:auto}
+.ah-table{width:100%;border-collapse:collapse;font-size:.75rem}
+.ah-table th{text-align:left;padding:.65rem 1rem;font-size:.5rem;font-weight:700;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--muted);
+  border-bottom:1px solid var(--border);background:var(--surface);
+  position:sticky;top:0;z-index:1}
+.ah-table td{padding:.65rem 1rem;border-bottom:1px solid var(--border);
+  vertical-align:middle;transition:background var(--transition)}
+.ah-table tr:hover td{background:var(--surface-2)}
+.ah-table tr:last-child td{border-bottom:none}
+.ah-table .mono{font-family:var(--mono);font-size:.7rem}
+.ah-table .muted{color:var(--muted)}
+
+/* BADGES */
+.ah-badge{display:inline-flex;align-items:center;padding:2px 8px;font-size:.5rem;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--border)}
+.ah-badge.active{color:var(--success);border-color:var(--success)}
+.ah-badge.pending{color:var(--warning);border-color:var(--warning)}
+.ah-badge.suspended{color:var(--danger);border-color:var(--danger)}
+.ah-badge.reserve{color:var(--muted);border-color:var(--border)}
+.ah-badge.trial{color:var(--info);border-color:var(--info)}
+.ah-badge.discharged{color:var(--faint);border-color:var(--faint)}
+.ah-badge-level{display:inline-flex;align-items:center;gap:.35rem;padding:3px 8px;
+  font-family:var(--mono);font-size:.6rem;font-weight:700;border:1px solid var(--border)}
+.ah-badge-level .dots{display:flex;gap:2px}
+.ah-badge-level .dot{width:3px;height:10px;background:var(--border)}
+.ah-badge-level .dot.lit{background:var(--text)}
+
+/* XP BAR INLINE */
+.ah-xp-bar{height:2px;background:var(--surface-3);min-width:80px;position:relative}
+.ah-xp-bar .fill{height:100%;background:var(--text);transition:width .6s ease}
+
+/* STANDING MINI */
+.ah-standing-mini{display:flex;align-items:center;gap:.5rem}
+.ah-standing-mini .ring{width:28px;height:28px;position:relative}
+.ah-standing-mini .ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ah-standing-mini .ring circle{fill:none;stroke-width:2.5}
+.ah-standing-mini .ring .track{stroke:var(--surface-3)}
+.ah-standing-mini .ring .fill{stroke:var(--text)}
+.ah-standing-mini .val{font-family:var(--mono);font-size:.7rem;font-weight:700}
+
+/* DRAWER */
+.ah-drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:none}
+.ah-drawer-overlay.active{display:block}
+.ah-drawer{position:fixed;top:0;right:0;bottom:0;width:560px;max-width:90vw;
+  background:var(--surface);border-left:1px solid var(--border);z-index:201;
+  transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);
+  overflow-y:auto;display:flex;flex-direction:column}
+.ah-drawer.active{transform:translateX(0)}
+.ah-drawer-head{padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.ah-drawer-head h3{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700}
+.ah-drawer-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.2rem;
+  transition:color var(--transition)}
+.ah-drawer-close:hover{color:var(--text)}
+.ah-drawer-body{padding:1.5rem;flex:1;overflow-y:auto}
+.ah-drawer-section{margin-bottom:2rem}
+.ah-drawer-section h4{font-size:.55rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;margin-bottom:.75rem;padding-bottom:.5rem;
+  border-bottom:1px solid var(--border)}
+.ah-detail-row{display:flex;justify-content:space-between;align-items:center;
+  padding:.4rem 0;font-size:.75rem}
+.ah-detail-row .label{color:var(--muted);font-size:.65rem}
+.ah-detail-row .value{font-weight:600;font-family:var(--mono);font-size:.7rem}
+
+/* LEVEL LADDER */
+.ah-ladder{display:flex;flex-direction:column;gap:1px;background:var(--border);
+  border:1px solid var(--border);margin-bottom:2rem}
+.ah-ladder-row{display:grid;grid-template-columns:60px 1fr 100px 100px 100px 80px;
+  gap:1rem;align-items:center;padding:1rem 1.25rem;background:var(--surface);
+  transition:background var(--transition)}
+.ah-ladder-row:hover{background:var(--surface-2)}
+.ah-ladder-row.header{background:var(--surface-3);font-size:.5rem;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--muted);font-weight:600;padding:.65rem 1.25rem}
+.ah-ladder-ordinal{font-family:var(--mono);font-size:1.2rem;font-weight:800;text-align:center}
+.ah-ladder-name{font-weight:700;font-size:.85rem}
+.ah-ladder-name .sub{font-size:.6rem;color:var(--muted);font-family:var(--mono);margin-top:.15rem}
+
+/* SETTINGS */
+.ah-settings-group{margin-bottom:2rem}
+.ah-settings-group h4{font-size:.55rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;margin-bottom:.75rem}
+.ah-setting-row{display:grid;grid-template-columns:1fr 120px 40px;gap:1rem;
+  align-items:center;padding:.6rem 0;border-bottom:1px solid var(--border)}
+.ah-setting-row .key{font-family:var(--mono);font-size:.7rem}
+.ah-setting-row .desc{font-size:.6rem;color:var(--muted);margin-top:.15rem}
+.ah-setting-row input{background:var(--surface-2);border:1px solid var(--border);
+  color:var(--text);padding:.4rem .6rem;font-size:.7rem;font-family:var(--mono);
+  text-align:right;outline:none;width:100%}
+.ah-setting-row input:focus{border-color:var(--border-active)}
+
+/* REVIEW QUEUE */
+.ah-review-card{background:var(--surface);border:1px solid var(--border);padding:1.25rem;
+  margin-bottom:1px;transition:border-color var(--transition);cursor:pointer}
+.ah-review-card:hover{border-color:var(--border-hover)}
+.ah-review-card-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:.75rem}
+.ah-review-card-title{font-weight:700;font-size:.85rem}
+.ah-review-card-meta{display:flex;gap:1rem;margin-top:.5rem;font-size:.65rem;color:var(--muted)}
+.ah-review-card-actions{display:flex;gap:.5rem;margin-top:1rem}
+
+/* RESPONSIVE */
+@media(max-width:1024px){
+  .ah-sidebar{width:180px}
+  .ah-main{margin-left:180px}
+  .ah-stats{grid-template-columns:repeat(2,1fr)}
+  .ah-ladder-row{grid-template-columns:50px 1fr 80px 80px}
+  .ah-ladder-row > :nth-child(n+5){display:none}
+}
+@media(max-width:768px){
+  .ah-sidebar{display:none}
+  .ah-main{margin-left:0}
+  .ah-stats{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="ah-loading" id="loading">
+  <div class="ah-spinner"></div>
+  <p>Loading Athlete HQ</p>
+</div>
+
+<!-- AUTH -->
+<div class="ah-auth" id="auth" style="display:none">
+  <div class="ah-auth-card">
+    <div class="ah-auth-logo">Offcomfrt Athlete HQ</div>
+    <h2>Admin Access</h2>
+    <form id="authForm">
+      <input type="password" class="ah-input" id="authToken" placeholder="Admin access token" required>
+      <button type="submit" class="ah-btn">Authenticate</button>
+      <div class="ah-auth-err" id="authErr"></div>
+    </form>
+  </div>
+</div>
+
+<!-- SHELL -->
+<div class="ah-shell" id="shell">
+  <!-- SIDEBAR -->
+  <aside class="ah-sidebar">
+    <div class="ah-sidebar-brand">Athlete HQ</div>
+    <nav class="ah-sidebar-nav">
+      <div class="ah-nav-group">
+        <div class="ah-nav-group-label">Overview</div>
+        <div class="ah-nav-item active" data-section="dashboard">Dashboard</div>
+      </div>
+      <div class="ah-nav-group">
+        <div class="ah-nav-group-label">Athletes</div>
+        <div class="ah-nav-item" data-section="athletes">All Athletes <span class="count" id="navAthleteCount">0</span></div>
+        <div class="ah-nav-item" data-section="applications">Applications <span class="count" id="navAppCount">0</span></div>
+      </div>
+      <div class="ah-nav-group">
+        <div class="ah-nav-group-label">Work</div>
+        <div class="ah-nav-item" data-section="tasks">Task Templates</div>
+        <div class="ah-nav-item" data-section="review">Review Queue <span class="count" id="navReviewCount">0</span></div>
+      </div>
+      <div class="ah-nav-group">
+        <div class="ah-nav-group-label">System</div>
+        <div class="ah-nav-item" data-section="ladder">Level Ladder</div>
+        <div class="ah-nav-item" data-section="ledger">Ledger</div>
+        <div class="ah-nav-item" data-section="payouts">Payouts</div>
+        <div class="ah-nav-item" data-section="settings">Settings</div>
+      </div>
+    </nav>
+    <div class="ah-sidebar-foot">FM-OFC-03 v1.0</div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="ah-main">
+    <div class="ah-topbar">
+      <div class="ah-topbar-title" id="topbarTitle">Dashboard</div>
+      <div class="ah-topbar-actions">
+        <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="refreshData()">Refresh</button>
+      </div>
+    </div>
+
+    <div class="ah-content">
+      <!-- DASHBOARD -->
+      <div class="ah-section active" id="sec-dashboard">
+        <div class="ah-stats">
+          <div class="ah-stat"><div class="ah-stat-label">Total Athletes</div><div class="ah-stat-value" id="statTotal">0</div><div class="ah-stat-sub" id="statActive">0 active</div></div>
+          <div class="ah-stat"><div class="ah-stat-label">On Trial</div><div class="ah-stat-value" id="statTrial">0</div><div class="ah-stat-sub">CL5 — 30 day window</div></div>
+          <div class="ah-stat"><div class="ah-stat-label">Pending Applications</div><div class="ah-stat-value" id="statApps">0</div><div class="ah-stat-sub">Awaiting review</div></div>
+          <div class="ah-stat"><div class="ah-stat-label">Review Queue</div><div class="ah-stat-value" id="statReview">0</div><div class="ah-stat-sub">Submissions pending</div></div>
+        </div>
+        <h3 style="font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:1rem">Recent Athletes</h3>
+        <div class="ah-table-wrap">
+          <table class="ah-table">
+            <thead><tr><th>Athlete</th><th>Level</th><th>XP</th><th>Standing</th><th>Status</th><th>Joined</th></tr></thead>
+            <tbody id="dashRecentAthletes"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ATHLETES -->
+      <div class="ah-section" id="sec-athletes">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+          <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700">All Athletes</h2>
+          <div style="display:flex;gap:.5rem">
+            <input type="text" class="ah-input" style="margin:0;width:200px;padding:.45rem .75rem;font-size:.7rem" placeholder="Search athletes..." id="athleteSearch">
+            <select class="ah-input" style="margin:0;width:140px;padding:.45rem .75rem;font-size:.7rem" id="athleteFilter">
+              <option value="">All Status</option>
+              <option value="ACTIVE">Active</option>
+              <option value="ON_TRIAL">On Trial</option>
+              <option value="RESERVE">Reserve</option>
+              <option value="SUSPENDED">Suspended</option>
+            </select>
+          </div>
+        </div>
+        <div class="ah-table-wrap">
+          <table class="ah-table">
+            <thead><tr><th>Athlete</th><th>Level</th><th>XP</th><th>Standing</th><th>Status</th><th>Coins</th><th>Joined</th><th></th></tr></thead>
+            <tbody id="athletesTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- APPLICATIONS -->
+      <div class="ah-section" id="sec-applications">
+        <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:1.25rem">Applications</h2>
+        <div class="ah-table-wrap">
+          <table class="ah-table">
+            <thead><tr><th>Applicant</th><th>Handle</th><th>Score</th><th>Status</th><th>Applied</th><th></th></tr></thead>
+            <tbody id="appsTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TASKS -->
+      <div class="ah-section" id="sec-tasks">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+          <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700">Task Templates</h2>
+          <button class="ah-btn ah-btn-sm" onclick="openTaskModal()">+ New Task</button>
+        </div>
+        <div class="ah-table-wrap">
+          <table class="ah-table">
+            <thead><tr><th>Code</th><th>Title</th><th>Type</th><th>XP</th><th>Coins</th><th>Due Days</th><th>Status</th><th></th></tr></thead>
+            <tbody id="tasksTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- REVIEW QUEUE -->
+      <div class="ah-section" id="sec-review">
+        <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:1.25rem">Review Queue</h2>
+        <div id="reviewQueue"></div>
+      </div>
+
+      <!-- LEVEL LADDER -->
+      <div class="ah-section" id="sec-ladder">
+        <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:1.25rem">Comfort Level Ladder</h2>
+        <div class="ah-ladder" id="ladderView"></div>
+      </div>
+
+      <!-- LEDGER -->
+      <div class="ah-section" id="sec-ledger">
+        <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:1.25rem">Ledger Explorer</h2>
+        <div style="margin-bottom:1rem">
+          <input type="text" class="ah-input" style="margin:0;width:280px;padding:.45rem .75rem;font-size:.7rem" placeholder="Enter athlete ID to view ledger..." id="ledgerAthleteId">
+        </div>
+        <div class="ah-table-wrap">
+          <table class="ah-table">
+            <thead><tr><th>Date</th><th>Currency</th><th>Amount</th><th>Balance</th><th>Source</th><th>Reason</th><th>Idempotency</th></tr></thead>
+            <tbody id="ledgerTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- PAYOUTS -->
+      <div class="ah-section" id="sec-payouts">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+          <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700">Payouts</h2>
+          <button class="ah-btn ah-btn-sm" onclick="buildPayoutBatch()">Build Batch</button>
+        </div>
+        <div class="ah-table-wrap">
+          <table class="ah-table">
+            <thead><tr><th>Athlete</th><th>Period</th><th>Gross</th><th>TDS</th><th>Net</th><th>Status</th><th></th></tr></thead>
+            <tbody id="payoutsTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="ah-section" id="sec-settings">
+        <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:1.25rem">Program Settings</h2>
+        <div id="settingsView"></div>
+        <button class="ah-btn ah-btn-sm" style="margin-top:1.5rem" onclick="saveSettings()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ATHLETE DETAIL DRAWER -->
+<div class="ah-drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+<div class="ah-drawer" id="drawer">
+  <div class="ah-drawer-head">
+    <h3 id="drawerTitle">Athlete Detail</h3>
+    <button class="ah-drawer-close" onclick="closeDrawer()">&times;</button>
+  </div>
+  <div class="ah-drawer-body" id="drawerBody"></div>
+</div>
+
+<script>
+const API = '/api/athlete-admin';
+let adminToken = null;
+let athletes = [], applications = [], tasks = [], reviewItems = [], levels = [], settings = [], payouts = [];
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = sessionStorage.getItem('ah_token');
+  if (saved) { adminToken = saved; initShell(); }
+  else { showAuthScreen(); }
+  setupNav();
+  setupAuthForm();
+});
+
+function showAuthScreen() {
+  document.getElementById('loading').classList.add('out');
+  document.getElementById('auth').style.display = 'flex';
+}
+
+function setupAuthForm() {
+  document.getElementById('authForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    adminToken = document.getElementById('authToken').value.trim();
+    sessionStorage.setItem('ah_token', adminToken);
+    initShell();
+  });
+}
+
+async function initShell() {
+  try {
+    await loadAll();
+    document.getElementById('auth').style.display = 'none';
+    document.getElementById('loading').classList.add('out');
+    document.getElementById('shell').classList.add('active');
+    renderAll();
+  } catch (err) {
+    sessionStorage.removeItem('ah_token');
+    document.getElementById('authErr').textContent = 'Authentication failed';
+    showAuthScreen();
+  }
+}
+
+async function loadAll() {
+  const headers = { 'Authorization': 'Bearer ' + adminToken };
+  const [athRes, appRes, taskRes, revRes, lvlRes, setRes, payRes] = await Promise.allSettled([
+    fetch(API + '/athletes', { headers }).then(r => r.json()),
+    fetch(API + '/applications', { headers }).then(r => r.json()),
+    fetch(API + '/tasks', { headers }).then(r => r.json()),
+    fetch(API + '/review-queue', { headers }).then(r => r.json()),
+    fetch(API + '/levels', { headers }).then(r => r.json()),
+    fetch(API + '/settings', { headers }).then(r => r.json()),
+    fetch(API + '/payouts', { headers }).then(r => r.json())
+  ]);
+  athletes = athRes.value?.data || [];
+  applications = appRes.value?.data || [];
+  tasks = taskRes.value?.data || [];
+  reviewItems = revRes.value?.data || [];
+  levels = lvlRes.value?.data || [];
+  settings = setRes.value?.data || [];
+  payouts = payRes.value?.data || [];
+}
+
+function renderAll() {
+  renderDashboard();
+  renderAthletes();
+  renderApplications();
+  renderTasks();
+  renderReview();
+  renderLadder();
+  renderSettings();
+  renderPayouts();
+  // Nav counts
+  document.getElementById('navAthleteCount').textContent = athletes.length;
+  document.getElementById('navAppCount').textContent = applications.filter(a => a.status === 'APPLIED').length;
+  document.getElementById('navReviewCount').textContent = reviewItems.length;
+}
+
+async function refreshData() { await loadAll(); renderAll(); }
+
+// ── NAV ──
+function setupNav() {
+  document.querySelectorAll('.ah-nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.ah-nav-item').forEach(i => i.classList.remove('active'));
+      document.querySelectorAll('.ah-section').forEach(s => s.classList.remove('active'));
+      item.classList.add('active');
+      const sec = item.dataset.section;
+      document.getElementById('sec-' + sec).classList.add('active');
+      document.getElementById('topbarTitle').textContent = item.textContent.trim().split('\n')[0];
+    });
+  });
+}
+
+// ── DASHBOARD ──
+function renderDashboard() {
+  document.getElementById('statTotal').textContent = athletes.length;
+  document.getElementById('statActive').textContent = athletes.filter(a => a.athlete_status === 'ACTIVE').length + ' active';
+  document.getElementById('statTrial').textContent = athletes.filter(a => a.athlete_status === 'ON_TRIAL').length;
+  document.getElementById('statApps').textContent = applications.filter(a => a.status === 'APPLIED').length;
+  document.getElementById('statReview').textContent = reviewItems.length;
+
+  const tbody = document.getElementById('dashRecentAthletes');
+  tbody.innerHTML = athletes.slice(0, 8).map(a => `<tr onclick="openAthleteDrawer(${a.id})" style="cursor:pointer">
+    <td><strong>${esc(a.name)}</strong><div class="muted mono" style="font-size:.6rem;margin-top:2px">${a.athlete_no || '—'}</div></td>
+    <td>${levelBadge(a)}</td>
+    <td class="mono">${(a.xp_total||0).toLocaleString()}</td>
+    <td>${standingMini(a.standing_score)}</td>
+    <td>${statusBadge(a.athlete_status)}</td>
+    <td class="muted">${a.joined_at ? new Date(a.joined_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'}) : '—'}</td>
+  </tr>`).join('');
+}
+
+// ── ATHLETES ──
+function renderAthletes() {
+  const search = (document.getElementById('athleteSearch')?.value || '').toLowerCase();
+  const filter = document.getElementById('athleteFilter')?.value || '';
+  let list = athletes;
+  if (search) list = list.filter(a => (a.name||'').toLowerCase().includes(search) || (a.athlete_no||'').toLowerCase().includes(search));
+  if (filter) list = list.filter(a => a.athlete_status === filter);
+
+  document.getElementById('athletesTable').innerHTML = list.map(a => `<tr onclick="openAthleteDrawer(${a.id})" style="cursor:pointer">
+    <td><strong>${esc(a.name)}</strong><div class="muted mono" style="font-size:.55rem;margin-top:2px">${a.athlete_no||'—'}</div></td>
+    <td>${levelBadge(a)}</td>
+    <td class="mono">${(a.xp_total||0).toLocaleString()}</td>
+    <td>${standingMini(a.standing_score)}</td>
+    <td>${statusBadge(a.athlete_status)}</td>
+    <td class="mono">${(a.coin_balance||0).toLocaleString()}</td>
+    <td class="muted">${a.joined_at ? new Date(a.joined_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
+    <td><button class="ah-btn ah-btn-sm ah-btn-outline" onclick="event.stopPropagation();openAthleteDrawer(${a.id})">View</button></td>
+  </tr>`).join('');
+}
+
+document.getElementById('athleteSearch')?.addEventListener('input', renderAthletes);
+document.getElementById('athleteFilter')?.addEventListener('change', renderAthletes);
+
+// ── APPLICATIONS ──
+function renderApplications() {
+  document.getElementById('appsTable').innerHTML = applications.map(a => `<tr>
+    <td><strong>${esc(a.payload?.name || a.email)}</strong><div class="muted" style="font-size:.6rem">${a.email} · ${a.phone}</div></td>
+    <td class="mono">${a.primary_handle || '—'}</td>
+    <td class="mono">${a.auto_score || 0}</td>
+    <td>${statusBadge(a.status)}</td>
+    <td class="muted">${new Date(a.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</td>
+    <td>
+      ${a.status === 'APPLIED' ? `<button class="ah-btn ah-btn-sm" onclick="approveApp(${a.id})">Approve</button>` : ''}
+      ${a.status === 'APPLIED' ? `<button class="ah-btn ah-btn-sm ah-btn-danger" onclick="rejectApp(${a.id})">Reject</button>` : ''}
+    </td>
+  </tr>`).join('');
+}
+
+// ── TASKS ──
+function renderTasks() {
+  document.getElementById('tasksTable').innerHTML = tasks.map(t => `<tr>
+    <td class="mono">${t.code}</td>
+    <td><strong>${esc(t.title)}</strong></td>
+    <td><span class="ah-badge">${t.type.replace(/_/g,' ')}</span></td>
+    <td class="mono">${t.xp_value}</td>
+    <td class="mono">${t.coin_value}</td>
+    <td class="mono">${t.due_days}d</td>
+    <td>${t.is_active ? '<span class="ah-badge active">Active</span>' : '<span class="ah-badge discharged">Inactive</span>'}</td>
+    <td><button class="ah-btn ah-btn-sm ah-btn-outline">Edit</button></td>
+  </tr>`).join('');
+}
+
+// ── REVIEW ──
+function renderReview() {
+  const container = document.getElementById('reviewQueue');
+  if (reviewItems.length === 0) {
+    container.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--muted);font-size:.75rem;border:1px solid var(--border)">Queue is empty</div>';
+    return;
+  }
+  container.innerHTML = reviewItems.map(r => `
+    <div class="ah-review-card">
+      <div class="ah-review-card-head">
+        <div>
+          <div class="ah-review-card-title">${esc(r.task_title || r.task_template_id)}</div>
+          <div style="font-size:.65rem;color:var(--muted);margin-top:.25rem">Athlete: ${esc(r.athlete_name || r.influencer_id)} · Attempt #${r.attempt_no || 1}</div>
+        </div>
+        <span class="ah-badge pending">${r.status.replace(/_/g,' ')}</span>
+      </div>
+      ${r.post_url ? `<div style="font-size:.7rem"><a href="${r.post_url}" target="_blank" style="color:var(--text-2)">${r.post_url}</a></div>` : ''}
+      <div class="ah-review-card-meta">
+        <span>Due: ${new Date(r.due_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
+        <span>XP: ${r.xp_value || 0}</span>
+      </div>
+      <div class="ah-review-card-actions">
+        <button class="ah-btn ah-btn-sm" onclick="reviewAssignment(${r.id},'approve')">Approve</button>
+        <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="reviewAssignment(${r.id},'changes')">Request Changes</button>
+        <button class="ah-btn ah-btn-sm ah-btn-danger" onclick="reviewAssignment(${r.id},'reject')">Reject</button>
+      </div>
+    </div>`).join('');
+}
+
+// ── LADDER ──
+function renderLadder() {
+  const sorted = [...levels].sort((a,b) => a.ordinal - b.ordinal);
+  document.getElementById('ladderView').innerHTML = `
+    <div class="ah-ladder-row header"><div>Ordinal</div><div>Level</div><div>Min XP</div><div>Min Standing</div><div>Min Days</div><div>Trial</div></div>
+    ${sorted.map(l => `<div class="ah-ladder-row">
+      <div class="ah-ladder-ordinal">${l.ordinal}</div>
+      <div class="ah-ladder-name">${l.display_name}<div class="sub">${l.code} · ${l.seat_cap || '∞'} seats</div></div>
+      <div class="mono">${l.min_xp.toLocaleString()}</div>
+      <div class="mono">${l.min_standing || '—'}</div>
+      <div class="mono">${l.min_days_in_previous || '—'}</div>
+      <div>${l.is_trial ? '<span class="ah-badge trial">Trial</span>' : ''}</div>
+    </div>`).join('')}`;
+}
+
+// ── SETTINGS ──
+function renderSettings() {
+  const groups = { Trial: [], XP: [], Level: [], Inactivity: [], Liveness: [], Leaderboard: [], Payout: [], Messaging: [] };
+  settings.forEach(s => {
+    const k = s.key;
+    if (k.startsWith('trial.')) groups.Trial.push(s);
+    else if (k.startsWith('xp.')) groups.XP.push(s);
+    else if (k.startsWith('level.')) groups.Level.push(s);
+    else if (k.startsWith('inactivity.')) groups.Inactivity.push(s);
+    else if (k.startsWith('liveness.')) groups.Liveness.push(s);
+    else if (k.startsWith('leaderboard.')) groups.Leaderboard.push(s);
+    else if (k.startsWith('payout.')) groups.Payout.push(s);
+    else if (k.startsWith('messaging.')) groups.Messaging.push(s);
+  });
+
+  document.getElementById('settingsView').innerHTML = Object.entries(groups).map(([group, items]) => {
+    if (items.length === 0) return '';
+    return `<div class="ah-settings-group"><h4>${group}</h4>
+      ${items.map(s => `<div class="ah-setting-row">
+        <div><div class="key">${s.key}</div><div class="desc">${s.description || ''}</div></div>
+        <input type="text" value="${esc(JSON.stringify(s.value))}" data-key="${s.key}" class="setting-input">
+        <div></div>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+// ── PAYOUTS ──
+function renderPayouts() {
+  document.getElementById('payoutsTable').innerHTML = payouts.map(p => `<tr>
+    <td>${esc(p.influencer?.name || p.influencer_id)}</td>
+    <td class="mono">${p.period_start} → ${p.period_end}</td>
+    <td class="mono">₹${parseFloat(p.gross||0).toFixed(0)}</td>
+    <td class="mono">₹${parseFloat(p.tds_amount||0).toFixed(0)}</td>
+    <td class="mono"><strong>₹${parseFloat(p.net||0).toFixed(0)}</strong></td>
+    <td>${statusBadge(p.status)}</td>
+    <td>${p.status === 'DRAFT' ? `<button class="ah-btn ah-btn-sm" onclick="queuePayout(${p.id})">Queue</button>` : ''}</td>
+  </tr>`).join('');
+}
+
+// ── DRAWER ──
+function openAthleteDrawer(id) {
+  const a = athletes.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('drawerTitle').textContent = a.name;
+  document.getElementById('drawerBody').innerHTML = `
+    <div class="ah-drawer-section">
+      <h4>Profile</h4>
+      <div class="ah-detail-row"><span class="label">Athlete No</span><span class="value">${a.athlete_no||'—'}</span></div>
+      <div class="ah-detail-row"><span class="label">Status</span><span class="value">${statusBadge(a.athlete_status)}</span></div>
+      <div class="ah-detail-row"><span class="label">Phone</span><span class="value">${a.phone||'—'}</span></div>
+      <div class="ah-detail-row"><span class="label">Email</span><span class="value">${a.email||'—'}</span></div>
+      <div class="ah-detail-row"><span class="label">Joined</span><span class="value">${a.joined_at ? new Date(a.joined_at).toLocaleDateString('en-IN') : '—'}</span></div>
+    </div>
+    <div class="ah-drawer-section">
+      <h4>Level & XP</h4>
+      <div class="ah-detail-row"><span class="label">Current Level</span><span class="value">${levelBadge(a)}</span></div>
+      <div class="ah-detail-row"><span class="label">XP Total</span><span class="value">${(a.xp_total||0).toLocaleString()}</span></div>
+      <div class="ah-detail-row"><span class="label">Standing</span><span class="value">${parseFloat(a.standing_score||0).toFixed(1)}</span></div>
+      <div class="ah-detail-row"><span class="label">Coin Balance</span><span class="value">${(a.coin_balance||0).toLocaleString()}</span></div>
+      <div class="ah-detail-row"><span class="label">Level Since</span><span class="value">${a.level_since ? new Date(a.level_since).toLocaleDateString('en-IN') : '—'}</span></div>
+    </div>
+    <div class="ah-drawer-section">
+      <h4>Actions</h4>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="overrideLevel(${a.id})">Override Level</button>
+        <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="changeStatus(${a.id},'SUSPENDED')">Suspend</button>
+        <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="changeStatus(${a.id},'ACTIVE')">Activate</button>
+        <button class="ah-btn ah-btn-sm ah-btn-danger" onclick="changeStatus(${a.id},'DISCHARGED')">Discharge</button>
+      </div>
+    </div>`;
+  document.getElementById('drawerOverlay').classList.add('active');
+  document.getElementById('drawer').classList.add('active');
+}
+
+function closeDrawer() {
+  document.getElementById('drawerOverlay').classList.remove('active');
+  document.getElementById('drawer').classList.remove('active');
+}
+
+// ── HELPERS ──
+function levelBadge(a) {
+  const name = a.level_name || a.level?.display_name || '—';
+  const ord = a.level_ordinal || a.level?.ordinal || 0;
+  const segs = a.level_dial || a.level?.dial_segments_lit || 0;
+  let dots = '';
+  for (let i = 0; i < 5; i++) dots += `<span class="dot${i < segs ? ' lit' : ''}"></span>`;
+  return `<span class="ah-badge-level"><span class="dots">${dots}</span>${name}</span>`;
+}
+
+function statusBadge(s) {
+  const cls = (s||'').toLowerCase().replace(/_/g,'-');
+  return `<span class="ah-badge ${cls}">${(s||'').replace(/_/g,' ')}</span>`;
+}
+
+function standingMini(score) {
+  const s = parseFloat(score) || 0;
+  const circ = 79.17; // 2*pi*12.6
+  const offset = circ - (s / 100) * circ;
+  return `<div class="ah-standing-mini">
+    <div class="ring"><svg viewBox="0 0 28 28"><circle class="track" cx="14" cy="14" r="12.6"/>
+    <circle class="fill" cx="14" cy="14" r="12.6" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/></svg></div>
+    <span class="val">${s.toFixed(0)}</span></div>`;
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ── ACTIONS ──
+async function approveApp(id) {
+  await fetch(`${API}/applications/${id}/approve`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + adminToken } });
+  await refreshData();
+}
+async function rejectApp(id) {
+  const reason = prompt('Rejection reason:');
+  if (!reason) return;
+  await fetch(`${API}/applications/${id}/reject`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) });
+  await refreshData();
+}
+async function reviewAssignment(id, action) {
+  const statusMap = { approve: 'APPROVED', changes: 'CHANGES_REQUESTED', reject: 'REJECTED' };
+  await fetch(`${API}/assignments/${id}/review`, { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: statusMap[action] }) });
+  await refreshData();
+}
+async function changeStatus(id, status) {
+  await fetch(`${API}/athletes/${id}/status`, { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+  await refreshData();
+  closeDrawer();
+}
+async function overrideLevel(id) {
+  const lvlId = prompt('Level ID to override to:');
+  const reason = prompt('Reason (mandatory):');
+  if (!lvlId || !reason) return;
+  await fetch(`${API}/athletes/${id}/override-level`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ level_id: parseInt(lvlId), reason }) });
+  await refreshData();
+  closeDrawer();
+}
+async function buildPayoutBatch() {
+  const start = prompt('Period start (YYYY-MM-DD):');
+  const end = prompt('Period end (YYYY-MM-DD):');
+  if (!start || !end) return;
+  await fetch(`${API}/payouts/build-batch`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ period_start: start, period_end: end }) });
+  await refreshData();
+}
+async function queuePayout(id) {
+  await fetch(`${API}/payouts/${id}/queue`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + adminToken } });
+  await refreshData();
+}
+async function saveSettings() {
+  const inputs = document.querySelectorAll('.setting-input');
+  const updates = [];
+  inputs.forEach(inp => {
+    try { updates.push({ key: inp.dataset.key, value: JSON.parse(inp.value) }); } catch(e) {}
+  });
+  await fetch(API + '/settings', { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: updates }) });
+  alert('Settings saved');
+  await refreshData();
+}
+function openTaskModal() { alert('Task creation modal — coming in next iteration'); }
+</script>
+</body>
+</html>
