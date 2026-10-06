@@ -4,7 +4,7 @@
 // Run AFTER supabase_migration_athlete_program.sql has been applied.
 // Maps existing data into the new domain model.
 //
-// Usage: node migrate-to-athlete-program.js
+// Usage: SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node migrate-to-athlete-program.js
 // ============================================================================
 
 require('dotenv').config();
@@ -15,11 +15,12 @@ async function migrate() {
 
   // 1. Map comfort levels
   console.log('1. Mapping comfort levels...');
-  const { data: levels } = await supabase
+  const { data: levels, error: lvlErr } = await supabase
     .from('comfort_levels')
     .select('id, ordinal, code')
     .order('ordinal');
 
+  if (lvlErr) { console.error('   Error:', lvlErr.message); return; }
   const levelByOrdinal = {};
   levels.forEach(l => levelByOrdinal[l.ordinal] = l.id);
   console.log(`   Found ${levels.length} levels`);
@@ -30,7 +31,7 @@ async function migrate() {
     .from('influencers')
     .select('*');
 
-  if (infErr) { console.error('   Error fetching influencers:', infErr); return; }
+  if (infErr) { console.error('   Error fetching influencers:', infErr.message); return; }
   console.log(`   Found ${oldInfluencers.length} influencers`);
 
   let migrated = 0;
@@ -38,10 +39,8 @@ async function migrate() {
 
   for (const inf of oldInfluencers) {
     try {
-      // Generate athlete_no
       const athleteNo = 'OFC-' + String(inf.id).padStart(4, '0');
 
-      // Map status
       const statusMap = {
         'pending': 'APPLIED',
         'active': 'ACTIVE',
@@ -50,13 +49,11 @@ async function migrate() {
       };
       const athleteStatus = statusMap[inf.status] || 'ACTIVE';
 
-      // Map follower tier to comfort level
-      let levelOrdinal = 1; // Default CL5
+      let levelOrdinal = 1;
       const tier = inf.follower_tier || 'Rising Star';
       if (tier === 'Top Tier Creator') levelOrdinal = 4;
       else if (tier === 'Established Influencer') levelOrdinal = 3;
       else if (tier === 'Growing Creator') levelOrdinal = 2;
-      else levelOrdinal = 1;
 
       const levelId = levelByOrdinal[levelOrdinal];
 
@@ -83,39 +80,42 @@ async function migrate() {
 
       // 3. Create social records
       if (inf.instagram_handle) {
-        await supabase.from('influencer_socials').upsert([{
+        const { error: socialErr } = await supabase.from('influencer_socials').upsert([{
           influencer_id: inf.id,
           platform: 'instagram',
           handle: inf.instagram_handle,
           followers: inf.follower_count || 0,
           is_primary: true
         }], { onConflict: 'influencer_id,platform' });
+        if (socialErr) console.log(`   Social skip (ig) ${inf.id}: ${socialErr.message}`);
       }
 
       if (inf.youtube_handle) {
-        await supabase.from('influencer_socials').upsert([{
+        const { error: socialErr } = await supabase.from('influencer_socials').upsert([{
           influencer_id: inf.id,
           platform: 'youtube',
           handle: inf.youtube_handle,
           followers: 0,
           is_primary: !inf.instagram_handle
         }], { onConflict: 'influencer_id,platform' });
+        if (socialErr) console.log(`   Social skip (yt) ${inf.id}: ${socialErr.message}`);
       }
 
       // 4. Create discount_code record
       if (inf.shopify_price_rule_id || inf.referral_code) {
-        await supabase.from('discount_codes').upsert([{
+        const { error: dcErr } = await supabase.from('discount_codes').upsert([{
           influencer_id: inf.id,
           code: inf.referral_code || 'CODE-' + inf.id,
           shopify_price_rule_id: inf.shopify_price_rule_id,
           shopify_discount_code_id: inf.shopify_discount_code_id,
           percent: inf.discount_value || 7,
           is_active: athleteStatus === 'ACTIVE'
-        }], { onConflict: 'code' }).catch(() => {});
+        }], { onConflict: 'code' });
+        if (dcErr) console.log(`   Discount skip ${inf.id}: ${dcErr.message}`);
       }
 
       // 5. Create level_history entry
-      await supabase.from('level_history').insert([{
+      const { error: lhErr } = await supabase.from('level_history').insert([{
         influencer_id: inf.id,
         from_level_id: null,
         to_level_id: levelId,
@@ -123,21 +123,24 @@ async function migrate() {
         reason_code: 'MIGRATION',
         actor_id: 'system'
       }]);
+      if (lhErr) console.log(`   Level history skip ${inf.id}: ${lhErr.message}`);
 
       // 6. Create PROGRESS access token
       const crypto = require('crypto');
       const rawToken = inf.link_token || crypto.randomBytes(32).toString('hex');
       const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-      await supabase.from('access_tokens').insert([{
+      const { error: tokErr } = await supabase.from('access_tokens').insert([{
         influencer_id: inf.id,
         scope: 'PROGRESS',
         token_hash: tokenHash,
         expires_at: null,
         single_use: false
-      }]).catch(() => {}); // Ignore if token already exists
+      }]);
+      if (tokErr) console.log(`   Token skip ${inf.id}: ${tokErr.message}`);
 
       migrated++;
+      if (migrated % 10 === 0) console.log(`   ... ${migrated}/${oldInfluencers.length}`);
     } catch (err) {
       console.error(`   Error migrating influencer ${inf.id}:`, err.message);
       errors++;
@@ -146,20 +149,35 @@ async function migrate() {
 
   console.log(`   Migrated: ${migrated}, Errors: ${errors}`);
 
-  // 7. Migrate influencer_orders -> attributed_orders
+  // 7. Migrate influencer_orders -> attributed_orders (batch with pagination)
   console.log('\n3. Migrating orders...');
-  const { data: oldOrders } = await supabase.from('influencer_orders').select('*');
+  let allOrders = [];
+  let page = 0;
+  const PAGE_SIZE = 1000;
+  while (true) {
+    const { data: pageOrders, error: pageErr } = await supabase
+      .from('influencer_orders')
+      .select('*')
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    if (pageErr) { console.error('   Page error:', pageErr.message); break; }
+    if (!pageOrders || pageOrders.length === 0) break;
+    allOrders = allOrders.concat(pageOrders);
+    if (pageOrders.length < PAGE_SIZE) break;
+    page++;
+  }
+  const oldOrders = allOrders;
+  console.log(`   Fetched ${oldOrders.length} orders in ${page + 1} pages`);
   let ordersMigrated = 0;
+  let ordersSkipped = 0;
 
-  for (const order of (oldOrders || [])) {
-    try {
-      // Find influencer's commission rate at time of migration
+  if (oldOrders && oldOrders.length > 0) {
+    // Build all order records
+    const orderRecords = oldOrders.map(order => {
       const inf = oldInfluencers.find(i => i.id === order.influencer_id);
       const commissionRate = inf?.commission_rate || 5;
       const netValue = parseFloat(order.total_price) || 0;
       const commissionAmount = Math.round(netValue * commissionRate / 100 * 100) / 100;
-
-      await supabase.from('attributed_orders').insert([{
+      return {
         influencer_id: order.influencer_id,
         shopify_order_id: order.shopify_order_id,
         code_used: order.referral_code,
@@ -176,26 +194,43 @@ async function migrate() {
         customer_name: order.customer_name,
         financial_status: order.financial_status,
         fulfillment_status: order.fulfillment_status
-      }]).catch(() => {}); // Ignore duplicates
+      };
+    });
 
-      ordersMigrated++;
-    } catch (err) {
-      // Skip duplicates silently
+    // Batch insert in groups of 100
+    const BATCH = 100;
+    for (let i = 0; i < orderRecords.length; i += BATCH) {
+      const batch = orderRecords.slice(i, i + BATCH);
+      const { error: batchErr } = await supabase.from('attributed_orders').upsert(batch, { onConflict: 'shopify_order_id' });
+      if (batchErr) {
+        // If batch upsert fails, try one-by-one
+        for (const rec of batch) {
+          const { error: singleErr } = await supabase.from('attributed_orders').upsert([rec], { onConflict: 'shopify_order_id' });
+          if (singleErr) {
+            ordersSkipped++;
+          } else {
+            ordersMigrated++;
+          }
+        }
+      } else {
+        ordersMigrated += batch.length;
+      }
+      if ((i + BATCH) % 500 === 0) console.log(`   ... ${Math.min(i + BATCH, orderRecords.length)}/${orderRecords.length}`);
     }
   }
 
-  console.log(`   Migrated: ${ordersMigrated} orders`);
+  console.log(`   Migrated: ${ordersMigrated}, Skipped: ${ordersSkipped}`);
 
   // 8. Migrate payouts
   console.log('\n4. Migrating payouts...');
-  const { data: oldPayouts } = await supabase.from('influencer_payouts').select('*');
+  const { data: oldPayouts } = await supabase.from('influencer_payouts').select('*').range(0, 10000);
   let payoutsMigrated = 0;
 
   for (const payout of (oldPayouts || [])) {
     try {
       const idempotencyKey = `payout:${payout.influencer_id}:${payout.month || payout.period_start || 'legacy'}`;
 
-      await supabase.from('payouts').insert([{
+      const { error: payErr } = await supabase.from('payouts').insert([{
         influencer_id: payout.influencer_id,
         period_start: payout.period_start || '2024-01-01',
         period_end: payout.period_end || '2024-12-31',
@@ -205,8 +240,10 @@ async function migrate() {
         status: payout.status === 'paid' ? 'SENT' : 'DRAFT',
         idempotency_key: idempotencyKey,
         notes: payout.notes
-      }]).catch(() => {});
-
+      }]);
+      if (payErr && !payErr.message.includes('duplicate')) {
+        console.log(`   Payout skip: ${payErr.message}`);
+      }
       payoutsMigrated++;
     } catch (err) {
       // Skip duplicates
@@ -225,7 +262,7 @@ async function migrate() {
   let appsMigrated = 0;
   for (const inf of (pendingInfluencers || [])) {
     try {
-      await supabase.from('applications').insert([{
+      const { error: appErr } = await supabase.from('applications').insert([{
         payload: {
           name: inf.name,
           platform: 'instagram',
@@ -240,8 +277,8 @@ async function migrate() {
         auto_score: 0,
         status: 'APPLIED',
         influencer_id: inf.id
-      }]).catch(() => {});
-
+      }]);
+      if (appErr) console.log(`   App skip ${inf.id}: ${appErr.message}`);
       appsMigrated++;
     } catch (err) {
       // Skip
@@ -266,9 +303,9 @@ async function migrate() {
 
     const orderCount = orders?.length || 0;
     if (orderCount > 0) {
-      const xpFromOrders = orderCount * 10; // 10 XP per order
+      const xpFromOrders = orderCount * 10;
 
-      await supabase.from('ledger_entries').insert([{
+      const { error: xpErr } = await supabase.from('ledger_entries').insert([{
         influencer_id: inf.id,
         currency: 'XP',
         amount: xpFromOrders,
@@ -277,7 +314,8 @@ async function migrate() {
         reason_code: 'MIGRATION_SEED',
         actor_id: 'system',
         idempotency_key: `migration:xp:${inf.id}`
-      }]).catch(() => {});
+      }]);
+      if (xpErr) console.log(`   XP skip ${inf.id}: ${xpErr.message}`);
 
       await supabase.from('influencers')
         .update({ xp_total: xpFromOrders })

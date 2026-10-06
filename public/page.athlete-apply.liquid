@@ -281,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const data = Object.fromEntries(form.entries());
 
     try {
-      const res = await fetch('/api/athlete/apply', {
+      const res = await fetch('https://exchange-return-tracking.onrender.com/api/athlete/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

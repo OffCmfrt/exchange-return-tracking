@@ -7,8 +7,27 @@
 -- ============================================================================
 
 -- ────────────────────────────────────────────────────────────────────────────
--- 0. PREREQUISITES — ensure base influencers table has required columns
+-- 0. PREREQUISITES — ensure base influencers table exists, then add columns
 -- ────────────────────────────────────────────────────────────────────────────
+
+-- Create base influencers table if it doesn't exist yet
+CREATE TABLE IF NOT EXISTS influencers (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT,
+  phone TEXT,
+  email TEXT,
+  referral_code TEXT,
+  link_token TEXT,
+  commission_rate NUMERIC(5,2) DEFAULT 5,
+  status TEXT DEFAULT 'active',
+  instagram_handle TEXT,
+  youtube_handle TEXT,
+  follower_count INTEGER,
+  niche TEXT,
+  city TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- Add new columns to existing influencers table (idempotent)
 ALTER TABLE influencers
