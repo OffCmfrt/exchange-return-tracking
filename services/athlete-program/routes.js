@@ -205,6 +205,77 @@ module.exports = function mountAthleteRoutes(app) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
+  // ── Generate/Retrieve Athlete Portal Token ──
+  app.post('/api/athlete-admin/athletes/:id/token', authAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { rotate } = req.body; // if true, revoke existing and create new
+
+      // Check if they already have a PROGRESS token
+      const { data: existingTokens } = await supabase
+        .from('access_tokens')
+        .select('id, scope')
+        .eq('influencer_id', parseInt(id))
+        .eq('scope', 'PROGRESS')
+        .is('revoked_at', null);
+
+      if (existingTokens && existingTokens.length > 0 && !rotate) {
+        return res.json({ 
+          success: true, 
+          data: { 
+            message: 'Token already exists',
+            has_token: true,
+            token_id: existingTokens[0].id
+          } 
+        });
+      }
+
+      // If rotating, revoke existing tokens
+      if (rotate) {
+        await supabase
+          .from('access_tokens')
+          .update({ revoked_at: new Date().toISOString() })
+          .eq('influencer_id', parseInt(id))
+          .eq('scope', 'PROGRESS')
+          .is('revoked_at', null);
+      }
+
+      // Generate new token
+      const crypto = require('crypto');
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+      const { data: newToken, error: insertErr } = await supabase
+        .from('access_tokens')
+        .insert([{
+          influencer_id: parseInt(id),
+          scope: 'PROGRESS',
+          token_hash: tokenHash,
+          expires_at: null,
+          single_use: false,
+          consumed_at: null,
+          revoked_at: null
+        }])
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      res.json({ 
+        success: true, 
+        data: { 
+          message: rotate ? 'Token rotated' : 'Token generated',
+          has_token: true,
+          token_id: newToken.id,
+          portal_url: 'https://exchange-return-tracking.onrender.com/pages/athlete-portal',
+          access_token: rawToken // Only returned once!
+        } 
+      });
+    } catch (err) { 
+      res.status(500).json({ error: err.message }); 
+    }
+  });
+
   // ─ Task Templates ──
   app.get('/api/athlete-admin/tasks', authAdmin, async (req, res) => {
     try {

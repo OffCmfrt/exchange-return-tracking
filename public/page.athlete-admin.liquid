@@ -1368,6 +1368,16 @@ function openAthleteDrawer(id) {
       <div class="ah-detail-row"><span class="label">Level Since</span><span class="value">${a.level_since ? new Date(a.level_since).toLocaleDateString('en-IN') : '—'}</span></div>
     </div>
     <div class="ah-drawer-section">
+      <h4>Portal Access</h4>
+      <div id="tokenSection-${a.id}">
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.75rem;line-height:1.5">
+          Share the portal link and access token with this athlete so they can view their progress, tasks, and leaderboard.
+        </div>
+        <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="generateToken(${a.id})" style="width:100%">Generate Portal Token</button>
+        <div id="tokenResult-${a.id}" style="margin-top:.75rem"></div>
+      </div>
+    </div>
+    <div class="ah-drawer-section">
       <h4>Actions</h4>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="overrideLevel(${a.id})">Override Level</button>
@@ -1461,6 +1471,84 @@ async function saveSettings() {
   await fetch(API + '/settings', { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: updates }) });
   alert('Settings saved');
   await refreshData();
+}
+
+async function generateToken(athleteId, rotate = false) {
+  const resultDiv = document.getElementById(`tokenResult-${athleteId}`);
+  if (!resultDiv) return;
+  
+  resultDiv.innerHTML = '<div style="font-size:.7rem;color:var(--muted)">Generating...</div>';
+  
+  try {
+    const res = await fetch(`${API}/athletes/${athleteId}/token`, {
+      method: 'POST',
+      headers: { 
+        'Authorization': 'Bearer ' + adminToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ rotate })
+    });
+    
+    const data = await res.json();
+    
+    if (!data.success) {
+      resultDiv.innerHTML = `<div style="font-size:.7rem;color:var(--danger)">Error: ${data.error || 'Failed to generate token'}</div>`;
+      return;
+    }
+    
+    if (data.data.access_token) {
+      // New token generated - show it
+      const portalUrl = data.data.portal_url;
+      const token = data.data.access_token;
+      
+      resultDiv.innerHTML = `
+        <div style="background:var(--surface-2);border:1px solid var(--border);padding:1rem;font-size:.7rem">
+          <div style="color:var(--success);font-weight:600;margin-bottom:.5rem">✓ Token Generated</div>
+          <div style="margin-bottom:.75rem">
+            <div style="color:var(--muted);font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.25rem">Portal URL</div>
+            <div style="word-break:break-all;color:var(--text);font-family:var(--mono)">${portalUrl}</div>
+          </div>
+          <div style="margin-bottom:.75rem">
+            <div style="color:var(--muted);font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.25rem">Access Token</div>
+            <div style="word-break:break-all;color:var(--text);font-family:var(--mono);background:var(--bg);padding:.5rem;border:1px solid var(--border)">${token}</div>
+          </div>
+          <div style="display:flex;gap:.5rem;margin-top:.75rem">
+            <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="copyToken('${token}')" style="flex:1">Copy Token</button>
+            <button class="ah-btn ah-btn-sm ah-btn-danger" onclick="generateToken(${athleteId}, true)" style="flex:1">Rotate</button>
+          </div>
+          <div style="color:var(--warning);font-size:.6rem;margin-top:.5rem;line-height:1.4">
+            ⚠️ Save this token now — it won't be shown again. Use "Rotate" if the athlete loses it.
+          </div>
+        </div>`;
+    } else {
+      // Token already exists
+      resultDiv.innerHTML = `
+        <div style="background:var(--surface-2);border:1px solid var(--border);padding:1rem;font-size:.7rem">
+          <div style="color:var(--info);font-weight:600;margin-bottom:.5rem">ℹ️ Token Already Exists</div>
+          <div style="color:var(--muted);margin-bottom:.75rem;line-height:1.5">
+            This athlete already has a portal token. If they lost it, click "Rotate" to generate a new one (the old token will stop working).
+          </div>
+          <button class="ah-btn ah-btn-sm ah-btn-danger" onclick="generateToken(${athleteId}, true)" style="width:100%">Rotate Token</button>
+        </div>`;
+    }
+  } catch (err) {
+    resultDiv.innerHTML = `<div style="font-size:.7rem;color:var(--danger)">Error: ${err.message}</div>`;
+  }
+}
+
+function copyToken(token) {
+  navigator.clipboard.writeText(token).then(() => {
+    alert('Token copied to clipboard!');
+  }).catch(() => {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea');
+    textArea.value = token;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    alert('Token copied to clipboard!');
+  });
 }
 
 // ── MODAL OVERLAY CLICK & KEYBOARD ──
