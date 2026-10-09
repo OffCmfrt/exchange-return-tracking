@@ -369,6 +369,13 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
         <div class="ah-nav-item" data-section="payouts">Payouts</div>
         <div class="ah-nav-item" data-section="settings">Settings</div>
       </div>
+      <div class="ah-nav-group">
+        <div class="ah-nav-group-label">Gamification</div>
+        <div class="ah-nav-item" data-section="daily-pools">Daily Tasks</div>
+        <div class="ah-nav-item" data-section="weekly-challenges">Weekly Challenge</div>
+        <div class="ah-nav-item" data-section="game-settings">Game Settings</div>
+        <div class="ah-nav-item" data-section="streaks-badges">Streaks & Badges</div>
+      </div>
     </nav>
     <div class="ah-sidebar-foot">FM-OFC-03 v1.0</div>
   </aside>
@@ -526,6 +533,60 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
         <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:1.25rem">Program Settings</h2>
         <div id="settingsView"></div>
         <button class="ah-btn ah-btn-sm" style="margin-top:1.5rem" onclick="saveSettings()">Save Changes</button>
+      </div>
+
+      <!-- DAILY TASK POOLS -->
+      <div class="ah-section" id="sec-daily-pools">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:.75rem">
+          <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700">Daily Task Pools</h2>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <input type="date" class="ah-input" style="margin:0;padding:.45rem .75rem;font-size:.7rem;width:auto" id="poolDatePicker">
+            <button class="ah-btn ah-btn-sm" onclick="openPoolModal()">+ Create Pool</button>
+          </div>
+        </div>
+        <div id="poolsList"></div>
+      </div>
+
+      <!-- WEEKLY CHALLENGES -->
+      <div class="ah-section" id="sec-weekly-challenges">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+          <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700">Weekly Challenges</h2>
+          <button class="ah-btn ah-btn-sm" onclick="openWeeklyModal()">+ New Challenge</button>
+        </div>
+        <div class="ah-table-wrap">
+          <table class="ah-table">
+            <thead><tr><th>Title</th><th>Week</th><th>Rewards</th><th>Entries</th><th>Status</th><th></th></tr></thead>
+            <tbody id="weeklyTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- GAME SETTINGS -->
+      <div class="ah-section" id="sec-game-settings">
+        <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:1.25rem">Game Settings</h2>
+        <div id="gameSettingsView"></div>
+        <button class="ah-btn ah-btn-sm" style="margin-top:1.5rem" onclick="saveGameSettings()">Save Changes</button>
+      </div>
+
+      <!-- STREAKS & BADGES -->
+      <div class="ah-section" id="sec-streaks-badges">
+        <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:1.25rem">Streaks</h2>
+        <div class="ah-table-wrap" style="margin-bottom:2rem">
+          <table class="ah-table">
+            <thead><tr><th>Athlete</th><th>Current Streak</th><th>Longest</th><th>Total Days</th><th>Last Active</th></tr></thead>
+            <tbody id="streaksTable"></tbody>
+          </table>
+        </div>
+        <h2 style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;font-weight:700;margin-bottom:1.25rem">Badge Library</h2>
+        <div class="ah-table-wrap">
+          <table class="ah-table">
+            <thead><tr><th>Icon</th><th>Code</th><th>Name</th><th>Category</th><th>Criteria</th><th>Status</th></tr></thead>
+            <tbody id="badgesTable"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:1rem;display:flex;gap:.5rem">
+          <button class="ah-btn ah-btn-sm" onclick="openAwardBadgeModal()">Award Badge Manually</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1557,6 +1618,265 @@ document.getElementById('assignModalOverlay')?.addEventListener('click', e => { 
 document.getElementById('deleteModalOverlay')?.addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeTaskModal(); closeAssignModal(); closeDeleteModal(); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// GAMIFICATION ADMIN
+// ══════════════════════════════════════════════════════════════════════════
+
+let gameSettings = [];
+let allTaskTemplates = [];
+const ah = () => ({ 'Authorization': 'Bearer ' + adminToken });
+
+// ── DAILY POOLS ──
+async function loadDailyPools() {
+  try {
+    const res = await fetch(API + '/daily-pools', { headers: ah() });
+    const data = await res.json();
+    renderPools(data.data || []);
+  } catch (err) { console.error('Pools load:', err); }
+}
+
+function renderPools(pools) {
+  const el = document.getElementById('poolsList');
+  if (pools.length === 0) {
+    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--muted);font-size:.75rem;border:1px solid var(--border)">No pools created yet. Click "+ Create Pool" to start.</div>';
+    return;
+  }
+  el.innerHTML = pools.map(p => `
+    <div style="border:1px solid var(--border);margin-bottom:.5rem;padding:1rem 1.25rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+      <div>
+        <div style="font-weight:700;font-size:.85rem">${p.pool_date}</div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:.25rem">${(p.tasks||[]).length} tasks · ${p.is_published ? '<span style="color:var(--success)">Published</span>' : '<span style="color:var(--muted)">Draft</span>'}</div>
+      </div>
+      <div style="display:flex;gap:.35rem;flex-wrap:wrap">
+        ${(p.tasks||[]).map(t => `<span style="font-size:.55rem;padding:2px 6px;border:1px solid var(--border);font-family:var(--mono)">${esc(t.title||t.id)}</span>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function openPoolModal() {
+  const date = document.getElementById('poolDatePicker').value || new Date().toISOString().slice(0,10);
+  const taskIds = prompt('Enter task template IDs (comma-separated, max 5):');
+  if (!taskIds) return;
+  const ids = taskIds.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+  if (ids.length === 0 || ids.length > 5) return alert('Enter 1-5 valid task IDs');
+
+  fetch(API + '/daily-pools', {
+    method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pool_date: date, task_template_ids: ids })
+  }).then(r => r.json()).then(data => {
+    if (data.success) { showToast('Pool created for ' + date, 'success'); loadDailyPools(); }
+    else showToast(data.error || 'Failed', 'error');
+  }).catch(() => showToast('Network error', 'error'));
+}
+
+// ── WEEKLY CHALLENGES ──
+async function loadWeeklyChallenges() {
+  try {
+    const res = await fetch(API + '/weekly-challenges?include_past=true', { headers: ah() });
+    const data = await res.json();
+    renderWeeklyTable(data.data || []);
+  } catch (err) { console.error('Weekly load:', err); }
+}
+
+function renderWeeklyTable(challenges) {
+  const tbody = document.getElementById('weeklyTable');
+  if (challenges.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--muted)">No challenges yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = challenges.map(c => `
+    <tr>
+      <td><strong>${esc(c.title)}</strong>${c.cover_emoji ? ' '+c.cover_emoji : ''}</td>
+      <td class="mono" style="font-size:.65rem">${c.week_start} → ${c.week_end}</td>
+      <td class="mono">${c.reward_xp||0} XP / ${c.reward_coins||0} 🪙</td>
+      <td class="mono">${c.entry_total||0} <span class="muted">(${c.entry_pending||0} pending)</span></td>
+      <td>${c.is_active ? '<span class="ah-badge active">Active</span>' : '<span class="ah-badge">Ended</span>'}</td>
+      <td>
+        <button class="ah-btn ah-btn-sm ah-btn-outline" onclick="viewWeeklyEntries(${c.id})">Entries</button>
+        ${c.is_active ? '' : `<button class="ah-btn ah-btn-sm" onclick="awardWeekly(${c.id})">Award</button>`}
+      </td>
+    </tr>`).join('');
+}
+
+function openWeeklyModal() {
+  const title = prompt('Challenge title:');
+  if (!title) return;
+  const desc = prompt('Description:') || '';
+  const weekStart = prompt('Week start (YYYY-MM-DD):', new Date().toISOString().slice(0,10));
+  if (!weekStart) return;
+  const weekEnd = prompt('Week end (YYYY-MM-DD):');
+  if (!weekEnd) return;
+  const xp = parseInt(prompt('Reward XP (1st place):', '500')) || 500;
+  const coins = parseInt(prompt('Reward Coins (1st place):', '200')) || 200;
+
+  fetch(API + '/weekly-challenges', {
+    method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, description: desc, week_start: weekStart, week_end: weekEnd, reward_xp: xp, reward_coins: coins, max_winners: 3, is_active: true })
+  }).then(r => r.json()).then(data => {
+    if (data.success) { showToast('Challenge created!', 'success'); loadWeeklyChallenges(); }
+    else showToast(data.error || 'Failed', 'error');
+  }).catch(() => showToast('Network error', 'error'));
+}
+
+async function viewWeeklyEntries(challengeId) {
+  try {
+    const res = await fetch(API + '/weekly-challenges/' + challengeId + '/leaderboard', { headers: ah() });
+    const data = await res.json();
+    const entries = data.data?.entries || [];
+    if (entries.length === 0) return showToast('No entries yet', 'error');
+
+    let html = '<h4 style="margin-bottom:.75rem">Entries & Rankings</h4>';
+    html += entries.map(e => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.75rem">
+        <div><strong>${esc(e.athlete?.name||'Unknown')}</strong> <span class="muted">${e.athlete?.athlete_no||''}</span>
+          <div style="font-size:.6rem;color:var(--muted)">${e.submission_url ? '<a href="'+e.submission_url+'" target="_blank" style="color:var(--info)">View Post</a>' : 'No URL'}</div>
+        </div>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <span class="mono" style="font-size:.65rem">${e.status}</span>
+          ${e.rank ? '<span class="mono" style="font-weight:700">#'+e.rank+'</span>' : ''}
+        </div>
+      </div>`).join('');
+
+    showToast(html);
+  } catch (err) { showToast('Error loading entries', 'error'); }
+}
+
+async function awardWeekly(challengeId) {
+  if (!confirm('Award winners for this challenge? This will distribute XP, coins, and badges.')) return;
+  try {
+    const res = await fetch(API + '/weekly-challenges/' + challengeId + '/award-winners', {
+      method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.success) { showToast('Awarded ' + data.data.awarded + ' winners!', 'success'); loadWeeklyChallenges(); }
+    else showToast(data.error || 'Failed', 'error');
+  } catch (err) { showToast('Network error', 'error'); }
+}
+
+// ── GAME SETTINGS ──
+async function loadGameSettings() {
+  try {
+    const res = await fetch(API.replace('/athlete-admin','/athlete-admin') + '/game-settings', { headers: ah() });
+    const data = await res.json();
+    gameSettings = data.data || [];
+    renderGameSettings();
+  } catch (err) { console.error('Game settings load:', err); }
+}
+
+function renderGameSettings() {
+  const el = document.getElementById('gameSettingsView');
+  const groups = {};
+  gameSettings.forEach(s => {
+    const group = s.key.split('.')[0];
+    if (!groups[group]) groups[group] = [];
+    groups[group].push(s);
+  });
+
+  el.innerHTML = Object.entries(groups).map(([group, settings]) => `
+    <div class="ah-settings-group">
+      <h4>${group.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</h4>
+      ${settings.map(s => `
+        <div class="ah-setting-row">
+          <div><div class="key">${s.key}</div><div class="desc">${esc(s.description||'')}</div></div>
+          <input type="text" value="${esc(typeof s.value === 'string' ? s.value : JSON.stringify(s.value))}" data-key="${s.key}" onchange="updateGameSettingVal(this)">
+          <div></div>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+function updateGameSettingVal(input) {
+  const key = input.dataset.key;
+  let val = input.value;
+  try { val = JSON.parse(val); } catch(e) {}
+  const setting = gameSettings.find(s => s.key === key);
+  if (setting) setting.value = val;
+}
+
+async function saveGameSettings() {
+  const settings = gameSettings.map(s => ({ key: s.key, value: s.value }));
+  try {
+    const res = await fetch(API + '/game-settings', {
+      method: 'PATCH', headers: { ...ah(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings })
+    });
+    const data = await res.json();
+    if (data.success) showToast('Game settings saved!', 'success');
+    else showToast(data.error || 'Failed', 'error');
+  } catch (err) { showToast('Network error', 'error'); }
+}
+
+// ── STREAKS & BADGES ──
+async function loadStreaks() {
+  try {
+    const res = await fetch(API + '/streaks', { headers: ah() });
+    const data = await res.json();
+    renderStreaks(data.data || []);
+  } catch (err) { console.error('Streaks load:', err); }
+}
+
+function renderStreaks(streaks) {
+  const tbody = document.getElementById('streaksTable');
+  if (streaks.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--muted)">No streak data yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = streaks.map(s => `
+    <tr>
+      <td><strong>${esc(s.influencers?.name||'Athlete '+s.influencer_id)}</strong> <span class="muted mono" style="font-size:.6rem">${s.influencers?.athlete_no||''}</span></td>
+      <td class="mono" style="font-weight:700;${s.current_streak >= 7 ? 'color:var(--warning)' : ''}">${s.current_streak} 🔥</td>
+      <td class="mono">${s.longest_streak}</td>
+      <td class="mono">${s.total_active_days||0}</td>
+      <td class="muted">${s.last_active_date || '—'}</td>
+    </tr>`).join('');
+}
+
+async function loadBadges() {
+  try {
+    const res = await fetch(API + '/badges', { headers: ah() });
+    const data = await res.json();
+    renderBadges(data.data || []);
+  } catch (err) { console.error('Badges load:', err); }
+}
+
+function renderBadges(badges) {
+  const tbody = document.getElementById('badgesTable');
+  tbody.innerHTML = badges.map(b => `
+    <tr>
+      <td style="font-size:1.2rem">${b.icon||'🏅'}</td>
+      <td class="mono" style="font-size:.65rem">${b.code}</td>
+      <td><strong>${esc(b.name)}</strong></td>
+      <td><span style="font-size:.55rem;padding:2px 6px;border:1px solid var(--border)">${b.category}</span></td>
+      <td class="muted" style="font-size:.65rem">${b.criteria_type}${b.criteria_value ? ' (>='+b.criteria_value+')' : ''}</td>
+      <td>${b.is_active ? '<span class="ah-badge active">Active</span>' : '<span class="ah-badge">Inactive</span>'}</td>
+    </tr>`).join('');
+}
+
+function openAwardBadgeModal() {
+  const athleteId = prompt('Athlete ID:');
+  if (!athleteId) return;
+  const badgeCode = prompt('Badge code (e.g. streak_7, weekly_champion, first_post):');
+  if (!badgeCode) return;
+
+  fetch(API + '/badges/award', {
+    method: 'POST', headers: { ...ah(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ influencer_id: parseInt(athleteId), badge_code: badgeCode })
+  }).then(r => r.json()).then(data => {
+    if (data.success) { showToast(data.data ? 'Badge awarded!' : 'Badge already earned', 'success'); }
+    else showToast(data.error || 'Failed', 'error');
+  }).catch(() => showToast('Network error', 'error'));
+}
+
+// ── Load gamification data on nav ──
+document.querySelectorAll('.ah-nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const sec = item.dataset.section;
+    if (sec === 'daily-pools') loadDailyPools();
+    if (sec === 'weekly-challenges') loadWeeklyChallenges();
+    if (sec === 'game-settings') loadGameSettings();
+    if (sec === 'streaks-badges') { loadStreaks(); loadBadges(); }
+  });
 });
 </script>
 </body>

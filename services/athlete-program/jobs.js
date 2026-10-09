@@ -5,7 +5,7 @@
 // liveness verification, trial nudges, and trial expiry.
 // ============================================================================
 
-const { StandingService, LevelEngine, TransitionService } = require('./index');
+const { StandingService, LevelEngine, TransitionService, GamificationService } = require('./index');
 const supabase = require('../../config/supabase');
 
 const AthleteJobs = {
@@ -34,6 +34,10 @@ const AthleteJobs = {
       // 4. Check trial expiry
       const trialResult = await this.checkTrialExpiry();
       console.log(`[AthleteJobs] Trial check: ${trialResult.expired} expired, ${trialResult.nudged} nudged`);
+
+      // 5. Update streaks (check who was active today)
+      const streakResult = await this.updateDailyStreaks();
+      console.log(`[AthleteJobs] Streak update: ${streakResult.updated} updated, ${streakResult.broken} broken`);
 
     } catch (err) {
       console.error('[AthleteJobs] Nightly run failed:', err);
@@ -212,6 +216,237 @@ const AthleteJobs = {
 
     console.log(`[AthleteJobs] Liveness: ${verified} verified, ${clawed} clawed back`);
     return { verified, clawed };
+  },
+
+  /**
+   * Run daily jobs — call at configured refresh time (default 09:00 IST).
+   * Auto-generates next day's task pool if not already created.
+   */
+  async runDaily() {
+    console.log('[AthleteJobs] Starting daily run...');
+    const start = Date.now();
+
+    try {
+      // Auto-generate tomorrow's pool if not exists
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const { data: existingPool } = await supabase
+        .from('daily_task_pools')
+        .select('id')
+        .eq('pool_date', tomorrow)
+        .maybeSingle();
+
+      if (!existingPool) {
+        const result = await this.autoGeneratePool(tomorrow);
+        console.log(`[AthleteJobs] Auto-generated pool for ${tomorrow}: ${result.taskCount} tasks`);
+      }
+
+      // Expire yesterday's unpicked tasks
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      await this.expireUnpickedTasks(yesterday);
+      console.log(`[AthleteJobs] Expired unpicked tasks for ${yesterday}`);
+
+    } catch (err) {
+      console.error('[AthleteJobs] Daily run failed:', err);
+    }
+
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    console.log(`[AthleteJobs] Daily run complete in ${elapsed}s`);
+  },
+
+  /**
+   * Run weekly jobs — call on Monday 00:00 IST.
+   * Closes previous week's challenge, ranks entries, awards winners.
+   */
+  async runWeekly() {
+    console.log('[AthleteJobs] Starting weekly run...');
+    const start = Date.now();
+
+    try {
+      // Find last week's challenge
+      const today = new Date();
+      const lastWeekEnd = new Date(today);
+      lastWeekEnd.setDate(today.getDate() - today.getDay()); // Last Sunday
+      const lastWeekStart = new Date(lastWeekEnd);
+      lastWeekStart.setDate(lastWeekEnd.getDate() - 6); // Last Monday
+
+      const startDate = lastWeekStart.toISOString().slice(0, 10);
+      const endDate = lastWeekEnd.toISOString().slice(0, 10);
+
+      const { data: challenge } = await supabase
+        .from('weekly_challenges')
+        .select('*')
+        .eq('is_active', true)
+        .eq('week_start', startDate)
+        .maybeSingle();
+
+      if (challenge) {
+        // Rank entries by score (or admin-reviewed rank)
+        const { data: entries } = await supabase
+          .from('weekly_challenge_entries')
+          .select('*')
+          .eq('weekly_challenge_id', challenge.id)
+          .eq('status', 'APPROVED')
+          .order('score', { ascending: false });
+
+        // Assign ranks if not already ranked
+        if (entries && entries.length > 0) {
+          for (let i = 0; i < entries.length; i++) {
+            if (!entries[i].rank) {
+              await supabase
+                .from('weekly_challenge_entries')
+                .update({ rank: i + 1 })
+                .eq('id', entries[i].id);
+            }
+          }
+        }
+
+        // Award winners
+        const result = await GamificationService.awardWeeklyWinners(challenge.id);
+        console.log(`[AthleteJobs] Awarded ${result.awarded} weekly winners for challenge "${challenge.title}"`);
+
+        // Deactivate the challenge
+        await supabase
+          .from('weekly_challenges')
+          .update({ is_active: false })
+          .eq('id', challenge.id);
+      }
+
+    } catch (err) {
+      console.error('[AthleteJobs] Weekly run failed:', err);
+    }
+
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    console.log(`[AthleteJobs] Weekly run complete in ${elapsed}s`);
+  },
+
+  /**
+   * Auto-generate a task pool for a date by selecting from active task templates.
+   * Picks a mix of task types for variety.
+   */
+  async autoGeneratePool(date) {
+    const maxPicks = await this._getSetting('daily_task.max_picks', 5);
+
+    // Get active, non-trial task templates
+    const { data: templates } = await supabase
+      .from('task_templates')
+      .select('id, title, type, xp_value, coin_value')
+      .eq('is_active', true)
+      .eq('is_trial_task', false);
+
+    if (!templates || templates.length === 0) return { taskCount: 0 };
+
+    // Pick up to maxPicks tasks, trying to vary types
+    const selected = [];
+    const usedTypes = new Set();
+
+    // First pass: one of each type
+    for (const t of templates) {
+      if (selected.length >= maxPicks) break;
+      if (!usedTypes.has(t.type)) {
+        selected.push(t.id);
+        usedTypes.add(t.type);
+      }
+    }
+
+    // Second pass: fill remaining slots
+    for (const t of templates) {
+      if (selected.length >= maxPicks) break;
+      if (!selected.includes(t.id)) {
+        selected.push(t.id);
+      }
+    }
+
+    await GamificationService.createDailyPool(date, selected, 'system');
+    return { taskCount: selected.length };
+  },
+
+  /**
+   * Expire picks that were PICKED but never submitted.
+   */
+  async expireUnpickedTasks(date) {
+    const { data: picks } = await supabase
+      .from('daily_task_picks')
+      .select('id, assignment_id')
+      .eq('pool_date', date)
+      .eq('status', 'PICKED');
+
+    if (!picks || picks.length === 0) return;
+
+    const pickIds = picks.map(p => p.id);
+    const assignmentIds = picks.map(p => p.assignment_id).filter(Boolean);
+
+    // Update pick status
+    if (pickIds.length > 0) {
+      await supabase
+        .from('daily_task_picks')
+        .update({ status: 'EXPIRED' })
+        .in('id', pickIds);
+    }
+
+    // Expire associated assignments
+    if (assignmentIds.length > 0) {
+      await supabase
+        .from('assignments')
+        .update({ status: 'EXPIRED' })
+        .in('id', assignmentIds)
+        .eq('status', 'ASSIGNED');
+    }
+  },
+
+  /**
+   * Update streaks nightly — check which athletes had activity today.
+   */
+  async updateDailyStreaks() {
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+    // Find athletes who had an approved submission today
+    const { data: todayApprovals } = await supabase
+      .from('assignments')
+      .select('influencer_id')
+      .eq('reviewed_at', today)
+      .in('status', ['APPROVED', 'VERIFIED_LIVE']);
+
+    // Also check daily_task_picks completed today
+    const { data: todayPicks } = await supabase
+      .from('daily_task_picks')
+      .select('influencer_id')
+      .eq('pool_date', today)
+      .in('status', ['APPROVED', 'SUBMITTED']);
+
+    const activeToday = new Set();
+    (todayApprovals || []).forEach(a => activeToday.add(a.influencer_id));
+    (todayPicks || []).forEach(p => activeToday.add(p.influencer_id));
+
+    let updated = 0, broken = 0;
+
+    // Get all athletes with active streaks
+    const { data: streaks } = await supabase
+      .from('athlete_streaks')
+      .select('*')
+      .gt('current_streak', 0);
+
+    for (const streak of (streaks || [])) {
+      if (streak.last_active_date === today) continue; // Already updated
+
+      if (streak.last_active_date === yesterday && activeToday.has(streak.influencer_id)) {
+        // Consecutive — will be handled by GamificationService.updateStreak when task approved
+        continue;
+      }
+
+      if (streak.last_active_date !== today && streak.last_active_date !== yesterday) {
+        // Streak broken (missed a day)
+        await supabase
+          .from('athlete_streaks')
+          .update({ current_streak: 0, updated_at: new Date().toISOString() })
+          .eq('influencer_id', streak.influencer_id);
+        broken++;
+      }
+    }
+
+    updated = activeToday.size;
+    return { updated, broken };
   },
 
   /**

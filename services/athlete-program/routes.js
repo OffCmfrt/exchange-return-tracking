@@ -9,7 +9,8 @@
 const supabase = require('../../config/supabase');
 const {
   LedgerService, LevelEngine, TransitionService,
-  TokenService, StandingService, AttributionService, PayoutService
+  TokenService, StandingService, AttributionService, PayoutService,
+  GamificationService
 } = require('./index');
 
 module.exports = function mountAthleteRoutes(app) {
@@ -774,6 +775,282 @@ module.exports = function mountAthleteRoutes(app) {
       }));
 
       res.json({ success: true, data: enriched });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GAMIFICATION — ADMIN ROUTES
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── Daily Task Pools (Admin) ──
+  app.get('/api/athlete-admin/daily-pools', authAdmin, async (req, res) => {
+    try {
+      const { start_date, end_date } = req.query;
+      const pools = await GamificationService.listDailyPools(start_date, end_date);
+      res.json({ success: true, data: pools });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/athlete-admin/daily-pools', authAdmin, async (req, res) => {
+    try {
+      const { pool_date, task_template_ids } = req.body;
+      if (!pool_date || !task_template_ids || !Array.isArray(task_template_ids)) {
+        return res.status(400).json({ error: 'pool_date and task_template_ids[] are required' });
+      }
+      const pool = await GamificationService.createDailyPool(pool_date, task_template_ids, req.adminToken);
+      res.json({ success: true, data: pool });
+    } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+  });
+
+  // ── Weekly Challenges (Admin) ──
+  app.get('/api/athlete-admin/weekly-challenges', authAdmin, async (req, res) => {
+    try {
+      const { include_past } = req.query;
+      const challenges = await GamificationService.listWeeklyChallenges(include_past === 'true');
+      res.json({ success: true, data: challenges });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/athlete-admin/weekly-challenges', authAdmin, async (req, res) => {
+    try {
+      const body = req.body;
+      body.created_by = req.adminToken;
+      body.reward_xp = parseInt(body.reward_xp) || 0;
+      body.reward_coins = parseInt(body.reward_coins) || 0;
+      body.max_winners = parseInt(body.max_winners) || 3;
+
+      const { data, error } = await supabase.from('weekly_challenges').insert([body]).select().single();
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.patch('/api/athlete-admin/weekly-challenges/:id', authAdmin, async (req, res) => {
+    try {
+      const body = { ...req.body };
+      if (body.reward_xp !== undefined) body.reward_xp = parseInt(body.reward_xp);
+      if (body.reward_coins !== undefined) body.reward_coins = parseInt(body.reward_coins);
+      if (body.max_winners !== undefined) body.max_winners = parseInt(body.max_winners);
+
+      const { data, error } = await supabase.from('weekly_challenges').update(body).eq('id', req.params.id).select().single();
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get('/api/athlete-admin/weekly-challenges/:id/leaderboard', authAdmin, async (req, res) => {
+    try {
+      const challengeId = parseInt(req.params.id);
+
+      // Get all entries for this challenge
+      const { data: entries, error } = await supabase
+        .from('weekly_challenge_entries')
+        .select('*')
+        .eq('weekly_challenge_id', challengeId)
+        .order('rank', { ascending: true, nullsLast: true });
+
+      if (error) throw error;
+
+      // Enrich with athlete info
+      const athleteIds = [...new Set((entries || []).map(e => e.influencer_id))];
+      let athletesMap = {};
+      if (athleteIds.length > 0) {
+        const { data: athletes } = await supabase
+          .from('influencers')
+          .select('id, name, athlete_no, level_id')
+          .in('id', athleteIds);
+        const levelIds = [...new Set((athletes || []).map(a => a.level_id).filter(Boolean))];
+        let levelsMap = {};
+        if (levelIds.length > 0) {
+          const { data: levels } = await supabase.from('comfort_levels').select('id, display_name').in('id', levelIds);
+          (levels || []).forEach(l => { levelsMap[l.id] = l; });
+        }
+        (athletes || []).forEach(a => {
+          athletesMap[a.id] = { ...a, level_name: levelsMap[a.level_id]?.display_name || '—' };
+        });
+      }
+
+      const enriched = (entries || []).map(e => ({
+        ...e,
+        athlete: athletesMap[e.influencer_id] || { name: 'Unknown', athlete_no: '—' }
+      }));
+
+      const { data: challenge } = await supabase.from('weekly_challenges').select('*').eq('id', challengeId).single();
+
+      res.json({ success: true, data: { challenge, entries: enriched } });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.patch('/api/athlete-admin/weekly-entries/:id/review', authAdmin, async (req, res) => {
+    try {
+      const { status, score, rank } = req.body;
+      const entry = await GamificationService.reviewWeeklyEntry(
+        parseInt(req.params.id), status, score, rank, req.adminToken
+      );
+      res.json({ success: true, data: entry });
+    } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+  });
+
+  app.post('/api/athlete-admin/weekly-challenges/:id/award-winners', authAdmin, async (req, res) => {
+    try {
+      const result = await GamificationService.awardWeeklyWinners(parseInt(req.params.id));
+      res.json({ success: true, data: result });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Game Settings (Admin) ──
+  app.get('/api/athlete-admin/game-settings', authAdmin, async (req, res) => {
+    try {
+      const settings = await GamificationService.getGameSettings();
+      res.json({ success: true, data: settings });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.patch('/api/athlete-admin/game-settings', authAdmin, async (req, res) => {
+    try {
+      const { settings } = req.body;
+      if (!settings || !Array.isArray(settings)) return res.status(400).json({ error: 'settings[] array required' });
+      await GamificationService.updateGameSettings(settings, req.adminToken);
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Streaks (Admin) ──
+  app.get('/api/athlete-admin/streaks', authAdmin, async (req, res) => {
+    try {
+      const streaks = await GamificationService.getAllStreaks();
+      res.json({ success: true, data: streaks });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.patch('/api/athlete-admin/streaks/:influencerId', authAdmin, async (req, res) => {
+    try {
+      const { current_streak, longest_streak } = req.body;
+      const updateData = { updated_at: new Date().toISOString() };
+      if (current_streak !== undefined) updateData.current_streak = parseInt(current_streak);
+      if (longest_streak !== undefined) updateData.longest_streak = parseInt(longest_streak);
+
+      const { data, error } = await supabase
+        .from('athlete_streaks')
+        .update(updateData)
+        .eq('influencer_id', parseInt(req.params.influencerId))
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Badges (Admin) ──
+  app.get('/api/athlete-admin/badges', authAdmin, async (req, res) => {
+    try {
+      const badges = await GamificationService.getAllBadgeDefinitions();
+      res.json({ success: true, data: badges });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/athlete-admin/badges', authAdmin, async (req, res) => {
+    try {
+      const { data, error } = await supabase.from('badge_definitions').insert([req.body]).select().single();
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/athlete-admin/badges/award', authAdmin, async (req, res) => {
+    try {
+      const { influencer_id, badge_code } = req.body;
+      if (!influencer_id || !badge_code) return res.status(400).json({ error: 'influencer_id and badge_code required' });
+      const result = await GamificationService.manualAwardBadge(parseInt(influencer_id), badge_code);
+      res.json({ success: true, data: result });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GAMIFICATION — ATHLETE-FACING ROUTES (scoped token auth)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── Daily Tasks ──
+  app.get('/api/athlete/:token/daily-tasks', authAthlete, async (req, res) => {
+    try {
+      const { influencerId, scope } = req.athleteScope;
+      if (scope !== 'PROGRESS') return res.status(403).json({ error: 'Wrong scope' });
+
+      const result = await GamificationService.getDailyTasksForAthlete(influencerId);
+      res.json({ success: true, data: result });
+    } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+  });
+
+  app.post('/api/athlete/:token/daily-tasks/pick', authAthlete, async (req, res) => {
+    try {
+      const { influencerId, scope } = req.athleteScope;
+      if (scope !== 'PROGRESS') return res.status(403).json({ error: 'Wrong scope' });
+
+      const { task_template_id, date } = req.body;
+      if (!task_template_id) return res.status(400).json({ error: 'task_template_id is required' });
+
+      const result = await GamificationService.pickTask(influencerId, parseInt(task_template_id), date);
+      res.json({ success: true, data: result });
+    } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+  });
+
+  // ── Weekly Challenge ──
+  app.get('/api/athlete/:token/weekly-challenge', authAthlete, async (req, res) => {
+    try {
+      const { influencerId, scope } = req.athleteScope;
+      if (scope !== 'PROGRESS') return res.status(403).json({ error: 'Wrong scope' });
+
+      const result = await GamificationService.getWeeklyChallengeForAthlete(influencerId);
+      res.json({ success: true, data: result });
+    } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+  });
+
+  app.post('/api/athlete/:token/weekly-challenge/submit', authAthlete, async (req, res) => {
+    try {
+      const { influencerId, scope } = req.athleteScope;
+      if (scope !== 'PROGRESS') return res.status(403).json({ error: 'Wrong scope' });
+
+      const { challenge_id, submission_url, caption, disclosure_found } = req.body;
+      if (!challenge_id || !submission_url) {
+        return res.status(400).json({ error: 'challenge_id and submission_url are required' });
+      }
+
+      const entry = await GamificationService.submitWeeklyEntry(
+        influencerId, parseInt(challenge_id), submission_url, caption, disclosure_found
+      );
+      res.json({ success: true, data: entry });
+    } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+  });
+
+  // ── Weekly Leaderboard ──
+  app.get('/api/athlete/:token/weekly-leaderboard', authAthlete, async (req, res) => {
+    try {
+      const { challenge_id } = req.query;
+      const result = await GamificationService.getWeeklyLeaderboard(challenge_id ? parseInt(challenge_id) : null);
+      res.json({ success: true, data: result });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Streak ──
+  app.get('/api/athlete/:token/streak', authAthlete, async (req, res) => {
+    try {
+      const { influencerId, scope } = req.athleteScope;
+      if (scope !== 'PROGRESS') return res.status(403).json({ error: 'Wrong scope' });
+
+      const streak = await GamificationService.getStreak(influencerId);
+      res.json({ success: true, data: streak });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Badges ──
+  app.get('/api/athlete/:token/badges', authAthlete, async (req, res) => {
+    try {
+      const { influencerId, scope } = req.athleteScope;
+      if (scope !== 'PROGRESS') return res.status(403).json({ error: 'Wrong scope' });
+
+      const badges = await GamificationService.getAthleteBadges(influencerId);
+      res.json({ success: true, data: badges });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 };

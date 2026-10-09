@@ -9,6 +9,7 @@ const TokenService = require('./TokenService');
 const StandingService = require('./StandingService');
 const AttributionService = require('./AttributionService');
 const PayoutService = require('./PayoutService');
+const GamificationService = require('./GamificationService');
 
 module.exports = {
   LedgerService,
@@ -17,5 +18,6 @@ module.exports = {
   TokenService,
   StandingService,
   AttributionService,
-  PayoutService
+  PayoutService,
+  GamificationService
 };
