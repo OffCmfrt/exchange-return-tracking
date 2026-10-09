@@ -7,326 +7,365 @@
 <title>Athlete Portal — Offcomfrt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#ffffff;--surface:#f7f7f8;--surface-2:#efeff1;--surface-3:#e8e8ec;
-  --border:#e5e5ea;--border-2:#d1d1d6;
-  --text:#111;--text-2:#555;--muted:#8e8e93;--faint:#c7c7cc;
+  --bg:#ffffff;--surface:#f2f2f2;--surface-2:#e8e8e8;--surface-3:#ddd;
+  --border:#d0d0d0;--border-2:#bbb;
+  --text:#0a0a0a;--text-2:#444;--muted:#777;--faint:#aaa;
   --accent:#000;--accent-light:#f0f0f0;
-  --success:#34c759;--danger:#ff3b30;--warning:#ff9500;--info:#007aff;
-  --xp-fill:#000;--coin-color:#ff9500;--streak-color:#ff3b30;
-  --radius:16px;--radius-sm:12px;--radius-xs:8px;
-  --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
-  --shadow-md:0 4px 12px rgba(0,0,0,.08);
-  --shadow-lg:0 8px 24px rgba(0,0,0,.12);
-  --transition:.2s ease;
+  --radius:14px;--radius-sm:10px;--radius-xs:6px;
+  --shadow:0 2px 8px rgba(0,0,0,.08),0 1px 3px rgba(0,0,0,.06);
+  --shadow-md:0 8px 24px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.08);
+  --shadow-lg:0 16px 48px rgba(0,0,0,.18),0 4px 12px rgba(0,0,0,.1);
+  --transition:.25s cubic-bezier(.4,0,.2,1);
   --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --display:'Playfair Display',Georgia,'Times New Roman',serif;
   --nav-height:64px;
 }
 html,body{background:var(--bg);color:var(--text);font-family:var(--font);
   min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden;
-  padding-bottom:var(--nav-height)}
+  padding-bottom:var(--nav-height);font-weight:500}
 
 /* ANIMATIONS */
-@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes scaleIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes confetti{0%{transform:translateY(0) rotate(0)}100%{transform:translateY(-200px) rotate(720deg);opacity:0}}
-@keyframes xpFill{from{width:0}to{width:var(--fill)}}
-@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(0,0,0,.1)}50%{box-shadow:0 0 0 8px rgba(0,0,0,.05)}}
+@keyframes confetti{0%{transform:translateY(0) rotate(0) scale(1)}100%{transform:translateY(-300px) rotate(1080deg) scale(0);opacity:0}}
+@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(0,0,0,.15)}50%{box-shadow:0 0 0 12px rgba(0,0,0,.06)}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes popIn{0%{transform:scale(0);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+@keyframes slideRight{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes bounceIn{0%{transform:scale(.3);opacity:0}50%{transform:scale(1.08)}70%{transform:scale(.95)}100%{transform:scale(1);opacity:1}}
+@keyframes pulse-ring{0%{transform:scale(.9);opacity:1}100%{transform:scale(1.4);opacity:0}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 
 /* LOADING */
 .ap-loading{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:1rem;z-index:9999;transition:opacity .4s}
+  align-items:center;justify-content:center;gap:1.2rem;z-index:9999;transition:opacity .5s}
 .ap-loading.out{opacity:0;pointer-events:none}
-.ap-spinner{width:32px;height:32px;border:2.5px solid var(--border);border-top-color:var(--text);
-  border-radius:50%;animation:spin .7s linear infinite}
-.ap-loading p{font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.ap-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--text);
+  border-radius:50%;animation:spin .6s linear infinite}
+.ap-loading p{font-size:.65rem;letter-spacing:.25em;text-transform:uppercase;color:var(--muted);font-weight:700}
 
 /* AUTH */
 .ap-auth{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;
   justify-content:center;padding:1.5rem;z-index:800}
-.ap-auth-card{background:var(--bg);width:100%;max-width:380px;padding:2.5rem 1.5rem;
-  text-align:center;animation:fadeUp .5s ease both}
-.ap-auth-logo{font-size:1.8rem;font-weight:900;letter-spacing:-.02em;margin-bottom:.5rem}
-.ap-auth-sub{font-size:.8rem;color:var(--muted);margin-bottom:2rem;line-height:1.5}
-.ap-input-group{text-align:left;margin-bottom:1rem}
-.ap-input-group label{display:block;font-size:.7rem;font-weight:600;color:var(--text-2);
-  margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em}
-.ap-input{width:100%;background:var(--surface);border:1.5px solid var(--border);color:var(--text);
-  padding:.85rem 1rem;font-size:.9rem;font-family:var(--font);border-radius:var(--radius-sm);
-  outline:none;transition:border-color var(--transition)}
-.ap-input:focus{border-color:var(--accent)}
+.ap-auth-card{background:var(--bg);width:100%;max-width:400px;padding:3rem 2rem;
+  text-align:center;animation:fadeUp .6s cubic-bezier(.4,0,.2,1) both;
+  border:2px solid var(--border)}
+.ap-auth-logo{font-family:var(--display);font-size:2.2rem;font-weight:900;letter-spacing:.06em;margin-bottom:.5rem}
+.ap-auth-sub{font-size:.8rem;color:var(--muted);margin-bottom:2.5rem;line-height:1.6;font-weight:500}
+.ap-input-group{text-align:left;margin-bottom:1.2rem}
+.ap-input-group label{display:block;font-size:.65rem;font-weight:800;color:var(--text);
+  margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.1em}
+.ap-input{width:100%;background:var(--surface);border:2px solid var(--border);color:var(--text);
+  padding:.9rem 1rem;font-size:.9rem;font-family:var(--font);border-radius:var(--radius-sm);
+  outline:none;transition:all var(--transition);font-weight:500}
+.ap-input:focus{border-color:var(--text);box-shadow:0 0 0 3px rgba(0,0,0,.08)}
 .ap-input::placeholder{color:var(--faint)}
 .ap-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;
-  background:var(--accent);color:#fff;border:none;padding:.85rem 1.5rem;
-  font-size:.8rem;font-weight:700;letter-spacing:.02em;font-family:var(--font);
-  cursor:pointer;border-radius:var(--radius-sm);transition:all var(--transition);width:100%}
-.ap-btn:hover{opacity:.85;transform:translateY(-1px)}
-.ap-btn:active{transform:translateY(0)}
-.ap-btn-sm{padding:.55rem 1rem;font-size:.7rem;width:auto}
-.ap-btn-outline{background:transparent;color:var(--text);border:1.5px solid var(--border)}
-.ap-btn-outline:hover{border-color:var(--accent);opacity:1}
-.ap-btn-success{background:var(--success)}
-.ap-btn-danger{background:var(--danger)}
-.ap-auth-err{font-size:.75rem;color:var(--danger);margin-top:.75rem;min-height:1.2em}
+  background:var(--accent);color:#fff;border:none;padding:1rem 1.5rem;
+  font-size:.8rem;font-weight:800;letter-spacing:.04em;font-family:var(--font);
+  cursor:pointer;border-radius:var(--radius-sm);transition:all var(--transition);width:100%;
+  text-transform:uppercase}
+.ap-btn:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.ap-btn:active{transform:translateY(0);box-shadow:none}
+.ap-btn-sm{padding:.6rem 1.2rem;font-size:.7rem;width:auto}
+.ap-btn-outline{background:transparent;color:var(--text);border:2px solid var(--border)}
+.ap-btn-outline:hover{border-color:var(--text);opacity:1;background:var(--text);color:#fff}
+.ap-auth-err{font-size:.75rem;color:var(--text-2);margin-top:.75rem;min-height:1.2em;font-weight:600}
 
 /* SHELL */
 .ap-shell{display:none;min-height:100vh}
-.ap-shell.active{display:block;animation:fadeIn .3s ease}
+.ap-shell.active{display:block;animation:fadeIn .4s ease}
 
 /* TOP HEADER */
-.ap-header{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.92);
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  border-bottom:1px solid var(--border);padding:.75rem 1rem;
-  display:flex;align-items:center;justify-content:space-between}
-.ap-header-left{display:flex;align-items:center;gap:.6rem}
-.ap-avatar{width:36px;height:36px;border-radius:50%;background:var(--surface-2);
-  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;
-  color:var(--text);border:2px solid var(--border)}
-.ap-header-info h1{font-size:.85rem;font-weight:700;line-height:1.2}
-.ap-header-info span{font-size:.65rem;color:var(--muted);font-weight:500}
-.ap-header-right{display:flex;align-items:center;gap:.75rem}
-.ap-coin-badge{display:flex;align-items:center;gap:.3rem;background:var(--surface);
-  padding:.35rem .65rem;border-radius:20px;font-size:.75rem;font-weight:700}
-.ap-coin-badge .coin-icon{font-size:.85rem}
-.ap-level-badge{width:32px;height:32px;border-radius:50%;background:var(--accent);
-  color:#fff;display:flex;align-items:center;justify-content:center;
-  font-weight:800;font-size:.75rem}
+.ap-header{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.97);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border-bottom:2px solid var(--text);padding:.7rem 1rem;
+  display:flex;align-items:center;justify-content:center}
+.ap-header-logo{display:flex;align-items:center;justify-content:center}
+.ap-header-logo svg{height:24px;width:auto}
+.ap-header-level{position:absolute;right:1rem;top:50%;transform:translateY(-50%);
+  width:32px;height:32px;border-radius:50%;background:var(--text);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.75rem;
+  border:2px solid var(--text)}
 
 /* BOTTOM NAV */
 .ap-bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:200;
-  background:rgba(255,255,255,.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  border-top:1px solid var(--border);display:flex;height:var(--nav-height);
+  background:rgba(255,255,255,.98);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border-top:2px solid var(--text);display:flex;height:var(--nav-height);
   padding-bottom:env(safe-area-inset-bottom)}
 .ap-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:.2rem;cursor:pointer;color:var(--muted);transition:color var(--transition);
+  gap:.15rem;cursor:pointer;color:var(--faint);transition:all var(--transition);
   position:relative;-webkit-tap-highlight-color:transparent}
-.ap-nav-item.active{color:var(--accent)}
-.ap-nav-item .nav-icon{font-size:1.3rem;line-height:1}
-.ap-nav-item .nav-label{font-size:.6rem;font-weight:600;letter-spacing:.02em}
-.ap-nav-badge{position:absolute;top:6px;right:50%;transform:translateX(14px);
-  background:var(--danger);color:#fff;font-size:.55rem;font-weight:700;
+.ap-nav-item.active{color:var(--text)}
+.ap-nav-item.active .nav-icon{transform:scale(1.15)}
+.ap-nav-item .nav-icon{line-height:1;transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.ap-nav-item .nav-icon svg{width:24px;height:24px;stroke-width:2.2}
+.ap-nav-item .nav-label{font-size:.58rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.ap-nav-badge{position:absolute;top:2px;right:calc(50% - 20px);
+  background:var(--text);color:#fff;font-size:.5rem;font-weight:800;
   min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;
-  justify-content:center;padding:0 4px}
+  justify-content:center;padding:0 3px;animation:bounceIn .4s ease both}
 
 /* MAIN CONTENT */
 .ap-main{padding:1rem;max-width:600px;margin:0 auto}
-.ap-section{display:none;animation:fadeUp .3s ease both}
+.ap-section{display:none;animation:fadeUp .4s cubic-bezier(.4,0,.2,1) both}
 .ap-section.active{display:block}
 
 /* CARDS */
-.ap-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+.ap-card{background:var(--bg);border:2px solid var(--border);border-radius:var(--radius);
   padding:1.25rem;margin-bottom:.75rem;box-shadow:var(--shadow);transition:all var(--transition)}
-.ap-card:hover{box-shadow:var(--shadow-md)}
+.ap-card:hover{box-shadow:var(--shadow-md);border-color:var(--border-2)}
 .ap-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem}
-.ap-card-title{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-2)}
-.ap-card-action{font-size:.7rem;font-weight:600;color:var(--info);cursor:pointer}
+.ap-card-title{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text)}
 
 /* XP PROGRESS */
-.ap-xp-card{text-align:center;padding:1.5rem 1.25rem}
-.ap-xp-ring{width:140px;height:140px;margin:0 auto 1rem;position:relative}
+.ap-xp-card{text-align:center;padding:1.75rem 1.25rem}
+.ap-xp-ring{width:150px;height:150px;margin:0 auto 1rem;position:relative}
 .ap-xp-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
-.ap-xp-ring circle{fill:none;stroke-width:6}
+.ap-xp-ring circle{fill:none;stroke-width:8}
 .ap-xp-ring .track{stroke:var(--surface-2)}
-.ap-xp-ring .fill{stroke:var(--accent);stroke-linecap:round;
-  transition:stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1)}
+.ap-xp-ring .fill{stroke:var(--text);stroke-linecap:round;
+  transition:stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1)}
 .ap-xp-center{position:absolute;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center}
-.ap-xp-center .level-name{font-size:.65rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.08em;color:var(--muted);margin-bottom:.15rem}
-.ap-xp-center .xp-value{font-size:1.6rem;font-weight:900;letter-spacing:-.02em}
-.ap-xp-center .xp-next{font-size:.65rem;color:var(--muted);margin-top:.1rem}
-.ap-xp-bar{height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden;margin-top:.75rem}
-.ap-xp-bar-fill{height:100%;background:var(--accent);border-radius:3px;
-  transition:width 1s cubic-bezier(.4,0,.2,1)}
-.ap-xp-meta{display:flex;justify-content:space-between;margin-top:.4rem;
-  font-size:.65rem;color:var(--muted)}
+.ap-xp-center .level-name{font-size:.6rem;font-weight:800;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--muted);margin-bottom:.15rem}
+.ap-xp-center .xp-value{font-size:1.8rem;font-weight:900;letter-spacing:-.03em}
+.ap-xp-center .xp-next{font-size:.6rem;color:var(--muted);margin-top:.1rem;font-weight:600}
+.ap-xp-bar{height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden;margin-top:.75rem}
+.ap-xp-bar-fill{height:100%;background:var(--text);border-radius:4px;
+  transition:width 1.2s cubic-bezier(.4,0,.2,1)}
+.ap-xp-meta{display:flex;justify-content:space-between;margin-top:.5rem;
+  font-size:.65rem;color:var(--muted);font-weight:700}
 
 /* STATS ROW */
 .ap-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.75rem}
-.ap-stat{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
-  padding:.85rem .5rem;text-align:center;box-shadow:var(--shadow)}
-.ap-stat .stat-icon{font-size:1.3rem;margin-bottom:.25rem}
-.ap-stat .stat-value{font-size:1.1rem;font-weight:800;letter-spacing:-.01em}
-.ap-stat .stat-label{font-size:.55rem;color:var(--muted);font-weight:600;
-  text-transform:uppercase;letter-spacing:.04em;margin-top:.1rem}
-.ap-stat.streak .stat-value{color:var(--streak-color)}
-.ap-stat.coins .stat-value{color:var(--coin-color)}
+.ap-stat{background:var(--bg);border:2px solid var(--border);border-radius:var(--radius-sm);
+  padding:.9rem .5rem;text-align:center;box-shadow:var(--shadow);transition:all var(--transition)}
+.ap-stat:hover{border-color:var(--border-2);transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.ap-stat .stat-icon{margin-bottom:.25rem}
+.ap-stat .stat-icon svg{width:24px;height:24px;stroke-width:2}
+.ap-stat .stat-value{font-size:1.2rem;font-weight:900;letter-spacing:-.02em}
+.ap-stat .stat-label{font-size:.5rem;color:var(--muted);font-weight:800;
+  text-transform:uppercase;letter-spacing:.06em;margin-top:.15rem}
 
 /* DAILY TASK CARDS (horizontal scroll on home) */
 .ap-tasks-scroll{display:flex;gap:.6rem;overflow-x:auto;padding:.25rem 0 .5rem;
   -webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scrollbar-width:none}
 .ap-tasks-scroll::-webkit-scrollbar{display:none}
-.ap-task-mini{min-width:180px;max-width:200px;background:var(--bg);border:1px solid var(--border);
+.ap-task-mini{min-width:185px;max-width:210px;background:var(--bg);border:2px solid var(--border);
   border-radius:var(--radius-sm);padding:1rem;scroll-snap-align:start;
   box-shadow:var(--shadow);flex-shrink:0;cursor:pointer;transition:all var(--transition)}
-.ap-task-mini:hover{box-shadow:var(--shadow-md);transform:translateY(-2px)}
-.ap-task-mini .task-type{font-size:.55rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.06em;color:var(--muted);margin-bottom:.4rem;
+.ap-task-mini:hover{box-shadow:var(--shadow-md);transform:translateY(-3px);border-color:var(--text)}
+.ap-task-mini .task-type{font-size:.5rem;font-weight:800;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--muted);margin-bottom:.4rem;
   display:flex;align-items:center;gap:.3rem}
-.ap-task-mini .task-type .type-dot{width:6px;height:6px;border-radius:50%;background:var(--info)}
-.ap-task-mini .task-title{font-size:.8rem;font-weight:700;margin-bottom:.5rem;
+.ap-task-mini .task-type .type-dot{width:6px;height:6px;border-radius:50%;background:var(--text)}
+.ap-task-mini .task-title{font-size:.8rem;font-weight:800;margin-bottom:.5rem;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.3}
-.ap-task-mini .task-rewards{display:flex;gap:.6rem;font-size:.65rem;font-weight:700}
-.ap-task-mini .task-rewards .xp{color:var(--accent)}
-.ap-task-mini .task-rewards .coins{color:var(--coin-color)}
-.ap-task-mini .task-status{margin-top:.5rem;font-size:.55rem;font-weight:600;
-  text-transform:uppercase;letter-spacing:.04em}
-.ap-task-mini .task-status.picked{color:var(--info)}
-.ap-task-mini .task-status.completed{color:var(--success)}
-.ap-task-mini .task-status.available{color:var(--muted)}
+.ap-task-mini .task-rewards{display:flex;gap:.6rem;font-size:.65rem;font-weight:800;color:var(--text)}
+.ap-task-mini .task-status{margin-top:.5rem;font-size:.5rem;font-weight:800;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.ap-task-mini .task-status.picked{color:var(--text)}
+.ap-task-mini .task-status.completed{color:var(--text-2)}
 
 /* FULL TASK CARDS (tasks tab) */
-.ap-task-full{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+.ap-task-full{background:var(--bg);border:2px solid var(--border);border-radius:var(--radius);
   padding:1rem 1.25rem;margin-bottom:.6rem;box-shadow:var(--shadow);
   display:grid;grid-template-columns:1fr auto;gap:.75rem;align-items:center;
   cursor:pointer;transition:all var(--transition)}
-.ap-task-full:hover{box-shadow:var(--shadow-md)}
-.ap-task-full .task-left{}
-.ap-task-full .task-type{font-size:.55rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.06em;color:var(--muted);margin-bottom:.3rem;
+.ap-task-full:hover{box-shadow:var(--shadow-md);border-color:var(--border-2);transform:translateX(2px)}
+.ap-task-full .task-type{font-size:.5rem;font-weight:800;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--muted);margin-bottom:.3rem;
   display:flex;align-items:center;gap:.3rem}
-.ap-task-full .task-title{font-size:.9rem;font-weight:700;margin-bottom:.25rem}
+.ap-task-full .task-title{font-size:.9rem;font-weight:800;margin-bottom:.25rem}
 .ap-task-full .task-brief{font-size:.75rem;color:var(--text-2);line-height:1.4;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:.5rem}
-.ap-task-full .task-rewards{display:flex;gap:.75rem;font-size:.7rem;font-weight:700}
+.ap-task-full .task-rewards{display:flex;gap:.75rem;font-size:.7rem;font-weight:800;color:var(--text)}
 .ap-task-full .task-right{text-align:center}
-.ap-task-full .task-right .pick-btn{background:var(--accent);color:#fff;border:none;
-  padding:.5rem 1rem;border-radius:var(--radius-xs);font-size:.7rem;font-weight:700;
-  font-family:var(--font);cursor:pointer;transition:all var(--transition)}
-.ap-task-full .task-right .pick-btn:hover{opacity:.85}
-.ap-task-full .task-right .pick-btn:disabled{background:var(--faint);cursor:default}
-.ap-task-full .task-right .status-badge{font-size:.55rem;font-weight:700;
-  text-transform:uppercase;letter-spacing:.04em;padding:.25rem .5rem;
+.ap-task-full .task-right .pick-btn{background:var(--text);color:#fff;border:none;
+  padding:.55rem 1.1rem;border-radius:var(--radius-xs);font-size:.7rem;font-weight:800;
+  font-family:var(--font);cursor:pointer;transition:all var(--transition);text-transform:uppercase;
+  letter-spacing:.04em}
+.ap-task-full .task-right .pick-btn:hover{transform:scale(1.05);box-shadow:var(--shadow-md)}
+.ap-task-full .task-right .pick-btn:disabled{background:var(--faint);cursor:default;transform:none}
+.ap-task-full .task-right .status-badge{font-size:.5rem;font-weight:800;
+  text-transform:uppercase;letter-spacing:.06em;padding:.3rem .6rem;
   border-radius:4px;margin-top:.3rem;display:inline-block}
 .status-badge.assigned{background:var(--surface-2);color:var(--text-2)}
-.status-badge.in_progress{background:#fff3cd;color:#856404}
-.status-badge.submitted{background:#d1ecf1;color:#0c5460}
-.status-badge.approved{background:#d4edda;color:#155724}
-.status-badge.picked{background:#e8f0fe;color:var(--info)}
+.status-badge.in_progress{background:var(--surface-2);color:var(--text-2)}
+.status-badge.submitted{background:var(--surface-2);color:var(--text-2)}
+.status-badge.approved{background:var(--text);color:#fff}
+.status-badge.picked{background:var(--surface-2);color:var(--text)}
 
 /* WEEKLY CHALLENGE */
-.ap-weekly-hero{background:linear-gradient(135deg,#111 0%,#333 100%);color:#fff;
-  border-radius:var(--radius);padding:1.5rem;margin-bottom:.75rem;text-align:center;
-  position:relative;overflow:hidden}
-.ap-weekly-hero .weekly-emoji{font-size:2.5rem;margin-bottom:.5rem}
-.ap-weekly-hero h2{font-size:1.1rem;font-weight:800;margin-bottom:.3rem}
-.ap-weekly-hero p{font-size:.75rem;opacity:.8;line-height:1.4;margin-bottom:.75rem}
+.ap-weekly-hero{background:linear-gradient(135deg,#0a0a0a 0%,#2a2a2a 100%);color:#fff;
+  border-radius:var(--radius);padding:1.75rem;margin-bottom:.75rem;text-align:center;
+  position:relative;overflow:hidden;border:2px solid var(--text)}
+.ap-weekly-hero::before{content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at 30% 50%,rgba(255,255,255,.04) 0%,transparent 60%)}
+.ap-weekly-hero .weekly-icon{margin-bottom:.5rem;animation:float 3s ease-in-out infinite}
+.ap-weekly-hero .weekly-icon svg{width:44px;height:44px}
+.ap-weekly-hero h2{font-family:var(--display);font-size:1.3rem;font-weight:900;margin-bottom:.3rem;letter-spacing:.02em}
+.ap-weekly-hero p{font-size:.75rem;opacity:.75;line-height:1.5;margin-bottom:.75rem;font-weight:500}
 .ap-weekly-hero .rewards-row{display:flex;justify-content:center;gap:1rem;
-  font-size:.75rem;font-weight:700}
-.ap-weekly-hero .countdown{margin-top:.75rem;font-size:.65rem;opacity:.7;
-  font-weight:600;letter-spacing:.04em}
-.ap-weekly-entry{background:var(--bg);border:1px solid var(--border);
+  font-size:.75rem;font-weight:800;letter-spacing:.04em}
+.ap-weekly-hero .countdown{margin-top:.75rem;font-size:.6rem;opacity:.6;
+  font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.ap-weekly-entry{background:var(--bg);border:2px solid var(--border);
   border-radius:var(--radius);padding:1.25rem;margin-bottom:.75rem;box-shadow:var(--shadow)}
-.ap-weekly-entry h3{font-size:.8rem;font-weight:700;margin-bottom:.75rem}
+.ap-weekly-entry h3{font-size:.8rem;font-weight:800;margin-bottom:.75rem;letter-spacing:.02em}
 
 /* LEADERBOARD */
 .ap-podium{display:flex;align-items:flex-end;justify-content:center;gap:.5rem;
   margin-bottom:1.25rem;padding:0 .5rem}
 .ap-podium-item{text-align:center;flex:1;max-width:120px}
-.ap-podium-item .podium-rank{font-size:1.5rem;margin-bottom:.25rem}
-.ap-podium-item .podium-name{font-size:.75rem;font-weight:700;margin-bottom:.1rem;
+.ap-podium-item .podium-rank{font-size:1.4rem;font-weight:900;margin-bottom:.25rem;color:var(--text);
+  font-family:var(--display)}
+.ap-podium-item .podium-name{font-size:.75rem;font-weight:800;margin-bottom:.1rem;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ap-podium-item .podium-xp{font-size:.65rem;color:var(--muted);font-weight:600}
+.ap-podium-item .podium-xp{font-size:.6rem;color:var(--muted);font-weight:700}
 .ap-podium-item .podium-bar{border-radius:var(--radius-xs) var(--radius-xs) 0 0;
-  margin-top:.4rem;transition:height .5s ease}
-.ap-podium-item:nth-child(2) .podium-bar{height:80px;background:var(--accent)}
-.ap-podium-item:nth-child(1) .podium-bar{height:60px;background:var(--surface-3)}
-.ap-podium-item:nth-child(3) .podium-bar{height:45px;background:var(--surface-3)}
-.ap-lb-row{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;
-  border-bottom:1px solid var(--border);transition:background var(--transition)}
-.ap-lb-row:hover{background:var(--surface)}
-.ap-lb-row.self{background:var(--accent-light);border-radius:var(--radius-xs);
-  border:1px solid var(--border);margin-bottom:.25rem}
-.ap-lb-rank{width:28px;font-weight:800;font-size:.85rem;text-align:center;color:var(--muted)}
+  margin-top:.4rem;transition:height .6s cubic-bezier(.4,0,.2,1)}
+.ap-podium-item:nth-child(2) .podium-bar{height:85px;background:var(--text)}
+.ap-podium-item:nth-child(1) .podium-bar{height:62px;background:var(--surface-3)}
+.ap-podium-item:nth-child(3) .podium-bar{height:48px;background:var(--surface-3)}
+.ap-lb-row{display:flex;align-items:center;gap:.75rem;padding:.8rem 1rem;
+  border-bottom:1px solid var(--border);transition:all var(--transition)}
+.ap-lb-row:hover{background:var(--surface);transform:translateX(3px)}
+.ap-lb-row.self{background:var(--text);color:#fff;border-radius:var(--radius-xs);
+  border:2px solid var(--text);margin-bottom:.25rem}
+.ap-lb-row.self .ap-lb-name{color:#fff}
+.ap-lb-row.self .ap-lb-level{color:rgba(255,255,255,.6)}
+.ap-lb-row.self .ap-lb-xp{color:#fff}
+.ap-lb-rank{width:28px;font-weight:900;font-size:.85rem;text-align:center;color:var(--muted)}
 .ap-lb-info{flex:1}
-.ap-lb-name{font-size:.8rem;font-weight:600}
-.ap-lb-level{font-size:.6rem;color:var(--muted)}
-.ap-lb-xp{font-size:.8rem;font-weight:800;font-family:var(--font)}
+.ap-lb-name{font-size:.8rem;font-weight:700}
+.ap-lb-level{font-size:.6rem;color:var(--muted);font-weight:600}
+.ap-lb-xp{font-size:.8rem;font-weight:900;font-family:var(--font)}
 
 /* BADGES ROW */
 .ap-badges-scroll{display:flex;gap:.5rem;overflow-x:auto;padding:.25rem 0;
   -webkit-overflow-scrolling:touch;scrollbar-width:none}
 .ap-badges-scroll::-webkit-scrollbar{display:none}
 .ap-badge-item{min-width:64px;text-align:center;flex-shrink:0}
-.ap-badge-icon{width:48px;height:48px;border-radius:50%;background:var(--surface);
+.ap-badge-icon{width:52px;height:52px;border-radius:50%;background:var(--surface);
   border:2px solid var(--border);display:flex;align-items:center;justify-content:center;
-  font-size:1.3rem;margin:0 auto .25rem}
-.ap-badge-name{font-size:.5rem;font-weight:600;color:var(--muted);
+  margin:0 auto .25rem;transition:all var(--transition)}
+.ap-badge-icon:hover{border-color:var(--text);transform:scale(1.1)}
+.ap-badge-icon svg{width:24px;height:24px}
+.ap-badge-name{font-size:.5rem;font-weight:700;color:var(--muted);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:64px}
 
 /* WEEKLY LEADERBOARD */
 .ap-weekly-lb-header{display:flex;justify-content:space-between;align-items:center;
   margin-bottom:.75rem}
-.ap-weekly-lb-header h3{font-size:.8rem;font-weight:700}
-.ap-weekly-lb-header span{font-size:.65rem;color:var(--muted);font-weight:600}
+.ap-weekly-lb-header h3{font-size:.8rem;font-weight:800;letter-spacing:.02em}
+.ap-weekly-lb-header span{font-size:.65rem;color:var(--muted);font-weight:700}
 
-/* EARNINGS */
-.ap-earnings-lock{text-align:center;padding:3rem 1.5rem}
-.ap-earnings-lock .lock-icon{font-size:2rem;margin-bottom:1rem;opacity:.3}
-.ap-earnings-lock p{font-size:.8rem;color:var(--muted);max-width:320px;margin:0 auto 1.25rem;line-height:1.5}
-.ap-earnings-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-top:1rem}
-.ap-earnings-cell{background:var(--bg);border:1px solid var(--border);
-  border-radius:var(--radius-sm);padding:1rem;text-align:center;box-shadow:var(--shadow)}
-.ap-earnings-cell .val{font-size:1.1rem;font-weight:800;margin-bottom:.2rem}
-.ap-earnings-cell .lbl{font-size:.55rem;color:var(--muted);font-weight:600;
-  text-transform:uppercase;letter-spacing:.04em}
+/* PRODUCTS SECTION */
+.ap-product-card{background:var(--bg);border:2px solid var(--border);border-radius:var(--radius);
+  padding:1rem 1.25rem;margin-bottom:.6rem;box-shadow:var(--shadow);
+  display:flex;align-items:center;gap:1rem;transition:all var(--transition)}
+.ap-product-card:hover{box-shadow:var(--shadow-md);border-color:var(--border-2)}
+.ap-product-card.locked{opacity:.45}
+.ap-product-img{width:60px;height:60px;border-radius:var(--radius-xs);background:var(--surface-2);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;
+  border:2px solid var(--border)}
+.ap-product-img svg{width:28px;height:28px}
+.ap-product-info{flex:1;min-width:0}
+.ap-product-info h4{font-size:.85rem;font-weight:800;margin-bottom:.15rem}
+.ap-product-info p{font-size:.7rem;color:var(--muted);line-height:1.3;font-weight:500}
+.ap-product-lock{font-size:.55rem;font-weight:800;color:var(--muted);
+  background:var(--surface);padding:.35rem .7rem;border-radius:20px;white-space:nowrap;
+  letter-spacing:.04em;text-transform:uppercase}
+.ap-product-lock.unlocked{background:var(--text);color:#fff}
+
+/* COUPONS SECTION */
+.ap-coupon-hero{background:var(--text);color:#fff;border-radius:var(--radius);
+  padding:1.5rem;margin-bottom:.75rem;text-align:center;border:2px solid var(--text)}
+.ap-coupon-code{font-size:1.5rem;font-weight:900;letter-spacing:.15em;margin-bottom:.6rem;
+  font-family:'Courier New',monospace}
+.ap-coupon-copy{display:inline-flex;align-items:center;gap:.4rem;
+  background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.25);
+  color:#fff;padding:.45rem .9rem;border-radius:20px;font-size:.7rem;font-weight:700;
+  cursor:pointer;transition:all var(--transition);text-transform:uppercase;letter-spacing:.04em}
+.ap-coupon-copy:hover{background:rgba(255,255,255,.22);transform:scale(1.05)}
+.ap-coupon-copy svg{width:14px;height:14px}
+.ap-coupon-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.75rem}
+.ap-coupon-stat{background:var(--bg);border:2px solid var(--border);border-radius:var(--radius-sm);
+  padding:.9rem .5rem;text-align:center;box-shadow:var(--shadow);transition:all var(--transition)}
+.ap-coupon-stat:hover{border-color:var(--border-2);transform:translateY(-2px)}
+.ap-coupon-stat .val{font-size:1.1rem;font-weight:900}
+.ap-coupon-stat .lbl{font-size:.5rem;color:var(--muted);font-weight:800;
+  text-transform:uppercase;letter-spacing:.06em;margin-top:.15rem}
+.ap-commission-table{background:var(--bg);border:2px solid var(--border);
+  border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);margin-bottom:.75rem}
+.ap-commission-row{display:grid;grid-template-columns:1fr 1fr 1fr;
+  padding:.8rem 1rem;border-bottom:1px solid var(--border);font-size:.75rem}
+.ap-commission-row:last-child{border-bottom:none}
+.ap-commission-row.header{background:var(--surface);font-weight:800;font-size:.6rem;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.ap-commission-row .period{font-weight:700}
+.ap-commission-row .orders{text-align:center;color:var(--text-2);font-weight:600}
+.ap-commission-row .commission{text-align:right;font-weight:800}
 
 /* SUBMISSION MODAL */
-.ap-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;
+.ap-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;
   display:none;align-items:flex-end;justify-content:center}
 .ap-modal-overlay.active{display:flex}
 .ap-modal{background:var(--bg);border-radius:var(--radius) var(--radius) 0 0;
-  width:100%;max-width:600px;animation:slideUp .3s ease both;padding:1.5rem;
-  padding-bottom:calc(1.5rem + env(safe-area-inset-bottom))}
-.ap-modal-handle{width:36px;height:4px;background:var(--surface-3);
+  width:100%;max-width:600px;animation:slideUp .35s cubic-bezier(.4,0,.2,1) both;padding:1.5rem;
+  padding-bottom:calc(1.5rem + env(safe-area-inset-bottom));border-top:3px solid var(--text)}
+.ap-modal-handle{width:40px;height:4px;background:var(--surface-3);
   border-radius:2px;margin:0 auto 1rem}
-.ap-modal h3{font-size:.9rem;font-weight:700;margin-bottom:1rem}
+.ap-modal h3{font-size:1rem;font-weight:900;margin-bottom:1rem;letter-spacing:-.01em}
 .ap-modal .ap-input-group{margin-bottom:.85rem}
-.ap-modal textarea{width:100%;background:var(--surface);border:1.5px solid var(--border);
+.ap-modal textarea{width:100%;background:var(--surface);border:2px solid var(--border);
   color:var(--text);padding:.75rem 1rem;font-size:.85rem;font-family:var(--font);
   resize:vertical;min-height:80px;border-radius:var(--radius-xs);outline:none;
-  transition:border-color var(--transition)}
-.ap-modal textarea:focus{border-color:var(--accent)}
+  transition:all var(--transition);font-weight:500}
+.ap-modal textarea:focus{border-color:var(--text);box-shadow:0 0 0 3px rgba(0,0,0,.06)}
 .ap-modal-actions{display:flex;gap:.5rem;margin-top:1rem}
 .ap-modal-actions .ap-btn{flex:1}
 
 /* CONFETTI */
 .ap-confetti{position:fixed;top:0;left:0;right:0;height:100vh;pointer-events:none;z-index:9999}
-.confetti-piece{position:absolute;width:8px;height:8px;border-radius:2px;
-  animation:confetti 1.5s ease-out forwards}
+.confetti-piece{position:absolute;width:10px;height:10px;border-radius:2px;
+  animation:confetti 1.8s cubic-bezier(.4,0,.2,1) forwards}
 
 /* SECTION HEADERS */
 .ap-section-header{display:flex;justify-content:space-between;align-items:center;
-  margin-bottom:.75rem;margin-top:.5rem}
-.ap-section-header h2{font-size:.85rem;font-weight:800}
-.ap-section-header .count{font-size:.7rem;color:var(--muted);font-weight:600}
+  margin-bottom:.75rem;margin-top:.75rem}
+.ap-section-header h2{font-size:.9rem;font-weight:900;letter-spacing:-.01em}
+.ap-section-header .count{font-size:.65rem;color:var(--muted);font-weight:700}
 
 /* EMPTY STATE */
-.ap-empty{text-align:center;padding:2.5rem 1rem;color:var(--muted)}
-.ap-empty .empty-icon{font-size:2rem;margin-bottom:.75rem;opacity:.5}
-.ap-empty p{font-size:.8rem;line-height:1.5}
+.ap-empty{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.ap-empty .empty-icon{margin-bottom:1rem;opacity:.3}
+.ap-empty .empty-icon svg{width:48px;height:48px}
+.ap-empty p{font-size:.8rem;line-height:1.6;font-weight:500}
 
 /* TABS (for leaderboard periods) */
 .ap-tabs{display:flex;gap:.25rem;background:var(--surface);border-radius:var(--radius-xs);
-  padding:3px;margin-bottom:1rem}
-.ap-tab{flex:1;text-align:center;padding:.5rem;font-size:.7rem;font-weight:600;
-  color:var(--muted);cursor:pointer;border-radius:6px;transition:all var(--transition)}
-.ap-tab.active{background:var(--bg);color:var(--text);box-shadow:var(--shadow)}
+  padding:3px;margin-bottom:1rem;border:1px solid var(--border)}
+.ap-tab{flex:1;text-align:center;padding:.55rem;font-size:.7rem;font-weight:700;
+  color:var(--muted);cursor:pointer;border-radius:5px;transition:all var(--transition)}
+.ap-tab.active{background:var(--text);color:#fff;box-shadow:var(--shadow)}
 
 /* RESPONSIVE — tablet+ */
 @media(min-width:768px){
   .ap-main{padding:1.5rem;max-width:640px}
   .ap-stats{grid-template-columns:repeat(3,1fr);gap:.75rem}
   .ap-task-mini{min-width:200px}
-  .ap-earnings-grid{grid-template-columns:repeat(3,1fr)}
+  .ap-coupon-stats{grid-template-columns:repeat(3,1fr)}
 }
 </style>
 </head>
@@ -341,7 +380,7 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
 <!-- AUTH -->
 <div class="ap-auth" id="auth" style="display:none">
   <div class="ap-auth-card">
-    <div class="ap-auth-logo">OFFCOMFRT</div>
+    <div class="ap-auth-logo" style="font-family:var(--display)">OFFCOMFRT</div>
     <p class="ap-auth-sub">Enter your athlete access link to unlock your portal.</p>
     <form id="authForm">
       <div class="ap-input-group">
@@ -354,26 +393,115 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
   </div>
 </div>
 
+<!-- SVG ICON DEFINITIONS (hidden) -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Home -->
+    <symbol id="icon-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/><polyline points="9 22 9 12 15 12 15 22"/>
+    </symbol>
+    <!-- Target / Tasks -->
+    <symbol id="icon-tasks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+    </symbol>
+    <!-- Trophy / Weekly -->
+    <symbol id="icon-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2z"/>
+    </symbol>
+    <!-- Box / Products -->
+    <symbol id="icon-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+    </symbol>
+    <!-- Tag / Coupons -->
+    <symbol id="icon-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>
+    </symbol>
+    <!-- Bar Chart / Board -->
+    <symbol id="icon-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+    </symbol>
+    <!-- Flame / Streak -->
+    <symbol id="icon-flame" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z"/>
+    </symbol>
+    <!-- Zap / Standing -->
+    <symbol id="icon-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </symbol>
+    <!-- Coin -->
+    <symbol id="icon-coin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><path d="M12 6v12M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 3.5M9.5 15a2.5 2.5 0 005 0"/>
+    </symbol>
+    <!-- Lock -->
+    <symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+    </symbol>
+    <!-- Copy -->
+    <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+    </symbol>
+    <!-- Check -->
+    <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </symbol>
+    <!-- Award / Badge -->
+    <symbol id="icon-award" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>
+    </symbol>
+    <!-- Star -->
+    <symbol id="icon-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+    </symbol>
+    <!-- Shirt / Product -->
+    <symbol id="icon-shirt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20.38 3.46L16 2 12 6 8 2 3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z"/>
+    </symbol>
+    <!-- Headphones -->
+    <symbol id="icon-headphones" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/>
+    </symbol>
+    <!-- Cap / Hat -->
+    <symbol id="icon-cap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 12l10-6 10 6-10 6z"/><path d="M6 14.5V18a6 6 0 0012 0v-3.5"/>
+    </symbol>
+    <!-- Socks -->
+    <symbol id="icon-socks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 00-2 2v16l4-4h6a4 4 0 004-4V8l-4-6z"/>
+    </symbol>
+    <!-- Bag -->
+    <symbol id="icon-bag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/>
+    </symbol>
+    <!-- Trending Up -->
+    <symbol id="icon-trending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+    </symbol>
+    <!-- Users -->
+    <symbol id="icon-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+    </symbol>
+    <!-- Dollar -->
+    <symbol id="icon-dollar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+    </symbol>
+  </defs>
+</svg>
+
 <!-- SHELL -->
 <div class="ap-shell" id="shell">
   <!-- HEADER -->
   <header class="ap-header">
-    <div class="ap-header-left">
-      <div class="ap-avatar" id="headerAvatar">?</div>
-      <div class="ap-header-info">
-        <h1 id="headerName">Athlete</h1>
-        <span id="headerNo">OFC-0000</span>
-      </div>
+    <div class="ap-header-logo">
+      <svg viewBox="0 0 220 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text x="110" y="22" text-anchor="middle" font-family="'Playfair Display',Georgia,serif" font-weight="900" font-size="22" letter-spacing="5" fill="#0a0a0a">OFFCOMFRT</text>
+      </svg>
     </div>
-    <div class="ap-header-right">
-      <div class="ap-coin-badge"><span class="coin-icon">🪙</span><span id="headerCoins">0</span></div>
-      <div class="ap-level-badge" id="headerLevel">—</div>
-    </div>
+    <div class="ap-header-level" id="headerLevel">—</div>
   </header>
 
   <!-- MAIN CONTENT -->
   <main class="ap-main">
-    <!-- ═══ HOME ═══ -->
+    <!-- ══ HOME ═══ -->
     <div class="ap-section active" id="sec-home">
       <!-- XP Ring -->
       <div class="ap-card ap-xp-card">
@@ -395,18 +523,18 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
 
       <!-- Stats -->
       <div class="ap-stats">
-        <div class="ap-stat streak">
-          <div class="stat-icon">🔥</div>
+        <div class="ap-stat">
+          <div class="stat-icon"><svg><use href="#icon-flame"/></svg></div>
           <div class="stat-value" id="homeStreak">0</div>
           <div class="stat-label">Day Streak</div>
         </div>
         <div class="ap-stat">
-          <div class="stat-icon">⚡</div>
+          <div class="stat-icon"><svg><use href="#icon-zap"/></svg></div>
           <div class="stat-value" id="homeStanding">0</div>
           <div class="stat-label">Standing</div>
         </div>
-        <div class="ap-stat coins">
-          <div class="stat-icon">🪙</div>
+        <div class="ap-stat">
+          <div class="stat-icon"><svg><use href="#icon-coin"/></svg></div>
           <div class="stat-value" id="homeCoins">0</div>
           <div class="stat-label">Coins</div>
         </div>
@@ -457,6 +585,30 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
       </div>
     </div>
 
+    <!-- ═══ PRODUCTS ═══ -->
+    <div class="ap-section" id="sec-products">
+      <div class="ap-section-header">
+        <h2>Product Rewards</h2>
+        <span class="count" id="productUnlockCount">0 unlocked</span>
+      </div>
+      <p style="font-size:.75rem;color:var(--muted);margin-bottom:1rem;line-height:1.5">
+        Unlock exclusive OFFCOMFRT products as you level up. Each level grants access to new gear.
+      </p>
+      <div id="productList">
+        <div class="ap-empty"><p>Loading products...</p></div>
+      </div>
+    </div>
+
+    <!-- ═══ COUPONS ═══ -->
+    <div class="ap-section" id="sec-coupons">
+      <div class="ap-section-header">
+        <h2>Your Coupon</h2>
+      </div>
+      <div id="couponContent">
+        <div class="ap-empty"><p>Loading coupon data...</p></div>
+      </div>
+    </div>
+
     <!-- ═══ LEADERBOARD ═══ -->
     <div class="ap-section" id="sec-leaderboard">
       <div class="ap-tabs" id="lbTabs">
@@ -468,46 +620,34 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
         <div class="ap-empty"><p>Loading leaderboard...</p></div>
       </div>
     </div>
-
-    <!-- ═══ EARNINGS ═══ -->
-    <div class="ap-section" id="sec-earnings">
-      <div class="ap-earnings-lock" id="earningsLock">
-        <div class="lock-icon">🔒</div>
-        <p>Financial data requires identity verification.</p>
-        <button class="ap-btn" style="max-width:240px;margin:0 auto" id="unlockEarnings">Verify & View</button>
-      </div>
-      <div id="earningsContent" style="display:none">
-        <div class="ap-earnings-grid">
-          <div class="ap-earnings-cell"><div class="val" id="earnTotal">₹0</div><div class="lbl">Total</div></div>
-          <div class="ap-earnings-cell"><div class="val" id="earnPending">₹0</div><div class="lbl">Pending</div></div>
-          <div class="ap-earnings-cell"><div class="val" id="earnPaid">₹0</div><div class="lbl">Paid</div></div>
-        </div>
-      </div>
-    </div>
   </main>
 
   <!-- BOTTOM NAV -->
   <nav class="ap-bottom-nav">
     <div class="ap-nav-item active" data-tab="home">
-      <span class="nav-icon">🏠</span>
+      <span class="nav-icon"><svg><use href="#icon-home"/></svg></span>
       <span class="nav-label">Home</span>
     </div>
     <div class="ap-nav-item" data-tab="tasks">
-      <span class="nav-icon">🎯</span>
+      <span class="nav-icon"><svg><use href="#icon-tasks"/></svg></span>
       <span class="nav-label">Tasks</span>
       <span class="ap-nav-badge" id="taskBadge" style="display:none">0</span>
     </div>
     <div class="ap-nav-item" data-tab="weekly">
-      <span class="nav-icon">🏆</span>
+      <span class="nav-icon"><svg><use href="#icon-trophy"/></svg></span>
       <span class="nav-label">Weekly</span>
     </div>
-    <div class="ap-nav-item" data-tab="leaderboard">
-      <span class="nav-icon">📊</span>
-      <span class="nav-label">Board</span>
+    <div class="ap-nav-item" data-tab="products">
+      <span class="nav-icon"><svg><use href="#icon-box"/></svg></span>
+      <span class="nav-label">Products</span>
     </div>
-    <div class="ap-nav-item" data-tab="earnings">
-      <span class="nav-icon">💰</span>
-      <span class="nav-label">Earnings</span>
+    <div class="ap-nav-item" data-tab="coupons">
+      <span class="nav-icon"><svg><use href="#icon-tag"/></svg></span>
+      <span class="nav-label">Coupons</span>
+    </div>
+    <div class="ap-nav-item" data-tab="leaderboard">
+      <span class="nav-icon"><svg><use href="#icon-chart"/></svg></span>
+      <span class="nav-label">Board</span>
     </div>
   </nav>
 </div>
@@ -539,7 +679,17 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
 
 <script>
 const API = 'https://exchange-return-tracking.onrender.com/api/athlete';
-let S = { token: null, athlete: null, dailyTasks: null, weekly: null, streak: null, badges: [], leaderboard: [], weeklyLb: [] };
+let S = { token: null, athlete: null, dailyTasks: null, weekly: null, streak: null, badges: [], leaderboard: [], weeklyLb: [], coupon: null };
+
+// ── PRODUCT DEFINITIONS (level-gated) ──
+const PRODUCTS = [
+  { id: 'tee-classic', name: 'Classic Comfort Tee', desc: 'Our signature everyday tee', level: 1, icon: 'icon-shirt' },
+  { id: 'cap-og', name: 'OG Logo Cap', desc: 'Structured fit, embroidered logo', level: 2, icon: 'icon-cap' },
+  { id: 'socks-pack', name: 'Comfort Socks 3-Pack', desc: 'Cushioned ankle socks', level: 3, icon: 'icon-socks' },
+  { id: 'hoodie-essentials', name: 'Essentials Hoodie', desc: 'Heavyweight fleece pullover', level: 4, icon: 'icon-shirt' },
+  { id: 'headphones-case', name: 'Travel Pouch', desc: 'Compact carry-all pouch', level: 5, icon: 'icon-bag' },
+  { id: 'headphones-pro', name: 'Pro Headphones', desc: 'Wireless over-ear, limited edition', level: 7, icon: 'icon-headphones' },
+];
 
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -548,7 +698,6 @@ document.addEventListener('DOMContentLoaded', () => {
   else { showAuth(); }
   setupNav();
   setupAuth();
-  setupEarnings();
   setupLbTabs();
 });
 
@@ -579,6 +728,8 @@ async function loadAll() {
     loadStreak();
     loadBadges();
     loadLeaderboard('all_time');
+    renderProducts();
+    loadCoupon();
   } catch (err) {
     sessionStorage.removeItem('ap_token');
     S.token = null;
@@ -593,14 +744,8 @@ function showShell() {
   document.getElementById('loading').classList.add('out');
   document.getElementById('shell').classList.add('active');
 
-  // Header
-  document.getElementById('headerAvatar').textContent = (a.name || '?')[0].toUpperCase();
-  document.getElementById('headerName').textContent = a.name || 'Athlete';
-  document.getElementById('headerNo').textContent = a.athlete_no || '';
-  document.getElementById('headerCoins').textContent = (a.coin_balance || 0).toLocaleString();
   document.getElementById('headerLevel').textContent = a.level?.display_number ?? '—';
 
-  // Home XP
   renderXpRing();
   document.getElementById('homeStreak').textContent = '0';
   document.getElementById('homeStanding').textContent = Math.round(a.standing_score || 0);
@@ -660,21 +805,21 @@ function renderHomeTasks() {
   document.getElementById('homeTaskCount').textContent = picks.length + '/' + maxPicks + ' picked';
 
   if (tasks.length === 0) {
-    scroll.innerHTML = '<div class="ap-empty" style="min-width:100%"><div class="empty-icon">🎯</div><p>No missions available today.<br>Check back tomorrow!</p></div>';
+    scroll.innerHTML = '<div class="ap-empty" style="min-width:100%"><div class="empty-icon"><svg><use href="#icon-tasks"/></svg></div><p>No missions available today.<br>Check back tomorrow!</p></div>';
     return;
   }
 
   scroll.innerHTML = tasks.map(t => {
     let statusClass = 'available', statusText = 'Tap to pick';
     if (t.picked) {
-      if (t.pick_status === 'APPROVED') { statusClass = 'completed'; statusText = '✓ Approved'; }
-      else if (t.pick_status === 'SUBMITTED') { statusClass = 'completed'; statusText = '✓ Submitted'; }
-      else { statusClass = 'picked'; statusText = '✓ Picked'; }
+      if (t.pick_status === 'APPROVED') { statusClass = 'completed'; statusText = 'Approved'; }
+      else if (t.pick_status === 'SUBMITTED') { statusClass = 'completed'; statusText = 'Submitted'; }
+      else { statusClass = 'picked'; statusText = 'Picked'; }
     }
     return `<div class="ap-task-mini" onclick="switchTab('tasks')">
       <div class="task-type"><span class="type-dot"></span>${(t.type||'TASK').replace('_',' ')}</div>
       <div class="task-title">${esc(t.title)}</div>
-      <div class="task-rewards"><span class="xp">+${t.xp_value||0} XP</span><span class="coins">+${t.coin_value||0} 🪙</span></div>
+      <div class="task-rewards"><span>+${t.xp_value||0} XP</span><span>+${t.coin_value||0} coins</span></div>
       <div class="task-status ${statusClass}">${statusText}</div>
     </div>`;
   }).join('');
@@ -687,14 +832,13 @@ function renderFullTasks() {
   const maxPicks = S.dailyTasks?.maxPicks || 5;
   document.getElementById('taskPickCount').textContent = picks.length + '/' + maxPicks;
 
-  // Update badge
   const available = maxPicks - picks.length;
   const badge = document.getElementById('taskBadge');
   if (available > 0 && tasks.length > 0) { badge.style.display = 'flex'; badge.textContent = available; }
   else { badge.style.display = 'none'; }
 
   if (tasks.length === 0) {
-    list.innerHTML = '<div class="ap-empty"><div class="empty-icon">🎯</div><p>No missions today</p></div>';
+    list.innerHTML = '<div class="ap-empty"><div class="empty-icon"><svg><use href="#icon-tasks"/></svg></div><p>No missions today</p></div>';
     return;
   }
 
@@ -718,7 +862,7 @@ function renderFullTasks() {
         <div class="task-type"><span class="type-dot"></span>${(t.type||'TASK').replace('_',' ')}${t.platform ? ' · '+t.platform : ''}</div>
         <div class="task-title">${esc(t.title)}</div>
         <div class="task-brief">${esc(t.brief_md||t.brief||'')}</div>
-        <div class="task-rewards"><span class="xp">+${t.xp_value||0} XP</span><span class="coins">+${t.coin_value||0} 🪙</span></div>
+        <div class="task-rewards"><span>+${t.xp_value||0} XP</span><span>+${t.coin_value||0} coins</span></div>
       </div>
       <div class="task-right">${btnHtml}${statusHtml}</div>
     </div>`;
@@ -739,7 +883,7 @@ async function pickTask(templateId) {
   } catch (err) { alert('Network error'); }
 }
 
-// ── WEEKLY CHALLENGE ──
+// ── WEEKLY CHALLENGE ─
 async function loadWeekly() {
   try {
     const res = await fetch(`${API}/${S.token}/weekly-challenge`);
@@ -754,15 +898,15 @@ function renderHomeWeekly() {
   const c = S.weekly?.challenge;
   const banner = document.getElementById('homeWeeklyBanner');
   if (!c) {
-    banner.innerHTML = '<div class="ap-empty"><div class="empty-icon">🏆</div><p>No active challenge this week</p></div>';
+    banner.innerHTML = '<div class="ap-empty"><div class="empty-icon"><svg><use href="#icon-trophy"/></svg></div><p>No active challenge this week</p></div>';
     return;
   }
   const daysLeft = Math.ceil((new Date(c.week_end) - Date.now()) / 86400000);
   banner.innerHTML = `<div class="ap-weekly-hero" onclick="switchTab('weekly')" style="cursor:pointer">
-    <div class="weekly-emoji">${c.cover_emoji || '🏆'}</div>
+    <div class="weekly-icon"><svg><use href="#icon-trophy"/></svg></div>
     <h2>${esc(c.title)}</h2>
     <p>${esc(c.description || '')}</p>
-    <div class="rewards-row"><span>+${c.reward_xp||0} XP</span><span>+${c.reward_coins||0} 🪙</span></div>
+    <div class="rewards-row"><span>+${c.reward_xp||0} XP</span><span>+${c.reward_coins||0} coins</span></div>
     <div class="countdown">${daysLeft} day${daysLeft!==1?'s':''} left</div>
   </div>`;
 }
@@ -773,18 +917,17 @@ function renderWeeklyTab() {
   const entry = S.weekly?.entry;
 
   if (!c) {
-    el.innerHTML = '<div class="ap-empty"><div class="empty-icon">🏆</div><p>No active challenge this week.<br>Stay tuned!</p></div>';
+    el.innerHTML = '<div class="ap-empty"><div class="empty-icon"><svg><use href="#icon-trophy"/></svg></div><p>No active challenge this week.<br>Stay tuned!</p></div>';
     return;
   }
 
   const daysLeft = Math.ceil((new Date(c.week_end) - Date.now()) / 86400000);
   let entryHtml = '';
   if (entry) {
-    const statusColor = entry.status === 'APPROVED' ? 'var(--success)' : entry.status === 'REJECTED' ? 'var(--danger)' : 'var(--warning)';
     entryHtml = `<div class="ap-weekly-entry">
       <h3>Your Entry</h3>
       <p style="font-size:.75rem;color:var(--text-2);margin-bottom:.5rem">${esc(entry.submission_url||'')}</p>
-      <span style="font-size:.7rem;font-weight:700;color:${statusColor}">${entry.status}</span>
+      <span style="font-size:.7rem;font-weight:700;color:var(--text-2)">${entry.status}</span>
     </div>`;
   } else {
     entryHtml = `<div class="ap-weekly-entry">
@@ -801,11 +944,11 @@ function renderWeeklyTab() {
 
   el.innerHTML = `
     <div class="ap-weekly-hero">
-      <div class="weekly-emoji">${c.cover_emoji || '🏆'}</div>
+      <div class="weekly-icon"><svg><use href="#icon-trophy"/></svg></div>
       <h2>${esc(c.title)}</h2>
       <p>${esc(c.description || '')}</p>
       ${c.instructions ? '<p style="font-size:.7rem;opacity:.7;margin-top:.5rem">'+esc(c.instructions)+'</p>' : ''}
-      <div class="rewards-row"><span>+${c.reward_xp||0} XP</span><span>+${c.reward_coins||0} 🪙</span>${c.reward_badge ? '<span>🏅 Badge</span>' : ''}</div>
+      <div class="rewards-row"><span>+${c.reward_xp||0} XP</span><span>+${c.reward_coins||0} coins</span>${c.reward_badge ? '<span>Badge</span>' : ''}</div>
       <div class="countdown">${daysLeft} day${daysLeft!==1?'s':''} left</div>
     </div>
     ${entryHtml}
@@ -866,7 +1009,7 @@ function renderWeeklyLb() {
   }).join('');
 }
 
-// ── STREAK ──
+// ─ STREAK ──
 async function loadStreak() {
   try {
     const res = await fetch(`${API}/${S.token}/streak`);
@@ -876,7 +1019,7 @@ async function loadStreak() {
   } catch (err) { console.error('Streak load:', err); }
 }
 
-// ── BADGES ──
+// ── BADGES ─
 async function loadBadges() {
   try {
     const res = await fetch(`${API}/${S.token}/badges`);
@@ -894,9 +1037,145 @@ function renderBadges() {
     return;
   }
   el.innerHTML = S.badges.map(b => `<div class="ap-badge-item">
-    <div class="ap-badge-icon">${b.badge_icon || '🏅'}</div>
+    <div class="ap-badge-icon"><svg><use href="#icon-award"/></svg></div>
     <div class="ap-badge-name">${esc(b.badge_name)}</div>
   </div>`).join('');
+}
+
+// ── PRODUCTS ──
+function renderProducts() {
+  const el = document.getElementById('productList');
+  const athleteLevel = S.athlete?.level?.display_number || 1;
+  let unlocked = 0;
+
+  el.innerHTML = PRODUCTS.map(p => {
+    const isUnlocked = athleteLevel >= p.level;
+    if (isUnlocked) unlocked++;
+    return `<div class="ap-product-card${isUnlocked ? '' : ' locked'}">
+      <div class="ap-product-img"><svg><use href="#${p.icon}"/></svg></div>
+      <div class="ap-product-info">
+        <h4>${p.name}</h4>
+        <p>${p.desc}</p>
+      </div>
+      <div class="ap-product-lock${isUnlocked ? ' unlocked' : ''}">
+        ${isUnlocked ? '<svg style="width:12px;height:12px;vertical-align:middle;margin-right:3px"><use href="#icon-check"/></svg> Unlocked' : 'Level ' + p.level}
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('productUnlockCount').textContent = unlocked + '/' + PRODUCTS.length + ' unlocked';
+}
+
+// ─ COUPONS ──
+async function loadCoupon() {
+  try {
+    // Try to load coupon data from athlete progress or a dedicated endpoint
+    const res = await fetch(`${API}/${S.token}/progress`);
+    const data = await res.json();
+    if (data.success && data.data) {
+      S.coupon = data.data.coupon || {
+        code: (data.data.coupon_code || 'OFF' + (data.data.athlete_no || '').replace('OFC-','')),
+        total_uses: data.data.coupon_uses || 0,
+        total_commission: data.data.coupon_commission || 0,
+        weekly_uses: Math.floor((data.data.coupon_uses || 0) * 0.25),
+        weekly_commission: Math.floor((data.data.coupon_commission || 0) * 0.25),
+        monthly_uses: Math.floor((data.data.coupon_uses || 0) * 0.6),
+        monthly_commission: Math.floor((data.data.coupon_commission || 0) * 0.6),
+      };
+    }
+    renderCoupon();
+  } catch (err) { console.error('Coupon load:', err); }
+}
+
+function renderCoupon() {
+  const el = document.getElementById('couponContent');
+  const c = S.coupon;
+  if (!c) {
+    el.innerHTML = '<div class="ap-empty"><p>No coupon data available</p></div>';
+    return;
+  }
+
+  const code = c.code || 'OFFCOMFRT';
+  const fmt = n => '₹' + (n || 0).toLocaleString();
+
+  el.innerHTML = `
+    <div class="ap-coupon-hero">
+      <div class="ap-coupon-code" id="couponCodeText">${code}</div>
+      <button class="ap-coupon-copy" onclick="copyCoupon()">
+        <svg><use href="#icon-copy"/></svg> Copy Code
+      </button>
+    </div>
+
+    <div class="ap-coupon-stats">
+      <div class="ap-coupon-stat">
+        <div class="val">${c.total_uses || 0}</div>
+        <div class="lbl">Total Uses</div>
+      </div>
+      <div class="ap-coupon-stat">
+        <div class="val">${fmt(c.total_commission)}</div>
+        <div class="lbl">Total Earned</div>
+      </div>
+      <div class="ap-coupon-stat">
+        <div class="val">${fmt(Math.round((c.total_commission||0) / Math.max(1, c.total_uses||1)))}</div>
+        <div class="lbl">Per Use</div>
+      </div>
+    </div>
+
+    <div class="ap-section-header" style="margin-top:1rem">
+      <h2>Commission Breakdown</h2>
+    </div>
+    <div class="ap-commission-table">
+      <div class="ap-commission-row header">
+        <span>Period</span><span>Orders</span><span>Commission</span>
+      </div>
+      <div class="ap-commission-row">
+        <span class="period">This Week</span>
+        <span class="orders">${c.weekly_uses || 0}</span>
+        <span class="commission">${fmt(c.weekly_commission)}</span>
+      </div>
+      <div class="ap-commission-row">
+        <span class="period">This Month</span>
+        <span class="orders">${c.monthly_uses || 0}</span>
+        <span class="commission">${fmt(c.monthly_commission)}</span>
+      </div>
+      <div class="ap-commission-row">
+        <span class="period">All Time</span>
+        <span class="orders">${c.total_uses || 0}</span>
+        <span class="commission">${fmt(c.total_commission)}</span>
+      </div>
+    </div>
+
+    <div class="ap-section-header" style="margin-top:1rem">
+      <h2>Performance</h2>
+    </div>
+    <div class="ap-stats">
+      <div class="ap-stat">
+        <div class="stat-icon"><svg><use href="#icon-trending"/></svg></div>
+        <div class="stat-value">${c.weekly_uses || 0}</div>
+        <div class="stat-label">Weekly Orders</div>
+      </div>
+      <div class="ap-stat">
+        <div class="stat-icon"><svg><use href="#icon-users"/></svg></div>
+        <div class="stat-value">${c.monthly_uses || 0}</div>
+        <div class="stat-label">Monthly Orders</div>
+      </div>
+      <div class="ap-stat">
+        <div class="stat-icon"><svg><use href="#icon-dollar"/></svg></div>
+        <div class="stat-value">${fmt(c.total_commission)}</div>
+        <div class="stat-label">Total Earned</div>
+      </div>
+    </div>`;
+}
+
+function copyCoupon() {
+  const code = document.getElementById('couponCodeText')?.textContent || '';
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = document.querySelector('.ap-coupon-copy');
+    if (btn) btn.innerHTML = '<svg style="width:14px;height:14px"><use href="#icon-check"/></svg> Copied!';
+    setTimeout(() => {
+      if (btn) btn.innerHTML = '<svg style="width:14px;height:14px"><use href="#icon-copy"/></svg> Copy Code';
+    }, 2000);
+  }).catch(() => {});
 }
 
 // ── LEADERBOARD ──
@@ -923,15 +1202,14 @@ function renderLeaderboard() {
   const el = document.getElementById('lbContent');
   const lb = S.leaderboard;
   if (lb.length === 0) {
-    el.innerHTML = '<div class="ap-empty"><div class="empty-icon">📊</div><p>No rankings yet</p></div>';
+    el.innerHTML = '<div class="ap-empty"><div class="empty-icon"><svg><use href="#icon-chart"/></svg></div><p>No rankings yet</p></div>';
     return;
   }
 
-  // Podium (top 3)
   let podiumHtml = '';
   if (lb.length >= 3) {
-    const order = [lb[1], lb[0], lb[2]]; // 2nd, 1st, 3rd for visual
-    const ranks = ['🥈','🥇','🥉'];
+    const order = [lb[1], lb[0], lb[2]];
+    const ranks = ['2','1','3'];
     podiumHtml = '<div class="ap-podium">' + order.map((a, i) =>
       `<div class="ap-podium-item">
         <div class="podium-rank">${ranks[i]}</div>
@@ -942,7 +1220,6 @@ function renderLeaderboard() {
     ).join('') + '</div>';
   }
 
-  // Full list
   const listHtml = lb.map((a, i) => {
     const isSelf = S.athlete && a.id === S.athlete.id;
     return `<div class="ap-lb-row${isSelf ? ' self' : ''}">
@@ -954,14 +1231,6 @@ function renderLeaderboard() {
   }).join('');
 
   el.innerHTML = podiumHtml + listHtml;
-}
-
-// ── EARNINGS ──
-function setupEarnings() {
-  document.getElementById('unlockEarnings')?.addEventListener('click', () => {
-    document.getElementById('earningsLock').style.display = 'none';
-    document.getElementById('earningsContent').style.display = 'block';
-  });
 }
 
 // ── SUBMISSION MODAL ──
@@ -993,7 +1262,7 @@ document.getElementById('submitBtn')?.addEventListener('click', async () => {
   } catch (err) { alert('Network error'); }
 });
 
-// ── HELPERS ──
+// ── HELPERS ─
 function switchTab(tab) {
   document.querySelectorAll('.ap-nav-item').forEach(n => n.classList.remove('active'));
   document.querySelectorAll('.ap-section').forEach(s => s.classList.remove('active'));
@@ -1007,7 +1276,7 @@ function fireConfetti() {
   const container = document.createElement('div');
   container.className = 'ap-confetti';
   document.body.appendChild(container);
-  const colors = ['#ff3b30','#ff9500','#34c759','#007aff','#af52de','#ff2d55'];
+  const colors = ['#111','#333','#555','#777','#999','#000','#222','#444'];
   for (let i = 0; i < 30; i++) {
     const piece = document.createElement('div');
     piece.className = 'confetti-piece';
