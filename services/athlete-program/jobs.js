@@ -219,39 +219,50 @@ const AthleteJobs = {
   },
 
   /**
-   * Run daily jobs — call at configured refresh time (default 09:00 IST).
-   * Auto-generates next day's task pool if not already created.
+   * Publish five rotating athlete-only missions for today and prebuild tomorrow.
+   * Existing admin-curated pools are never overwritten.
    */
   async runDaily() {
-    console.log('[AthleteJobs] Starting daily run...');
+    console.log('[AthleteJobs] Starting daily mission rotation...');
     const start = Date.now();
+    const indiaDate = (offsetDays = 0) => {
+      const date = new Date(Date.now() + offsetDays * 86400000);
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).formatToParts(date);
+      const values = Object.fromEntries(parts
+        .filter(part => part.type !== 'literal')
+        .map(part => [part.type, part.value]));
+      return `${values.year}-${values.month}-${values.day}`;
+    };
 
     try {
-      // Auto-generate tomorrow's pool if not exists
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-      const { data: existingPool } = await supabase
-        .from('daily_task_pools')
-        .select('id')
-        .eq('pool_date', tomorrow)
-        .maybeSingle();
+      const today = indiaDate();
+      const tomorrow = indiaDate(1);
 
-      if (!existingPool) {
-        const result = await this.autoGeneratePool(tomorrow);
-        console.log(`[AthleteJobs] Auto-generated pool for ${tomorrow}: ${result.taskCount} tasks`);
+      for (const poolDate of [today, tomorrow]) {
+        const { data: existingPool, error } = await supabase
+          .from('daily_task_pools')
+          .select('id')
+          .eq('pool_date', poolDate)
+          .maybeSingle();
+        if (error) throw error;
+
+        if (!existingPool) {
+          const result = await this.autoGeneratePool(poolDate);
+          console.log(`[AthleteJobs] Published ${result.taskCount} athlete missions for ${poolDate}`);
+        }
       }
 
-      // Expire yesterday's unpicked tasks
-      const today = new Date().toISOString().slice(0, 10);
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const yesterday = indiaDate(-1);
       await this.expireUnpickedTasks(yesterday);
       console.log(`[AthleteJobs] Expired unpicked tasks for ${yesterday}`);
-
     } catch (err) {
-      console.error('[AthleteJobs] Daily run failed:', err);
+      console.error('[AthleteJobs] Daily mission rotation failed:', err);
     }
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    console.log(`[AthleteJobs] Daily run complete in ${elapsed}s`);
+    console.log(`[AthleteJobs] Daily mission rotation complete in ${elapsed}s`);
   },
 
   /**
@@ -321,43 +332,54 @@ const AthleteJobs = {
   },
 
   /**
-   * Auto-generate a task pool for a date by selecting from active task templates.
-   * Picks a mix of task types for variety.
+   * Auto-generate an athlete portal pool from the dedicated mission catalog.
+   * Five mission types are preferred and the prior pool is avoided when possible.
    */
   async autoGeneratePool(date) {
     const maxPicks = await this._getSetting('daily_task.max_picks', 5);
-
-    // Get active, non-trial task templates
-    const { data: templates } = await supabase
+    const { data: templates, error } = await supabase
       .from('task_templates')
       .select('id, title, type, xp_value, coin_value')
       .eq('is_active', true)
-      .eq('is_trial_task', false);
+      .eq('is_trial_task', false)
+      .eq('is_athlete_portal_task', true);
 
+    if (error) throw error;
     if (!templates || templates.length === 0) return { taskCount: 0 };
 
-    // Pick up to maxPicks tasks, trying to vary types
+    const previousDate = new Date(`${date}T12:00:00Z`);
+    previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+    const { data: previousPool } = await supabase
+      .from('daily_task_pools')
+      .select('task_template_ids')
+      .eq('pool_date', previousDate.toISOString().slice(0, 10))
+      .maybeSingle();
+    const previousIds = new Set(previousPool?.task_template_ids || []);
+    const freshTemplates = templates.filter(t => !previousIds.has(t.id));
+    const candidates = freshTemplates.length >= maxPicks ? freshTemplates : templates;
+
+    // Shuffle before selecting, so each daily pool is a real rotation.
+    const shuffled = [...candidates];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
     const selected = [];
     const usedTypes = new Set();
-
-    // First pass: one of each type
-    for (const t of templates) {
+    for (const task of shuffled) {
       if (selected.length >= maxPicks) break;
-      if (!usedTypes.has(t.type)) {
-        selected.push(t.id);
-        usedTypes.add(t.type);
+      if (!usedTypes.has(task.type)) {
+        selected.push(task.id);
+        usedTypes.add(task.type);
       }
     }
-
-    // Second pass: fill remaining slots
-    for (const t of templates) {
+    for (const task of shuffled) {
       if (selected.length >= maxPicks) break;
-      if (!selected.includes(t.id)) {
-        selected.push(t.id);
-      }
+      if (!selected.includes(task.id)) selected.push(task.id);
     }
 
-    await GamificationService.createDailyPool(date, selected, 'system');
+    await GamificationService.createDailyPool(date, selected, 'athlete-portal-rotation');
     return { taskCount: selected.length };
   },
 

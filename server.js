@@ -16625,8 +16625,20 @@ app.get('/api/tech-team/my-stats', authenticateTeamMember, async (req, res) => {
 
 // ==================== ATHLETE PROGRAM (FM-OFC-03) ====================
 const mountAthleteRoutes = require('./services/athlete-program/routes');
+const AthleteJobs = require('./services/athlete-program/jobs');
 mountAthleteRoutes(app);
 console.log('🏅 Athlete Program routes mounted');
+
+// Publish today's athlete-only mission pool immediately after a restart, then
+// rotate and prebuild pools at 00:05 IST every day. Weekly challenges retain
+// their existing shared-admin workflow and leaderboard.
+AthleteJobs.runDaily();
+cron.schedule('5 0 * * *', () => {
+    AthleteJobs.runDaily();
+}, {
+    timezone: 'Asia/Kolkata'
+});
+console.log('🏋️ Athlete mission rotation scheduled daily at 00:05 IST');
 
 // 404 handler
 app.use((req, res) => {
