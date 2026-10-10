@@ -443,6 +443,39 @@ html,body{background:var(--paper);padding-bottom:var(--nav-height)}
 .ap-training-copy{position:absolute;z-index:3;left:1rem;right:1rem;bottom:1rem;display:flex;align-items:end;justify-content:space-between;gap:1rem}.ap-training-copy small{display:block;font-size:.46rem;font-weight:900;letter-spacing:.16em;color:#bababa;margin-bottom:.35rem}.ap-training-copy h2{font-family:var(--display);font-size:1.45rem;line-height:.88;letter-spacing:-.05em}.ap-training-copy span{font-size:.46rem;font-weight:900;letter-spacing:.13em;border:1px solid rgba(255,255,255,.5);padding:.32rem .4rem;white-space:nowrap}.ap-training-film .film-rule{position:absolute;z-index:3;top:1rem;left:1rem;right:1rem;height:1px;background:rgba(255,255,255,.38)}
 @media(min-width:500px){.ap-training-film{margin-left:-1.25rem;margin-right:-1.25rem;height:235px}}
 @media(prefers-reduced-motion:reduce){.ap-training-video{display:none}}
+
+/* TASKS — subtle endurance backdrop and structured recovery state */
+#sec-tasks{position:relative;isolation:isolate;min-height:calc(100svh - var(--nav-height) - 54px);overflow:hidden;padding-bottom:2rem}
+#sec-tasks::before{content:'';position:absolute;z-index:-2;pointer-events:none;right:-7.25rem;top:2.2rem;width:30rem;height:39rem;opacity:.14;filter:grayscale(1) contrast(1.1);background:center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 480 620'%3E%3Cg fill='none' stroke='%23242424' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 540C115 498 146 513 215 455S333 350 472 330' stroke-width='7' opacity='.18'/%3E%3Cpath d='M32 574C162 523 250 539 461 457' stroke-width='2' opacity='.3'/%3E%3Cpath d='M283 148c31 0 56 25 56 56s-25 56-56 56-56-25-56-56 25-56 56-56Z' fill='%23242424' stroke='none'/%3E%3Cpath d='M256 271c37-14 77 5 91 40l18 80-44 14-27-70-34 75-65 96-38-24 58-108 17-69-20-51Z' fill='%23242424' stroke='none'/%3E%3Cpath d='m194 326-75 61' stroke-width='28'/%3E%3Cpath d='m158 389-57 107' stroke-width='29'/%3E%3Cpath d='m315 400 61 110' stroke-width='31'/%3E%3Cpath d='m367 298 49 154' stroke-width='10'/%3E%3Cpath d='m423 272-6 271' stroke-width='8'/%3E%3Cpath d='m206 270 48 18' stroke-width='12'/%3E%3Cpath d='m218 315 32 8' stroke-width='18'/%3E%3C/g%3E%3C/svg%3E")}
+#sec-tasks::after{content:'ENDURE';position:absolute;z-index:-1;right:-.13em;bottom:2rem;color:transparent;-webkit-text-stroke:1px rgba(0,0,0,.075);font-size:6.7rem;font-weight:900;letter-spacing:-.12em;line-height:.8;pointer-events:none}
+#sec-tasks .ap-section-header{position:relative;z-index:2;margin-top:1.2rem;padding:.3rem 0 .82rem;border-bottom:2px solid #090909}
+#sec-tasks .ap-section-header h2{font-family:var(--display);font-size:1.35rem;letter-spacing:-.06em}
+#sec-tasks .ap-section-header h2::before{content:'MISSION DECK / 001';display:block;font-family:var(--font);font-size:.42rem;font-weight:900;letter-spacing:.16em;color:#777;margin-bottom:.3rem}
+#sec-tasks .ap-section-header .count{background:#090909;color:#fff;border-radius:999px;padding:.38rem .52rem;font-size:.55rem;letter-spacing:.04em}
+#taskList{position:relative;z-index:1;min-height:calc(100svh - 11.5rem);padding-top:.35rem}
+#taskList .ap-task-full{background:rgba(255,255,255,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.ap-task-idle{min-height:calc(100svh - 14rem)!important;margin:0!important;padding:1.15rem!important;display:flex;align-items:flex-end;border:1px solid rgba(9,9,9,.68)!important;background:linear-gradient(135deg,rgba(203,203,203,.58),rgba(255,255,255,.44) 55%,rgba(185,185,185,.28))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 12px 34px rgba(0,0,0,.06);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.ap-task-idle::before{content:'RECOVER';position:absolute;right:-.08em;top:.22rem;font-size:5.4rem;line-height:.8;font-weight:900;letter-spacing:-.13em;color:transparent;-webkit-text-stroke:1px rgba(0,0,0,.14)}
+.ap-task-idle::after{content:'ENDURANCE MODE / ACTIVE';position:absolute;top:1rem;left:1.15rem;font-size:.46rem;font-weight:900;letter-spacing:.16em;color:#555}
+.ap-task-idle .task-idle-copy{position:relative;z-index:2;max-width:13rem}
+.ap-task-idle h3{font-family:var(--display);font-size:1.7rem;line-height:.88;letter-spacing:-.07em;margin-bottom:.8rem}
+.ap-task-idle p{font-size:.62rem;line-height:1.55;font-weight:700;color:#555;max-width:11rem}
+.ap-task-idle .task-idle-meta{position:absolute;z-index:2;right:1.15rem;bottom:1.15rem;font-size:.45rem;font-weight:900;letter-spacing:.13em;writing-mode:vertical-rl;color:#666}
+@media(max-width:360px){#sec-tasks::before{right:-10rem;opacity:.11}.ap-task-idle h3{font-size:1.48rem}}
+
+/* Mountain endurance shadow — a distant trekker remains intentionally small */
+#sec-tasks::before{right:-2.5rem;top:8.5rem;width:34rem;height:31rem;opacity:.17;filter:none;background:center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 480 440'%3E%3Cpath d='M-30 385 92 191l67 87 82-149 95 135 54-59L510 385Z' fill='%23757575' opacity='.38'/%3E%3Cpath d='m8 393 174-151 45 55 86-97 194 193Z' fill='%233f3f3f' opacity='.34'/%3E%3Cpath d='M-10 405c86-55 151-70 225-123 62-44 144-28 280-68v226H-10Z' fill='%23696969' opacity='.28'/%3E%3Cpath d='M2 332c113 7 187-54 251-89 67-37 139-21 235-50' fill='none' stroke='%232d2d2d' stroke-width='4' opacity='.52'/%3E%3Cg transform='translate(293 205)' fill='none' stroke='%231c1c1c' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='0' cy='0' r='5' fill='%231c1c1c' stroke='none'/%3E%3Cpath d='m-1 7 3 19m-1-14-11 8m12 6 10 13m-9-13-8 16m25-30 10 38' stroke-width='4'/%3E%3Cpath d='m-8 20-5 8' stroke-width='5'/%3E%3C/g%3E%3C/svg%3E")}
+.ap-task-idle{background:linear-gradient(135deg,rgba(189,189,189,.68),rgba(241,241,241,.54) 55%,rgba(164,164,164,.42))!important}
+.ap-task-idle::before{content:'';inset:2.3rem 0 .5rem;z-index:0;opacity:.72;background:center bottom/cover no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 480 440'%3E%3Cpath d='M-30 385 92 191l67 87 82-149 95 135 54-59L510 385Z' fill='%23757575' opacity='.42'/%3E%3Cpath d='m8 393 174-151 45 55 86-97 194 193Z' fill='%233c3c3c' opacity='.38'/%3E%3Cpath d='M-10 405c86-55 151-70 225-123 62-44 144-28 280-68v226H-10Z' fill='%23636363' opacity='.33'/%3E%3Cpath d='M2 332c113 7 187-54 251-89 67-37 139-21 235-50' fill='none' stroke='%23252525' stroke-width='4' opacity='.56'/%3E%3Cg transform='translate(293 205)' fill='none' stroke='%23151515' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='0' cy='0' r='5' fill='%23151515' stroke='none'/%3E%3Cpath d='m-1 7 3 19m-1-14-11 8m12 6 10 13m-9-13-8 16m25-30 10 38' stroke-width='4'/%3E%3Cpath d='m-8 20-5 8' stroke-width='5'/%3E%3C/g%3E%3C/svg%3E")}
+.ap-task-idle::after{z-index:2}
+@media(max-width:360px){#sec-tasks::before{right:-6rem;opacity:.13}}
+
+/* Editorial trekking photograph — served from the app for Shopify cross-origin use */
+#sec-tasks::before{display:none}
+.ap-task-idle{background:linear-gradient(135deg,rgba(202,202,202,.72),rgba(236,236,236,.52) 58%,rgba(151,151,151,.46))!important}
+.ap-task-idle::before{content:'';inset:0;z-index:0;opacity:.44;background:linear-gradient(180deg,rgba(250,250,250,.86) 0%,rgba(238,238,238,.48) 42%,rgba(113,113,113,.34) 100%),url('https://exchange-return-tracking.onrender.com/videos/athlete-mission-mountain-shadow.png') center 57%/cover no-repeat;filter:grayscale(1) contrast(1.14);mix-blend-mode:multiply}
+.ap-task-idle .task-idle-copy{padding:.2rem 0;text-shadow:0 1px 0 rgba(255,255,255,.72)}
+.ap-task-idle .task-idle-meta{color:#383838;text-shadow:0 1px 0 rgba(255,255,255,.72)}
 </style>
 </head>
 <body>
@@ -620,7 +653,13 @@ html,body{background:var(--paper);padding-bottom:var(--nav-height)}
         <span class="count" id="taskPickCount">0/5</span>
       </div>
       <div id="taskList">
-        <div class="ap-empty"><p>Loading missions...</p></div>
+        <div class="ap-empty ap-task-idle">
+          <div class="task-idle-copy">
+            <h3>Train for<br>what’s next.</h3>
+            <p>Loading your mission queue and today’s performance targets.</p>
+          </div>
+          <span class="task-idle-meta">SYSTEM / SYNCING</span>
+        </div>
       </div>
     </div>
 
@@ -899,7 +938,13 @@ function renderFullTasks() {
   else { badge.style.display = 'none'; }
 
   if (tasks.length === 0) {
-    list.innerHTML = '<div class="ap-empty"><div class="empty-icon"><svg><use href="#icon-tasks"/></svg></div><p>No missions today</p></div>';
+    list.innerHTML = `<div class="ap-empty ap-task-idle">
+          <div class="task-idle-copy">
+            <h3>Recovery is<br>part of<br>the work.</h3>
+            <p>Today’s mission queue is clear. Reset with intention and return ready for the next drop.</p>
+          </div>
+          <span class="task-idle-meta">QUEUE / 00 — RESET 00:00</span>
+        </div>`;
     return;
   }
 
