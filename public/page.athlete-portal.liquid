@@ -363,6 +363,86 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
   .ap-task-mini{min-width:185px}
   .ap-coupon-stats{gap:.5rem}
 }
+
+/* LUXURY SPORT OVERHAUL */
+:root{--ink:#090909;--paper:#fff;--fog:#ededed;--steel:#a7a7a7;--rule:#d7d7d7;--nav-height:68px}
+html,body{background:var(--paper);padding-bottom:var(--nav-height)}
+@keyframes marquee{to{transform:translateX(-50%)}}
+@keyframes scan{0%,100%{transform:translateY(-150%);opacity:0}10%,70%{opacity:.55}90%{transform:translateY(500%);opacity:0}}
+@keyframes shimmerRail{from{background-position:200% 0}to{background-position:-200% 0}}
+@keyframes heroRise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+@keyframes trophyPulse{0%,100%{filter:drop-shadow(0 0 0 rgba(255,255,255,0))}50%{filter:drop-shadow(0 0 12px rgba(255,255,255,.45))}}
+@keyframes drawArc{from{stroke-dashoffset:376.99}}
+.ap-shell{background:var(--paper)}
+.ap-header{position:fixed;inset:0 0 auto;transform:translateY(-110%);height:54px;padding:.65rem 1rem;background:#090909;color:#fff;border:0;transition:transform .35s ease;z-index:140}
+.ap-header.scrolled{transform:translateY(0)}
+.ap-header-logo svg text{fill:#fff!important}.ap-header-logo svg{height:18px}.ap-header-name{display:none}.ap-header-level{background:#fff;color:#090909;border:0;width:26px;height:26px}
+.ap-main{max-width:600px;padding:0;margin:0 auto}.ap-section{animation:none}.ap-section.active{display:block}
+.ap-section-header{margin:2.15rem 1rem .75rem;border-bottom:2px solid var(--ink);padding-bottom:.55rem}.ap-section-header h2{font-family:var(--display);font-size:1.35rem;line-height:1;font-weight:900;letter-spacing:-.045em}.ap-section-header h2::before{content:'// ';font-family:var(--font);font-size:.55rem;letter-spacing:.08em;vertical-align:middle}.ap-section-header .count{color:#fff;background:var(--ink);border-radius:999px;padding:.28rem .55rem;font-size:.52rem;letter-spacing:.06em;text-transform:uppercase}
+.ap-home-hero{position:relative;min-height:490px;overflow:hidden;background:#090909;color:#fff;padding:1.2rem 1rem 0;isolation:isolate}
+.ap-home-hero::before{content:'';position:absolute;inset:0;z-index:-1;opacity:.35;background-image:linear-gradient(rgba(255,255,255,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.1) 1px,transparent 1px),radial-gradient(circle at 75% 25%,#555 0,transparent 30%);background-size:100% 58px,58px 100%,100% 100%}
+.ap-home-hero::after{content:'';position:absolute;left:0;right:0;height:1px;background:#fff;opacity:.45;animation:scan 7s linear infinite;pointer-events:none}
+.hero-utility{display:flex;justify-content:space-between;align-items:center;font-size:.55rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.hero-status{display:flex;gap:.35rem;align-items:center}.hero-status i{width:6px;height:6px;background:#fff;border-radius:50%;display:block;animation:pulse-ring 1.7s infinite}
+.hero-wordmark{font-family:var(--display);font-size:2.25rem;letter-spacing:.12em;line-height:1;margin-top:2rem;animation:heroRise .6s .1s both}.hero-kicker{font-size:.57rem;font-weight:800;letter-spacing:.18em;text-transform:uppercase;margin-top:.35rem;color:#bdbdbd;animation:heroRise .6s .2s both}.hero-outline{position:absolute;right:-.08em;top:116px;font-size:5.45rem;font-weight:900;line-height:.72;letter-spacing:-.11em;color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.28);writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--font);z-index:-1}
+.hero-athlete{margin-top:1.65rem;animation:heroRise .6s .3s both}.hero-athlete-label{font-size:.55rem;text-transform:uppercase;letter-spacing:.16em;color:#aaa;font-weight:800}.hero-athlete-name{font-size:1.55rem;font-weight:900;line-height:1.05;letter-spacing:-.065em;text-transform:uppercase;margin-top:.25rem;max-width:260px}.hero-athlete-level{font-family:var(--display);font-size:1rem;margin-top:.35rem;color:#ddd}
+.hero-progress{position:absolute;bottom:0;left:0;right:0;display:grid;grid-template-columns:120px 1fr;align-items:end;background:#151515;border-top:1px solid #555;padding:.9rem 1rem 0;animation:heroRise .7s .4s both}.hero-xp-plate{width:114px;height:114px;position:relative;transform:translateY(20px);background:#fff;border-radius:50%;padding:7px;box-shadow:0 0 0 8px #151515}.hero-xp-plate .ap-xp-ring{width:100%;height:100%}.hero-xp-plate .track{stroke:#e2e2e2}.hero-xp-plate .fill{stroke:#090909;animation:drawArc 1.3s .45s both}.hero-xp-plate .ap-xp-center .level-name{font-size:.4rem;color:#777}.hero-xp-plate .xp-value{font-size:1.3rem;color:#090909}.hero-xp-plate .xp-next{font-size:.42rem}.hero-data{padding:0 0 1.15rem .5rem}.hero-data-label{font-size:.5rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:#aaa}.hero-data-main{display:flex;align-items:baseline;gap:.35rem;margin:.25rem 0 .5rem}.hero-data-main strong{font-size:1.8rem;line-height:1;font-weight:900;letter-spacing:-.08em}.hero-data-main span{font-size:.58rem;font-weight:700;color:#aaa}.hero-rail{height:7px;background:#333;overflow:hidden}.hero-rail i{height:100%;display:block;width:0;background:linear-gradient(110deg,#fff 0%,#fff 40%,#777 50%,#fff 60%,#fff 100%);background-size:200% 100%;animation:shimmerRail 2.5s linear infinite}.hero-meta{display:flex;justify-content:space-between;margin-top:.38rem;font-size:.5rem;font-weight:700;color:#aaa}
+.ap-index-strip{height:36px;overflow:hidden;background:#fff;border-bottom:1px solid var(--ink);display:flex;align-items:center;white-space:nowrap}.ap-index-track{display:flex;width:max-content;animation:marquee 18s linear infinite;font-size:.59rem;font-weight:900;letter-spacing:.1em;text-transform:uppercase}.ap-index-track span{padding-right:1.5rem}.ap-tech-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.65rem 1rem;border-bottom:1px solid var(--rule);font-size:.5rem;letter-spacing:.09em;text-transform:uppercase;font-weight:800}.ap-tech-row span+span{border-left:1px solid var(--rule);padding-left:.5rem}.ap-tech-row .active{margin-left:auto;color:#fff;background:#090909;padding:.22rem .35rem}
+.ap-home-content{padding:0 1rem}.ap-home-content .ap-section-header{margin-left:0;margin-right:0}.ap-card{border:0;border-radius:0;box-shadow:none;margin:0;padding:0}.ap-xp-card{display:none}
+.ap-stats{margin:0;border-top:2px solid var(--ink);border-bottom:1px solid var(--ink);gap:0}.ap-stat{box-shadow:none;border:0;border-radius:0;background:transparent;padding:1.05rem .35rem;position:relative}.ap-stat+.ap-stat{border-left:1px solid var(--ink)}.ap-stat .stat-icon{width:24px;height:24px;display:grid;place-items:center;background:#090909;color:#fff;border-radius:50%;margin:0 auto .5rem}.ap-stat .stat-icon svg{width:13px;height:13px}.ap-stat .stat-value{font-size:1.65rem;line-height:1;font-weight:900;letter-spacing:-.07em}.ap-stat .stat-label{font-size:.46rem;letter-spacing:.12em;margin-top:.35rem}
+.ap-tasks-scroll{gap:.65rem;padding:.15rem 0 .5rem}.ap-task-mini{position:relative;min-width:218px;max-width:235px;height:176px;border:1px solid var(--ink);border-radius:0;box-shadow:none;padding:1rem;overflow:hidden;background:#fff}.ap-task-mini::after{content:attr(data-index);position:absolute;right:-.05em;bottom:-.29em;font-size:6.4rem;font-weight:900;line-height:1;color:#f0f0f0;letter-spacing:-.12em;z-index:0}.ap-task-mini>*{position:relative;z-index:1}.ap-task-mini .task-type{display:inline-flex;background:#090909;color:#fff;padding:.28rem .38rem;font-size:.45rem;letter-spacing:.1em;margin:0 0 .65rem}.ap-task-mini .type-dot{display:none}.ap-task-mini .task-title{font-size:.92rem;line-height:1.16;max-width:155px;margin-bottom:.7rem}.ap-task-mini .task-rewards{position:absolute;bottom:.95rem;left:1rem;gap:.35rem}.ap-task-mini .task-rewards span{background:#eee;padding:.28rem .35rem;font-size:.5rem}.ap-task-mini .task-status{position:absolute;right:1rem;bottom:.95rem;background:#090909;color:#fff;padding:.28rem .35rem;font-size:.44rem}
+.ap-weekly-hero{border:0;border-radius:0;min-height:270px;text-align:left;padding:1.3rem;background:#090909;overflow:hidden}.ap-weekly-hero::after{content:'WEEKLY';position:absolute;right:-.03em;bottom:-.12em;font-size:5.4rem;line-height:.8;font-weight:900;letter-spacing:-.11em;color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.27)}.ap-weekly-hero .weekly-icon{position:absolute;right:1.15rem;top:1.1rem;z-index:2}.ap-weekly-hero .weekly-icon svg{width:52px;height:52px;animation:trophyPulse 2s ease-in-out infinite}.ap-weekly-hero h2{position:relative;z-index:2;font-family:var(--display);font-size:1.8rem;line-height:.95;max-width:230px;margin-top:2.6rem}.ap-weekly-hero p{position:relative;z-index:2;max-width:235px;margin-top:.8rem;font-size:.7rem}.ap-weekly-hero .rewards-row{position:absolute;z-index:2;bottom:2.4rem;left:1.3rem;gap:.35rem}.ap-weekly-hero .rewards-row span{border:1px solid #fff;border-radius:999px;padding:.35rem .45rem;font-size:.5rem}.ap-weekly-hero .countdown{position:absolute;z-index:2;bottom:.9rem;left:1.3rem;font-size:.56rem;letter-spacing:.15em;color:#fff;opacity:1}
+.ap-badges-scroll{border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);padding:.8rem 0;gap:.65rem}.ap-badge-item{min-width:64px}.ap-badge-icon{width:46px;height:46px;border:1px solid var(--ink);border-radius:0;background:#fff}.ap-badge-name{max-width:64px;font-size:.44rem;text-transform:uppercase;letter-spacing:.03em;margin:auto}
+.ap-task-full{border:0;border-radius:0;box-shadow:none;border-bottom:1px solid var(--ink);margin:0;padding:1.05rem 0;grid-template-columns:34px 1fr auto;gap:.6rem;position:relative}.ap-task-full::before{content:counter(task);font-size:1.35rem;font-weight:900;letter-spacing:-.08em}.ap-task-full{counter-increment:task}.ap-task-full:first-child{counter-reset:task}.ap-task-full .task-type{background:#090909;color:#fff;width:max-content;padding:.22rem .3rem;font-size:.42rem;margin-bottom:.35rem}.ap-task-full .task-title{font-size:.92rem}.ap-task-full .task-rewards span{font-size:.52rem;background:#eee;padding:.25rem .3rem}.ap-task-full .task-right .pick-btn{border-radius:0;padding:.6rem .75rem;font-size:.55rem}.ap-task-full .task-right .status-badge{border-radius:0}
+.ap-weekly-entry{border:1px solid var(--ink);border-radius:0;box-shadow:none;padding:1rem}.ap-weekly-lb-header{border-bottom:1px solid var(--ink);padding-bottom:.45rem;margin-top:1.5rem}.ap-lb-row{border-bottom:1px solid var(--ink);padding:.85rem 0}.ap-lb-row.self{border-radius:0;margin:0;padding:.85rem .65rem}.ap-lb-rank{font-family:var(--display);font-size:1.1rem}.ap-podium{border-bottom:2px solid var(--ink);padding:.5rem 0 0;gap:1px}.ap-podium-item .podium-rank{height:34px;width:34px;display:grid;place-items:center;margin:0 auto .35rem;border-radius:50%;background:#090909;color:#fff;font-family:var(--font);font-size:.8rem}.ap-podium-item .podium-bar{border-radius:0}.ap-podium-item:nth-child(2) .podium-bar{height:102px}.ap-podium-item:nth-child(1) .podium-bar{height:76px}.ap-podium-item:nth-child(3) .podium-bar{height:56px}
+.ap-product-card{border:1px solid var(--ink);border-radius:0;box-shadow:none;margin-bottom:.65rem;padding:0;gap:0;align-items:stretch}.ap-product-card.locked{opacity:.5}.ap-product-img{width:88px;height:auto;min-height:90px;border:0;border-right:1px solid var(--ink);border-radius:0;background:#eee}.ap-product-info{padding:.8rem}.ap-product-info::before{content:'PRODUCT / 001';display:block;font-size:.42rem;font-weight:900;letter-spacing:.12em;margin-bottom:.4rem}.ap-product-info h4{font-size:.9rem}.ap-product-lock{align-self:flex-end;margin:.65rem;border-radius:0;font-size:.45rem}.ap-product-lock.unlocked{background:#090909}
+.ap-coupon-hero{border-radius:0;padding:1.4rem;text-align:left;position:relative;overflow:hidden}.ap-coupon-hero::after{content:'MEMBER';position:absolute;right:-.04em;bottom:-.2em;font-size:4.8rem;font-weight:900;color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.32);letter-spacing:-.1em}.ap-coupon-code{font-size:1.8rem;position:relative;z-index:1}.ap-coupon-copy{position:relative;z-index:1;border-radius:0}.ap-coupon-stats{border-top:2px solid var(--ink);border-bottom:1px solid var(--ink);gap:0}.ap-coupon-stat{box-shadow:none;border:0;border-radius:0;padding:.95rem .3rem}.ap-coupon-stat+.ap-coupon-stat{border-left:1px solid var(--ink)}.ap-commission-table{border:1px solid var(--ink);border-radius:0;box-shadow:none}.ap-commission-row{border-bottom:1px solid var(--rule)}
+.ap-tabs{border:1px solid var(--ink);border-radius:0;background:#fff;padding:0;margin:1rem}.ap-tab{border-radius:0;font-size:.55rem;padding:.65rem .25rem}.ap-tab+.ap-tab{border-left:1px solid var(--rule)}.ap-tab.active{box-shadow:none;background:#090909}.ap-bottom-nav{height:var(--nav-height);border-top:1px solid var(--ink);padding:5px 6px;background:#fff}.ap-nav-item{border-radius:7px;gap:.08rem}.ap-nav-item.active{background:#090909;color:#fff}.ap-nav-item .nav-icon svg{width:19px;height:19px}.ap-nav-item .nav-label{font-size:.46rem}.ap-nav-badge{top:1px;right:calc(50% - 16px);background:#fff;color:#090909}
+.ap-empty{padding:1.5rem .5rem}.ap-empty .empty-icon{width:38px;height:38px;border:1px solid var(--rule);display:grid;place-items:center;margin:0 auto .6rem;border-radius:50%;opacity:1}.ap-empty .empty-icon svg{width:18px;height:18px}
+.ap-loading{background:#090909;color:#fff}.ap-loading::before{content:'OFFCOMFRT';font-family:var(--display);font-weight:900;font-size:1.7rem;letter-spacing:.1em}.ap-loading p{color:#aaa}.ap-spinner{border-color:#333;border-top-color:#fff}.ap-auth{background:#090909}.ap-auth-card{border:0;border-radius:0;box-shadow:12px 12px 0 #555}.ap-auth-logo{font-size:2.25rem}.ap-modal{border-radius:0;border-top:2px solid #090909}.ap-modal-handle{border-radius:0}
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .55s ease,transform .55s ease}.reveal.is-visible{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important}}
+#sec-tasks,#sec-products,#sec-coupons,#sec-leaderboard{padding:0 1rem}#sec-weekly{padding:0 1rem}.ap-section:not(#sec-home) .ap-section-header{margin-left:0;margin-right:0}.ap-section:not(#sec-home) .ap-empty{margin-top:2rem}
+@media(min-width:500px){.ap-home-hero{min-height:520px}.hero-wordmark{font-size:2.7rem}.hero-outline{font-size:6.8rem}.ap-home-content,#sec-tasks,#sec-products,#sec-coupons,#sec-leaderboard,#sec-weekly{padding-left:1.25rem;padding-right:1.25rem}}
+
+/* HOME MODULES — deliberate states, never blank space */
+.ap-home-content{padding-bottom:1.5rem}
+.ap-home-content .ap-section-header{margin-top:2.7rem;margin-bottom:.8rem;position:relative}
+.ap-home-content .ap-section-header::after{content:'';position:absolute;left:0;right:0;bottom:-6px;height:1px;background:#090909;opacity:.16}
+.ap-stats{gap:.5rem;border:1px solid rgba(10,10,10,.18);border-radius:16px;padding:1.85rem .55rem .55rem;position:relative;overflow:hidden;background:linear-gradient(135deg,rgba(194,194,194,.88),rgba(158,158,158,.66));box-shadow:inset 0 1px 0 rgba(255,255,255,.58),0 10px 24px rgba(0,0,0,.09)}
+.ap-stats::before{content:'LIVE PERFORMANCE / 001';position:absolute;top:.7rem;left:.85rem;color:#505050;font-size:.42rem;font-weight:900;letter-spacing:.16em;z-index:2}
+.ap-stats::after{content:'';position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 12% 0,rgba(255,255,255,.5),transparent 33%),linear-gradient(112deg,rgba(255,255,255,.18),transparent 38%,rgba(255,255,255,.08) 64%,transparent 76%)}
+.ap-stat{isolation:isolate;min-height:126px;padding:.72rem .3rem .62rem;color:#111;border:1px solid rgba(255,255,255,.46)!important;border-radius:11px!important;background:linear-gradient(145deg,rgba(225,225,225,.56),rgba(182,182,182,.32))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.58),inset 0 -1px 0 rgba(0,0,0,.1),0 5px 12px rgba(0,0,0,.08);backdrop-filter:blur(20px) saturate(0);-webkit-backdrop-filter:blur(20px) saturate(0);transition:transform .3s cubic-bezier(.2,.8,.2,1),background .3s ease,box-shadow .3s ease}
+.ap-stat+.ap-stat{border-left:1px solid rgba(255,255,255,.46)!important}
+.ap-stat:hover{transform:translateY(-3px);background:linear-gradient(145deg,rgba(238,238,238,.68),rgba(195,195,195,.45))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 11px 18px rgba(0,0,0,.12)}
+.ap-stat .stat-icon{position:relative;background:rgba(235,235,235,.7);color:#111;width:27px;height:27px;margin:0 auto .7rem;border-radius:50%;border:1px solid rgba(0,0,0,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 2px 5px rgba(0,0,0,.1)}
+.ap-stat .stat-icon::after{content:'';position:absolute;inset:-4px;border:1px solid rgba(0,0,0,.1);border-radius:50%}
+.ap-stat .stat-value{font-size:2.1rem;letter-spacing:-.11em;text-shadow:0 1px 0 rgba(255,255,255,.65)}
+.ap-stat .stat-label{color:#686868;font-size:.42rem;letter-spacing:.13em;margin-top:.46rem}
+.ap-home-content .ap-tasks-scroll{min-height:174px;align-items:stretch}
+.ap-empty{position:relative;overflow:hidden;text-align:left;color:#090909}
+.ap-empty .empty-icon{display:none}
+.ap-empty p{position:relative;z-index:2;font-size:.72rem;line-height:1.5;font-weight:700;color:inherit}
+.ap-mission-empty{min-height:174px!important;display:flex;flex-direction:column;justify-content:flex-end;border:1px solid #090909!important;padding:1rem!important;background:linear-gradient(135deg,#f1f1f1 0%,#fff 58%)!important}
+.ap-mission-empty::before{content:'NO DROP';position:absolute;right:-.07em;top:-.15em;font-size:4.9rem;line-height:1;font-weight:900;letter-spacing:-.12em;color:transparent;-webkit-text-stroke:1px #c7c7c7}
+.ap-mission-empty::after{content:'MISSION QUEUE / RESETS 00:00';position:absolute;top:1rem;left:1rem;font-size:.48rem;font-weight:900;letter-spacing:.13em;color:#777}
+.ap-mission-empty p::before{content:'TODAY\A\A';white-space:pre;font-size:.48rem;letter-spacing:.13em;color:#777}
+.ap-weekly-idle{min-height:216px;background:#090909;color:#fff;padding:1.1rem;display:flex;flex-direction:column;justify-content:flex-end;border:0!important}
+.ap-weekly-idle::before{content:'WEEKLY';position:absolute;right:-.06em;top:.12em;font-size:5.1rem;line-height:.8;font-weight:900;letter-spacing:-.12em;color:transparent;-webkit-text-stroke:1px #555}
+.ap-weekly-idle::after{content:'CHALLENGE WINDOW CLOSED';position:absolute;top:1.1rem;left:1.1rem;font-size:.48rem;font-weight:900;letter-spacing:.14em;color:#aaa}
+.ap-weekly-idle p{color:#fff;max-width:180px;font-family:var(--display);font-size:1.35rem;line-height:.95;letter-spacing:-.04em}
+.ap-badge-vault{min-height:98px!important;border:1px solid #090909!important;display:flex;align-items:flex-end;padding:1rem!important;background:repeating-linear-gradient(90deg,#fff 0,#fff 28px,#f3f3f3 29px,#f3f3f3 30px)!important}
+.ap-badge-vault::before{content:'BADGE VAULT / 000';position:absolute;top:1rem;left:1rem;font-size:.48rem;font-weight:900;letter-spacing:.14em;color:#777}
+.ap-badge-vault p::before{content:'COMPLETE MISSIONS TO BUILD YOUR COLLECTION\A\A';white-space:pre;font-size:.48rem;letter-spacing:.1em;color:#777}
+@media(max-width:360px){.ap-stat .stat-value{font-size:1.7rem}.ap-weekly-idle p{font-size:1.18rem}}
+
+/* TRAINING FILM — compact, background-merged Home footer */
+.ap-training-film{position:relative;height:198px;margin:2.8rem -1rem 0;overflow:hidden;background:#080808;color:#fff;isolation:isolate;border-top:1px solid #111;border-bottom:1px solid #111}
+.ap-training-film::before{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(90deg,rgba(0,0,0,.88) 0%,rgba(0,0,0,.46) 48%,rgba(0,0,0,.78) 100%),linear-gradient(0deg,#080808 0%,transparent 25%,transparent 72%,#080808 100%)}
+.ap-training-film::after{content:'';position:absolute;inset:0;z-index:2;pointer-events:none;opacity:.32;background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px);background-size:100% 34px,34px 100%;mix-blend-mode:screen}
+.ap-training-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:grayscale(1) contrast(1.22) brightness(.58);opacity:.78;transform:scale(1.04);z-index:0}
+.ap-training-copy{position:absolute;z-index:3;left:1rem;right:1rem;bottom:1rem;display:flex;align-items:end;justify-content:space-between;gap:1rem}.ap-training-copy small{display:block;font-size:.46rem;font-weight:900;letter-spacing:.16em;color:#bababa;margin-bottom:.35rem}.ap-training-copy h2{font-family:var(--display);font-size:1.45rem;line-height:.88;letter-spacing:-.05em}.ap-training-copy span{font-size:.46rem;font-weight:900;letter-spacing:.13em;border:1px solid rgba(255,255,255,.5);padding:.32rem .4rem;white-space:nowrap}.ap-training-film .film-rule{position:absolute;z-index:3;top:1rem;left:1rem;right:1rem;height:1px;background:rgba(255,255,255,.38)}
+@media(min-width:500px){.ap-training-film{margin-left:-1.25rem;margin-right:-1.25rem;height:235px}}
+@media(prefers-reduced-motion:reduce){.ap-training-video{display:none}}
 </style>
 </head>
 <body>
@@ -480,70 +560,56 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);
   <main class="ap-main">
     <!-- ══ HOME ═══ -->
     <div class="ap-section active" id="sec-home">
-      <!-- XP Progress (compact row) -->
-      <div class="ap-card ap-xp-card">
-        <div class="ap-xp-ring">
-          <svg viewBox="0 0 140 140">
-            <circle class="track" cx="70" cy="70" r="60"/>
-            <circle class="fill" id="xpArc" cx="70" cy="70" r="60"
-              stroke-dasharray="376.99" stroke-dashoffset="376.99"/>
-          </svg>
-          <div class="ap-xp-center">
-            <div class="level-name" id="homeLevelName">—</div>
-            <div class="xp-value" id="homeXp">0</div>
-            <div class="xp-next" id="homeXpNext">/ 0 XP</div>
+      <section class="ap-home-hero">
+        <div class="hero-utility"><span>ATHLETE PROGRAM / 001</span><span class="hero-status"><i></i> PROGRAM ACTIVE</span></div>
+        <div class="hero-wordmark">OFFCOMFRT</div>
+        <div class="hero-kicker">OUTSIDE COMFORT / PERFORMANCE SYSTEM</div>
+        <div class="hero-outline" id="heroLevelOutline">LEVEL 00</div>
+        <div class="hero-athlete">
+          <div class="hero-athlete-label">ATHLETE PROFILE</div>
+          <div class="hero-athlete-name" id="heroAthleteName">ATHLETE</div>
+          <div class="hero-athlete-level" id="heroLevelName">UNRANKED</div>
+        </div>
+        <div class="hero-progress">
+          <div class="hero-xp-plate">
+            <div class="ap-xp-ring">
+              <svg viewBox="0 0 140 140">
+                <circle class="track" cx="70" cy="70" r="60"/>
+                <circle class="fill" id="xpArc" cx="70" cy="70" r="60" stroke-dasharray="376.99" stroke-dashoffset="376.99"/>
+              </svg>
+              <div class="ap-xp-center"><div class="level-name" id="homeLevelName">LVL —</div><div class="xp-value" id="homeXp">0</div><div class="xp-next" id="homeXpNext">/ 0</div></div>
+            </div>
+          </div>
+          <div class="hero-data">
+            <div class="hero-data-label">TOTAL EXPERIENCE</div>
+            <div class="hero-data-main"><strong id="heroXpTotal">0</strong><span>XP</span></div>
+            <div class="hero-rail"><i id="xpBarFill"></i></div>
+            <div class="hero-meta"><span id="xpProgress">0%</span><span id="xpToNext">TO NEXT LEVEL</span></div>
           </div>
         </div>
-        <div class="ap-xp-info">
-          <div class="xp-level-name" id="xpLevelLabel">—</div>
-          <div class="xp-bar"><div class="xp-bar-fill" id="xpBarFill" style="width:0%"></div></div>
-          <div class="xp-meta"><span id="xpProgress">0%</span><span id="xpToNext">to next level</span></div>
+      </section>
+      <div class="ap-index-strip"><div class="ap-index-track"><span>OFFCOMFRT ATHLETE SYSTEM — OUTSIDE COMFORT — DAILY MISSIONS — </span><span>OFFCOMFRT ATHLETE SYSTEM — OUTSIDE COMFORT — DAILY MISSIONS — </span></div></div>
+      <div class="ap-tech-row"><span id="heroDate">SYSTEM DATE</span><span id="heroAthleteId">ATHLETE / —</span><span class="active">ACTIVE</span></div>
+      <div class="ap-home-content">
+        <div class="ap-section-header"><h2>Status</h2><span class="count">Live Metrics</span></div>
+        <div class="ap-stats reveal">
+          <div class="ap-stat"><div class="stat-icon"><svg><use href="#icon-flame"/></svg></div><div class="stat-value" id="homeStreak">0</div><div class="stat-label">Day Streak</div></div>
+          <div class="ap-stat"><div class="stat-icon"><svg><use href="#icon-zap"/></svg></div><div class="stat-value" id="homeStanding">0</div><div class="stat-label">Standing</div></div>
+          <div class="ap-stat"><div class="stat-icon"><svg><use href="#icon-coin"/></svg></div><div class="stat-value" id="homeCoins">0</div><div class="stat-label">Credits</div></div>
         </div>
-      </div>
-
-      <!-- Stats -->
-      <div class="ap-stats">
-        <div class="ap-stat">
-          <div class="stat-icon"><svg><use href="#icon-flame"/></svg></div>
-          <div class="stat-value" id="homeStreak">0</div>
-          <div class="stat-label">Day Streak</div>
-        </div>
-        <div class="ap-stat">
-          <div class="stat-icon"><svg><use href="#icon-zap"/></svg></div>
-          <div class="stat-value" id="homeStanding">0</div>
-          <div class="stat-label">Standing</div>
-        </div>
-        <div class="ap-stat">
-          <div class="stat-icon"><svg><use href="#icon-coin"/></svg></div>
-          <div class="stat-value" id="homeCoins">0</div>
-          <div class="stat-label">Coins</div>
-        </div>
-      </div>
-
-      <!-- Daily Tasks Preview -->
-      <div class="ap-section-header">
-        <h2>Today's Missions</h2>
-        <span class="count" id="homeTaskCount">0/5 picked</span>
-      </div>
-      <div class="ap-tasks-scroll" id="homeTasksScroll">
-        <div class="ap-empty" style="min-width:100%"><p>Loading missions...</p></div>
-      </div>
-
-      <!-- Weekly Challenge Banner -->
-      <div class="ap-section-header">
-        <h2>Weekly Challenge</h2>
-      </div>
-      <div id="homeWeeklyBanner">
-        <div class="ap-empty"><p>Loading...</p></div>
-      </div>
-
-      <!-- Badges -->
-      <div class="ap-section-header">
-        <h2>Badges</h2>
-        <span class="count" id="homeBadgeCount">0 earned</span>
-      </div>
-      <div class="ap-badges-scroll" id="homeBadges">
-        <div class="ap-empty" style="min-width:100%"><p>No badges yet</p></div>
+        <div class="ap-section-header"><h2>Today's Missions</h2><span class="count" id="homeTaskCount">0/5 picked</span></div>
+        <div class="ap-tasks-scroll reveal" id="homeTasksScroll"><div class="ap-empty" style="min-width:100%"><p>Loading missions...</p></div></div>
+        <div class="ap-section-header"><h2>Weekly Challenge</h2></div>
+        <div class="reveal" id="homeWeeklyBanner"><div class="ap-empty"><p>Loading...</p></div></div>
+        <div class="ap-section-header"><h2>Badges</h2><span class="count" id="homeBadgeCount">0 earned</span></div>
+        <div class="ap-badges-scroll reveal" id="homeBadges"><div class="ap-empty ap-badge-vault" style="min-width:100%"><p>Collection pending</p></div></div>
+        <section class="ap-training-film reveal" aria-label="Athlete training film">
+          <video class="ap-training-video" autoplay muted loop playsinline preload="metadata" aria-hidden="true">
+            <source src="https://exchange-return-tracking.onrender.com/videos/athlete-running-loop.mp4" type="video/mp4">
+          </video>
+          <div class="film-rule"></div>
+          <div class="ap-training-copy"><div><small>ATHLETE TRAINING FILM / 001</small><h2>Outside<br>comfort.</h2></div><span>RUN / LOOP</span></div>
+        </section>
       </div>
     </div>
 
@@ -716,17 +782,21 @@ async function loadAll() {
 
 function showShell() {
   const a = S.athlete;
+  const levelNumber = a.level?.display_number ?? '—';
   document.getElementById('auth').style.display = 'none';
   document.getElementById('loading').classList.add('out');
   document.getElementById('shell').classList.add('active');
-
-  document.getElementById('headerLevel').textContent = a.level?.display_number ?? '—';
+  document.getElementById('headerLevel').textContent = levelNumber;
   document.getElementById('headerName').textContent = a.name || 'Athlete';
-
+  document.getElementById('heroAthleteName').textContent = a.name || 'ATHLETE';
+  document.getElementById('heroAthleteId').textContent = 'ATHLETE / ' + (a.athlete_no || a.id || '—');
+  document.getElementById('heroLevelOutline').textContent = 'LEVEL ' + String(levelNumber).padStart(2, '0');
+  document.getElementById('heroDate').textContent = new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(new Date());
   renderXpRing();
   document.getElementById('homeStreak').textContent = '0';
   document.getElementById('homeStanding').textContent = Math.round(a.standing_score || 0);
   document.getElementById('homeCoins').textContent = (a.coin_balance || 0).toLocaleString();
+  setupLuxuryMotion();
 }
 
 function renderXpRing() {
@@ -734,23 +804,35 @@ function renderXpRing() {
   const xp = a.xp_total || 0;
   const nextMinXp = a.next_level?.min_xp || xp + 100;
   const prevMinXp = a.level?.min_xp || 0;
-  const range = nextMinXp - prevMinXp;
+  const range = Math.max(1, nextMinXp - prevMinXp);
   const progress = xp - prevMinXp;
   const pct = Math.min(100, Math.max(0, (progress / range) * 100));
   const circumference = 376.99;
   const offset = circumference - (pct / 100) * circumference;
-
   const levelName = a.level?.display_name || 'Unranked';
   document.getElementById('homeLevelName').textContent = 'LVL ' + (a.level?.display_number || '—');
   document.getElementById('homeXp').textContent = xp.toLocaleString();
+  document.getElementById('heroXpTotal').textContent = xp.toLocaleString();
   document.getElementById('homeXpNext').textContent = '/ ' + nextMinXp.toLocaleString();
-  document.getElementById('xpLevelLabel').textContent = levelName;
+  document.getElementById('heroLevelName').textContent = levelName;
   setTimeout(() => {
     document.getElementById('xpArc').style.strokeDashoffset = offset;
     document.getElementById('xpBarFill').style.width = pct.toFixed(1) + '%';
   }, 300);
   document.getElementById('xpProgress').textContent = pct.toFixed(0) + '%';
-  document.getElementById('xpToNext').textContent = (nextMinXp - xp).toLocaleString() + ' XP to go';
+  document.getElementById('xpToNext').textContent = (nextMinXp - xp).toLocaleString() + ' XP TO GO';
+}
+
+function setupLuxuryMotion() {
+  const header = document.querySelector('.ap-header');
+  const hero = document.querySelector('.ap-home-hero');
+  window.addEventListener('scroll', () => header.classList.toggle('scrolled', window.scrollY > (hero?.offsetHeight || 360) - 54), { passive: true });
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+      if (entry.isIntersecting) { entry.target.classList.add('is-visible'); observer.unobserve(entry.target); }
+    }), { threshold: .16 });
+    document.querySelectorAll('.reveal').forEach(element => observer.observe(element));
+  } else document.querySelectorAll('.reveal').forEach(element => element.classList.add('is-visible'));
 }
 
 // ── NAV ──
@@ -784,18 +866,18 @@ function renderHomeTasks() {
   document.getElementById('homeTaskCount').textContent = picks.length + '/' + maxPicks + ' picked';
 
   if (tasks.length === 0) {
-    scroll.innerHTML = '<div class="ap-empty" style="min-width:100%"><div class="empty-icon"><svg><use href="#icon-tasks"/></svg></div><p>No missions available today.<br>Check back tomorrow!</p></div>';
+    scroll.innerHTML = '<div class="ap-empty ap-mission-empty" style="min-width:100%"><p>No missions available today.<br>Check back tomorrow.</p></div>';
     return;
   }
 
-  scroll.innerHTML = tasks.map(t => {
+  scroll.innerHTML = tasks.map((t, index) => {
     let statusClass = 'available', statusText = 'Tap to pick';
     if (t.picked) {
       if (t.pick_status === 'APPROVED') { statusClass = 'completed'; statusText = 'Approved'; }
       else if (t.pick_status === 'SUBMITTED') { statusClass = 'completed'; statusText = 'Submitted'; }
       else { statusClass = 'picked'; statusText = 'Picked'; }
     }
-    return `<div class="ap-task-mini" onclick="switchTab('tasks')">
+    return `<div class="ap-task-mini" data-index="${String(index + 1).padStart(2, '0')}" onclick="switchTab('tasks')">
       <div class="task-type"><span class="type-dot"></span>${(t.type||'TASK').replace('_',' ')}</div>
       <div class="task-title">${esc(t.title)}</div>
       <div class="task-rewards"><span>+${t.xp_value||0} XP</span><span>+${t.coin_value||0} coins</span></div>
@@ -877,7 +959,7 @@ function renderHomeWeekly() {
   const c = S.weekly?.challenge;
   const banner = document.getElementById('homeWeeklyBanner');
   if (!c) {
-    banner.innerHTML = '<div class="ap-empty"><div class="empty-icon"><svg><use href="#icon-trophy"/></svg></div><p>No active challenge this week</p></div>';
+    banner.innerHTML = '<div class="ap-empty ap-weekly-idle"><p>Next challenge<br>is being prepared.</p></div>';
     return;
   }
   const daysLeft = Math.ceil((new Date(c.week_end) - Date.now()) / 86400000);
@@ -1012,7 +1094,7 @@ function renderBadges() {
   const el = document.getElementById('homeBadges');
   document.getElementById('homeBadgeCount').textContent = S.badges.length + ' earned';
   if (S.badges.length === 0) {
-    el.innerHTML = '<div class="ap-empty" style="min-width:100%"><p>Complete tasks to earn badges</p></div>';
+    el.innerHTML = '<div class="ap-empty ap-badge-vault" style="min-width:100%"><p>Collection pending</p></div>';
     return;
   }
   el.innerHTML = S.badges.map(b => `<div class="ap-badge-item">
