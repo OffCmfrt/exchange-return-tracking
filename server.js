@@ -180,6 +180,16 @@ app.get('/manufacture/admin', (req, res) => {
     res.send(injected);
 });
 
+// Athlete training film is consumed by the Shopify-hosted athlete portal.
+// Keep its cross-origin access narrowly scoped to this public video directory.
+app.use('/videos', express.static(path.join(__dirname, 'public', 'videos'), {
+    setHeaders: (res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.setHeader('Accept-Ranges', 'bytes');
+    },
+}));
+
 // Security middleware - Helmet for security headers (applied AFTER admin routes)
 app.use(helmet({
     contentSecurityPolicy: {
