@@ -4310,7 +4310,13 @@ async function getEkartTracking(waybill) {
             }]
         };
     } catch (error) {
-        console.error('Ekart tracking fetch error:', error.message);
+        // 404 / SWIFT_RESOURCE_NOT_FOUND_EXCEPTION is expected when the AWB
+        // belongs to a different carrier — log at debug level, not error.
+        if (/Ekart API error: 404\b/.test(error.message)) {
+            console.debug(`Ekart tracking: AWB ${waybill} not found (404) — likely a non-Ekart shipment`);
+        } else {
+            console.error('Ekart tracking fetch error:', error.message);
+        }
     }
     return null;
 }
