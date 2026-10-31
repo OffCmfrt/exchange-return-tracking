@@ -1,4 +1,6 @@
-const CACHE = 'offcomfrt-v1';
+// Bump on any change to ASSETS: activate() drops every cache whose name differs,
+// which is what discards the previously precached app icon.
+const CACHE = 'offcomfrt-v2';
 const ASSETS = [
   '/images/app-icon.png'
 ];

@@ -13,10 +13,12 @@
   <meta name="format-detection" content="telephone=no">
   {% # theme-check-disable RemoteAsset %}
   <link rel="manifest" href="https://exchange-return-tracking.onrender.com/manifest.json?host={{ request.host }}&amp;path={{ request.path | url_encode }}">
-  {% comment %} Icon art is a borderless dark disc with the white brand bar; the ?v=2 busts cached square favicons. {% endcomment %}
-  <link rel="apple-touch-icon" href="https://exchange-return-tracking.onrender.com/images/app-icon.png?v=2">
-  <link rel="icon" type="image/svg+xml" href="https://exchange-return-tracking.onrender.com/images/app-icon.svg?v=2">
-  <link rel="icon" type="image/png" sizes="192x192" href="https://exchange-return-tracking.onrender.com/images/app-icon-192.png?v=2">
+  {% comment %} Icon art is the OFFCOMFRT grain field split by the white bar, cut from the brand photo by generate-app-icon.js. PNG only: the old SVG circle is retired, since browsers prefer an SVG icon over every PNG one, and ?v=3 busts the cached ?v=2 disc. {% endcomment %}
+  <link rel="apple-touch-icon" sizes="180x180" href="https://exchange-return-tracking.onrender.com/images/apple-touch-icon.png?v=3">
+  <link rel="icon" type="image/png" sizes="32x32" href="https://exchange-return-tracking.onrender.com/images/favicon-32.png?v=3">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://exchange-return-tracking.onrender.com/images/favicon-16.png?v=3">
+  <link rel="icon" type="image/png" sizes="192x192" href="https://exchange-return-tracking.onrender.com/images/app-icon-192.png?v=3">
+  <link rel="shortcut icon" href="https://exchange-return-tracking.onrender.com/images/favicon-32.png?v=3">
   <title>OFFCOMFRT Athlete Program</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
