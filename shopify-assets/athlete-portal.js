@@ -1641,11 +1641,16 @@ ${(r.biggest_climbers||[]).length?`<div class="module"><div class="rk-climbers-h
 // ══════════════════════════════════════════════════════════════════════════
 const LOGUI={monthlyOpen:true,monthlyMore:new Set(),ordersOpen:true,ordersPage:1,ordersPer:10,orderFilter:'ALL',prOpen:true,actOpen:true,actPage:1,actPer:12,actFilter:'ALL',actMore:new Set()};
 const LOG_KIND_LABEL={MISSION:'Mission',XP:'XP',COINS:'Coins',CLIMB:'Rank'};
-const LOG_REASONS={GAME_XP:'Arcade run',GAME_COINS:'Arcade run',RACE_XP:'Rooftop race',TASK_XP:'Mission approved',TASK_COINS:'Mission approved',WEEKLY_CHALLENGE_WIN:'Weekly challenge',LEVEL_UP_BONUS:'Level-up bonus',SIGNUP_BONUS:'Join bonus',REFERRAL_BONUS:'Referral bonus'};
+const LOG_REASONS={GAME_XP:'Arcade run',GAME_COINS:'Arcade run',RACE_XP:'Multiplayer race',TASK_XP:'Mission approved',TASK_COINS:'Mission approved',WEEKLY_CHALLENGE_WIN:'Weekly challenge',LEVEL_UP_BONUS:'Level-up bonus',SIGNUP_BONUS:'Join bonus',REFERRAL_BONUS:'Referral bonus'};
 const LOG_PAGE_SIZES=[10,25,50];
 const logFmt=v=>'\u20B9'+Number(v||0).toLocaleString('en-IN');
 
-function logKind(e){const t=String(e&&e.type||'').toUpperCase();return LOG_KIND_LABEL[t]?t:'OTHER'}
+// Ledger rows store the coin currency as 'COIN' while the journal's chip is 'COINS'.
+function logKind(e){
+  const t=String(e&&e.type||'').toUpperCase();
+  if(t==='COIN'||t==='COINS')return 'COINS';
+  return LOG_KIND_LABEL[t]?t:'OTHER';
+}
 function logReason(code){
   const raw=String(code||'').trim();
   if(!raw)return '\u2014';
@@ -1653,6 +1658,26 @@ function logReason(code){
   if(hit)return hit;
   const words=raw.replace(/_/g,' ').toLowerCase();
   return words.charAt(0).toUpperCase()+words.slice(1);
+}
+// Which cabinet paid a run: the ledger keeps the slug, the portal owns the name.
+function logGame(e){
+  const g=String(e&&e.game||'');
+  return g?(GAME_LABELS[g]||e.game_label||g):'';
+}
+// Activity column. Arcade rows name the game they were played on; every other
+// ledger row names what paid it, so the reason moves down to Detail.
+function logTitle(e){
+  const kind=logKind(e);
+  if(kind==='XP'||kind==='COINS')return logGame(e)||logReason(e.detail);
+  return String(e.title||'Event');
+}
+function logDetail(e){
+  const kind=logKind(e);
+  if(kind==='XP'||kind==='COINS'){
+    if(logGame(e))return logReason(e.detail);
+    return e.balance_after!==undefined&&e.balance_after!==null?`Balance ${Number(e.balance_after).toLocaleString('en-IN')}`:'';
+  }
+  return logReason(e.detail);
 }
 function logWhen(iso){
   const d=new Date(iso);
@@ -1805,11 +1830,11 @@ function activityPanel(events){
   const rows=slice.map(n=>{
     const open=LOGUI.actMore.has(n.id);
     return `<div class="act-row${open?' open':''}" data-act-row="${esc(n.id)}" role="button" tabindex="0" aria-expanded="${open?'true':'false'}">
-        <span class="ar-title">${esc(n.e.title||'Event')}</span>
+        <span class="ar-title">${esc(logTitle(n.e))}</span>
         <span class="ar-val ${n.dir}">${esc(n.value)}</span>
         <span class="ar-kind ${n.kind.toLowerCase()}">${LOG_KIND_LABEL[n.kind]||esc(n.kind)}</span>
         <span class="ar-when">${logWhen(n.e.occurred_at)}</span>
-        <span class="ar-detail">${esc(logReason(n.e.detail))}</span>
+        <span class="ar-detail">${esc(logDetail(n.e))}</span>
       </div>${open?actMore(n):''}`;
   }).join('');
   const meta=norm.length?`${norm.length} events \u00B7 ${logAgo(norm[0].e.occurred_at)}`:'0 events';

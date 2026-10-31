@@ -2025,7 +2025,7 @@ const GamificationService = {
     const limit = Math.min(Math.max(parseInt(opts.limit, 10) || 50, 1), 300);
     const [assignments, entries, movements] = await Promise.all([
       supabase.from('assignments').select('id, status, submitted_at, reviewed_at, xp_awarded, coin_awarded, task_templates(title)').eq('influencer_id', influencerId).order('updated_at', { ascending: false }).limit(limit),
-      supabase.from('ledger_entries').select('id, currency, amount, reason_code, balance_after, created_at').eq('influencer_id', influencerId).order('created_at', { ascending: false }).limit(limit),
+      supabase.from('ledger_entries').select('id, currency, amount, reason_code, balance_after, idempotency_key, created_at').eq('influencer_id', influencerId).order('created_at', { ascending: false }).limit(limit),
       supabase.from('level_history').select('id, direction, reason_code, occurred_at').eq('influencer_id', influencerId).order('occurred_at', { ascending: false }).limit(limit)
     ]);
     if (assignments.error) throw assignments.error;
@@ -2033,7 +2033,24 @@ const GamificationService = {
     if (movements.error) throw movements.error;
     const events = [
       ...(assignments.data || []).map(item => ({ id: `mission-${item.id}`, type: 'MISSION', title: item.task_templates?.title || 'Mission updated', detail: item.status, status: item.status, xp: item.xp_awarded || 0, coins: item.coin_awarded || 0, occurred_at: item.reviewed_at || item.submitted_at })),
-      ...(entries.data || []).map(item => ({ id: `ledger-${item.id}`, type: item.currency, title: `${item.amount > 0 ? '+' : ''}${item.amount} ${item.currency}`, detail: item.reason_code, amount: item.amount, currency: item.currency, balance_after: item.balance_after, occurred_at: item.created_at })),
+      ...(entries.data || []).map(item => {
+        // The cabinet a run was played on is only recoverable from the idempotency
+        // key, so resolve it here and let the journal name the game instead of
+        // filing every run under the same generic reason.
+        const game = arcadeGameOf(item.idempotency_key);
+        return {
+          id: `ledger-${item.id}`,
+          type: item.currency,
+          title: `${item.amount > 0 ? '+' : ''}${item.amount} ${item.currency === 'COIN' ? 'coins' : item.currency}`,
+          detail: item.reason_code,
+          game: game || null,
+          game_label: game ? (GAME_RULES[game]?.label || game) : null,
+          amount: item.amount,
+          currency: item.currency,
+          balance_after: item.balance_after,
+          occurred_at: item.created_at
+        };
+      }),
       ...(movements.data || []).map(item => ({ id: `level-${item.id}`, type: 'CLIMB', title: item.direction, detail: item.reason_code, direction: item.direction, occurred_at: item.occurred_at }))
     ].filter(event => event.occurred_at).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at)).slice(0, limit);
     return events;
