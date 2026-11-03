@@ -261,7 +261,7 @@ const TOKEN_EXPIRY = '24h';
 const corsOptions = {
     origin: true, // Allow all origins
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Customer-Phone'],
     credentials: true,
     optionsSuccessStatus: 200
 };
@@ -17438,6 +17438,23 @@ app.get('/api/tech-team/my-stats', authenticateTeamMember, async (req, res) => {
 });
 
 // ==================== ERROR HANDLING ====================
+
+// ==================== CUSTOMER SUPPORT & TICKETS SYSTEM ====================
+const mountSupportRoutes = require('./services/support/routes');
+const { createSupportSync } = require('./services/support');
+mountSupportRoutes(app, {
+    supabase,
+    shopifyAPI,
+    upload,
+    authenticateAdmin,
+    verifyToken,
+    schedulePickup,
+    razorpay,
+    writeLimiter,
+    apiLimiter
+});
+const supportSync = createSupportSync({ supabase, shopifyAPI });
+supportSync.start();
 
 // ==================== ATHLETE PROGRAM (FM-OFC-03) ====================
 const mountAthleteRoutes = require('./services/athlete-program/routes');
