@@ -244,6 +244,107 @@ async function getAllRequestsForExport(filters = {}) {
 
     return allRows.map(convertFromSnakeCase);
 }
+/**
+ * Stream requests for export in bounded batches using keyset pagination.
+ */
+async function* streamRequestsForExport(
+    filters = {},
+    { batchSize = 1000, signal } = {}
+) {
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 1000) {
+        throw new RangeError('batchSize must be between 1 and 1000');
+    }
+
+    let cursor = null;
+
+    while (true) {
+        if (signal?.aborted) {
+            const error = new Error('Export aborted');
+            error.name = 'AbortError';
+            throw error;
+        }
+
+        let query = supabase.from('requests').select('*');
+
+        if (filters.status) query = query.eq('status', filters.status);
+        if (filters.type) query = query.eq('type', filters.type);
+        if (filters.carrier) query = query.eq('carrier', filters.carrier);
+
+        if (filters.dateFrom) {
+            const from = new Date(filters.dateFrom);
+            from.setHours(0, 0, 0, 0);
+            query = query.gte('created_at', from.toISOString());
+        }
+
+        if (filters.dateTo) {
+            const to = new Date(filters.dateTo);
+            to.setHours(23, 59, 59, 999);
+            query = query.lte('created_at', to.toISOString());
+        }
+
+        if (filters.date && !filters.dateFrom && !filters.dateTo) {
+            const start = new Date(filters.date);
+            start.setHours(0, 0, 0, 0);
+
+            const end = new Date(filters.date);
+            end.setHours(23, 59, 59, 999);
+
+            query = query
+                .gte('created_at', start.toISOString())
+                .lte('created_at', end.toISOString());
+        }
+
+        const search = filters.search;
+        const searchGroup = search
+            ? `or(request_id.ilike.%${search}%,order_number.ilike.%${search}%,customer_name.ilike.%${search}%,customer_email.ilike.%${search}%,customer_phone.ilike.%${search}%)`
+            : null;
+
+        const cursorGroup = cursor
+            ? `or(created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},request_id.lt.${cursor.requestId}))`
+            : null;
+
+        if (searchGroup && cursorGroup) {
+            query = query.or(`and(${searchGroup},${cursorGroup})`);
+        } else if (searchGroup) {
+            query = query.or(searchGroup.slice(3, -1));
+        } else if (cursorGroup) {
+            query = query.or(cursorGroup.slice(3, -1));
+        }
+
+        query = query
+            .order('created_at', { ascending: false })
+            .order('request_id', { ascending: false })
+            .limit(batchSize);
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        const page = data || [];
+
+        if (page.length === 0) {
+            yield [];
+            return;
+        }
+
+        const lastRow = page[page.length - 1];
+
+        if (!lastRow.created_at || !lastRow.request_id) {
+            throw new Error(
+                'created_at and request_id must be non-null for safe pagination'
+            );
+        }
+
+        yield page.map(convertFromSnakeCase);
+
+        if (page.length < batchSize) return;
+
+        cursor = {
+            createdAt: lastRow.created_at,
+            requestId: lastRow.request_id
+        };
+    }
+}
 
 /**
  * Get request statistics
@@ -989,6 +1090,7 @@ module.exports = {
     getRequestsByOrderNumber,
     getAllRequests,
     getAllRequestsForExport,
+    streamRequestsForExport,
     getRequestStats,
     updateRequestStatus,
     updateRequestData,
