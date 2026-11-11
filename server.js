@@ -1,6 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { createAppLogger, installConsoleShim, resolveLevel } = require('./src/utils/logger');
+const { getBreaker, isBreakerOpen, breakerStatus } = require('./src/utils/circuitBreaker');
 const jwt = require('jsonwebtoken');
 const helmet = require('helmet');
 
@@ -327,6 +328,7 @@ app.use(createHealthRouter({
     authenticate: authenticateAdmin,
     getSyncState: () => ({ running: isSyncRunning, lastRunAt: lastSyncTimestamp }),
     getShopifySyncState: () => ({ running: isShopifySyncRunning, lastRunAt: lastShopifySyncTimestamp }),
+    getBreakers: breakerStatus,
     shoppersHubQuery: require('./config/shopper-hub-db').probeConnection
 }));
 
@@ -613,6 +615,10 @@ async function syncWithRetry(req, maxRetries = 3) {
             
             return { success: true, attempts: attempt, changed: !!(syncResult && syncResult.changed) };
         } catch (error) {
+            if (isBreakerOpen(error)) {
+                console.warn(`[${req.requestId}] Carrier circuit breaker open during sync. Skipping without DB error write or retry.`);
+                return { success: false, skipped: true, breakerOpen: true, carrier: error.service || detectCarrier(req), error: error.message };
+            }
             if (attempt === maxRetries) {
                 // Final failure - log permanently
                 try {
@@ -705,6 +711,8 @@ async function performBackgroundSync() {
                     if (syncMetrics.carrierBreakdown[carrier]) {
                         syncMetrics.carrierBreakdown[carrier].success++;
                     }
+                } else if (result.skipped || result.breakerOpen) {
+                    syncMetrics.skipped++;
                 } else {
                     syncMetrics.failed++;
                     if (syncMetrics.carrierBreakdown[carrier]) {
@@ -1703,37 +1711,87 @@ const OUTBOUND_TIMEOUT_MS = Math.max(1000, parseInt(process.env.OUTBOUND_TIMEOUT
  * @param {number} retries - Maximum number of retries
  * @param {number} backoff - Initial backoff delay in ms
  */
-async function fetchWithRetry(url, options = {}, retries = 3, backoff = 500) {
-    const { timeoutMs, signal: callerSignal, ...fetchOptions } = options;
-    const attemptTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : OUTBOUND_TIMEOUT_MS;
+// ── Resilience (Phase 5A) ── Hard Timeout Helper (M1) ────────────────────────
+/**
+ * Composes a hard timeout with an optional caller-supplied AbortSignal.
+ * Compatible with Node 16+ without leaking timers or event listeners.
+ */
+function composeTimeoutSignal(timeoutMs = 25000, callerSignal) {
+    if (callerSignal && callerSignal.aborted) {
+        return { signal: callerSignal, cleanup: () => {} };
+    }
+
+    const controller = new AbortController();
+    let timer = null;
+    let onCallerAbort = null;
+
+    if (timeoutMs && timeoutMs > 0) {
+        timer = setTimeout(() => {
+            const err = new Error(`Request timed out after ${timeoutMs}ms`);
+            err.name = 'AbortError';
+            err.code = 'ETIMEDOUT';
+            controller.abort(err);
+        }, timeoutMs);
+    }
+
+    if (callerSignal) {
+        onCallerAbort = () => {
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            controller.abort(callerSignal.reason);
+        };
+        callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+    }
+
+    const cleanup = () => {
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        if (callerSignal && onCallerAbort) {
+            callerSignal.removeEventListener('abort', onCallerAbort);
+            onCallerAbort = null;
+        }
+    };
+
+    return { signal: controller.signal, cleanup };
+}
+
+async function fetchWithRetry(url, options = {}, retries = 3, backoff = 500, timeoutMs = OUTBOUND_TIMEOUT_MS) {
+    const callerSignal = options.signal;
+    const effectiveTimeout = options.timeoutMs || timeoutMs;
 
     for (let i = 0; i < retries; i++) {
-        // The deadline covers headers *and* body consumption, since a stalled
-        // response body is exactly the hang being guarded against. A caller's
-        // own signal (caller cancellation) is combined with ours, never dropped.
-        const timeoutSignal = AbortSignal.timeout(attemptTimeoutMs);
-        const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal;
-
+        const { signal, cleanup } = composeTimeoutSignal(effectiveTimeout, callerSignal);
         try {
-            const response = await fetch(url, { ...fetchOptions, signal });
+            const fetchOptions = { ...options, signal };
+            const response = await fetch(url, fetchOptions);
             return response;
         } catch (error) {
-            // Caller cancelled on purpose - surface as-is, don't relabel or retry.
-            if (callerSignal && callerSignal.aborted) throw error;
+            if (signal.aborted && (!error || error.name !== 'AbortError')) {
+                const abortErr = new Error(`Request timed out after ${effectiveTimeout}ms`);
+                abortErr.name = 'AbortError';
+                abortErr.code = 'ETIMEDOUT';
+                error = abortErr;
+            }
 
-            const timedOut = error.name === 'TimeoutError' || error.name === 'AbortError';
-            if (timedOut) {
+            if (callerSignal && callerSignal.aborted) {
+                throw error;
+            }
+
+            // Deliberately not retried: a timeout means "we never saw an answer",
+            // not "nothing happened" - the carrier may well have created the
+            // shipment, so a blind second attempt risks a duplicate booking.
+            // Connection errors below stay retryable. Flagged structurally so
+            // callers can branch without matching the message text.
+            if (error && (error.name === 'AbortError' || error.name === 'TimeoutError' || error.code === 'ETIMEDOUT')) {
+                error.isTimeout = true;
                 let host = url;
                 try { host = new URL(url).host; } catch (_) { /* relative or malformed url - log as given */ }
-                console.warn(`[Outbound Timeout] ${host} did not respond within ${attemptTimeoutMs}ms (${url})`);
-                // Deliberately not retried: a timeout means "we never saw an
-                // answer", not "nothing happened" - the carrier may well have
-                // created the shipment. A blind second attempt risks a
-                // duplicate booking. Connection errors below stay retryable.
-                const wrapped = new Error(`Request to ${host} timed out after ${attemptTimeoutMs}ms`);
-                wrapped.isTimeout = true;
-                wrapped.cause = error;
-                throw wrapped;
+                console.warn(`[Outbound Timeout] ${host} did not respond within ${effectiveTimeout}ms (${url})`);
+                throw error;
             }
 
             // If it's the last retry, throw the error
@@ -1742,6 +1800,8 @@ async function fetchWithRetry(url, options = {}, retries = 3, backoff = 500) {
             console.warn(`[Network Retry] Attempt ${i + 1}/${retries} failed for ${url}. Error: ${error.message}. Retrying in ${backoff}ms...`);
             await new Promise(resolve => setTimeout(resolve, backoff));
             backoff *= 2; // Exponential backoff
+        } finally {
+            cleanup();
         }
     }
 }
@@ -1763,6 +1823,21 @@ function withDeadline(promise, ms, label) {
     return Promise.race([promise, budget]).finally(() => clearTimeout(timer));
 }
 
+async function fireCreateRequest(service, actionName, timeoutMs, idempotencyKey, request) {
+    const { signal, cleanup } = composeTimeoutSignal(timeoutMs - 500);
+    try {
+        return await getBreaker(service, 'mutate_unknown', actionName, fn => fn()).fire(() => request(signal));
+    } catch (error) {
+        if (signal.aborted && !isBreakerOpen(error)) {
+            error.outcome = 'OUTCOME_UNKNOWN';
+            error.idempotencyKey = idempotencyKey;
+        }
+        throw error;
+    } finally {
+        cleanup();
+    }
+}
+
 // ==================== SHOPIFY API HELPER ====================
 
 async function shopifyAPI(endpoint, options = {}) {
@@ -1776,20 +1851,41 @@ async function shopifyAPI(endpoint, options = {}) {
     // Check if endpoint is already a full URL (from pagination Link header)
     const isFullUrl = endpoint.startsWith('http');
     const url = isFullUrl ? endpoint : `https://${shop}/admin/api/2024-01/${endpoint}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const isMutate = method !== 'GET';
+    const defaultTimeout = isMutate ? 25000 : 20000;
+    const timeoutMs = options.timeoutMs || defaultTimeout;
 
-    const response = await fetchWithRetry(url, {
-        ...options,
-        headers: {
-            'X-Shopify-Access-Token': token,
-            'Content-Type': 'application/json',
-            ...options.headers
+    const doFetch = async () => {
+        const response = await fetchWithRetry(url, {
+            ...options,
+            timeoutMs,
+            headers: {
+                'X-Shopify-Access-Token': token,
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        }, options.retries !== undefined ? options.retries : 3, 500, timeoutMs);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            const err = new Error(`Shopify API error: ${response.status} - ${errorText}`);
+            err.status = response.status;
+            err.service = 'shopify';
+            err.retryable = response.status >= 500 || response.status === 429;
+            err.mutationClass = isMutate ? 'MUTATE_IDEMPOTENT' : 'READ';
+            if (response.status === 429) {
+                const retryAfter = response.headers.get('Retry-After');
+                if (retryAfter) err.retryAfter = parseFloat(retryAfter) || 2;
+            }
+            throw err;
         }
-    });
+        return response;
+    };
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Shopify API error: ${response.status} - ${errorText}`);
-    }
+    const response = !isMutate
+        ? await getBreaker('shopify', 'read', 'shopifyAPI', fn => fn()).fire(doFetch)
+        : await doFetch();
 
     const data = await response.json();
     
@@ -2746,18 +2842,23 @@ async function getShiprocketToken(signal) {
 }
 
 async function shiprocketAPI(endpoint, options = {}, retries = 2) {
-    let token = await getShiprocketToken();
+    const isCreate = endpoint.includes('/create') || endpoint.includes('/orders/create');
+    const defaultTimeout = isCreate ? 35000 : 25000;
+    const timeoutMs = options.timeoutMs || defaultTimeout;
+    const executeRequest = async () => {
+        let token = await getShiprocketToken();
 
     for (let i = 0; i <= retries; i++) {
         try {
             const response = await fetchWithRetry(`https://apiv2.shiprocket.in/v1/external${endpoint}`, {
                 ...options,
+                timeoutMs,
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
                     ...options.headers
                 }
-            });
+            }, 1, 500, timeoutMs);
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -2767,24 +2868,37 @@ async function shiprocketAPI(endpoint, options = {}, retries = 2) {
                     shiprocketToken = null;
                     shiprocketTokenExpiry = null;
                     token = await getShiprocketToken();
-                    if (i < retries) continue;
+                    if (i < retries) {
+                        continue;
+                    }
                 }
-                // Retry on 5xx errors
                 if (response.status >= 500 && i < retries) {
                     console.warn(`[Shiprocket Retry] Status ${response.status} for ${endpoint}. Attempt ${i + 1}/${retries + 1}.`);
                     await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
                     continue;
                 }
-                throw new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
+                const err = new Error(`Shiprocket API error: ${response.status} - ${errorText}`);
+                err.status = response.status;
+                err.service = 'shiprocket';
+                err.retryable = !isCreate && (response.status >= 500 || response.status === 429);
+                err.mutationClass = isCreate ? 'MUTATE_UNKNOWN' : 'READ';
+                throw err;
             }
 
             return response.json();
         } catch (error) {
+            if (isBreakerOpen(error)) throw error;
             if (i === retries) throw error;
             console.warn(`[Shiprocket Exception Retry] Attempt ${i + 1}/${retries + 1}. Error: ${error.message}`);
             await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
         }
     }
+    };
+    if (!isCreate) {
+        const breaker = getBreaker('shiprocket', 'read', 'shiprocketAPI', fn => fn());
+        return await breaker.fire(executeRequest);
+    }
+    return await executeRequest();
 }
 
 
@@ -2925,14 +3039,15 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
 
         // POST helper so we can transparently refresh an expired token and retry once.
         const postReturn = async (authToken) => {
-            const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/return', {
+            const response = await fireCreateRequest('shiprocket', 'createReturn', 35000, requestData.requestId, signal => fetch('https://apiv2.shiprocket.in/v1/external/orders/create/return', {
                 method: 'POST',
+                signal,
                 headers: {
                     'Authorization': `Bearer ${authToken}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(payload)
-            });
+            }));
             return response.json();
         };
 
@@ -2965,6 +3080,7 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
         return data;
     } catch (error) {
         console.error('❌ Failed to create Shiprocket return:', error);
+        if (error.outcome === 'OUTCOME_UNKNOWN' || isBreakerOpen(error)) throw error;
         return null;
     }
 }
@@ -3178,11 +3294,12 @@ async function createShiprocketForwardOrder(requestData) {
 
         // POST helper so we can transparently refresh an expired token and retry once.
         const postForward = async (authToken) => {
-            const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+        const response = await fireCreateRequest('shiprocket', 'createForward', 35000, payload.order_id, signal => fetch('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', {
+            method: 'POST',
+            signal,
+            headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }));
             const body = await response.json();
             return { response, body };
         };
@@ -3224,6 +3341,7 @@ async function createShiprocketForwardOrder(requestData) {
         return data;
     } catch (error) {
         console.error('❌ Failed to create forward order:', error);
+        if (error.outcome === 'OUTCOME_UNKNOWN' || isBreakerOpen(error)) throw error;
         return null;
     }
 }
@@ -3239,35 +3357,52 @@ async function delhiveryAPI(endpoint, options = {}, retries = 2) {
         throw new Error('Delhivery API key not configured');
     }
 
+    const isCreate = endpoint.includes('create.json') || endpoint.includes('fm/request/new') || endpoint.includes('/create');
+    const defaultTimeout = isCreate ? 30000 : 20000;
+    const timeoutMs = options.timeoutMs || defaultTimeout;
+    const executeRequest = async () => {
+
     for (let i = 0; i <= retries; i++) {
         try {
             const response = await fetchWithRetry(`https://track.delhivery.com/api${endpoint}`, {
                 ...options,
+                timeoutMs,
                 headers: {
                     'Authorization': `Token ${apiKey}`,
                     'Content-Type': 'application/json',
                     ...options.headers
                 }
-            });
+            }, 1, 500, timeoutMs);
 
             if (!response.ok) {
                 const errorText = await response.text();
-                // Retry on 5xx errors
                 if (response.status >= 500 && i < retries) {
                     console.warn(`[Delhivery Retry] Status ${response.status} for ${endpoint}. Attempt ${i + 1}/${retries + 1}.`);
                     await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
                     continue;
                 }
-                throw new Error(`Delhivery API error: ${response.status} - ${errorText}`);
+                const err = new Error(`Delhivery API error: ${response.status} - ${errorText}`);
+                err.status = response.status;
+                err.service = 'delhivery';
+                err.retryable = !isCreate && (response.status >= 500 || response.status === 429);
+                err.mutationClass = isCreate ? 'MUTATE_UNKNOWN' : 'READ';
+                throw err;
             }
 
             return response.json();
         } catch (error) {
+            if (isBreakerOpen(error)) throw error;
             if (i === retries) throw error;
             console.warn(`[Delhivery Exception Retry] Attempt ${i + 1}/${retries + 1}. Error: ${error.message}`);
             await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
         }
     }
+    };
+    if (!isCreate) {
+        const breaker = getBreaker('delhivery', 'read', 'delhiveryAPI', fn => fn());
+        return await breaker.fire(executeRequest);
+    }
+    return await executeRequest();
 }
 
 /**
@@ -3473,14 +3608,15 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         // Delhivery requires format=json&data=<json_string> in the body
         const bodyString = `format=json&data=${JSON.stringify(payload)}`;
 
-        const response = await fetch('https://track.delhivery.com/api/cmu/create.json', {
+        const response = await fireCreateRequest('delhivery', 'createReturn', 30000, delhiveryOrderId, signal => fetch('https://track.delhivery.com/api/cmu/create.json', {
             method: 'POST',
+            signal,
             headers: {
                 'Authorization': `Token ${process.env.DELHIVERY_API_KEY}`,
                 'Content-Type': 'application/json'
             },
             body: bodyString
-        });
+        }));
 
         const data = await response.json();
         console.log(`📦 Delhivery Response:`, JSON.stringify(data, null, 2));
@@ -3590,6 +3726,7 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
             throw err;
         }
         console.error('❌ Failed to create Delhivery return:', error);
+        if (error.outcome === 'OUTCOME_UNKNOWN' || isBreakerOpen(error)) throw error;
         return null;
     }
 }
@@ -3874,14 +4011,15 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
         // Bounded summary only — the payload holds customer name/address/phone (Phase 1 §0.4).
         console.log(`🚀 Sending to Delhivery CMU API (forward). order=${forwardOrderId} qty=${totalQuantity} amt=₹${totalAmount} pin=***${String(customerPincode || '').slice(-3)}`);
 
-        const response = await fetch('https://track.delhivery.com/api/cmu/create.json', {
+        const response = await fireCreateRequest('delhivery', 'createForward', 30000, forwardOrderId, signal => fetch('https://track.delhivery.com/api/cmu/create.json', {
             method: 'POST',
+            signal,
             headers: {
                 'Authorization': `Token ${process.env.DELHIVERY_API_KEY}`,
                 'Content-Type': 'application/json'
             },
             body: `format=json&data=${JSON.stringify(payload)}`
-        });
+        }));
 
         const data = await response.json();
         console.log('📦 Delhivery Response:', JSON.stringify(data, null, 2));
@@ -3965,6 +4103,7 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
 
     } catch (error) {
         console.error(`❌ Error creating Delhivery forward order:`, error.message);
+        if (error.outcome === 'OUTCOME_UNKNOWN' || isBreakerOpen(error)) throw error;
         return null;
     }
 }
@@ -4038,6 +4177,7 @@ function ekartConfigured() {
 
 let ekartToken = null;
 let ekartTokenExpiry = null;
+let ekartTokenInFlight = null;
 
 async function getEkartToken(signal) {
     // Return cached token if still valid
@@ -4048,59 +4188,103 @@ async function getEkartToken(signal) {
         throw new Error('Ekart not configured (EKART_CLIENT_ID / EKART_USERNAME / EKART_PASSWORD missing)');
     }
 
-    const response = await fetch(
-        `${EKART_BASE_URL()}/integrations/v2/auth/token/${encodeURIComponent(process.env.EKART_CLIENT_ID)}`,
-        {
-            method: 'POST', signal,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                username: process.env.EKART_USERNAME,
-                password: process.env.EKART_PASSWORD
-            })
+    if (ekartTokenInFlight) return ekartTokenInFlight;
+
+    ekartTokenInFlight = getBreaker('ekart', 'read', 'getEkartToken', fn => fn()).fire(async () => {
+        const { signal: timeoutSignal, cleanup } = composeTimeoutSignal(19500, signal);
+        try {
+        const response = await fetch(
+            `${EKART_BASE_URL()}/integrations/v2/auth/token/${encodeURIComponent(process.env.EKART_CLIENT_ID)}`,
+            {
+                method: 'POST',
+                signal: timeoutSignal,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: process.env.EKART_USERNAME,
+                    password: process.env.EKART_PASSWORD
+                })
+            }
+        );
+
+        const text = await response.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (_) { /* non-JSON */ }
+
+        if (!response.ok || !data || !data.access_token) {
+            const err = new Error(`Ekart auth failed: ${response.status} - ${(text || '').substring(0, 300)}`);
+            err.status = response.status;
+            err.service = 'ekart';
+            err.retryable = response.status >= 500 || response.status === 429;
+            err.mutationClass = 'READ';
+            throw err;
         }
-    );
 
-    const text = await response.text();
-    let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch (_) { /* non-JSON */ }
+        console.log('✅ Ekart authenticated (Elite API)');
+        ekartToken = data.access_token;
+        // Refresh 5 min before expiry (expires_in is in seconds)
+        const expiresInSec = Math.max(parseInt(data.expires_in, 10) || 3600, 600) - 300;
+        ekartTokenExpiry = Date.now() + expiresInSec * 1000;
+            return ekartToken;
+        } finally {
+            cleanup();
+        }
+    });
 
-    if (!response.ok || !data || !data.access_token) {
-        throw new Error(`Ekart auth failed: ${response.status} - ${(text || '').substring(0, 300)}`);
+    try {
+        return await ekartTokenInFlight;
+    } finally {
+        ekartTokenInFlight = null;
     }
-
-    console.log('✅ Ekart authenticated (Elite API)');
-    ekartToken = data.access_token;
-    // Refresh 5 min before expiry (expires_in is in seconds)
-    const expiresInSec = Math.max(parseInt(data.expires_in, 10) || 3600, 600) - 300;
-    ekartTokenExpiry = Date.now() + expiresInSec * 1000;
-    return ekartToken;
 }
 
 async function ekartAPI(endpoint, options = {}) {
-    const token = await getEkartToken();
+    const method = (options.method || 'GET').toUpperCase();
+    const isCreate = method !== 'GET' && (endpoint.includes('/shipment') || endpoint.includes('/create'));
+    const defaultTimeout = isCreate ? 30000 : 20000;
+    const timeoutMs = options.timeoutMs || defaultTimeout;
 
-    const response = await fetchWithRetry(`${EKART_BASE_URL()}${endpoint}`, {
-        ...options,
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
-    });
+    const executeRequest = async () => {
+        const token = await getEkartToken(options.signal);
+
+    let response;
+    for (let attempt = 0; attempt <= (isCreate ? 0 : 2); attempt++) {
+        response = await fetchWithRetry(`${EKART_BASE_URL()}${endpoint}`, {
+            ...options,
+            timeoutMs,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        }, 1, 500, timeoutMs);
+        if (isCreate || response.status < 500 || attempt === 2) break;
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
 
     if (!response.ok) {
         const errorText = await response.text();
         // Token expired mid-session — retry once with a fresh token
-        if (response.status === 401 && !options._ekartRetried) {
+        if (!isCreate && response.status === 401 && !options._ekartRetried) {
             ekartToken = null;
             ekartTokenExpiry = null;
             return ekartAPI(endpoint, { ...options, _ekartRetried: true });
         }
-        throw new Error(`Ekart API error: ${response.status} - ${errorText.substring(0, 300)}`);
+        const err = new Error(`Ekart API error: ${response.status} - ${errorText.substring(0, 300)}`);
+        err.status = response.status;
+        err.service = 'ekart';
+        err.retryable = !isCreate && (response.status >= 500 || response.status === 429);
+        err.mutationClass = isCreate ? 'MUTATE_UNKNOWN' : 'READ';
+        throw err;
     }
 
     const text = await response.text();
     return text ? JSON.parse(text) : null;
+    };
+    if (!isCreate) {
+        const breaker = getBreaker('ekart', 'read', 'ekartAPI', fn => fn());
+        return await breaker.fire(executeRequest);
+    }
+    return await executeRequest();
 }
 
 // Today / tomorrow in IST as YYYY-MM-DD (invoice date = today, dispatch date
@@ -4504,6 +4688,7 @@ async function schedulePickup(token, requestId, order, items, type, carrierOverr
         try {
             booking = await returnBookingAttempt(carrierResolution.primary, requestData, order);
         } catch (primaryError) {
+            if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
             if (!carrierResolution.useFallback) throw primaryError;
             const fallbackCarrier = carrierResolution.fallback || getFallbackCarrier(carrierResolution.primary);
             fallbackReason = `${carrierResolution.primary} failed: ${primaryError.message}`;
@@ -5801,6 +5986,7 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                 try {
                     booking = await returnBookingAttempt(carrierResolution.primary, requestData, null);
                 } catch (primaryError) {
+                    if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
                     primaryCarrierFailed = true;
                     if (primaryError.isUnserviceable || isUnserviceableError(primaryError.message)) {
                         allCarriersUnserviceable = true;
@@ -6160,6 +6346,7 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 try {
                     booking = await returnBookingAttempt(resolution.primary, requestData, shopifyOrder);
                 } catch (primaryError) {
+                    if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
                     primaryCarrierFailed = true;
                     if (primaryError.isUnserviceable || isUnserviceableError(primaryError.message)) {
                         allCarriersUnserviceable = true;
@@ -6498,6 +6685,7 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 try {
                     booking = await returnBookingAttempt(resolution.primary, requestData, shopifyOrder);
                 } catch (primaryError) {
+                    if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
                     primaryCarrierFailed = true;
                     if (primaryError.isUnserviceable || isUnserviceableError(primaryError.message)) {
                         allCarriersUnserviceable = true;
@@ -6815,10 +7003,34 @@ app.get('/api/track-request/:identifier', async (req, res) => {
             const returnCarrier = detectCarrier(request);
             try {
                 // Route to the correct carrier using unified detection
+                let trackingData = null;
+                let usedCarrier = null;
                 if (returnCarrier === 'delhivery') {
-                    // Try Delhivery tracking
-                    const trackingData = await getDelhiveryTracking(request.awbNumber);
-                    if (trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
+                    try {
+                        trackingData = await getDelhiveryTracking(request.awbNumber);
+                        usedCarrier = 'delhivery';
+                    } catch (dlvErr) {
+                        if (isBreakerOpen(dlvErr)) {
+                            console.warn(`[Tracking API] Delhivery breaker open for ${request.awbNumber}. Falling back to Shiprocket tracking...`);
+                            try { trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`); usedCarrier = 'shiprocket'; } catch (_) {}
+                        } else {
+                            throw dlvErr;
+                        }
+                    }
+                } else {
+                    try {
+                        trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`);
+                        usedCarrier = 'shiprocket';
+                    } catch (srErr) {
+                        if (isBreakerOpen(srErr)) {
+                            console.warn(`[Tracking API] Shiprocket breaker open for ${request.awbNumber}. Falling back to Delhivery tracking...`);
+                            try { trackingData = await getDelhiveryTracking(request.awbNumber); usedCarrier = 'delhivery'; } catch (_) {}
+                        } else {
+                            throw srErr;
+                        }
+                    }
+                }
+                if (usedCarrier === 'delhivery' && trackingData && trackingData.shipments && trackingData.shipments.length > 0) {
                         const shipment = trackingData.shipments[0];
                         const edd = shipment.eta || null;
                         const carrierStatus = shipment.status || shipment.delivered_status;
@@ -6845,11 +7057,7 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                                 if (mapping.status === 'delivered') persistUpdates.deliveredAt = new Date().toISOString();
                             }
                         }
-                    }
-                } else {
-                    // Try Shiprocket tracking
-                    const trackingData = await shiprocketAPI(`/courier/track/awb/${request.awbNumber}`);
-                    if (trackingData && trackingData.tracking_data) {
+                } else if (usedCarrier === 'shiprocket' && trackingData && trackingData.tracking_data) {
                         const tracking = trackingData.tracking_data;
                         const edd = tracking.edd || tracking.etd || null;
                         const carrierStatus = tracking.current_status;
@@ -6874,7 +7082,6 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                             }
                         }
                     }
-                }
             } catch (err) {
                 if (err.message.toLowerCase().includes('cancelled') || err.message.toLowerCase().includes('canceled')) {
                     console.log(`[Tracking API] Return Shipment (${request.awbNumber}) is cancelled.`);
@@ -8430,6 +8637,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                     console.log(`[${requestId}] Using ${carrierToUse} (fallback: ${useFallback})...`);
                     booking = await returnBookingAttempt(carrierToUse, bookingData, shopifyOrder);
                 } catch (primaryError) {
+                    if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
                     // If fallback is enabled, try the fallback carrier
                     if (!useFallback) throw primaryError;
 
@@ -8548,6 +8756,7 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                 carrierUsed = primaryResult.carrierUsed;
                 console.log(`[${requestId}] ✅ ${primaryCarrier} forward dispatch success`);
             } catch (primaryError) {
+                if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
                 console.error(`[${requestId}] ❌ Primary carrier (${primaryCarrier}) failed:`, primaryError.message);
                 
                 // Try fallback if enabled
@@ -8837,6 +9046,7 @@ app.post('/api/admin/resolve-exchange', authenticateAdmin, async (req, res) => {
                 forwardOrder = primaryResult.forwardOrder;
                 carrierUsed = primaryResult.carrierUsed;
             } catch (primaryError) {
+                if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
                 if (useFallback) {
                     try {
                         const fallbackResult = await forwardBookingAttempt(fallbackCarrier, { ...requestDetails, items });
@@ -9463,6 +9673,7 @@ async function bookReturnPickup(requestDetails, requestId, carrierOverride = nul
     try {
         result = await attempt(carrierToUse);
     } catch (primaryError) {
+        if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
         if (!useFallback) throw primaryError;
         fallbackReason = `${carrierToUse} failed: ${primaryError.message}`;
         console.warn(`[${requestId}] ⚠️ ${carrierToUse} failed, falling back to ${fallbackCarrier}:`, primaryError.message);
@@ -9587,6 +9798,7 @@ app.post('/api/admin/create-duplicate-forward', authenticateAdmin, async (req, r
         try {
             result = await attempt(primaryCarrier);
         } catch (primaryError) {
+            if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
             if (!useFallback) throw primaryError;
             fallbackReason = `${primaryCarrier} failed: ${primaryError.message}`;
             console.warn(`[${requestId}] ⚠️ ${primaryCarrier} failed for duplicate forward, falling back to ${fallbackCarrier}:`, primaryError.message);
@@ -9979,6 +10191,14 @@ app.post('/api/admin/sync-status', authenticateAdmin, async (req, res) => {
                     updated: result.changed ? 1 : 0,
                     attempts: result.attempts
                 });
+            } else if (result.skipped || result.breakerOpen) {
+                return res.json({
+                    success: false,
+                    skipped: true,
+                    message: `Carrier ${result.carrier || 'service'} is temporarily unavailable (circuit breaker open). Sync skipped.`,
+                    requestId: requestId,
+                    attempts: 0
+                });
             } else {
                 return res.json({
                     success: false,
@@ -10352,6 +10572,7 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
                     booking = await returnBookingAttempt(carrierToUse, bookingData, shopifyOrder);
                     console.log(`[${requestId}] ✅ Bulk ${carrierToUse} success: ShipmentID ${booking.shipmentId}, AWB ${booking.awbNumber || 'PENDING'}`);
                 } catch (primaryError) {
+                    if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
                     // If fallback is enabled, try the fallback carrier
                     if (!useFallback) throw primaryError;
 
@@ -10842,6 +11063,7 @@ app.post('/api/admin/override-payment', authenticateAdmin, async (req, res) => {
                 try {
                     booking = await returnBookingAttempt(resolution.primary, bookingData, shopifyOrder);
                 } catch (primaryError) {
+                    if (primaryError.outcome === 'OUTCOME_UNKNOWN') throw primaryError;
                     if (!resolution.useFallback) throw primaryError;
                     const fallbackCarrier = resolution.fallback || getFallbackCarrier(resolution.primary);
                     fallbackReason = `${resolution.primary} failed: ${primaryError.message}`;
