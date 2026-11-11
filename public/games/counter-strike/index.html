@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#0a0a0c">
   <link rel="manifest" href="manifest.json">
   <title>OFFCOMFRT &mdash; Counter Strike</title>
-  <link rel="stylesheet" href="style.css?v=29" />
+  <link rel="stylesheet" href="style.css?v=30" />
 </head>
 <body>
 
@@ -235,6 +235,18 @@
           <span id="escortStatus">RAVEN STATUS: OK</span>
           <span id="extractionTimer">1:00</span>
         </div>
+        <div id="holdHud" style="display:none;">
+          <span id="holdLabel">CONSOLE</span>
+          <div class="hold-track"><div id="holdBar"></div></div>
+          <span id="holdPct">0s</span>
+        </div>
+        <div id="defenseHud" style="display:none;">
+          <span id="defenseTimer">90s</span>
+          <span id="defenseHostiles">HOSTILES: 0</span>
+        </div>
+        <div id="turretHud" style="display:none;">
+          <span id="turretStatus">DEFENCE GRID: ONLINE</span>
+        </div>
       </div>
     </div>
 
@@ -245,6 +257,26 @@
         <div class="dialogue-content">
           <div class="dialogue-speaker" id="dialogueSpeaker">SPEAKER</div>
           <div class="dialogue-text" id="dialogueText">Dialogue text goes here.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Moral-choice overlay: two cards, monochrome, freeze the game until a pick -->
+    <div id="choiceOverlay" class="choice-overlay" style="display:none;">
+      <div class="choice-panel">
+        <h2 id="choiceTitle">THE LEDGER</h2>
+        <p id="choiceLead">Choose your action.</p>
+        <div class="choice-grid">
+          <div class="choice-option" data-choice="antidote">
+            <div class="choice-opt-title">DISTRIBUTE ANTIDOTE</div>
+            <div class="choice-opt-body">Save the workers. Let the formula go public.</div>
+            <div class="choice-opt-cost">Exposes the programme</div>
+          </div>
+          <div class="choice-option" data-choice="sterilise">
+            <div class="choice-opt-title">THERMAL STERILISATION</div>
+            <div class="choice-opt-body">Burn the archive. Protect the secret.</div>
+            <div class="choice-opt-cost">Kessler dies here</div>
+          </div>
         </div>
       </div>
     </div>
@@ -391,9 +423,9 @@
   <!-- Network client for multiplayer -->
   <script src="counter-strike-net.js?v=13"></script>
   <!-- Shared map geometry: the same module the hub requires, so client and server collide identically -->
-  <script src="../cs-map.js?v=6"></script>
+  <script src="../cs-map.js?v=12"></script>
   <!-- Game engine loads as ES module (deferred by spec) -->
-  <script type="module" src="script.js?v=122"></script>
+  <script type="module" src="script.js?v=133"></script>
   <!-- YouTube IFrame API for monster truck music player -->
   <script src="https://www.youtube.com/iframe_api" async></script>
   <style>

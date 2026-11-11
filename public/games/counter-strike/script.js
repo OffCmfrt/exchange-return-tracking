@@ -156,7 +156,7 @@ renderer.domElement.id = 'game';
 gameScreen.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x555560); // bright monochrome gray
+scene.background = new THREE.Color(0x555560); // overcast grey
 scene.fog = new THREE.Fog(0x555560, 50, 160);
 
 // Fast-path traversal: after the static freeze (matrixAutoUpdate=false on all
@@ -198,8 +198,8 @@ addEventListener('resize', () => {
   weaponCam.updateProjectionMatrix();
 });
 
-// Monochrome dramatic lighting — boosted to compensate for no post-processing
-scene.add(new THREE.HemisphereLight(0xffffff, 0x2a2a30, 4.0));
+// Lighting rig — uniform across all maps
+scene.add(new THREE.HemisphereLight(0xffffff, 0x1a1a20, 4.0));
 const sun = new THREE.DirectionalLight(0xffffff, 5.5);
 sun.position.set(30, 55, 18);
 sun.castShadow = true;
@@ -371,7 +371,7 @@ const mats = {
   cannabisStem: new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 1 }),
   cannabisBud: new THREE.MeshStandardMaterial({ color: 0x8a8a8a, roughness: 1, flatShading: true }),
   // Marsh palette — all greyscale, brand rule: no hue anywhere in the cabinet
-  water: new THREE.MeshStandardMaterial({ map: waterTex, color: 0x909095, roughness: 0.18, metalness: 0.45, transparent: true, opacity: 0.55 }),
+  water: new THREE.MeshStandardMaterial({ map: waterTex, color: 0x909095, roughness: 0.18, metalness: 0.45, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
   mud: new THREE.MeshStandardMaterial({ color: 0x3f3f42, roughness: 1 }),
   glass: new THREE.MeshStandardMaterial({ color: 0xa8b0b4, roughness: 0.12, metalness: 0.25, transparent: true, opacity: 0.24, side: THREE.DoubleSide }),
   // Reed blades and grass tufts share ONE flat, double-sided quad geometry (one draw call each)
@@ -387,6 +387,11 @@ const mats = {
 // ── Map ──
 const colliders = [];
 const worldMeshes = [];
+// The Mission-03 hillside. Colliders stop bodies on the flat compound; an analytic height field
+// does the same job on a slope, and cs-map.js hands it out so the renderer, the player, the bots
+// and the co-op hub all read ONE surface. null on every map that predates Mission 03, which keeps
+// those maps bit-identical: every terrain test below is guarded by this being non-null.
+let terrain = null;
 
 // Geometry cache: identical box dims+texScale share ONE BufferGeometry instead of allocating
 // a fresh GPU buffer per mesh. The map has hundreds of repeated boxes (walls, stairs, slabs),
@@ -872,6 +877,18 @@ const _driftBranchInst = [];
 // deliberately axis-aligned against the drawn squash axis — a few degrees of error at the shore
 // line is unnoticeable when the payoff is a per-frame call with zero allocations.
 function wadeDepth(x, z) {
+  // Mission-03 generator sub-level: one flooded excavation with dry pads under the switchgear and
+  // the plinth. Checked first because it is a single circle test and only exists on that map.
+  if (genPit) {
+    const dx = (x - genPit.x) / genPit.r, dz = (z - genPit.z) / genPit.r;
+    const e = dx * dx + dz * dz;
+    if (e < 1) {
+      for (const r of genPit.dry) {
+        if (x > r[0] && x < r[1] && z > r[2] && z < r[3]) return 0;
+      }
+      return e < 0.62 ? 2 : 1;
+    }
+  }
   // Continuous flood: the whole east band is wadeable, with a shallows gradient at the west
   // edge where the bayou seeps under the old wall line. Boardwalks, slabs and building
   // footprints sit on hardcoded dry rects — standing on pavement must never feel like wading.
@@ -1714,7 +1731,9 @@ function scatterBushes(count, minGap = 4.5) {
 //   • branches end in their own cola, and the stalk finishes in a terminal cola ringed by sugar leaves
 // ~72 blades per plant, all one instanced draw call. NO colliders: player and bots walk straight
 // through a field, and nothing here feeds isFree()/waypoint generation.
-function addCannabisPlant(x, z, s = 1) {
+// `base` is the height the plant roots at — 0 everywhere in the compound, and the surface height on
+// the Mission-03 hill, where there is no flat plane to stand a 1.5 m shrub on in the first place.
+function addCannabisPlant(x, z, s = 1, base = 0) {
   const H = 1.55 * s;
   const tint = () => CANNABIS_TINTS[(Math.random() * CANNABIS_TINTS.length) | 0];
   // A woody segment rising from (px,py,pz) for `len` at `tilt` from vertical, around `yaw`.
@@ -1731,12 +1750,12 @@ function addCannabisPlant(x, z, s = 1) {
   // Radii are deliberately tiny. A real Cannabis stem is 3-5cm across and its branches 1-2cm; the
   // previous 5cm/3cm radii made a 10cm trunk on a 1.5m plant, which is why the skeleton read as
   // branches rather than as a leafy shrub. The blades carry the silhouette, not the wood.
-  seg(x, 0, z, H, 0, 0, 0.026 * s);                         // main stalk
+  seg(x, base, z, H, 0, 0, 0.026 * s);                       // main stalk
   const phase = Math.random() * Math.PI * 2;
   const nodes = 6;
   for (let i = 0; i < nodes; i++) {
     const f = 0.08 + (i / (nodes - 1)) * 0.86;              // 8% → 94% up the stalk
-    const y = f * H, pair = phase + i * Math.PI / 2;        // each pair rotated 90° from the last
+    const y = base + f * H, pair = phase + i * Math.PI / 2;  // each pair rotated 90° from the last
     const fn = (f - 0.24) / 0.70;                           // 0 at the first branch node → 1 at top
     if (fn < 0) {                                           // skirt: the big lowest pair
       leaf(x, y, z, 0.74 * s, pair, 1.12);
@@ -1773,10 +1792,10 @@ function addCannabisPlant(x, z, s = 1) {
     }
   }
   // Terminal cola: stacked upright sugar leaves around the main bud
-  for (let k = 0; k < 4; k++) leaf(x, H * (0.89 + k * 0.05), z, 0.36 * s * (1 - k * 0.12), phase + k * 1.57, 0.50);
+  for (let k = 0; k < 4; k++) leaf(x, base + H * (0.89 + k * 0.05), z, 0.36 * s * (1 - k * 0.12), phase + k * 1.57, 0.50);
   for (let b = 0; b < 3; b++) {
     const r = 0.11 * s * BUD_SCALE * (1 - b * 0.22);
-    _budInst.push({ p: [x, H + 0.02 + b * 0.09 * s, z], s: [r, r * 1.35, r] });
+    _budInst.push({ p: [x, base + H + 0.02 + b * 0.09 * s, z], s: [r, r * 1.35, r] });
   }
 }
 
@@ -1830,6 +1849,83 @@ function scatterCannabis(count, minGap = 1.4) {
   return placed.length;
 }
 
+// True inside the hamlet's abandoned grow block, padded by `margin` metres. The crop carries no
+// colliders — but the pinewood is planted BEFORE it and does, so unless the wood is told to give this
+// rectangle up, the firs legally claim the one piece of ground the whole compound was cut into the
+// flank for. Measured, not assumed: the first build printed `occupied 11` for a block that a clean-table
+// solver had just called 18/21 legal, which is only explicable by trees having got there first.
+function onHillField(M, x, z, margin = 0) {
+  const G = M.grow;
+  if (!G) return false;
+  const dx = x - G.x, dz = z - G.z;
+  const ca = Math.cos(G.yaw), sa = Math.sin(G.yaw);
+  const lx = Math.abs(dx * ca + dz * sa), lz = Math.abs(-dx * sa + dz * ca);
+  return lx <= ((G.cols - 1) / 2) * G.pitch + 1.1 + margin && lz <= ((G.rows - 1) / 2) * G.rowPitch + 1.1 + margin;
+}
+
+// Cannabis on the hillside, which is the entire reason Sector Zero was cut into this flank. The crop
+// escapes two different ways, so it is placed in two different ways:
+//   • the grow — the hamlet fields went over years ago and were never cleared, so it is a short block
+//     of rows that is legible as rows from ten metres, with most of the plants simply gone and the
+//     support stakes still standing. Dying, not tidy.
+//   • volunteers — single plants where a seed blown off a terrace would actually take hold: sheltered
+//     shoulder ground, never the flats (grazed mown short) and never the faces (nothing holds there).
+// Sized down hard, because nothing exposed on a hill grows the 1.5 m the compound plants do. And as
+// everywhere else in this game: NO colliders, so the flock and the bots both walk straight through.
+function scatterHillCannabis(terr, M, count) {
+  const trailMin = 1.7;
+  let plants = 0, stakes = 0, field = 0;
+
+  // ── The abandoned field. Laid from M.grow in cs-map.js, which is a SOLVED block, not a sketched
+  //    one: the first attempt was hand-placed on the flattest fold of the hamlet ground and the
+  //    survey found it sitting directly on the drover's track, so the search now carries the same
+  //    trail gate the plants do. Everything here is local geometry — rows along the contour, one
+  //    heading, so a player can read it as a field somebody once planted and nobody harvested. ──
+  const G = M.grow || { x: M.anchors.settlement.x, z: M.anchors.settlement.z + 2.2, yaw: -0.34, cols: 7, rows: 3, pitch: 1.15, rowPitch: 1.5 };
+  const ca = Math.cos(G.yaw), sa = Math.sin(G.yaw);
+  const cHalf = (G.cols - 1) / 2, rHalf = (G.rows - 1) / 2;
+  // Why a station went bare, counted and printed. The solver says 18 of these 21 are legal ground, so
+  // if the build ever disagrees the log has to say which gate moved — otherwise the field silently
+  // vanishes and the only clue is a plant total, which cannot tell a bad centre from a bad predicate.
+  const bare = {};
+  for (let r = 0; r < G.rows; r++) {
+    for (let c = 0; c < G.cols; c++) {
+      const lx = (c - cHalf) * G.pitch + rand(-0.24, 0.24), lz = (r - rHalf) * G.rowPitch + rand(-0.2, 0.2);
+      const x = G.x + lx * ca - lz * sa, z = G.z + lx * sa + lz * ca;
+      let fail = null;
+      if (x < M.xLo + 2 || x > M.xHi - 2 || z < M.zLo + 2 || z > M.zHi - 2) fail = 'off-sector';
+      else if (terr.gradient(x, z) > 0.45) fail = 'slope';        // a ploughed block needs gentle ground
+      else if (trailDistance(M, x, z) < 1.2) fail = 'trail';
+      else if (wadeDepth(x, z) > 0) fail = 'flood';
+      else if (!isFree(x, z, 0.6)) fail = 'occupied';
+      if (fail) { bare[fail] = (bare[fail] || 0) + 1; continue; }
+      if (Math.random() < 0.32) { bare.skipped = (bare.skipped || 0) + 1; continue; }  // a third of it is bare
+      const base = terr.height(x, z);
+      addCannabisPlant(x, z, rand(0.55, 1.0), base);
+      plants++; field++;
+      if (Math.random() < 0.72) {                              // the stake it was still tied to
+        const s = addDecoCylinder(x + rand(-0.2, 0.2), z + rand(-0.2, 0.2), 0.045, rand(0.8, 1.3), hillMats.timber, base);
+        s.rotation.z = rand(-0.16, 0.16);
+        stakes++;
+      }
+    }
+  }
+
+  // ── volunteers, rejection-sampled over the whole sector ──
+  let guard = 0;
+  while (plants < count && guard++ < count * 150) {
+    const x = rand(M.xLo + 2, M.xHi - 2), z = rand(M.zLo + 3, M.zHi - 2);
+    const sl = terr.gradient(x, z);
+    if (sl < 0.05 || sl > 0.7) continue;                       // avoid the very flattest (paths) and the sheerest (crests)
+    if (padWeightAt(x, z) > 0.45) continue;                    // nothing roots in a poured yard
+    if (trailDistance(M, x, z) < trailMin) continue;           // never in the walking line
+    if (wadeDepth(x, z) > 0) continue;
+    if (!isFree(x, z, 0.6)) continue;
+    addCannabisPlant(x, z, rand(0.5, 0.9), terr.height(x, z));
+    plants++;
+  }
+  return { plants, stakes, field, bare, volunteers: plants - field };
+}
 
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(66, 66), mats.ground);
 ground.rotation.x = -Math.PI / 2;
@@ -1916,6 +2012,9 @@ function clearMap() {
   colliders.length = 0;
   marshPools = [];   // wading physics must go dry until the next marsh actually gets built
   floodRect = null;  // so must the continuous bayou surface
+  genPit = null;     // and the Mission-03 generator excavation
+  waterStreams.length = 0;  // stream ribbon meshes cleared with the map
+  clearFauna();      // the flock lives on the hill only; its instance buffers are per-map VRAM
 }
 
 function buildIndustrialMap() {
@@ -1933,12 +2032,14 @@ function buildIndustrialMap() {
   // ════════════════════════════════════════════════════════════
 
   const EAST = selectedMap === 'industrial_east';
+  // Mission-03: the same compound with its north wall opened into a gate and the hill behind it.
+  const MOUNTAIN = selectedMap === 'industrial_mountain';
 
   buildGround(99);
 
   // OFFCOMFRT wordmarks flush on the inner face of each perimeter wall
   createWallLogo(0, 3, -48.4, 0);
-  createWallLogo(0, 3, 48.4, Math.PI);
+  if (!MOUNTAIN) createWallLogo(0, 3, 48.4, Math.PI);   // the north wall is a gateway here
   createWallLogo(-48.4, 3, 0, Math.PI / 2);
 
   if (EAST) {
@@ -1951,6 +2052,18 @@ function buildIndustrialMap() {
     addBox(18.25, 49.5, 135.5, 1, 8, mats.wall);
     addBox(-49.5, 0, 1, 99, 8, mats.wall);
     addBox(86, 0, 1, 99, 8, mats.wall);
+  } else if (MOUNTAIN) {
+    // 99 x 139: the flank walls run on past the old north wall to the hill's back face, and the
+    // north wall itself splits into two 43.5 m legs with the gateway between them (the gate blocks,
+    // the lintel and the checkpoint are drawn with Sector Zero, in buildSectorZero).
+    createWallLogo(0, 5, 88.9, Math.PI);
+    addBox(-49.5, 0, 1, 99, 8, mats.wall);            // the core's west wall, unchanged
+    addBox(-100, 40, 1, 180, 8, mats.wall);        // west flank (covers z -50 to 130)
+    addBox(100, 40, 1, 180, 8, mats.wall);         // east flank
+    addBox(0, -49.5, 99, 1, 8, mats.wall);
+    addBox(-27.75, 49.5, 43.5, 1, 8, mats.wall);
+    addBox(27.75, 49.5, 43.5, 1, 8, mats.wall);
+    addBox(0, 130, 200, 1, 14, mats.wall);         // back wall at new north limit
   } else {
     // Original symmetric arena: 99x99 with the east wall standing back at x=49.5
     createWallLogo(48.4, 3, 0, -Math.PI / 2);
@@ -2123,6 +2236,1499 @@ function buildIndustrialMap() {
   console.log(`[CS] Industrial Complex: 6 duplexes + round towers, vehicles, pavement streets${EAST ? ` + eastern marshland (${marshPools.length} pools, 136x99)` : ' (99x99, no marsh)'}`);
 }
 
+// ════════════════════════════════════════════════════════════
+//  MISSION-03 · SECTOR ZERO — THE HILLSIDE
+//  The hill is not geometry first and physics second: cs-map.js owns one analytic surface and this
+//  section only ever READS it. So the mesh, the texture, the player's feet, the bots' pathing and
+//  the co-op hub are all looking at the same arithmetic — a hill can no more drift out from under
+//  its own renderer than out from under its own collider table.
+//  Two derived products, built once and reused on every rebuild because the surface is
+//  deterministic: a vertex grid (height + slope + pad/trail/pit masks, sampled from the shared
+//  surface at ~0.6 m) and a painted ground sheet derived from that same grid.
+// ════════════════════════════════════════════════════════════
+const HILL = { nx: 340, nz: 140, texW: 2048, texH: 1024 };
+let _hillGrid = null;
+let _hillMesh = null;
+// The wadable generator sub-level (Mission-03 Scene Four). Null on every other map, which is the
+// guard on the wade branch — same convention as floodRect.
+let genPit = null;
+// Prop-local materials: the shared `mats` entries back crop, marsh and compound surfaces at the
+// same time, so the hillside must never edit them (see the marsh driftwood for the precedent).
+let hillMats = null;
+
+// Painting noise. Deliberately NOT cs-map's noise — that one is the surface; this one only decides
+// where a puddle sits, so it is free to be a different field entirely.
+function hillPaintNoise(x, z) {
+  const ix = Math.floor(x), iz = Math.floor(z);
+  const fx = x - ix, fz = z - iz;
+  const sx = fx * fx * (3 - 2 * fx), sz = fz * fz * (3 - 2 * fz);
+  const hs = (a, b) => {
+    let n = Math.imul(a, 15731) ^ Math.imul(b, 789221) ^ 1376312547;
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+  };
+  const a = hs(ix, iz), b = hs(ix + 1, iz), c = hs(ix, iz + 1), d = hs(ix + 1, iz + 1);
+  return (a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sz;
+}
+
+// Nearest perpendicular distance from a point to a trail polyline — the same measure the surface
+// itself grades by, so a puddle painted at 0.6 m off centre sits where the rut actually is.
+function trailDistance(M, x, z) {
+  let best = 99;
+  for (const line of M.trails) {
+    for (let k = 0; k < line.length - 1; k++) {
+      const ax = line[k][0], az = line[k][1], bx = line[k + 1][0], bz = line[k + 1][1];
+      const vx = bx - ax, vz = bz - az;
+      const len2 = vx * vx + vz * vz;
+      let t = len2 > 1e-6 ? ((x - ax) * vx + (z - az) * vz) / len2 : 0;
+      t = clamp(t, 0, 1);
+      const px = ax + vx * t - x, pz = az + vz * t - z;
+      const d = Math.hypot(px, pz);
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+function lineDistance(pts, x, z) {
+  let best = 99;
+  for (let k = 0; k < pts.length - 1; k++) {
+    const ax = pts[k][0], az = pts[k][1], vx = pts[k + 1][0] - ax, vz = pts[k + 1][1] - az;
+    const len2 = vx * vx + vz * vz;
+    let t = len2 > 1e-6 ? ((x - ax) * vx + (z - az) * vz) / len2 : 0;
+    t = clamp(t, 0, 1);
+    const d = Math.hypot(ax + vx * t - x, az + vz * t - z);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+// One sampled grid, kept for the life of the page. Heights come straight off the shared surface;
+// slope is a central difference on that grid (free), and the pad/trail/pit masks are the very
+// features the physics blends with, re-measured here so the paint can never disagree with them.
+function buildHillGrid(terr, M) {
+  if (_hillGrid) return _hillGrid;
+  const nx = HILL.nx, nz = HILL.nz, N = (nx + 1) * (nz + 1);
+  const dx = (M.xHi - M.xLo) / nx, dz = (M.zHi - M.zLo) / nz;
+  const h = new Float32Array(N), slope = new Float32Array(N);
+  const trail = new Float32Array(N), gully = new Float32Array(N), wet = new Float32Array(N);
+  const at = (i, j) => j * (nx + 1) + i;
+  for (let j = 0; j <= nz; j++) {
+    const z = M.zLo + j * dz;
+    for (let i = 0; i <= nx; i++) {
+      const x = M.xLo + i * dx, k = at(i, j);
+      h[k] = terr.height(x, z);
+      slope[k] = terr.gradient(x, z);
+      // Pad weight is deliberately NOT baked into this grid: its isolines come out of a bilinear
+      // resample a metre or two off the terrace circles, and a retaining wall has to land on the
+      // circle the structures are built on. The paint solves the ramp analytically instead.
+      trail[k] = trailDistance(M, x, z);
+      gully[k] = 99;
+      for (const g of M.gullies) gully[k] = Math.min(gully[k], lineDistance(g, x, z));
+      const p = M.pits[0];
+      wet[k] = clamp(1 - Math.hypot(x - p.x, z - p.z) / (p.r * 1.15), 0, 1);
+    }
+  }
+  // Slope comes straight off the shared surface rather than from a difference of this grid: the grid
+  // is a paint aid, and a paint aid must never become the thing the physics is approximating.
+  _hillGrid = { nx, nz, dx, dz, h, slope, trail, gully, wet, at };
+  return _hillGrid;
+}
+
+// Bilinear fetch from the grid, in cell coordinates.
+function hillSample(g, arr, fx, fz) {
+  const nx = g.nx, nz = g.nz;
+  const i = Math.min(nx - 1, Math.max(0, Math.floor(fx))), j = Math.min(nz - 1, Math.max(0, Math.floor(fz)));
+  const u = fx - i, v = fz - j;
+  const a = g.at(i, j), b = g.at(i + 1, j), c = g.at(i, j + 1), d = g.at(i + 1, j + 1);
+  return (arr[a] + (arr[b] - arr[a]) * u) * (1 - v) + (arr[c] + (arr[d] - arr[c]) * u) * v;
+}
+
+// The ground sheet. Everything about "realistic mud" here is a value-and-roughness decision, not a
+// hue one: wet silt is nearly black and glossy, dry rock is pale and matte, grass sits between them
+// as a darker, finer grain. Roughness is the channel doing the heavy lifting — a puddle in a rut is
+// unreadable as a colour, but a specular streak across it is instantly water.
+function paintHillSheet(terr, M, g) {
+  const W = HILL.texW, H = HILL.texH;
+  const cc = document.createElement('canvas'); cc.width = W; cc.height = H;
+  const rc = document.createElement('canvas'); rc.width = W; rc.height = H;
+  const cg = cc.getContext('2d'), rg = rc.getContext('2d');
+  const ci = cg.createImageData(W, H), ri = rg.createImageData(W, H);
+  const cd = ci.data, rd = ri.data;
+  const spanX = M.xHi - M.xLo, spanZ = M.zHi - M.zLo;
+  // Distance to the nearest sawn expansion joint of a 2.4 m slab grid, on one axis. JS % keeps the
+  // sign of a negative dividend, so the fold into the cell has to be done on the absolute value.
+  const jointDist = (u) => { const m = Math.abs(u % 2.4); return Math.min(m, 2.4 - m); };
+  // The pad weight is a bilinear sample of a radial ramp, so its isolines are a metre or two off the
+  // terrace's real radius. Solving the ramp analytically puts the revetment exactly on the circle the
+  // structures are built on instead of floating somewhere near it.
+  const padWeight = (x, z) => {
+    let w = 0;
+    for (const t of M.terraces) {
+      const f = Math.hypot(x - t.x, z - t.z) / t.r;
+      w = Math.max(w, f <= M.TERR_F ? 1 : (f >= M.TERR_A ? 0 : 1 - (f - M.TERR_F) / (M.TERR_A - M.TERR_F)));
+    }
+    return w;
+  };
+  for (let py = 0; py < H; py++) {
+    const z = M.zLo + (py / H) * spanZ;
+    const fz = (py / H) * g.nz;
+    for (let px = 0; px < W; px++) {
+      const x = M.xLo + (px / W) * spanX;
+      const fx = (px / W) * g.nx;
+      const hh = hillSample(g, g.h, fx, fz);
+      const sl = hillSample(g, g.slope, fx, fz);
+      const pw = padWeight(x, z);
+      const td = hillSample(g, g.trail, fx, fz);
+      const gd = hillSample(g, g.gully, fx, fz);
+      const wt = hillSample(g, g.wet, fx, fz);
+      const k = (py * W + px) * 4;
+
+      // Contour-banded micro relief: bands follow elevation, which is how erosion on a hillside
+      // actually looks, and it costs one extra noise call.
+      const band = hillPaintNoise(x * 0.9, z * 0.55 + hh * 1.6);
+      const grain = hillPaintNoise(x * 6.5, z * 6.5);
+      const blot = hillPaintNoise(x * 0.31, z * 0.31);
+
+      // Base: dark jungle floor. Gentle ground is very dark humus, steep ground is mid-grey exposed
+      // rock. Dense vegetation shadows keep the overall tone low.
+      const grassiness = clamp(1 - sl / 0.30, 0, 1) * clamp(1 - wt * 1.4, 0, 1);
+      let v = 0.18 + grassiness * 0.04 + (1 - grassiness) * 0.12;
+      v += (grain - 0.5) * (0.05 + (1 - grassiness) * 0.07);
+      v += (blot - 0.5) * 0.09 + (band - 0.5) * 0.035;
+      const patch = hillPaintNoise(x * 0.17 + 3, z * 0.17 - 8);
+      const bracken = clamp((patch - 0.56) / 0.24, 0, 1) * grassiness;   // coarser, darker stands
+      const peat = clamp((0.30 - patch) / 0.24, 0, 1) * grassiness;      // hollows of bare wet peat
+      v -= bracken * 0.035 + peat * 0.075;
+      let rough = 0.97 - grassiness * 0.05 - bracken * 0.03 - peat * 0.22;
+      // Scree: talus piles where the face runs off. Bare rock on a hillside is markedly PALER than
+      // the tussock it emerges from, and it is drawn as facets rather than grain — without both, a
+      // steep face and a gentle one come out of the sheet the same grey and the hill reads flat.
+      const scree = clamp((sl - 0.50) / 0.40, 0, 1);
+      if (scree > 0) {
+        const clump = hillPaintNoise(x * 2.6, z * 2.6);
+        const facet = hillPaintNoise(x * 7.5 + 21, z * 7.5 - 9);      // one broken face, one value
+        const rv = 0.28 + (facet - 0.5) * 0.10 + (clump - 0.5) * 0.04;
+        v = v * (1 - scree * 0.6) + rv * scree * 0.6;
+        rough = rough * (1 - scree * 0.6) + (0.9 + clump * 0.08) * scree * 0.6;
+      }
+
+      // Poured bench — and this is the "hard pad, natural skirt" decision made visible: the pour
+      // keeps a crisp edge instead of washing into the hill, its joints run square to the site the
+      // way slabbing does, and the retaining lip itself is the palest line on the map.
+      if (pw > 0.02) {
+        // A hard cut, not a power curve: a soft ramp still lets the slabbing bleed a couple of
+        // metres past the retaining line, and a pour that fades into a hillside is not a pour.
+        const pad = clamp((pw - 0.16) / 0.42, 0, 1);
+        const seam = (jointDist(x) < 0.035 || jointDist(z) < 0.035) ? 1 : 0;
+        const stain = hillPaintNoise(x * 1.5 + 40, z * 1.5 - 17);
+        const cv = 0.53 + (grain - 0.5) * 0.05 + (stain - 0.5) * 0.12 - seam * 0.17;
+        v = v * (1 - pad) + cv * pad;
+        rough = rough * (1 - pad) + (0.86 - stain * 0.12) * pad;
+      }
+      const kerb = clamp(1 - Math.abs(pw - 0.40) / 0.12, 0, 1);       // the revetment at the pad edge
+      if (kerb > 0) {
+        v = v * (1 - kerb * 0.85) + (0.63 + (grain - 0.5) * 0.05) * kerb * 0.85;
+        rough = rough * (1 - kerb) + 0.8 * kerb;
+      }
+
+      // The trails. Mud, not gravel: a worn bed about four metres across with a ragged edge, two
+      // wheel ruts, a trampled shoulder fading into the hill, and puddles wherever it is level
+      // enough to hold water. Narrower than the graded corridor the physics cuts, which is what
+      // makes the margins look walked-in rather than painted over.
+      const edge = 0.55 * (hillPaintNoise(x * 1.3, z * 1.3) - 0.5);   // ragged corridor wall
+      const bed = clamp((2.05 + edge - td) / 0.75, 0, 1);
+      const shoulder = clamp((M.TRAIL_R + edge - td) / 1.15, 0, 1) * (1 - bed);
+      const onTrail = (bed + shoulder * 0.45) * (1 - pw);
+      if (onTrail > 0) {
+        // td is an unsigned perpendicular distance, so one band either side of the centreline draws
+        // both wheel ruts at once — and the middle strip stays worn and churned between them.
+        const rut = Math.exp(-Math.pow((td - 0.62) * 3.6, 2)) + Math.exp(-Math.pow((td - 0.18) * 5.2, 2)) * 0.55;
+        const churn = hillPaintNoise(x * 3.1, z * 3.1);
+        let mv = 0.185 + (churn - 0.5) * 0.06 - rut * 0.045;
+        // Water only where the surface is nearly level and the patch is big enough to matter
+        const pool = clamp((0.14 - sl) / 0.10, 0, 1) * clamp((hillPaintNoise(x * 0.85 + 9, z * 0.85) - 0.56) / 0.16, 0, 1) * bed;
+        mv = mv * (1 - pool) + 0.085 * pool;
+        v = v * (1 - onTrail) + mv * onTrail;
+        rough = rough * (1 - onTrail) + (0.44 - pool * 0.38) * onTrail;
+        // pale puddle skins catch the sky on their far lip — the single best "this is wet" cue
+        if (pool > 0.2) { const lip = hillPaintNoise(x * 0.85 + 9.06, z * 0.85 - 0.04); v += (lip - churn) * 0.05 * pool; }
+      }
+      // The culverted watercourse down the west flank: wet silt and stones, always the dampest place
+      const inGully = clamp((3.2 - gd) / 2.2, 0, 1) * (1 - pw);
+      if (inGully > 0) {
+        const shingle = hillPaintNoise(x * 4.4 - 12, z * 4.4 + 5);
+        v = v * (1 - inGully) + (0.14 + (shingle - 0.5) * 0.10) * inGully;
+        rough = rough * (1 - inGully) + (0.30 + shingle * 0.2) * inGully;
+      }
+      // Excavated generator sub-level: drowned mud floor, standing water up to the rim
+      if (wt > 0.02) {
+        const murk = hillPaintNoise(x * 2.2, z * 2.2);
+        v = v * (1 - wt) + (0.10 + murk * 0.04) * wt;
+        rough = rough * (1 - wt) + 0.06 * wt;
+      }
+
+      const b = Math.round(clamp(v, 0.03, 0.92) * 255);
+      cd[k] = b; cd[k + 1] = b; cd[k + 2] = b; cd[k + 3] = 255;
+      const rr = Math.round(clamp(rough, 0.04, 1) * 255);
+      rd[k] = rr; rd[k + 1] = rr; rd[k + 2] = rr; rd[k + 3] = 255;
+    }
+  }
+  cg.putImageData(ci, 0, 0);
+  rg.putImageData(ri, 0, 0);
+  const mk = (canvas) => {
+    const t = new THREE.CanvasTexture(canvas);
+    // One unique sheet over the whole hill, so no tiling and no wrap — the mesh UVs span it exactly.
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.flipY = false;                    // uv v runs with canvas rows, which is how it was painted
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return t;
+  };
+  // The roughness sheet carries no colour, so it must NOT be tagged sRGB or the wet would wash out.
+  const roughTex = mk(rc);
+  roughTex.colorSpace = THREE.NoColorSpace;
+  return { color: mk(cc), rough: roughTex };
+}
+
+// The hill as one mesh: a grid over the shared surface, no colliders (an AABB per 2 m^2 of slope
+// would gridlock every waypoint on the map), lit and shadowed like everything else.
+function buildHillMesh(terr, M) {
+  const g = buildHillGrid(terr, M);
+  if (_hillMesh) { scene.add(_hillMesh); worldMeshes.push(_hillMesh); return _hillMesh; }
+  const nx = g.nx, nz = g.nz, cols = nx + 1;
+  const pos = new Float32Array(cols * (nz + 1) * 3);
+  const uv = new Float32Array(cols * (nz + 1) * 2);
+  const idx = new Uint32Array(nx * nz * 6);
+  for (let j = 0; j <= nz; j++) {
+    for (let i = 0; i <= nx; i++) {
+      const k = g.at(i, j), p = k * 3;
+      pos[p] = M.xLo + i * g.dx; pos[p + 1] = g.h[k]; pos[p + 2] = M.zLo + j * g.dz;
+      uv[k * 2] = i / nx; uv[k * 2 + 1] = j / nz;
+    }
+  }
+  let t = 0;
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const a = g.at(i, j), b = a + 1, c = a + cols, d = c + 1;
+      idx[t++] = a; idx[t++] = c; idx[t++] = b;
+      idx[t++] = b; idx[t++] = c; idx[t++] = d;
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  const sheets = paintHillSheet(terr, M, g);
+  hillMats = {
+    surface: new THREE.MeshStandardMaterial({ map: sheets.color, roughnessMap: sheets.rough, roughness: 1, metalness: 0.02 }),
+    // Angular solids, flat-shaded so a boulder reads as a faceted rock rather than a ball
+    rock: new THREE.MeshStandardMaterial({ color: 0x6e6e70, roughness: 0.88, metalness: 0.04, flatShading: true }),
+    scree: new THREE.MeshStandardMaterial({ color: 0x5a5a5c, roughness: 0.95, flatShading: true }),
+    gorse: new THREE.MeshStandardMaterial({ color: 0x3b3d3b, roughness: 1, flatShading: true }),
+    // Conifer foliage: darker and flatter than gorse, so a fir silhouettes against the hill rather
+    // than blending into the tussock it is standing in.
+    pine: new THREE.MeshStandardMaterial({ color: 0x2f3334, roughness: 1, flatShading: true }),
+    herbage: new THREE.MeshStandardMaterial({ color: 0x4a4d4a, roughness: 1, side: THREE.DoubleSide }),
+    wool: new THREE.MeshStandardMaterial({ color: 0x9c9c9e, roughness: 1, flatShading: true }),
+    hide: new THREE.MeshStandardMaterial({ color: 0x2b2b2d, roughness: 0.9 }),
+    timber: new THREE.MeshStandardMaterial({ color: 0x4f4a46, roughness: 0.95, flatShading: true }),
+    rust: new THREE.MeshStandardMaterial({ color: 0x585350, roughness: 0.72, metalness: 0.35, flatShading: true }),
+  };
+  const mesh = new THREE.Mesh(geo, hillMats.surface);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.name = 'hillside';
+  scene.add(mesh); worldMeshes.push(mesh);
+  _hillMesh = mesh;
+  return mesh;
+}
+
+// ══ SECTOR ZERO ══
+// Every SOLID below is drawn at the same x/z/w/d/h/y as its twin in cs-map.js buildMountainSector.
+// That duplication is deliberate and it is checked: installSharedColliders() diffs the two lists
+// and shouts if they disagree, which is how the old bot-cannot-walk-here drift got caught. The
+// anchor COORDINATES are never retyped — they come off CSMap.MTN.anchors, the same table the
+// mission's objective zones read — so only the dimensions are literals here.
+// Everything else on this list is deco: corrugation, pipework, duckboards, placards, cables,
+// lamps, sandbags. Deco registers no collider, which is what lets the hillside be this detailed
+// without adding a single byte to the shared table.
+function buildSectorZero(terr, M) {
+  const A = M.anchors;
+  const surf = (x, z) => terr.height(x, z);
+  const concrete = mats.concrete, metal = mats.metal, wall = mats.wall;
+
+  // ── North gate: a ramp through the old wall line, with the stock fencing collapsed either side
+  //    of the lane. Nothing here blocks anything — the apron and checkpoint already shape the
+  //    approach, and a fence the bots cannot path through would be worse than no fence. ──
+  addBox(-6, 49.5, 8, 1, 8, wall, 2);
+  addBox(6, 49.5, 8, 1, 8, wall, 2);
+  addBox(0, 49.5, 4, 1, 0.9, wall, 2, 6.2);                    // lintel
+  addBox(-11.5, 51.5, 6, 5, 3.2, concrete, 2);                 // checkpoint house
+  addPavement(0, 52.5, 9, 7);                                  // gate apron (collider twin)
+  createWallLogo(0, 3, 48.9, 0);
+  // Apron continuation up the ramp, kerbs, and the wheel-scrub marks vehicles left in the mud
+  addDecoBoxNS(0, 56.4, 8.6, 2.6, 0.1, concrete, 3);
+  for (const sx of [-4.4, 4.4]) addDecoBox(sx, 54.4, 0.5, 7.4, 0.34, concrete, 2, 0.1);
+  for (let i = 0; i < 5; i++) addDecoBoxNS(-1.6 + (i % 2) * 3.2, 51 + i * 1.1, 1.5, 0.34, 0.05, hillMats.rust, 2, 0.12);
+  // Stock fencing: standing posts, four rails on the west run, and the rest lying where it fell
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 7; i++) {
+      const z = 50.6 + i * 1.5, x = side * 5.4;
+      const standing = side < 0 ? i < 4 : i > 2;
+      const y = surf(x, z);
+      if (standing) {
+        addDecoBox(x, z, 0.14, 0.14, 1.25, hillMats.timber, 2, y);
+        if (i < 3) for (const h of [0.45, 0.8, 1.1]) addDecoBox(x, z + 0.75, 0.07, 1.5, 0.09, hillMats.timber, 2, y + h - 0.045);
+      } else {
+        // a panel slumped across the ground, tilted off its posts
+        const fall = addDecoBox(x + side * 0.3, z, 0.1, 1.9, 1.05, hillMats.timber, 2, y + 0.12);
+        fall.rotation.z = side * 1.35; fall.rotation.y = rand(-0.3, 0.3);
+      }
+    }
+  }
+  // Checkpoint interior read from outside: burned ledger shelf, a stove, the boom's counterweight
+  addDecoBox(-11.5, 51.5, 4.4, 0.3, 1.6, hillMats.timber, 2, 0.9);
+  addDecoCylinder(-13.2, 50.6, 0.28, 0.7, metal, 0);
+  addDecoBox(-9.9, 52.6, 1.2, 0.5, 0.9, hillMats.rust, 2, 0.9);
+  addDecoCylinder(-6.4, 51.2, 0.1, 3.4, metal, 0);             // boom post
+  addDecoBox(-6.4, 51.2, 2.6, 0.16, 0.16, hillMats.rust, 2, 3.2);
+
+  // ── T1 · the blast door, set into the cut face above the apron ──
+  const D = A.blastDoor;
+  addBox(D.x - 4.6, D.z, 1.4, 2.4, 7.2, concrete, 2, D.y);
+  addBox(D.x + 4.6, D.z, 1.4, 2.4, 7.2, concrete, 2, D.y);
+  addBox(D.x, D.z, 10.6, 2.4, 1.6, concrete, 2, D.y + 6.8);    // header, clear below
+  addBox(D.x - 8.6, D.z - 0.6, 1.2, 3.4, 2.4, concrete, 2, D.y);
+  addBox(D.x + 8.6, D.z - 0.6, 1.2, 3.4, 2.4, concrete, 2, D.y);
+  addBox(A.panelT1.x, A.panelT1.z, 1.8, 0.9, 1.4, metal, 2, A.panelT1.y);
+  addBox(A.pressA.x, A.pressA.z, 1.2, 1.2, 1.3, metal, 2, A.pressA.y);
+  addBox(A.pressB.x, A.pressB.z, 1.2, 1.2, 1.3, metal, 2, A.pressB.y);
+  // The door itself: two sliding leaves with horizontal corrugation, ram bodies and a seal channel.
+  // It is drawn OPEN by a hair — the mission breaches it — so the gap reads as a lit throat rather
+  // than a texture on a wall.
+  for (const side of [-1, 1]) {
+    const lx = D.x + side * 1.9;
+    addDecoBox(lx, D.z - 1.15, 3.6, 0.24, 5.6, hillMats.rust, 2, D.y + 0.4);
+    for (let i = 0; i < 6; i++) addDecoBox(lx, D.z - 1.28, 3.5, 0.1, 0.22, metal, 2, D.y + 0.7 + i * 0.85);
+    addDecoCylinder(D.x + side * 3.9, D.z - 1.9, 0.17, 1.9, metal, D.y + 3.4);
+  }
+  addDecoBox(D.x, D.z - 1.05, 0.5, 0.5, 6.9, metal, 2, D.y);   // centre mullion
+  addDecoBoxNS(D.x, D.z - 1.2, 8.4, 0.3, 0.14, hillMats.rock, 2, D.y + 6.62);   // seal channel
+  // Hazard chevrons across the apron, and the spall where the ram took the frame out
+  for (let i = 0; i < 9; i++) addDecoBoxNS(D.x - 4 + i * 1.0, D.z - 2.6, 0.5, 0.9, 0.04, i % 2 ? concrete : hillMats.rust, 2, D.y + 0.02);
+  for (let i = 0; i < 14; i++) {
+    const px = D.x + rand(-5.5, 5.5), pz = D.z - rand(1.6, 4.2), py = surf(px, pz);
+    addDecoBox(px, pz, rand(0.2, 0.6), rand(0.2, 0.5), rand(0.15, 0.45), hillMats.rock, 2, py);
+  }
+  // Jack leg, cable tray and a floodlight mast on the flank
+  addDecoCylinder(D.x + 6.8, D.z - 1.4, 0.05, 4.6, metal, D.y);
+  addDecoBox(D.x + 6.8, D.z - 1.4, 0.7, 0.5, 0.4, hillMats.rust, 2, D.y + 4.2);
+  for (let i = 0; i < 5; i++) addDecoBox(D.x - 8.4, D.z - 0.6 + i * 0.7, 0.3, 0.6, 0.24, metal, 2, D.y + 2.2);
+  addDecoBox(A.panelT1.x, A.panelT1.z - 0.5, 0.6, 0.12, 0.5, concrete, 2, A.panelT1.y + 0.9);
+  addDecoBox(A.panelT1.x, A.panelT1.z - 0.58, 0.9, 0.06, 0.4, hillMats.wool, 2, A.panelT1.y + 0.7);  // lit face
+  for (const p of [A.pressA, A.pressB]) {                       // handwheels on top of each pedestal
+    addDecoCylinder(p.x, p.z, 0.42, 0.1, metal, p.y + 1.3);
+    addDecoBox(p.x, p.z, 0.86, 0.08, 0.08, metal, 2, p.y + 1.36);
+    addDecoBox(p.x, p.z, 0.08, 0.86, 0.08, metal, 2, p.y + 1.36);
+    addDecoCylinder(p.x, p.z, 0.08, 0.5, metal, p.y + 1.0);
+  }
+
+  // ── The two bulkhead stations, on T2's west face and T4's south face ──
+  for (const st of [A.breach1, A.breach3]) {
+    addBox(st.x, st.z, 1.5, 1.0, 1.2, metal, 2, st.y);
+    const pz = st.z + 1.9;
+    addBox(st.x - 2.1, pz, 1.2, 2.4, 3.4, concrete, 2, st.y);
+    addBox(st.x + 2.1, pz, 1.2, 2.4, 3.4, concrete, 2, st.y);
+    addBox(st.x, pz, 5.4, 2.4, 0.9, concrete, 2, st.y + 3.4);
+    // Mouth detail: ribbed liner, a half-raised shutter, decon shower arms and a spill track
+    for (let i = 0; i < 4; i++) addDecoBox(st.x, pz - 0.9 + i * 0.6, 3.4, 0.14, 3.1, hillMats.rust, 2, st.y + 0.05);
+    addDecoBox(st.x, pz + 0.4, 3.0, 0.2, 1.1, metal, 2, st.y + 2.2);
+    addDecoCylinder(st.x - 1.5, pz + 0.6, 0.07, 2.6, metal, st.y + 0.4);
+    addDecoCylinder(st.x + 1.5, pz + 0.6, 0.07, 2.6, metal, st.y + 0.4);
+    addDecoBox(st.x, pz + 0.6, 3.2, 0.14, 0.16, hillMats.rust, 2, st.y + 2.9);
+    addDecoBoxNS(st.x, st.z - 1.2, 1.1, 2.4, 0.05, hillMats.wool, 2, st.y + 0.03);   // dry footprint
+    // station head: a recessed panel, a status plate and the hose reel beside it
+    addDecoBox(st.x, st.z - 0.55, 0.9, 0.1, 0.6, concrete, 2, st.y + 0.5);
+    addDecoCylinder(st.x + 1.1, st.z - 0.3, 0.34, 0.24, metal, st.y + 0.5);
+  }
+
+  // ── The third station, out on T3's east apron, in the ventilation field ──
+  addBox(A.breach2.x, A.breach2.z, 1.5, 1.0, 1.2, metal, 2, A.breach2.y);
+  addCylinder(A.breach2.x - 4.2, A.breach2.z - 1.4, 1.4, 2.6, concrete, A.breach2.y);
+  addCylinder(A.breach2.x + 4.2, A.breach2.z - 1.4, 1.4, 2.6, concrete, A.breach2.y);
+  addBox(A.breach2.x - 2.6, A.breach2.z + 2.8, 5, 1.2, 2.4, concrete, 2, A.breach2.y);
+  // Ducts rising out of both bases, rain caps, the louvred housing and a manifold between them
+  for (const bx of [A.breach2.x - 4.2, A.breach2.x + 4.2]) {
+    addDecoCylinder(bx, A.breach2.z - 1.4, 0.85, 3.4, hillMats.rust, A.breach2.y + 2.6);
+    addDecoCylinder(bx, A.breach2.z - 1.4, 1.15, 0.22, metal, A.breach2.y + 5.9);
+    for (let i = 0; i < 3; i++) addDecoCylinder(bx, A.breach2.z - 1.4, 0.95, 0.16, metal, A.breach2.y + 3.2 + i * 1.0);
+  }
+  addDecoCylinder(A.breach2.x, A.breach2.z - 1.4, 0.5, 8.4, metal, A.breach2.y + 3.2);
+  for (let i = 0; i < 7; i++) addDecoBox(A.breach2.x - 2.6, A.breach2.z + 2.05, 4.6, 0.1, 0.3, hillMats.rust, 2, A.breach2.y + 1.5 + i * 0.12);
+  addDecoBox(A.breach2.x - 2.6, A.breach2.z + 3.45, 2.2, 0.12, 2.0, metal, 2, A.breach2.y + 0.2);
+  addDecoBox(A.breach2.x, A.breach2.z - 0.2, 0.7, 0.1, 0.55, concrete, 2, A.breach2.y + 0.5);
+
+  // ── T4 · the flooded generator sub-level ──
+  const pit = M.pits[0], PY = A.genPit.y;
+  for (const b of [A.breaker1, A.breaker2, A.breaker3]) {
+    addBox(b.x, b.z, 2.2, 1.4, 1.6, metal, 2, b.y);
+    // switchgear face: three lever handles, conduit down the back, a perished label plate
+    for (let i = 0; i < 3; i++) {
+      addDecoCylinder(b.x - 0.7 + i * 0.7, b.z - 0.75, 0.07, 0.42, hillMats.rust, b.y + 0.7);
+      addDecoBox(b.x - 0.7 + i * 0.7, b.z - 0.8, 0.3, 0.1, 0.14, concrete, 2, b.y + 1.05);
+    }
+    addDecoCylinder(b.x, b.z + 0.5, 0.09, 1.9, metal, b.y + 1.4);
+    addDecoBoxNS(b.x, b.z - 0.72, 1.6, 0.05, 0.22, hillMats.wool, 2, b.y + 1.35);
+  }
+  addBox(A.genPit.x + 1.0, A.genPit.z + 2.8, 4.6, 3.0, 1.2, concrete, 2, PY);
+  addBox(pit.x - 3.6, pit.z + 4.4, 5.4, 1.2, 2.4, concrete, 2, PY + pit.depth);
+  addBox(pit.x + 3.4, pit.z + 4.0, 4.4, 1.2, 2.4, concrete, 2, PY + pit.depth);
+  // The set on the plinth: alternator body, exhaust riser, fuel drum, belt guard, priming pump
+  addDecoBox(A.genPit.x + 1.0, A.genPit.z + 2.8, 3.4, 2.0, 1.5, hillMats.rust, 2, PY + 1.2);
+  addDecoCylinder(A.genPit.x - 0.4, A.genPit.z + 2.4, 0.55, 1.7, metal, PY + 1.3);
+  addDecoCylinder(A.genPit.x + 2.6, A.genPit.z + 3.6, 0.16, 3.6, hillMats.rust, PY + 2.6);
+  addDecoCylinder(A.genPit.x + 2.6, A.genPit.z + 3.6, 0.26, 0.3, metal, PY + 6.0);
+  addDecoCylinder(A.genPit.x + 0.4, A.genPit.z + 1.6, 0.34, 0.95, hillMats.rust, PY + 1.2);
+  addDecoBox(A.genPit.x + 1.9, A.genPit.z + 1.7, 1.1, 0.9, 1.1, metal, 2, PY + 1.3);
+  // Water line stain around the excavation, and the collar coping where the bench was cut
+  for (const c of [[pit.x - 3.6, pit.z + 4.4, 5.4], [pit.x + 3.4, pit.z + 4.0, 4.4]]) {
+    addDecoBoxNS(c[0], c[1] - 0.62, c[2], 0.12, 0.7, hillMats.rock, 2, PY + pit.depth + 1.0);
+  }
+  addDecoCylinder(A.genPit.x - 3.2, A.genPit.z + 0.4, 0.07, 2.0, metal, PY);   // ladder out
+  for (let i = 0; i < 6; i++) addDecoBox(A.genPit.x - 3.2, A.genPit.z + 0.4 + i * 0.32, 0.5, 0.06, 0.06, metal, 2, PY + 0.25 + i * 0.3);
+  for (let i = 0; i < 9; i++) {   // sandbags along the upstream lip, some slipped into the water
+    const bx = pit.x - 4.6 + i * 0.62, bz = pit.z + 3.0, by = surf(bx, bz);
+    addDecoBox(bx, bz, 0.56, 0.34, 0.2, hillMats.timber, 2, by + (i % 2) * 0.2);
+  }
+
+  // ── T5 · central atrium: cover walls, lanes, and the two security terminals ──
+  addBox(A.atrium.x - 4.5, A.atrium.z + 0.6, 1.2, 7, 2.4, concrete, 2, A.atrium.y);
+  addBox(A.atrium.x - 4.0, A.atrium.z + 5.4, 9, 1.2, 2.4, concrete, 2, A.atrium.y);
+  addBox(A.terminalA.x, A.terminalA.z, 2.4, 1.4, 1.5, metal, 2, A.terminalA.y);
+  addBox(A.terminalB.x, A.terminalB.z, 2.4, 1.4, 1.5, metal, 2, A.terminalB.y);
+  for (const w of [[A.atrium.x - 4.5, A.atrium.z + 0.6, 1.2, 7], [A.atrium.x - 4.0, A.atrium.z + 5.4, 9, 1.2]]) {
+    // panel joints and a damp course along the base of each wall
+    const along = w[2] > w[3] ? 'x' : 'z', len = Math.max(w[2], w[3]);
+    for (let i = 1; i < Math.round(len / 1.8); i++) {
+      const off = -len / 2 + i * 1.8;
+      addDecoBox(w[0] + (along === 'x' ? off : 0), w[1] + (along === 'x' ? 0 : off), along === 'x' ? 0.1 : w[2], along === 'x' ? w[3] : 0.1, 2.3, hillMats.rock, 2, A.atrium.y + 0.05);
+    }
+    addDecoBox(w[0], w[1], w[2] + 0.16, w[3] + 0.16, 0.24, hillMats.rock, 2, A.atrium.y);
+  }
+  for (const t of [A.terminalA, A.terminalB]) {
+    addDecoBox(t.x, t.z - 0.75, 1.7, 0.12, 0.8, concrete, 2, t.y + 0.7);      // monitor, tilted
+    addDecoBox(t.x, t.z - 0.5, 1.2, 0.5, 0.06, hillMats.wool, 2, t.y + 0.75); // keyboard shelf lit
+    addDecoCylinder(t.x + 0.9, t.z + 0.4, 0.06, 1.6, metal, t.y + 1.3);       // antenna mast
+    addDecoBox(t.x - 0.9, t.z + 0.7, 0.5, 0.4, 0.5, hillMats.rust, 2, t.y);   // UPS at the foot
+    addDecoBoxNS(t.x, t.z - 0.9, 2.6, 1.0, 0.04, hillMats.rock, 2, t.y + 0.02);
+  }
+  // Plaza furniture: bollards, a painted lane, a notice board and the planter that never grew back
+  for (let i = 0; i < 6; i++) {
+    const bx = A.atrium.x - 1.5 + (i % 3) * 3.2, bz = A.atrium.z - 1.0 + Math.floor(i / 3) * 3.0;
+    addDecoCylinder(bx, bz, 0.12, 0.9, concrete, surf(bx, bz));
+  }
+  addDecoBoxNS(A.atrium.x + 1.4, A.atrium.z + 1.6, 0.3, 8, 0.04, hillMats.wool, 2, surf(A.atrium.x + 1.4, A.atrium.z + 1.6) + 0.03);
+  addDecoBox(A.atrium.x + 5.2, A.atrium.z - 2.4, 2.2, 0.2, 1.6, hillMats.timber, 2, surf(A.atrium.x + 5.2, A.atrium.z - 2.4));
+  addDecoBox(A.atrium.x + 4.0, A.atrium.z + 4.2, 2.6, 2.0, 0.6, concrete, 2, surf(A.atrium.x + 4.0, A.atrium.z + 4.2));
+
+  // ── T6 · the centrifuge chamber, open to the south ──
+  addCylinder(A.centrifuge.x, A.centrifuge.z, 2.3, 4.6, metal, A.centrifuge.y);
+  addBox(A.centrifuge.x - 4.6, A.centrifuge.z + 0.7, 1.2, 3.4, 4.4, concrete, 2, A.centrifuge.y);
+  addBox(A.centrifuge.x + 4.6, A.centrifuge.z + 0.7, 1.2, 3.4, 4.4, concrete, 2, A.centrifuge.y);
+  addBox(A.centrifuge.x, A.centrifuge.z + 5.0, 8, 1.2, 4.4, concrete, 2, A.centrifuge.y);
+  addBox(A.synth.x, A.synth.z, 2.6, 1.4, 1.5, metal, 2, A.synth.y);
+  // Drum detail: stiffening rings, a drive collar, the feed and draw pipes, a maintenance platform
+  for (let i = 0; i < 4; i++) addDecoCylinder(A.centrifuge.x, A.centrifuge.z, 2.42, 0.2, hillMats.rust, A.centrifuge.y + 0.5 + i * 1.1);
+  addDecoCylinder(A.centrifuge.x, A.centrifuge.z, 1.3, 0.5, concrete, A.centrifuge.y + 4.6);
+  addDecoCylinder(A.centrifuge.x, A.centrifuge.z, 0.3, 1.6, metal, A.centrifuge.y + 5.0);
+  addDecoCylinder(A.centrifuge.x - 2.3, A.centrifuge.z - 1.0, 0.16, 3.2, metal, A.centrifuge.y + 0.6);
+  addDecoBox(A.centrifuge.x - 2.9, A.centrifuge.z - 1.0, 1.2, 1.2, 0.3, hillMats.rust, 2, A.centrifuge.y + 3.6);
+  for (const sx of [-1, 1]) {   // shield corrugation and a shot-blasted face on the inside
+    for (let i = 0; i < 6; i++) addDecoBox(A.centrifuge.x + sx * 4.6, A.centrifuge.z + 0.7 + (i - 2.5) * 0.55, 1.32, 0.16, 4.2, hillMats.rock, 2, A.centrifuge.y);
+    addDecoBox(A.centrifuge.x + sx * 3.9, A.centrifuge.z + 0.7, 0.2, 3.2, 0.9, concrete, 2, A.centrifuge.y + 1.2);
+  }
+  for (let i = 0; i < 5; i++) addDecoBox(A.centrifuge.x - 3.2 + i * 1.6, A.centrifuge.z + 5.0, 1.3, 1.32, 4.2, hillMats.rock, 2, A.centrifuge.y);
+  addDecoCylinder(A.centrifuge.x, A.centrifuge.z + 5.6, 0.2, 4.0, metal, A.centrifuge.y + 2.0);   // steam riser
+  // Synthesis terminal: hood, vial rack, a balance bench and the specimen light
+  addDecoBox(A.synth.x, A.synth.z - 0.75, 2.0, 0.12, 0.9, concrete, 2, A.synth.y + 0.75);
+  addDecoBox(A.synth.x - 0.7, A.synth.z + 0.2, 0.5, 0.5, 0.7, hillMats.wool, 2, A.synth.y + 1.6);
+  addDecoBox(A.synth.x + 1.9, A.synth.z, 1.4, 0.8, 0.9, hillMats.timber, 2, A.synth.y);
+  for (const c of [A.chokeA, A.chokeB, A.chokeC]) {   // the three lanes, marked by barrels
+    addDecoCylinder(c.x, c.z, 0.34, 0.95, hillMats.rust, surf(c.x, c.z));
+    addDecoCylinder(c.x, c.z, 0.36, 0.1, metal, surf(c.x, c.z) + 0.45);
+  }
+
+  // ── T7 · HVAC distribution hub astride the crest, sunk 0.8 m into the bench ──
+  const H = A.hvac;
+  addBox(H.x - 5.0, H.z, 4.4, 5, 3.4, concrete, 2, H.y - 0.8);
+  addBox(H.x + 5.0, H.z, 4.4, 5, 3.4, concrete, 2, H.y - 0.8);
+  addBox(A.consoleA.x, A.consoleA.z, 1.8, 1.0, 1.3, metal, 2, A.consoleA.y);
+  addBox(A.consoleB.x, A.consoleB.z, 1.8, 1.0, 1.3, metal, 2, A.consoleB.y);
+  // Scrubber halls: louvred banks, access doors, and the plenum + riser the brief wants visible but
+  // never walkable-through, so they are deco rather than colliders.
+  for (const sx of [-1, 1]) {
+    const bx = H.x + sx * 5.0;
+    for (let i = 0; i < 7; i++) addDecoBox(bx, H.z - 1.4 + i * 0.45, 4.2, 0.14, 0.26, hillMats.rust, 2, H.y + 1.1);
+    addDecoBox(bx - sx * 1.6, H.z - 2.55, 1.4, 0.16, 2.2, metal, 2, H.y - 0.75);
+    addDecoCylinder(bx, H.z + 1.0, 1.1, 3.2, concrete, H.y - 0.8);
+    addDecoBox(bx, H.z + 2.0, 3.6, 0.5, 0.5, metal, 2, H.y + 2.2);
+  }
+  addDecoBox(H.x, H.z - 0.4, 8.4, 2.6, 1.8, concrete, 2, H.y + 0.2);    // plenum over the lane
+  addDecoBox(H.x, H.z + 2.2, 2.4, 2.4, 3.6, hillMats.rust, 2, H.y + 1.8); // riser
+  addDecoCylinder(H.x, H.z + 2.2, 0.55, 2.2, metal, H.y + 5.2);
+  for (let i = 0; i < 4; i++) addDecoBox(H.x - 3.0 + i * 2.0, H.z - 2.9, 1.7, 0.2, 0.4, hillMats.rock, 2, surf(H.x - 3.0 + i * 2.0, H.z - 2.9) + 0.2);
+  // The two consoles are the moral choice, so they must be tellable apart at ten metres in the dark:
+  // A is an aerosol manifold with bottles and a soft intake; B is a heater battery with flue ports.
+  addDecoBox(A.consoleA.x, A.consoleA.z - 0.6, 1.5, 0.12, 0.7, concrete, 2, A.consoleA.y + 0.7);
+  for (let i = 0; i < 3; i++) addDecoCylinder(A.consoleA.x - 0.5 + i * 0.5, A.consoleA.z + 0.8, 0.16, 0.9, metal, A.consoleA.y + 1.3);
+  addDecoCylinder(A.consoleA.x, A.consoleA.z + 0.8, 0.4, 1.4, hillMats.rust, A.consoleA.y + 2.2);
+  addDecoBox(A.consoleB.x, A.consoleB.z - 0.6, 1.5, 0.12, 0.7, concrete, 2, A.consoleB.y + 0.7);
+  for (let i = 0; i < 4; i++) addDecoBox(A.consoleB.x - 0.6 + i * 0.4, A.consoleB.z + 0.7, 0.22, 0.5, 0.22, hillMats.rust, 2, A.consoleB.y + 1.1);
+  addDecoCylinder(A.consoleB.x, A.consoleB.z + 1.4, 0.3, 2.6, metal, A.consoleB.y + 1.3);
+
+  // ── T8 · extraction elevator headframe: the one roofed spot in the sector ──
+  addBox(A.lift.x, A.lift.z - 3, 1.2, 1.2, 8.6, concrete, 2, A.lift.y);
+  addBox(A.lift.x, A.lift.z + 3, 1.2, 1.2, 8.6, concrete, 2, A.lift.y);
+  addBox(A.lift.x, A.lift.z, 2.4, 7.4, 0.6, metal, 2, A.lift.y + 8.6);
+  addBox(A.liftPanel.x + 2.2, A.liftPanel.z, 4.4, 4, 3.2, concrete, 2, A.liftPanel.y);
+  addBox(A.lift.x, A.lift.z + 3.6, 9, 1.2, 2.6, concrete, 2, A.lift.y);
+  for (let i = 0; i < 7; i++) {   // lattice bracing between the legs
+    const by = A.lift.y + 0.8 + i * 1.15;
+    addDecoBox(A.lift.x, A.lift.z, 1.3, 0.14, 0.14, hillMats.rust, 2, by);
+    addDecoBox(A.lift.x, A.lift.z - 1.5 + (i % 2) * 3.0, 0.14, 0.14, 1.2, hillMats.rust, 2, by + 0.5);
+  }
+  addDecoCylinder(A.lift.x, A.lift.z, 1.1, 0.4, metal, A.lift.y + 9.2);     // sheave
+  addDecoCylinder(A.lift.x, A.lift.z, 0.06, 6.0, hillMats.rust, A.lift.y + 2.6);  // hoist rope
+  addDecoBox(A.lift.x, A.lift.z, 2.0, 2.0, 0.2, concrete, 2, A.lift.y + 2.4);     // cage
+  addDecoBox(A.lift.x, A.lift.z + 4.25, 6.4, 0.12, 2.4, hillMats.rock, 2, A.lift.y);  // shaft collar face
+  addDecoBox(A.liftPanel.x + 2.2, A.liftPanel.z - 2.05, 1.4, 0.16, 2.2, metal, 2, A.liftPanel.y + 0.1);
+  addDecoBox(A.liftPanel.x + 4.4, A.liftPanel.z - 2.05, 1.0, 0.16, 1.0, concrete, 2, A.liftPanel.y + 1.6);
+  addDecoBox(A.liftPanel.x + 2.2, A.liftPanel.z + 2.05, 3.0, 0.4, 0.35, hillMats.rust, 2, A.liftPanel.y + 3.2);
+  addDecoBox(A.liftPanel.x + 2.2, A.liftPanel.z, 4.0, 0.5, 0.5, metal, 2, A.liftPanel.y + 3.2);   // winding drum
+  addDecoBox(A.liftPanel.x, A.liftPanel.z, 0.5, 0.4, 0.6, hillMats.wool, 2, A.liftPanel.y + 1.0); // call plate
+
+  // ── The crest: a breastwork with the whole compound below it ──
+  const O = A.overwatch;
+  addBox(O.x, O.z - 1.3, 6, 1.0, 1.1, concrete, 2, O.y);
+  for (let i = 0; i < 10; i++) {   // sandbag parapet, two courses, uneven
+    const bx = O.x - 2.7 + (i % 5) * 1.15, bz = O.z - 1.75 - Math.floor(i / 5) * 0.45;
+    addDecoBox(bx, bz, 0.95, 0.4, 0.22, hillMats.timber, 2, O.y + 1.05 + Math.floor(i / 5) * 0.2);
+  }
+  addDecoBox(O.x + 3.4, O.z - 0.6, 1.2, 1.2, 0.4, concrete, 2, surf(O.x + 3.4, O.z - 0.6));   // firing step
+  addDecoCylinder(O.x - 3.6, O.z, 0.08, 2.4, metal, O.y);                                       // flag/antenna mast
+  addDecoBox(O.x - 3.6, O.z + 0.6, 0.9, 0.6, 0.5, hillMats.rust, 2, O.y + 1.4);                 // rear sight box
+  for (let i = 0; i < 5; i++) addDecoCylinder(O.x + rand(-2, 2), O.z + rand(0.8, 2.4), 0.09, 0.12, hillMats.wool, surf(O.x, O.z));  // casings
+  addDecoCylinder(O.x + 1.4, O.z + 1.4, 0.4, 0.5, concrete, surf(O.x + 1.4, O.z + 1.4));        // observation tripod base
+  addDecoBox(O.x + 1.4, O.z + 1.4, 0.14, 0.14, 1.1, metal, 2, surf(O.x + 1.4, O.z + 1.4) + 0.4);
+}
+
+// ══ HILLSIDE DETAIL ══
+// All of it collider-free, all of it placed from the surface itself, so nothing here can ever
+// disagree with what the physics walks on.
+const _rockInst = [];
+const _screeInst = [];
+const _gorseInst = [];
+const _herbInst = [];
+const _pineInst = [];
+let rockGeo = null, screeGeo = null, pineGeo = null;
+
+// A pinewood silhouette, not the broadleaf blob the compound uses — a rounded crown on this flank
+// would read as a garden tree. Structure: a bare bole showing under three stacked conical tiers,
+// each narrower and shallower than the one below, finishing in a spire. Every tier is one instance
+// of a unit cone re-based to y=0, so the whole treeline costs a single draw call and the base of
+// each cone lands exactly where the surface is, which is the only way a fir looks grown rather than
+// planted on a hill.
+function addHillTree(terr, x, z, s = 1) {
+  const y = terr.height(x, z);
+  const bole = 2.5 * s;                                   // metres of bare trunk to the lowest tier
+  _trunkInst.push({ p: [x, y + bole / 2, z], s: [s * 0.3, bole / 2.2, s * 0.3] });
+  for (let i = 0; i < 3; i++) {
+    const f = i / 2;                                      // 0 at the skirt, 1 at the spire
+    _pineInst.push({
+      p: [x, y + bole + i * 1.28 * s, z],
+      s: [(1.45 - f * 0.76) * s, (2.1 - f * 0.62) * s, (1.45 - f * 0.76) * s],
+      yaw: rand(0, Math.PI),
+    });
+  }
+  // A trunk on a slope has to stand where the ground is, so the collider is seated on the surface.
+  colliders.push({ minX: x - 0.4 * s, maxX: x + 0.4 * s, minZ: z - 0.4 * s, maxZ: z + 0.4 * s, minY: y, maxY: y + 2.2 * s, veg: true });
+}
+
+// Resample a trail at a fixed pitch so line items (duckboards, posts, poles, wire) can follow it.
+function trailStations(M, li, step) {
+  const line = M.trails[li], out = [];
+  let acc = 0;
+  for (let k = 0; k < line.length - 1; k++) {
+    const ax = line[k][0], az = line[k][1];
+    const bx = line[k + 1][0], bz = line[k + 1][1];
+    const seg = Math.hypot(bx - ax, bz - az);
+    const yaw = Math.atan2(bx - ax, bz - az);
+    let t = step - (acc % step);
+    if (t > seg) t = seg + 1;                    // skip a short leg rather than double up on it
+    for (; t <= seg; t += step) {
+      const f = t / seg;
+      out.push({ x: ax + (bx - ax) * f, z: az + (bz - az) * f, yaw, s: seg });
+    }
+    acc += seg;
+  }
+  return out;
+}
+
+function buildHillDetail(terr, M) {
+  const surf = (x, z) => terr.height(x, z);
+  const inSector = (x, z) => z > M.zLo + 1.2 && z < M.zHi - 1.2 && x > M.xLo + 1.2 && x < M.xHi - 1.2;
+  rockGeo = rockGeo || new THREE.DodecahedronGeometry(1, 0);
+  screeGeo = screeGeo || new THREE.TetrahedronGeometry(1, 0);
+  // Unit cone, re-based so its CIRCLE sits on y=0 and the apex is at y=1. That is what lets a tier
+  // be scaled to a height and dropped straight onto the surface height with no per-tree arithmetic.
+  pineGeo = pineGeo || new THREE.ConeGeometry(1, 1, 7, 1).translate(0, 0.5, 0);
+
+  // ── Boulders and outcrop: sparse scatter, only where it steepens ──
+  let guard = 0, rocks = 0;
+  while (rocks < 120 && guard++ < 8000) {
+    const x = rand(M.xLo + 1, M.xHi - 1), z = rand(M.zLo + 1, M.zHi - 1);
+    if (!inSector(x, z)) continue;
+    const sl = terr.gradient(x, z);
+    if (Math.random() > 0.25 + sl * 1.4) continue;
+    if (trailDistance(M, x, z) < 1.5) continue;              // never in the walking line
+    const pw = (() => { let w = 0; for (const t of M.terraces) { const f = Math.hypot(x - t.x, z - t.z) / t.r; w = Math.max(w, f <= M.TERR_F ? 1 : (f >= M.TERR_A ? 0 : 1 - (f - M.TERR_F) / (M.TERR_A - M.TERR_F))); } return w; })();
+    if (pw > 0.55) continue;                                 // benches were cleared when they were cut
+    const s = rand(0.28, 1.5) * (0.7 + sl), y = surf(x, z);
+    _rockInst.push({ p: [x, y + s * 0.42, z], s: [s * rand(0.8, 1.4), s * rand(0.55, 1.0), s * rand(0.8, 1.4)], yaw: rand(0, 6.3), roll: rand(-0.25, 0.25) });
+    // half-buried: tilt the long axis downslope so the field reads as settled, not dropped
+    rocks++;
+  }
+  // ── Scree and exposed root-grit: a dense shallow carpet over the steep ground ──
+  guard = 0; let scree = 0;
+  while (scree < 3000 && guard++ < 100000) {
+    const x = rand(M.xLo + 1, M.xHi - 1), z = rand(M.zLo + 1, M.zHi - 1);
+    if (!inSector(x, z)) continue;
+    const sl = terr.gradient(x, z);
+    if (sl < 0.30 || Math.random() > (sl - 0.2) * 1.6) continue;
+    if (trailDistance(M, x, z) < 1.1) continue;
+    const s = rand(0.1, 0.34), y = surf(x, z);
+    _screeInst.push({ p: [x, y + s * 0.3, z], s: [s * rand(1, 2), s * rand(0.5, 1), s * rand(1, 2)], yaw: rand(0, 6.3), tilt: rand(-0.4, 0.4), roll: rand(-0.4, 0.4) });
+    scree++;
+  }
+  // ── Moorland: tufts on the gentle ground, gorse clumps on the benches' margins, reeds in the
+  //    watercourse. Pushed into the existing marsh collectors so the grass and reed draws stay one
+  //    call each, just with the hill's own surface height under them. ──
+  guard = 0; let herbs = 0, gorse = 0;
+  while (herbs < 8000 && guard++ < 300000) {
+    const x = rand(M.xLo + 1, M.xHi - 1), z = rand(M.zLo + 1, M.zHi - 1);
+    if (!inSector(x, z)) continue;
+    const sl = terr.gradient(x, z), y = surf(x, z);
+    // No slope gate for ground cover — tropical grass and ferns root on any surface including vertical
+    if (trailDistance(M, x, z) < 1.2) continue;
+    let pw = 0;
+    for (const t of M.terraces) { const f = Math.hypot(x - t.x, z - t.z) / t.r; pw = Math.max(pw, f <= M.TERR_F ? 1 : (f >= M.TERR_A ? 0 : 1 - (f - M.TERR_F) / (M.TERR_A - M.TERR_F))); }
+    if (pw > 0.6) continue;                                   // poured decks were cleared and stay clear
+    if (Math.random() < 0.09 && gorse < 800) {                // bramble/gorse: low, dense, unculled
+      _gorseInst.push({ p: [x, y + 0.34, z], s: [rand(0.55, 1.05), rand(0.4, 0.8), rand(0.55, 1.05)] });
+      gorse++;
+      continue;
+    }
+    const gd = lineDistance(M.gullies[0], x, z);
+    if (gd < 2.6) {   // the watercourse grows reeds and nothing else
+      const g = 0.42 + Math.random() * 0.3;
+      _reedInst.push({ p: [x, y + 0.02, z], s: [0.1, rand(1.3, 2.4), 0.1], yaw: rand(0, 6.3), tilt: rand(0.02, 0.2), roll: rand(-0.1, 0.1), col: Math.round(g * 255) * 0x010101 });
+    } else {
+      // rush clumps: taller, coarser than the tussocks, and the thing the flocks actually eat
+      if (Math.random() < 0.14) {
+        _herbInst.push({ p: [x, y + 0.01, z], s: [rand(0.3, 0.5), rand(0.8, 1.5), rand(0.3, 0.5)], yaw: rand(0, 6.3), tilt: Math.min(0.4, sl * 0.6), roll: rand(-0.4, 0.4) });
+      }
+      // lean the tuft with the slope: one third of the "grown not placed" read is this
+      _grassInst.push({ p: [x, y + 0.01, z], s: [rand(0.28, 0.46), rand(0.34, 0.62), rand(0.28, 0.46)], yaw: rand(0, 6.3), tilt: Math.min(0.34, sl * 0.5), roll: rand(-0.3, 0.3) });
+      if (Math.random() < 0.35) _grassInst.push({ p: [x + rand(-0.4, 0.4), y + 0.01, z + rand(-0.4, 0.4)], s: [0.2, rand(0.5, 0.9), 0.2], yaw: rand(0, 6.3), tilt: Math.min(0.3, sl * 0.5), roll: rand(-0.4, 0.4) });
+    }
+    herbs++;
+  }
+  // ── TROPICAL GROUND COVER: dense grass carpet over EVERY surface regardless of slope. In a
+  //    jungle hillside, grass roots on vertical faces, overhangs and scree alike. This pass has
+  //    NO gradient gate — only excludes pad floors and trail centres. Uses _grassInst (one draw call).
+  guard = 0; let carpet = 0;
+  while (carpet < 40000 && guard++ < 120000) {
+    const x = rand(M.xLo + 0.5, M.xHi - 0.5), z = rand(M.zLo + 0.5, M.zHi - 0.5);
+    if (!inSector(x, z)) continue;
+    if (padWeightAt(x, z) > 0.5) continue;                    // not on concrete
+    if (trailDistance(M, x, z) < 0.8) continue;               // not in the walking line
+    const sl = terr.gradient(x, z), y = surf(x, z);
+    // Dense blade clusters: 2-4 blades per point, varying size for natural depth
+    const n = 2 + ((Math.random() * 3) | 0);
+    for (let b = 0; b < n; b++) {
+      const bx = x + rand(-0.3, 0.3), bz = z + rand(-0.3, 0.3);
+      const h = rand(0.4, 1.2) * (0.6 + Math.random() * 0.4);
+      _grassInst.push({ p: [bx, y + 0.01, bz], s: [rand(0.15, 0.3), h, rand(0.15, 0.3)], yaw: rand(0, 6.3), tilt: Math.min(0.5, sl * 0.4), roll: rand(-0.3, 0.3) });
+    }
+    carpet++;
+  }
+  console.log('[CS] Grass carpet placed:', carpet, 'clusters');
+  // ── The pinewood: not an even sprinkling but STANDS, because that is how conifers actually hold
+  //    a flank — a seedling colony thick enough to drop its own shade, with open ground between it
+  //    and the next one. Kept off the trails, the benches and the structural lanes, and willing to
+  //    grow on ground twice as steep as anything the broadleaf compound trees tolerate.
+  //
+  //    The gates below are measured, not styled. isFree() counts vegetation colliders, so a radius
+  //    here is reserved land no other trunk may use: the first pass asked for 2.4 m of clearance at
+  //    each stand CENTRE (a point that never receives a tree) and 4.5 m off the trail, and the two
+  //    multiplied down to 5.8 % of the sector — 28 firs instead of a wood. A centre only has to be
+  //    somewhere the crown may close over; 1.5 m of clear ground at the anchor is enough to know the
+  //    stand is rooted on real flank, and the per-tree test is where the spacing is actually paid.
+  //    The trail buffer is 3.0 m at the anchor and 2.2 m at a trunk because the mission route winds
+  //    through every bench — a wider exclusion than that and there is no hillside left to grow on. ──
+  guard = 0; let trees = 0, stands = 0;
+  // Open woodland: 350 firs with 4.5m minimum trunk spacing so the player walks easily between them.
+  const TREE_TARGET = 350;
+  const allTreePos = [];                              // global trunk positions for cross-stand spacing
+  let samples = 0;
+  const SAMPLE_BUDGET = 600000;
+  // Only 7.7 % of the sector takes a fir at all, so a stand that samples a fixed handful of points
+  // will almost always come up empty — that is why the first pass printed 74 firs in 58 stands, i.e.
+  // one lonely tree per colony. Each centre now spends a CANDIDATE BUDGET hunting for its trees, so a
+  // stand is either filled or genuinely out of ground.
+  //
+  // BOTH loops are bounded, and that is not decoration: `guard` caps centre attempts and `samples`
+  // caps trunk attempts, and the outer condition has to test both. An earlier cut dropped the centre
+  // bound and kept only `samples`, which is incremented in the INNER loop — so once the wood filled up
+  // and no centre could pass isFree any more, the outer loop spun forever without ever incrementing
+  // anything. A capacity-bound scatter must decrement a counter on the failing path too.
+  while (trees < TREE_TARGET && guard++ < 80000 && samples < SAMPLE_BUDGET) {
+    const cx = rand(M.xLo + 4, M.xHi - 4), cz = rand(M.zLo + 4, M.zHi - 4);
+    if (!inSector(cx, cz)) continue;
+    if (terr.gradient(cx, cz) > 0.85) continue;                // firs tolerate steep ground, but not cliffs
+    if (padWeightAt(cx, cz) > 0.62) continue;                  // never inside a work yard
+    if (trailDistance(M, cx, cz) < 3.0) continue;              // a stand must not close a route
+    if (onHillField(M, cx, cz, 1.6)) continue;                 // the hamlet's field stays open ground
+    if (!isFree(cx, cz, 1.5)) continue;
+    const inStand = [];
+    const limbs = 4 + ((Math.random() * 6) | 0);
+    for (let tryI = 0; tryI < limbs * 14 && inStand.length < limbs && trees < TREE_TARGET && samples < SAMPLE_BUDGET; tryI++) {
+      samples++;
+      const a = rand(0, 6.283), r = Math.sqrt(Math.random()) * rand(2.2, 5.0);
+      const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+      if (!inSector(x, z)) continue;
+      // 1.0: on a 28m hill most of the face exceeds 0.7. Real pines root on 40°+ scree slopes —
+      // the gate exists to keep trees off the bare crest lip and vertical cut faces only.
+      if (terr.gradient(x, z) > 1.0) continue;
+      // 0.7, not 1.1: a fir's own collider is 0.4 m half-width, so 1.1 was reserving three times the
+      // ground the tree stands on and capping the whole hill at ~73 firs. At 0.7 the trunk plus a
+      // hand's width of grace is what is reserved, and the spacing you SEE comes from `gap` below.
+      if (!isFree(x, z, 0.7)) continue;
+      if (trailDistance(M, x, z) < 2.2) continue;
+      if (onHillField(M, x, z, 0.5)) continue;
+      const gap = 4.5;                                         // open forest: player walks easily between trunks
+      if (inStand.some(p => (p[0] - x) ** 2 + (p[1] - z) ** 2 < gap * gap)) continue;
+      if (allTreePos.some(p => (p[0] - x) ** 2 + (p[1] - z) ** 2 < gap * gap)) continue;
+      inStand.push([x, z]);
+      allTreePos.push([x, z]);
+      // Exposure stunts: a fir on the shoulder of a bench is 1.5, one clinging to a face is barely 0.7.
+      // Free realism, and it also means the trees that cost the most to place are the ones that reserve
+      // the least ground, which is how the wood reaches a density the flat-ground ones never could.
+      const sl = terr.gradient(x, z);
+      addHillTree(terr, x, z, rand(0.75, 1.5) * (1 - Math.max(0, (sl - 0.4)) * 0.9));
+      // A conifer drop-line means no bramble under the canopy, so the layer beneath a fir is bare
+      // tussock and nothing else. That is a big part of why pinewood reads darker on a hillside.
+      if (Math.random() < 0.4) {
+        const ox = x + rand(-1.5, 1.5), oz = z + rand(-1.5, 1.5);
+        _herbInst.push({ p: [ox, surf(ox, oz) + 0.01, oz], s: [rand(0.3, 0.5), rand(0.7, 1.25), rand(0.3, 0.5)], yaw: rand(0, 6.3), roll: rand(-0.3, 0.3) });
+      }
+      trees++;
+    }
+    // Counted after the fact: a centre whose whole candidate budget came up empty is not a colony.
+    if (inStand.length) stands++;
+  }
+  // Cannabis on the hill: the reason the compound was out here at all. Two ways it survives —
+  // volunteer plants scattered in the shelter of the treeline, and one abandoned terrace grow left
+  // running to seed where the hamlet fields were. All of it collider-free, like every other crop.
+  const crop = scatterHillCannabis(terr, M, 600);
+
+  // ── Trail furniture. This is what makes a track look used rather than drawn: duckboards over
+  //    the soft ground, a stone edge on the gradients, milestones, culverts where it fords the
+  //    watercourse, and the poles along the maintenance spur. ──
+  const main = trailStations(M, 0, 3.0);
+  for (const st of main) {
+    const y = surf(st.x, st.z), sl = terr.gradient(st.x, st.z);
+    if (sl > 0.16) {   // boards only where it is wet enough to need them
+      for (let i = 0; i < 4; i++) addDecoBox(st.x, st.z, 1.9, 0.16, 0.07, hillMats.timber, 2, y + 0.06 + i * 0.001);
+      // stringers under the boards, laid along the line
+      const off = [[0.75, 0], [-0.75, 0]];
+      for (const o of off) {
+        const px = st.x + Math.cos(st.yaw) * o[0], pz = st.z - Math.sin(st.yaw) * o[0];
+        const b = addDecoBox(px, pz, 0.14, 1.5, 0.06, hillMats.timber, 2, surf(px, pz) + 0.02);
+        b.rotation.y = st.yaw;
+      }
+    }
+    if (sl > 0.30) {   // pitched edging on the steep sections
+      for (const side of [-1, 1]) {
+        const px = st.x + Math.cos(st.yaw) * side * 1.5, pz = st.z - Math.sin(st.yaw) * side * 1.5;
+        const b = addDecoBox(px, pz, 0.2, 1.4, 0.4, hillMats.rock, 2, surf(px, pz) - 0.05);
+        b.rotation.y = st.yaw; b.rotation.z = side * 0.25;
+      }
+    }
+  }
+  for (let i = 4; i < main.length; i += 7) {   // stub posts down one side, every other group
+    const st = main[i];
+    const px = st.x + Math.cos(st.yaw) * 2.1, pz = st.z - Math.sin(st.yaw) * 2.1;
+    addDecoCylinder(px, pz, 0.07, 0.75, hillMats.timber, surf(px, pz));
+  }
+  // Culverts where the mission line fords the watercourse
+  for (const t of trailStations(M, 0, 1.2)) {
+    const gd = lineDistance(M.gullies[0], t.x, t.z);
+    if (gd > 1.4) continue;
+    const b = addDecoCylinder(t.x, t.z, 0.55, 2.6, hillMats.rust, surf(t.x, t.z) - 0.1);
+    b.rotation.z = Math.PI / 2; b.rotation.y = -t.yaw;
+    break;
+  }
+  // The spur is a vehicle track, so it gets telegraph poles and a drooping line
+  const spur = trailStations(M, 1, 11);
+  spur.forEach((st, i) => {
+    const px = st.x + 2.6, pz = st.z + 1.0, y = surf(px, pz);
+    if (!isFree(px, pz, 0.7)) return;
+    addDecoCylinder(px, pz, 0.12, 6.2, hillMats.timber, y);
+    addDecoBox(px, pz, 1.7, 0.14, 0.14, hillMats.timber, 2, y + 5.5);
+    for (let k = 0; k < 3; k++) addDecoCylinder(px - 0.6 + k * 0.6, pz, 0.08, 0.26, hillMats.rock, y + 5.65);
+    if (i) {   // a sagging span to the previous pole, three segments
+      const q = spur[i - 1];
+      const qx = q.x + 2.6, qz = q.z + 1.0;
+      for (let k = 1; k < 4; k++) {
+        const f = k / 4;
+        const wx = px + (qx - px) * f, wz = pz + (qz - pz) * f;
+        const wy = (y + 5.6) * (1 - f) + (surf(qx, qz) + 5.6) * f - Math.sin(f * Math.PI) * 0.75;
+        const seg = addDecoBox(wx, wz, 0.05, 0.05, 0.05, hillMats.hide, 2, wy);
+        seg.scale.set(1, 1, Math.hypot(qx - px, qz - pz) / 4);
+        seg.rotation.y = Math.atan2(qx - px, qz - pz);
+      }
+    }
+  });
+
+  // ── Bench margins deliberately carry NO fence. The sector was evacuated, not decommissioned, and
+  //    the brief is that the whole hill is open to move: a post-and-wire line round every terrace
+  //    would read as a boundary the player instinctively tries to walk around. The maintained edge
+  //    is already legible — the sheet paints a revetment kerb right on the pad isoline, so the cut
+  //    reads as engineered ground without a single obstacle being placed on it. ──
+
+  // ── Yard clutter on the benches: pallets, barrels, skips, cable reels, crates, floodlight masts.
+  //    Placed from isFree() so nothing ever lands inside a structure's own footprint. ──
+  for (const t of M.terraces) {
+    const anchorY = t.y;
+    for (let i = 0; i < 3; i++) {
+      const a = rand(0, 6.3), rr = rand(2.2, t.r * 0.62);
+      const x = t.x + Math.cos(a) * rr, z = t.z + Math.sin(a) * rr;
+      if (!isFree(x, z, 0.8)) continue;
+      const y = groundHeight(new THREE.Vector3(x, 0, z), 0.6);
+      if (Math.random() < 0.4) {
+        const p = addDecoBox(x, z, rand(1.0, 1.3), 0.9, 0.16, hillMats.timber, 2, y);
+        p.rotation.y = rand(0, 3.1);
+        for (let k = 0; k < 3; k++) { const c = addDecoBox(x + rand(-0.4, 0.4), z + rand(-0.3, 0.3), 0.5, 0.5, rand(0.4, 0.8), mats.crate, 2, y + 0.16); c.rotation.y = rand(0, 3.1); }
+      } else if (Math.random() < 0.5) {
+        addDecoCylinder(x, z, 0.34, 0.95, hillMats.rust, y);
+        if (Math.random() < 0.4) addDecoCylinder(x + 0.8, z + 0.3, 0.34, 0.95, hillMats.rust, y);
+      } else {
+        const r = addDecoCylinder(x, z, 0.55, 0.3, hillMats.timber, y + 0.5);
+        r.rotation.z = Math.PI / 2; r.rotation.y = rand(0, 3.1);
+        addDecoBox(x, z + 1.2, 1.6, 0.9, 0.7, mats.metal, 2, y);
+      }
+    }
+    // one floodlight mast per bench, aimed back over the terrace it lights
+    const fx = t.x + t.r * 0.5, fz = t.z - t.r * 0.5;
+    if (isFree(fx, fz, 0.9)) {
+      const y = surf(fx, fz);
+      addDecoCylinder(fx, fz, 0.13, 6.4, mats.metal, y);
+      const head = addDecoBox(fx, fz - 0.5, 0.8, 0.5, 0.3, hillMats.rust, 2, y + 6.3);
+      head.rotation.x = 0.5;
+      addDecoBox(fx, fz - 0.78, 0.7, 0.1, 0.24, hillMats.wool, 2, y + 6.15);   // the lens face
+    }
+  }
+
+  // Emit the hillside-only instance sets, then reuse the marsh collectors for grass/reed/leaf.
+  _fillOriented(rockGeo, hillMats.rock, _rockInst, false);
+  _fillOriented(screeGeo, hillMats.scree, _screeInst, false);
+  _fillInstances(rockGeo, hillMats.gorse, _gorseInst);
+  _fillOriented(pineGeo, hillMats.pine, _pineInst, false);       // one draw for the whole pinewood
+  _fillOriented(bladeGeo, hillMats.herbage, _herbInst, false);   // rushes share the reed blade quad
+  _rockInst.length = 0; _screeInst.length = 0; _gorseInst.length = 0; _herbInst.length = 0;
+  _pineInst.length = 0;
+  console.log(`[CS] Hillside detail: ${rocks} boulders, ${scree} scree, ${herbs} tussocks, ${gorse} gorse, ${trees} firs in ${stands} stands, ${crop.plants} crop plants (${crop.field} in the grow block, ${crop.volunteers} volunteers) on ${crop.stakes} stakes` +
+    (Object.keys(crop.bare).length ? ` — block: ${Object.entries(crop.bare).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''));
+}
+
+// ══ FAUNA ══
+// The flocks are the reason a drover's track exists on the west flank at all, so they have to behave
+// like animals rather than like props: graze where they were turned out, drift a few metres between
+// crops, stand head-up when something loud happens, and run away from it. Every one of them is
+// standing on the shared surface — the same arithmetic the player's feet use, sampled four times per
+// animal per frame to get the tilt, which is the entire difference between a sheep on a hillside and
+// a sheep on a table.
+//
+// Draw cost decided the construction. Sixteen animals at seven parts each is 112 meshes built the
+// obvious way, so they are not built that way: the whole flock is THREE InstancedMeshes (fleece,
+// head, leg) rewritten with setMatrixAt every frame. Only the collie gets real meshes and a Group,
+// because one dog is not worth an instancing argument.
+//
+// There is deliberately no pathfinding. A timer-based brain with a legality test on each step looks
+// like livestock; a state machine that routes around obstacles looks like a bot with wool on it.
+const SHEEP_CAP = 150;
+const FLOCK_PAIRS = 8;              // animals per grazing beat
+let hillFauna = [];
+let faunaDesc = null;               // the MTN table, kept for the step legality tests
+const hillPanic = { x: 0, z: 0, life: 0 };
+let _fleeceInst = null, _headInst = null, _legInst = null, _dogGroup = null;
+let _dogLegs = null, _dogHead = null, _dogTail = null;
+let _faunaGeo = null;               // cached across rebuilds; the InstancedMeshes are not
+let _nextBleatAt = 0;
+// Scratch only: this loop runs for every animal every frame and must not allocate.
+const _faM = new THREE.Matrix4(), _faQ = new THREE.Quaternion(), _faQ2 = new THREE.Quaternion();
+const _faP = new THREE.Vector3(), _faP2 = new THREE.Vector3(), _faS = new THREE.Vector3();
+const _faE = new THREE.Euler(0, 0, 0, 'YXZ');
+
+// Ground an animal can be put on AND walk to. Every test is one the surface itself grades by, so a
+// sheep can never end up on ground the player's own movement would refuse — which is also why the
+// same test gates every step and not just the initial placement.
+function faunaGround(x, z) {
+  const M = faunaDesc;
+  if (!M || !terrain) return false;
+  if (x < M.xLo + 4 || x > M.xHi - 4 || z < M.zLo + 4 || z > M.zHi - 4) return false;
+  // 0.80: with the expanded 55m walls, gradients are much steeper than the original 17m hill.
+  // Sheep will graze on moderate slopes but not the near-vertical faces.
+  if (slopeAt(x, z) > 0.80) return false;                     // not on a face, and not on the crest lip
+  if (padWeightAt(x, z) > 0.85) return false;                 // nobody grazes a poured work yard
+  if (trailDistance(M, x, z) < 1.4) return false;            // the graded route stays clear
+  if (wadeDepth(x, z) > 0) return false;                     // the flooded sub-level is not a pasture
+  return isFree(x, z, 0.9);                                 // never inside a structure's footprint
+}
+
+// Footing is not enough — an animal also needs a way out, and "way out" means exactly what the mover
+// will later be able to use. This counts directions open for TWO steps, deliberately the same probe
+// distances faunaMove's escape search uses, because the first version counted one-step exits here and
+// the runtime still produced a sheep that walked 0.19 m in 20 s: it had been handed a legal splinter
+// whose only door was a dead end, ground that passed the placement test and failed the movement test.
+// Two predicates describing one idea is where that class of flake comes from; one idea, one probe.
+function faunaSteppable(x, z) {
+  let exits = 0;
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    if (faunaGround(x + Math.sin(a) * 0.5, z + Math.cos(a) * 0.5)
+      && faunaGround(x + Math.sin(a), z + Math.cos(a))) exits++;
+  }
+  return exits;
+}
+
+// Samples a beat and keeps the BEST legal ground rather than the first legal ground. The search length
+// is the same, so this can never find fewer animals than plain rejection sampling would — it only
+// chooses better of what it finds. It exists because "is there a way out" is not a threshold you should
+// be satisfied at: requiring >= 1 exit still left one build in four with a sheep that travelled 0.3 m
+// in 20 s, wedged on a splinter with a single door. Take the widest of ninety candidates instead.
+function faunaPick(beat, roomy = 5) {
+  let best = null;
+  for (let att = 0; att < 90; att++) {
+    const a = rand(0, 6.283), r = Math.sqrt(Math.random()) * beat.r;
+    const x = beat.x + Math.cos(a) * r, z = beat.z + Math.sin(a) * r;
+    if (!faunaGround(x, z)) continue;
+    const exits = faunaSteppable(x, z);
+    if (!best || exits > best.exits) best = { x, z, exits };
+    if (best.exits >= roomy) break;                            // open enough, stop paying for it
+  }
+  return best;
+}
+
+// A beat that came up barren used to print only its coordinates, which left the two possible causes
+// indistinguishable: the ground was never legal (a bad line in cs-map.js) or the detail scatter took it
+// (which MOVES between builds, because the pinewood is randomised and runs before the flock). Only the
+// second explains a beat that the solver called legal. This spends ~130 samples to name the cause, and
+// runs only on a beat that already failed, so a healthy hillside pays nothing for it.
+function faunaWhy(beat) {
+  const M = faunaDesc, noVeg = colliders.filter(c => !c.veg), tally = {};
+  for (let k = 0; k < 130; k++) {
+    const a = rand(0, 6.283), r = Math.sqrt(Math.random()) * beat.r;
+    const x = beat.x + Math.cos(a) * r, z = beat.z + Math.sin(a) * r;
+    let why = 'legal';
+    if (x < M.xLo + 4 || x > M.xHi - 4 || z < M.zLo + 4 || z > M.zHi - 4) why = 'edge';
+    else if (slopeAt(x, z) > 0.48) why = 'slope';
+    else if (padWeightAt(x, z) > 0.85) why = 'pad';
+    else if (trailDistance(M, x, z) < 1.4) why = 'trail';
+    else if (wadeDepth(x, z) > 0) why = 'water';
+    else if (!isFree(x, z, 0.9)) {
+      // isFree refuses for one reason out of five, so ask again with the vegetation taken out: if it
+      // passes without them, the trees are what moved onto this beat, not the poured structures.
+      why = CSMap.isFree(noVeg, mapBounds(), x, z, 0.9, terrain) ? 'pinewood' : 'structures';
+    }
+    tally[why] = (tally[why] || 0) + 1;
+  }
+  return Object.entries(tally).sort((p, q) => q[1] - p[1]).map(([k, v]) => `${k} ${v}`).join(', ');
+}
+
+function spawnHillFauna(terr, M) {
+  faunaDesc = M;
+  hillFauna.length = 0;
+  const beats = M.flocks || [];
+  const barren = [];
+  const beatGot = [];
+  for (const b of beats) {
+    let got = 0;
+    for (let k = 0; k < FLOCK_PAIRS; k++) {                  // a pair at every grazing beat
+      // Ninety samples, not the thirty this started on: the beats were solved against the STRUCTURE
+      // table and the pinewood is planted before the flock, so a beat measured at 32 % legal can arrive
+      // holding a fifth of that. A thin sample left the beat nearest the gate barren on about one build
+      // run in three — exactly the flaky-empty layer a static log would never show.
+      const spot = faunaPick(b);
+      if (!spot || !spot.exits) continue;                    // no door at all is a cage, not a pasture
+      const x = spot.x, z = spot.z;
+      got++;
+      hillFauna.push({
+        kind: 'sheep', homeX: x, homeZ: z, x, z,
+        heading: rand(0, 6.283), speed: 0, state: 'graze', timer: rand(1, 7),
+        head: 0.3, gait: rand(0, 6.283), s: rand(0.82, 1.12),
+        surfY: terr.height(x, z), pitch: 0, roll: 0,
+      });
+    }
+    beatGot.push({ b, got });
+    if (!got) barren.push(`${b.x},${b.z} [of 130 samples: ${faunaWhy(b)}]`);
+  }
+  // The collie holds the best pasture, measured rather than assumed: the beat that actually fed the most
+  // sheep this build. Ranking by `r` was meaningless — every beat is 4.5 m — so it silently handed the
+  // dog the first entry in the table, which is the thin ground by the gate lane. Falling through to the
+  // next beat, and to no dog at all, keeps a herder off a rock face.
+  beatGot.sort((p, q) => q.got - p.got);
+  let bx = 0, bz = 0, ok = false, dogBeat = null;
+  for (const { b: beat } of beatGot) {
+    const spot = faunaPick(beat, 6);
+    // Two exits, not the one a sheep will settle for: the collie covers metres between the pairs, so
+    // ground it can only shuffle along is no good for the animal that has to work the whole pasture.
+    if (!spot || spot.exits < 2) continue;
+    bx = spot.x; bz = spot.z; dogBeat = beat; ok = true; break;
+  }
+  if (ok) {
+    hillFauna.push({
+      kind: 'dog', homeX: bx, homeZ: bz, x: bx, z: bz, targetX: bx, targetZ: bz,
+      heading: rand(0, 6.283), speed: 0, state: 'patrol', timer: rand(1, 4),
+      head: 0, gait: rand(0, 6.283), s: 1, surfY: terr.height(bx, bz), pitch: 0, roll: 0,
+    });
+  }
+  buildFaunaMeshes();
+  // Logged because the beats are static data in cs-map.js and the ground they sit on is not: re-grade a
+  // bench, widen a trail or let the pinewood creep and a beat silently goes barren. The sheep count is
+  // the only thing that will tell you, and a missing layer here prints nothing at all by itself.
+  const sheep = hillFauna.length - (ok ? 1 : 0);
+  console.log(`[CS] Flock: ${sheep} sheep across ${beats.length - barren.length}/${beats.length} grazing beats` +
+    (ok ? `, collie on the ${dogBeat ? `${dogBeat.x},${dogBeat.z}` : 'hill'} beat` : ', NO DOG — no legal ground') +
+    (barren.length ? ` — barren: ${barren.join(' | ')}` : ''));
+}
+
+function buildFaunaMeshes() {
+  if (!hillFauna.length) return;
+  _faunaGeo = _faunaGeo || {
+    blob: new THREE.IcosahedronGeometry(1, 0),               // 20 flat facets: fleece, not a balloon
+    leg: getCylGeo(0.05, 1),                                // unit shaft, scaled to a leg per instance
+    dogLeg: new THREE.CylinderGeometry(0.045, 0.038, 0.44, 7),
+    box: new THREE.BoxGeometry(1, 1, 1),
+  };
+  // Re-based so a limb pivots at its TOP: the hip stays put while the swing carries the foot.
+  _faunaGeo.dogLeg.translate(0, -0.22, 0);
+  _fleeceInst = new THREE.InstancedMesh(_faunaGeo.blob, hillMats.wool, SHEEP_CAP * 2);
+  _headInst = new THREE.InstancedMesh(_faunaGeo.blob, hillMats.hide, SHEEP_CAP);
+  _legInst = new THREE.InstancedMesh(_faunaGeo.leg, hillMats.hide, SHEEP_CAP * 4);
+  for (const im of [_fleeceInst, _headInst, _legInst]) {
+    // An InstancedMesh's bounding sphere comes from its BASE geometry, which says nothing at all
+    // about where sixteen scattered animals are, so these three may not be culled against it.
+    im.frustumCulled = false;
+    im.castShadow = im.receiveShadow = true;
+    scene.add(im);
+  }
+  // The collie. Deliberately NOT in worldMeshes: those get matrixAutoUpdate turned off at the end of
+  // a build, and this has to keep moving.
+  _dogGroup = new THREE.Group();
+  const mk = (geo, mat, x, y, z, sx, sy, sz) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z); m.scale.set(sx, sy, sz);
+    m.castShadow = true; m.receiveShadow = true;
+    _dogGroup.add(m); return m;
+  };
+  const B = _faunaGeo.box, L = _faunaGeo.dogLeg;
+  mk(B, hillMats.hide, 0, 0.46, -0.02, 0.2, 0.24, 0.5);       // barrel
+  mk(B, hillMats.hide, 0, 0.5, -0.28, 0.23, 0.26, 0.22);      // haunch
+  mk(B, hillMats.hide, 0, 0.52, 0.24, 0.19, 0.23, 0.2);       // chest
+  _dogHead = mk(B, hillMats.hide, 0, 0.66, 0.44, 0.14, 0.16, 0.22);
+  mk(B, hillMats.hide, 0, 0.61, 0.58, 0.09, 0.08, 0.14);      // muzzle
+  mk(B, hillMats.hide, 0.075, 0.76, 0.4, 0.05, 0.11, 0.03);   // ears: a collie's are the silhouette
+  mk(B, hillMats.hide, -0.075, 0.76, 0.4, 0.05, 0.11, 0.03);
+  _dogTail = mk(B, hillMats.timber, 0, 0.56, -0.42, 0.05, 0.05, 0.26);
+  _dogTail.rotation.x = -0.7;
+  _dogLegs = [
+    mk(L, hillMats.hide, 0.09, 0.42, 0.17, 1, 1, 1),
+    mk(L, hillMats.hide, -0.09, 0.42, 0.17, 1, 1, 1),
+    mk(L, hillMats.hide, 0.09, 0.44, -0.22, 1, 1, 1),
+    mk(L, hillMats.hide, -0.09, 0.44, -0.22, 1, 1, 1),
+  ];
+  scene.add(_dogGroup);
+}
+
+function clearFauna() {
+  // The instance buffers are per-map VRAM and go with the map; the cached geometries do not.
+  for (const im of [_fleeceInst, _headInst, _legInst]) { if (im) { scene.remove(im); im.dispose(); } }
+  if (_dogGroup) scene.remove(_dogGroup);
+  _fleeceInst = _headInst = _legInst = _dogGroup = _dogLegs = _dogHead = _dogTail = null;
+  hillFauna.length = 0;
+  faunaDesc = null;
+  hillPanic.life = 0;
+}
+
+// A sheep's bleat is a falling sawtooth with a wobble in it and breath over the top. Rate limited to
+// roughly one voice a second on purpose: sixteen animals all answering one shot is not a flock, it is
+// a bad film.
+function playBleat(vol) {
+  const a = audio(), t = a.currentTime;
+  if (t < _nextBleatAt) return;
+  _nextBleatAt = t + 0.9;
+  const dur = rand(0.3, 0.55);
+  const o = a.createOscillator(), g = a.createGain(), lfo = a.createOscillator(), lg = a.createGain();
+  const f = a.createBiquadFilter();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(rand(330, 440), t);
+  o.frequency.exponentialRampToValueAtTime(rand(150, 200), t + dur);
+  lfo.frequency.value = rand(18, 27); lg.gain.value = 28;
+  lfo.connect(lg); lg.connect(o.frequency);
+  f.type = 'bandpass'; f.frequency.value = 950; f.Q.value = 1.2;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.15 * vol, t + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(f); f.connect(g); g.connect(a.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+  lfo.start(t); lfo.stop(t + dur);
+}
+
+// Gunfire is the one thing out here that moves a flock. Called with the ground position of the
+// muzzle — not the camera — so a round put up the spur from the col cannot startle a lamb on the
+// crest. The dog does the opposite of the animals, which is the whole point of a working dog.
+function startleFauna(x, z, radius = 34) {
+  if (!hillFauna.length) return;
+  hillPanic.x = x; hillPanic.z = z;
+  hillPanic.life = 4 + Math.random() * 3;
+  let nearest = null, nd = 1e9;
+  for (const a of hillFauna) {
+    const d = Math.hypot(a.x - x, a.z - z);
+    if (d > radius) continue;
+    if (d < nd) { nd = d; nearest = a; }
+    if (a.kind === 'dog') { a.state = 'chase'; a.timer = rand(3, 6); }
+    else { a.state = 'flee'; a.timer = rand(2.5, 6); }
+  }
+  if (nearest && nd < 26) playBleat(clamp(1.1 - nd / 26, 0.2, 1));
+}
+
+// Grazing is the occupation, walking is between crops, standing head-up is the reaction, and running
+// only happens because of something the player did.
+function updateSheep(a, dt) {
+  a.timer -= dt;
+  const dx = a.homeX - a.x, dz = a.homeZ - a.z, dh = Math.hypot(dx, dz);
+  if (a.state === 'flee') {
+    const px = a.x - hillPanic.x, pz = a.z - hillPanic.z, pd = Math.hypot(px, pz);
+    a.heading = Math.atan2(px, pz);
+    if (hillPanic.life <= 0 && (pd > 15 || a.timer <= 0)) { a.state = 'stand'; a.timer = rand(1.5, 4); }
+    return 4.0;
+  }
+  if (a.state === 'stand') {
+    if (a.timer <= 0) {
+      if (Math.random() < 0.7) { a.state = 'graze'; a.timer = rand(3, 10); }
+      else { a.state = 'walk'; a.timer = rand(2, 6); a.heading = dh > 4 ? Math.atan2(dx, dz) : rand(0, 6.283); }
+    }
+    return 0;
+  }
+  if (a.state === 'walk') {
+    if (dh > 5) a.heading = Math.atan2(dx, dz);              // back to the crop it was turned out on
+    if (a.timer <= 0) { a.state = Math.random() < 0.75 ? 'graze' : 'stand'; a.timer = rand(2.5, 9); }
+    return 1.2;
+  }
+  // graze: drift forward with the head down, turning slowly with the contour, and stop every few
+  // mouthfuls to look up — the pause is what sells it as feeding rather than as idling.
+  a.heading += Math.sin(performance.now() * 0.0004 + a.gait) * dt * 0.7;
+  if (dh > 6) a.heading = Math.atan2(dx, dz);
+  if (a.timer <= 0) {
+    if (Math.random() < 0.25) { a.state = 'stand'; a.timer = rand(2, 5); }
+    else { a.state = 'walk'; a.timer = rand(2, 6); a.heading = dh > 4 ? Math.atan2(dx, dz) : rand(0, 6.283); }
+  }
+  return 0.11;
+}
+
+// The dog has no herd to hold — the pairs are scattered across the whole sector — so it works its own
+// beat: an arc around wherever the animals currently are, a sweep at anything loud, and home.
+function updateDog(a, dt, cx, cz) {
+  a.timer -= dt;
+  if (a.state === 'chase') {
+    const dx = hillPanic.x - a.x, dz = hillPanic.z - a.z;
+    a.heading = Math.atan2(dx, dz);
+    if (Math.hypot(dx, dz) < 4 || a.timer <= 0) { a.state = 'look'; a.timer = rand(2, 4.5); }
+    return 5.0;
+  }
+  if (a.state === 'look') {
+    a.heading += dt * 1.7;                                  // a slow sweep, reading the ground
+    if (a.timer <= 0) a.state = 'return';
+    return 0;
+  }
+  if (a.state === 'return') {
+    const dx = a.homeX - a.x, dz = a.homeZ - a.z;
+    if (Math.hypot(dx, dz) < 4) { a.state = 'patrol'; a.timer = rand(3, 8); return 0; }
+    a.heading = Math.atan2(dx, dz);
+    return 2.6;
+  }
+  if (a.state === 'stand') {
+    if (a.timer <= 0) { a.state = 'patrol'; a.timer = rand(4, 10); }
+    return 0;
+  }
+  // patrol
+  if (a.timer <= 0 || Math.hypot(a.x - a.targetX, a.z - a.targetZ) < 1.8) {
+    if (Math.random() < 0.3) { a.state = 'stand'; a.timer = rand(1.5, 4); return 0; }
+    const ang = rand(0, 6.283), r = rand(4, 9);
+    a.targetX = cx + Math.cos(ang) * r; a.targetZ = cz + Math.sin(ang) * r;
+    a.timer = rand(6, 14);
+  }
+  a.heading = Math.atan2(a.targetX - a.x, a.targetZ - a.z);
+  return 1.15;
+}
+
+// One step, gated on the same legality test as placement. Refusing the step and turning is also how
+// an animal avoids a wall it has never seen, without any of this becoming navigation.
+function faunaMove(a, want, dt) {
+  if (want <= 0.001) { a.speed += -a.speed * Math.min(1, dt * 5); return; }
+  const nx = a.x + Math.sin(a.heading) * want * dt;
+  const nz = a.z + Math.cos(a.heading) * want * dt;
+  if (faunaGround(nx, nz)) {
+    a.x = nx; a.z = nz;
+    a.blocked = 0;
+    a.speed += (want - a.speed) * Math.min(1, dt * 6);
+    return;
+  }
+  a.speed *= 0.35;
+  if (a.state === 'patrol') a.timer = Math.min(a.timer, 0.5);      // re-aim at the flock soon
+  // A refusal is normal — it is how an animal avoids a wall it has never seen — so the first response is
+  // just a veer. But veering by a fixed random amount is what made one sheep walk 0.19 m in 20 s: inside
+  // a concave pocket a consistent turn orbits the corner forever. After a dozen refusals it stops
+  // guessing and looks, picking the direction with the most unbroken legal ground in front of it. Depth
+  // is scored in whole steps, because a one-step gap that closes again is not a way out.
+  a.blocked = (a.blocked || 0) + 1;
+  if (a.blocked < 12) { a.heading += rand(1.1, 2.3); return; }
+  a.blocked = 0;
+  let bestH = a.heading + Math.PI, bestDepth = 0;                  // about-turn is the fallback
+  for (let i = 0; i < 8; i++) {
+    const h = i * Math.PI / 4;
+    let depth = 0;
+    for (let s = 1; s <= 4; s++) {
+      if (!faunaGround(a.x + Math.sin(h) * 0.5 * s, a.z + Math.cos(h) * 0.5 * s)) break;
+      depth = s;
+    }
+    if (depth > bestDepth) { bestDepth = depth; bestH = h; }
+  }
+  a.heading = bestH;
+}
+
+// Body attitude from the surface under the four hooves. (fx,fz) is forward, so the animal's left is
+// (fz,-fx) — the sign conventions below follow from that and from three applying Euler 'YXZ' as
+// qy·qx·qz, i.e. roll and pitch in the body frame, yaw in the world.
+function faunaAttitude(a, terr) {
+  const fx = Math.sin(a.heading), fz = Math.cos(a.heading);
+  a.surfY = terr.height(a.x, a.z);
+  const hF = terr.height(a.x + fx * 0.42, a.z + fz * 0.42);
+  const hB = terr.height(a.x - fx * 0.42, a.z - fz * 0.42);
+  const hL = terr.height(a.x + fz * 0.32, a.z - fx * 0.32);
+  const hR = terr.height(a.x - fz * 0.32, a.z + fx * 0.32);
+  a.pitch = -Math.atan2(hF - hB, 0.84);                     // nose up on the way uphill
+  a.roll = Math.atan2(hL - hR, 0.64);                       // left flank up on a side slope
+  _faE.set(a.pitch, a.heading, a.roll, 'YXZ');
+  _faQ.setFromEuler(_faE);
+}
+
+function updateFauna(dt) {
+  if (!hillFauna.length || !terrain || !_fleeceInst) return;
+  const terr = terrain;
+  if (hillPanic.life > 0) hillPanic.life -= dt;
+
+  let cx = 0, cz = 0, n = 0;
+  for (const a of hillFauna) if (a.kind === 'sheep') { cx += a.x; cz += a.z; n++; }
+  if (n) { cx /= n; cz /= n; }
+
+  let fi = 0, hi = 0, li = 0;
+  for (const a of hillFauna) {
+    const want = a.kind === 'dog' ? updateDog(a, dt, cx, cz) : updateSheep(a, dt);
+    // A person walking at them is as good a reason to move as a gunshot, and needs no sound hook:
+    // the panic point simply becomes the player, so the flee branch already points the right way.
+    if (a.state !== 'flee' && a.state !== 'chase') {
+      const pd = Math.hypot(a.x - player.pos.x, a.z - player.pos.z);
+      if (pd < 4.5) { hillPanic.x = player.pos.x; hillPanic.z = player.pos.z; hillPanic.life = Math.max(hillPanic.life, 2.5);
+        if (a.kind === 'dog') { a.state = 'look'; a.timer = rand(1.5, 3); } else { a.state = 'flee'; a.timer = rand(2, 5); } }
+    }
+    faunaMove(a, want, dt);
+    a.gait += a.speed * dt * 4.6;
+    // Head: down through a mouthful, level when watching, high in a run.
+    const target = a.state === 'flee' || a.state === 'chase' ? -0.35
+      : a.state === 'look' ? -0.1
+      : a.kind === 'dog' ? 0.05
+      : a.state === 'graze' ? 0.85 + Math.sin(a.gait * 0.7 + a.timer) * 0.1
+      : a.state === 'walk' ? 0.45 : 0.1;
+    a.head += (target - a.head) * Math.min(1, dt * 4.5);
+    faunaAttitude(a, terr);
+
+    if (a.kind === 'dog') {
+      _dogGroup.position.set(a.x, a.surfY, a.z);
+      _dogGroup.quaternion.copy(_faQ);
+      for (let l = 0; l < 4; l++) {
+        const phase = ((l & 1) ^ (l >> 1)) ? Math.PI : 0;    // diagonal pairs in step
+        _dogLegs[l].rotation.x = Math.sin(a.gait + phase) * (a.speed > 0.2 ? 0.55 : 0.02);
+      }
+      _dogHead.rotation.x = -a.head * 0.6;
+      _dogTail.rotation.x = -0.7 - Math.sin(a.gait * 1.6) * 0.16;
+      continue;
+    }
+
+    // Two fleece blobs instead of one long ellipsoid: a sheep is a shoulder and a rump with a dip
+    // between them, and the silhouette is what makes it read as an animal at forty metres.
+    for (let i = 0; i < 2 && fi < SHEEP_CAP * 2; i++) {
+      _faP.set(0, (i ? 0.6 : 0.68) * a.s, (i ? -0.24 : 0.2) * a.s).applyQuaternion(_faQ);
+      _faM.compose(
+        _faP2.set(a.x + _faP.x, a.surfY + _faP.y, a.z + _faP.z), _faQ,
+        _faS.set((i ? 0.27 : 0.24) * a.s, (i ? 0.29 : 0.31) * a.s, (i ? 0.32 : 0.36) * a.s));
+      _fleeceInst.setMatrixAt(fi++, _faM);
+    }
+    if (hi < SHEEP_CAP) {
+      // The head hangs off a neck pivot, so it tilts on its own axis rather than the body's.
+      const tilt = a.pitch - a.head * 0.85;
+      _faE.set(tilt, a.heading, a.roll, 'YXZ');
+      _faQ2.setFromEuler(_faE);
+      _faP.set(0, 0.72 * a.s, 0.26 * a.s).applyQuaternion(_faQ);
+      _faP2.set(0, 0.04 * a.s, 0.2 * a.s).applyQuaternion(_faQ2);
+      _faM.compose(
+        _faP.set(a.x + _faP.x + _faP2.x, a.surfY + _faP.y + _faP2.y, a.z + _faP.z + _faP2.z), _faQ2,
+        _faS.set(0.13 * a.s, 0.15 * a.s, 0.3 * a.s));
+      _headInst.setMatrixAt(hi++, _faM);
+    }
+    for (let l = 0; l < 4 && li < SHEEP_CAP * 4; l++) {
+      const hipX = (l & 1 ? 0.14 : -0.14) * a.s;
+      const hipZ = (l < 2 ? 0.26 : -0.24) * a.s;
+      const phase = ((l & 1) ^ (l < 2 ? 0 : 1)) ? Math.PI : 0;
+      const swing = Math.sin(a.gait + phase) * (a.speed > 0.12 ? 0.46 : 0.03);
+      _faE.set(a.pitch - swing, a.heading, a.roll, 'YXZ');
+      _faQ2.setFromEuler(_faE);
+      _faP.set(hipX, 0.56 * a.s, hipZ).applyQuaternion(_faQ);
+      const len = 0.6 * a.s;
+      _faP2.set(0, -len / 2, 0).applyQuaternion(_faQ2);
+      _faM.compose(
+        _faP.set(a.x + _faP.x + _faP2.x, a.surfY + _faP.y + _faP2.y, a.z + _faP.z + _faP2.z), _faQ2,
+        _faS.set(1, len, 1));
+      _legInst.setMatrixAt(li++, _faM);
+    }
+  }
+
+  // Only the instances actually written are drawn — a rebuilt mission with fewer legal beats must not
+  // leave the leftovers parked at the origin.
+  _fleeceInst.count = fi; _headInst.count = hi; _legInst.count = li;
+  _fleeceInst.instanceMatrix.needsUpdate = true;
+  _headInst.instanceMatrix.needsUpdate = true;
+  _legInst.instanceMatrix.needsUpdate = true;
+}
+
+// Standing water in the generator excavation — drawn as one disc, and handed to the wading
+// physics through genPit so a waist-deep round actually feels waist-deep.
+function buildGeneratorPool(terr, M) {
+  const pit = M.pits[0], PY = M.anchors.genPit.y, A = M.anchors;
+  const waterY = PY + 0.95;
+  const geo = new THREE.CircleGeometry(pit.r * 0.99, 40);
+  const mesh = new THREE.Mesh(geo, mats.water);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(pit.x, waterY, pit.z);
+  mesh.receiveShadow = false; mesh.castShadow = false;
+  mesh.renderOrder = 2;
+  mesh.name = 'genPool';
+  scene.add(mesh); worldMeshes.push(mesh);
+  genPit = {
+    x: pit.x, z: pit.z, r: pit.r * 0.99, waterY,
+    // Switchgear banks and the generator plinth stand proud of the water — standing on a box must
+    // never feel like wading, so those footprints are dry (same rule as floodDry on the marsh).
+    dry: [
+      [A.breaker1.x - 1.2, A.breaker1.x + 1.2, A.breaker1.z - 0.8, A.breaker1.z + 0.8],
+      [A.breaker2.x - 1.2, A.breaker2.x + 1.2, A.breaker2.z - 0.8, A.breaker2.z + 0.8],
+      [A.breaker3.x - 1.2, A.breaker3.x + 1.2, A.breaker3.z - 0.8, A.breaker3.z + 0.8],
+      [pit.x - 1.4, pit.x + 5.4, pit.z + 1.2, pit.z + 4.4],
+    ],
+  };
+  // Wet-line staining on everything the water reached, plus the float it left behind
+  for (let i = 0; i < 22; i++) {
+    const a = rand(0, 6.3), rr = pit.r * rand(0.75, 1.02);
+    const x = pit.x + Math.cos(a) * rr, z = pit.z + Math.sin(a) * rr;
+    addDecoBox(x, z, rand(0.2, 0.5), rand(0.2, 0.5), 0.06, hillMats.timber, 2, waterY + 0.02);
+  }
+  for (const b of [A.breaker1, A.breaker2, A.breaker3]) {
+    addDecoBoxNS(b.x, b.z - 0.76, 2.0, 0.08, 0.55, hillMats.rock, 2, waterY - 0.3);   // tide mark
+  }
+}
+
+// ── Water streams: visible ribbon meshes along each gully path ──
+const waterStreams = [];
+function buildWaterStreams(terr, M) {
+  const streamMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1a22, roughness: 0.08, metalness: 0.7,
+    transparent: true, opacity: 0.75, side: THREE.DoubleSide
+  });
+  for (const gully of M.gullies) {
+    if (gully.length < 2) continue;
+    const width = 1.2;
+    const positions = [], indices = [];
+    let vi = 0;
+    for (let i = 0; i < gully.length; i++) {
+      const [px, pz] = gully[i];
+      let dx = 0, dz = 1;
+      if (i < gully.length - 1) { dx = gully[i+1][0]-px; dz = gully[i+1][1]-pz; }
+      else if (i > 0) { dx = px-gully[i-1][0]; dz = pz-gully[i-1][1]; }
+      const len = Math.hypot(dx, dz) || 1;
+      const nx = -dz/len * width * 0.5, nz = dx/len * width * 0.5;
+      const y = terr.height(px, pz) - 0.12; // sits in the channel, below surface
+      const ripple = (i % 2 === 0) ? 0.03 : -0.03;
+      positions.push(px + nx, y + ripple, pz + nz, px - nx, y - ripple, pz - nz);
+      if (i > 0) {
+        indices.push(vi-2, vi-1, vi, vi-1, vi+1, vi);
+      }
+      vi += 2;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, streamMat);
+    mesh.receiveShadow = false; mesh.castShadow = false;
+    mesh.renderOrder = 2;
+    scene.add(mesh); worldMeshes.push(mesh);
+    waterStreams.push(mesh);
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  MISSION-03 ARENA: the whole 99x99 compound, its north wall opened into a gate, and Sector Zero
+//  terraced up the hill behind it. The compound is drawn by the existing builder (which switches on
+//  selectedMap for the wall runs), so the two halves of the map can never be laid out twice.
+// ════════════════════════════════════════════════════════════
+function buildIndustrialMountainMap() {
+  const M = CSMap.MTN;
+  const terr = CSMap.descriptor('industrial_mountain');
+  if (!terr) {                                  // cs-map.js without the hill: fall back to the plain
+    buildIndustrialMap();
+    console.warn('[CS] cs-map.js has no terrain descriptor — Mission 03 falling back to the flat compound');
+    return;
+  }
+  // Publish the surface BEFORE drawing anything: the builders below place props by measuring the
+  // ground under them (groundHeight) and by asking isFree() to reject steep faces, and both would
+  // silently see a flat world while terrain was still null — burying yard clutter up to 23 m deep.
+  // Safe on the compound half: the height field is exactly 0 for every z below the gate line.
+  terrain = terr;
+  buildIndustrialMap();                         // compound + the extended wall runs
+  buildHillMesh(terr, M);                       // one mesh, reused across rebuilds
+  buildSectorZero(terr, M);                     // man-made volumes (colliders) + all their detail
+  buildGeneratorPool(terr, M);                  // wading water in the T4 excavation
+  buildWaterStreams(terr, M);                   // visible streams along each gully
+  buildHillDetail(terr, M);                     // rock, scree, moorland, pinewood, crop, trails
+  finalizeVegetation();                         // flush the hill's grass/reed/leaf/trunk instances
+  spawnHillFauna(terr, M);                      // the flocks and the one working dog
+  for (const m of worldMeshes) { if (!m.isInstancedMesh) { m.updateMatrix(); m.updateMatrixWorld(true); m.matrixAutoUpdate = false; } }
+  renderer.shadowMap.needsUpdate = true;
+  console.log(`[CS] Sector Zero: relief 0-${(M.peak + M.crestA).toFixed(0)} m over ${((M.zHi - M.zLo) * (M.xHi - M.xLo)).toFixed(0)} m2, ${M.terraces.length} benches, ${M.trails.length} lines`);
+}
+
 function buildClassicMap() {
   // ════════════════════════════════════════════════════════════
   //  CLASSIC ARENA — 66x66 Arena (Original)
@@ -2168,14 +3774,15 @@ function buildClassicMap() {
 const waypoints = [];
 function generateWaypoints() {
   waypoints.length = 0;
-  const b = mapBounds();
-  const count = selectedMap === 'classic' ? 60 : selectedMap === 'industrial_east' ? 260 : 140;
-  const xLo = b.xMin + 3, xHi = b.xMax - 3, zLo = -b.halfD + 3, zHi = b.halfD - 3;
+  const count = selectedMap === 'classic' ? 60 : selectedMap === 'industrial_east' ? 260
+    : selectedMap === 'industrial_mountain' ? 420 : 140;
+  const e = arenaEdges();
   // Guarded: if a map edit ever makes free space scarce this must degrade to fewer waypoints rather
-  // than spin the browser forever inside a while loop.
+  // than spin the browser forever inside a while loop. On the mountain most of that guard gets used,
+  // because isFree() now refuses ground too steep to stand on as well as ground a box occupies.
   let guard = 0;
   while (waypoints.length < count && guard++ < count * 300) {
-    const x = rand(xLo, xHi), z = rand(zLo, zHi);
+    const x = rand(e.xLo, e.xHi), z = rand(e.zLo, e.zHi);
     if (isFree(x, z, 0.9)) waypoints.push(new THREE.Vector2(x, z));
   }
 }
@@ -2210,9 +3817,15 @@ function installSharedColliders() {
 
 function buildMap() {
   clearMap();
+  // Nothing may consult the height field before the map that owns it has been drawn, and clearMap()
+  // is how a mission changing map also changes ground.
+  terrain = null;
   if (selectedMap === 'classic') {
     buildClassicMap();
     console.log('[CS] Classic map loaded (66x66)');
+  } else if (selectedMap === 'industrial_mountain') {
+    buildIndustrialMountainMap();
+    console.log('[CS] Industrial Complex + Sector Zero map loaded (99x139, hillside north)');
   } else {
     buildIndustrialMap();
     console.log(selectedMap === 'industrial_east'
@@ -2220,6 +3833,10 @@ function buildMap() {
       : '[CS] Industrial Complex map loaded (99x99)');
   }
   installSharedColliders();
+  // cs-map.js is the only place the hill is defined, so asking it for a descriptor is also how the
+  // client learns that this map HAS one. It answers null for every older map, which is the guard on
+  // each terrain call below.
+  if (typeof CSMap !== 'undefined' && CSMap.descriptor) terrain = CSMap.descriptor(selectedMap);
   generateWaypoints();
 }
 
@@ -2234,24 +3851,91 @@ function circleHitsBox(x, z, r, c) {
   return CSMap.circleHitsBox(x, z, r, c);
 }
 
-function collide(pos, r, h, step) {
+function collide(pos, r, h, step, from) {
   CSMap.collide(colliders, pos, r, h, step);
+  // A hill has no AABB to be pushed out of, so a face steeper than the climb limit is refused
+  // instead. `from` is where the mover stood before this frame's move: callers that are placing
+  // something rather than walking (spawns, props, waves) pass nothing and get the old behaviour.
+  if (terrain && from) CSMap.terrainStep(terrain, pos, from.x, from.z);
 }
 
 const STEP = CSMap.STEP;
 function groundHeight(pos, r) {
-  return CSMap.groundHeight(colliders, pos, r, STEP);
+  return CSMap.groundHeight(colliders, pos, r, STEP, terrain);
+}
+// The slope under a foot, in metres of rise per metre of run. Zero everywhere on the flat maps.
+function slopeAt(x, z) { return terrain ? terrain.gradient(x, z) : 0; }
+// How much of a pace the ground will let a mover keep: steep scree is around 0.55, a bench or a
+// graded trail is a full 1. This is what makes the trails the fast route without closing the hill.
+function terrainPace(x, z) { return terrain ? terrain.walkSlow(x, z) : 1; }
+// Perpendicular distance to the nearest graded trail, and how much of a poured bench a point sits
+// on. Both are measured off the same shared tables the surface itself blends with, and both are
+// only ever consulted for footstep texture and flock grazing, so the compound pays nothing.
+function trailDist(x, z) {
+  const M = CSMap.MTN;
+  let best = 99;
+  for (const line of M.trails) {
+    for (let k = 0; k < line.length - 1; k++) {
+      const ax = line[k][0], az = line[k][1], vx = line[k + 1][0] - ax, vz = line[k + 1][1] - az;
+      const len2 = vx * vx + vz * vz;
+      let t = len2 > 1e-6 ? ((x - ax) * vx + (z - az) * vz) / len2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const d = Math.hypot(ax + vx * t - x, az + vz * t - z);
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+function padWeightAt(x, z) {
+  let w = 0;
+  for (const t of CSMap.MTN.terraces) {
+    const f = Math.hypot(x - t.x, z - t.z) / t.r;
+    const v = f <= CSMap.MTN.TERR_F ? 1 : (f >= CSMap.MTN.TERR_A ? 0 : 1 - (f - CSMap.MTN.TERR_F) / (CSMap.MTN.TERR_A - CSMap.MTN.TERR_F));
+    if (v > w) w = v;
+  }
+  return w;
+}
+// Where the player stood before this frame's move, kept as one scratch vector because the move
+// block runs every frame and terrainStep needs the pre-move point to decide which axis to refuse.
+const _moveFrom = new THREE.Vector3();
+// Mission entities (clues, props, NPCs) are declared with y=0, which was the compound floor and is
+// now wherever the hill happens to be. Non-zero declared heights are literal (a code on a console
+// shelf) and stay untouched.
+function groundOn(x, z, y) {
+  if (!terrain || y) return y;
+  return groundHeight(new THREE.Vector3(x, 0, z), 0.4);
+}
+// Bullets. Rock stops a round the way a wall does, and on the mountain there is a great deal more
+// of it: a shot fired into a spur has to die in the spur, not on the terrace behind it. This only
+// ever pulls the far plane in — the mesh raycast still runs against every volume in the compound,
+// so a wall standing on a hill wins over the ground under it.
+function terrainShotRange(origin, dir, maxDist) {
+  if (!terrain) return maxDist;
+  const d = terrain.rayHit(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, maxDist, 0.4);
+  return d > 0 ? Math.min(maxDist, d) : maxDist;
 }
 
 function mapHalf() { return CSMap.info(selectedMap).half; }
 
-// Rectangular bounds accessor: industrial_east (Mission-02 marsh arena) runs x[-49.5, 64.5], so any
-// confinement clamp has to take xMin/xMax per axis instead of a symmetric half — same rule that
-// keeps spawn bands honest: derive from the shared table, never from a literal.
+// Rectangular bounds accessor: industrial_east (Mission-02 marsh arena) runs x[-49.5, 64.5], and
+// the Mission-03 mountain valley runs x[-100, 100] z[-49.5, 130], so any confinement clamp has to take each axis from
+// the shared table instead of a symmetric half — and anything still reading halfD as ±extent is
+// wrong on both of those maps.
 function mapBounds() { return CSMap.info(selectedMap); }
 
+// Per-axis arena edges, because two of the four maps are not square about the origin.
+function arenaEdges() {
+  const b = mapBounds();
+  return {
+    xLo: (b.xMin !== undefined ? b.xMin : -b.halfW) + 3,
+    xHi: (b.xMax !== undefined ? b.xMax : b.halfW) - 3,
+    zLo: (b.zMin !== undefined ? b.zMin : -b.halfD) + 3,
+    zHi: (b.zMax !== undefined ? b.zMax : b.halfD) - 3,
+  };
+}
+
 function isFree(x, z, r) {
-  return CSMap.isFree(colliders, mapBounds(), x, z, r);
+  return CSMap.isFree(colliders, mapBounds(), x, z, r, terrain);
 }
 
 // Nudge a desired spawn point to nearby open ground (footprint test), or null if nothing frees up
@@ -2278,6 +3962,12 @@ function hasLOS(from, to) {
   const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (len < 0.001) return true;
+  // A crest hides a mover exactly the way a wall does, and on the mountain it hides more of the map
+  // than the walls do. Checked before the collider loop because it is the cheaper test and because
+  // on the hillside most sight lines die on the ground rather than on a box. Both ends have to be
+  // off the sector for the test to be skipped, since a compound sight line can still cross a bench.
+  if (terrain && (from.z > CSMap.MTN.zLo - 6 || to.z > CSMap.MTN.zLo - 6)
+      && terrain.losBlocked(from.x, from.y, from.z, to.x, to.y, to.z)) return false;
   const invDx = 1 / dx, invDy = 1 / dy, invDz = 1 / dz;
   for (let i = 0, n = colliders.length; i < n; i++) {
     const c = colliders[i];
@@ -2458,6 +4148,13 @@ function footstepNode(a, pos, dist) {
 // Water is already handled separately by wadeDepth() / playSplash().
 // Returns: 'mud' | 'metal' | 'concrete'
 function getSurfaceType(x, y, z) {
+  // Mission-03 hillside, north of the gate: the y > 0.5 rule below was written for building floors
+  // and tank decks, and on a 23 m slope it would make every footstep clang. Here the only poured
+  // ground is a bench floor, so anything the terracing doesn't cover reads as earth.
+  if (terrain && z > CSMap.MTN.zLo) {
+    if (genPit && y < genPit.waterY && Math.hypot(x - genPit.x, z - genPit.z) < genPit.r) return 'mud';
+    return padWeightAt(x, z) > 0.55 ? 'concrete' : 'mud';
+  }
   // Eastern marsh shelf — mud ground (industrial_east map only, x > 49.5)
   if (selectedMap === 'industrial_east' && x > 49.5 && y < 1.0) return 'mud';
   // Elevated surfaces (building floors, platforms, containers, tanks)
@@ -2754,6 +4451,10 @@ function spawnHole(point, normal) {
 const camShake = { t: 0, mag: 0 };
 
 function updateEffects(dt) {
+  // Ambient fauna ride the effects tick: they exist on one map only, they must keep moving in both
+  // single-player and co-op, and they are the only world animation that is neither a particle nor a
+  // bot. The call returns on the first line wherever there is no flock.
+  updateFauna(dt);
   for (let i = effects.length - 1; i >= 0; i--) {
     const e = effects[i];
     e.life -= dt;
@@ -3103,6 +4804,37 @@ const botMats = {
   pants: new THREE.MeshStandardMaterial({ color: 0x8a8a8e, roughness: 0.9 }),
   gun: new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.4, metalness: 0.6 }),
 };
+
+// ── Mission 03 · enemy archetypes ──
+// An archetype is a handful of numbers plus a coat, NOT a second brain: update() still decides when
+// to shoot and where to walk, and these only change how fast it closes, how often it fires, how much
+// lead a miss needs and how much of you it has to take off. A second AI per kind is where a mission
+// gets two behaviours that disagree about the same bot.
+// Visuals obey the cabinet's monochrome rule — the whole difference is VALUE (a bleached, sweat-ridden
+// coat against a clean dark one), never hue.
+const ARCHETYPES = {
+  infected: {
+    label: 'INFECTED',
+    health: 55, speedMul: 1.55, cdMul: 1.5, accBias: -0.05, dmgMul: 0.8, rush: true, contact: 1.7,
+    mats: { shirt: 0xf2f2f0, pants: 0xc6c6c2, vest: 0xb2b2ae, mask: 0xe2e2e2, skin: 0xeaeaea },
+  },
+  cleaner: {
+    label: 'CLEANUP',
+    health: 190, speedMul: 0.85, cdMul: 0.62, accBias: 0.12, dmgMul: 1.35, rush: false, contact: 0,
+    mats: { shirt: 0x303034, pants: 0x28282c, vest: 0x1c1c20, mask: 0xf0f0f0, skin: 0x9a9a9a },
+  },
+};
+// One material per (archetype, part) for the whole session, shared by every bot of that kind: 20
+// infected cost five extra materials, not a hundred.
+const _archMatCache = {};
+function archMat(kind, key) {
+  const a = ARCHETYPES[kind];
+  if (!a || !a.mats[key]) return botMats[key];
+  const id = kind + ':' + key;
+  return _archMatCache[id] || (_archMatCache[id] = new THREE.MeshStandardMaterial({
+    color: a.mats[key], roughness: key === 'vest' ? 0.72 : 0.9,
+  }));
+}
 const bots = [];
 
 class Bot {
@@ -3117,6 +4849,9 @@ class Bot {
     this.walkPhase = Math.random() * 10; this.spotted = 0; this.parts = [];
     this.stepDist = 0; this.lastStepPos = this.pos.clone();
     this._losCounter = bots.length % 3; // stagger LOS checks across bots
+    // Archetype defaults — a plain Greyline soldier. setArchetype() overwrites these.
+    this.arch = null; this.speedMul = 1; this.accBias = 0; this.cdMul = 1; this.dmgMul = 1;
+    this.rush = false; this.contactRange = 0;
 
     const g = this.group = new THREE.Group();
     const part = (geo, mat, x, y, z, partName, parent = g) => {
@@ -3141,6 +4876,25 @@ class Bot {
   }
 
   eye(out = new THREE.Vector3()) { return out.set(this.pos.x, this.pos.y + 1.65, this.pos.z); }
+
+  // Applied by the mission spawner after construction, so the archetype never has to know how a bot
+  // is built. Materials are swapped by IDENTITY rather than by part name because 'body' is the torso,
+  // the vest AND both shoulders at once, and only the constructor's own material says which is which.
+  setArchetype(kind) {
+    const a = ARCHETYPES[kind];
+    if (!a) { console.warn('[CS] unknown bot archetype:', kind); return this; }
+    this.arch = kind;
+    this.health = a.health; this.speedMul = a.speedMul; this.accBias = a.accBias;
+    this.cdMul = a.cdMul; this.dmgMul = a.dmgMul || 1; this.rush = !!a.rush;
+    this.contactRange = a.contact || 0;
+    this.group.traverse(o => {
+      if (!o.isMesh) return;
+      for (const key of Object.keys(botMats)) {
+        if (o.material === botMats[key]) { o.material = archMat(kind, key); return; }
+      }
+    });
+    return this;
+  }
 
   damage(amount, part) {
     if (this.dead) return false;
@@ -3196,16 +4950,20 @@ class Bot {
     // Accuracy eased a notch: base 0.35 -> 0.30 and the round-scaling ceiling 0.65 -> 0.55, so
     // even late rounds cap lower. ~15% fewer landed shots; combined with the softer per-hit
     // damage this is the second dial toward "less lethal" without making bots feel passive.
-    const chance = clamp(0.30 + game.round * 0.02 - dist * 0.009 - moving - airborne - crouchBonus, 0.06, 0.55);
+    // accBias is added AFTER the clamp, not inside it: a cleanup operative is supposed to out-shoot a
+    // patrol, and a bias the clamp could swallow would silently make it identical to one. The floor is
+    // deliberately permissive too — an infected's negative bias only ever makes it wilder.
+    const chance = clamp(0.30 + game.round * 0.02 - dist * 0.009 - moving - airborne - crouchBonus, 0.06, 0.55) + this.accBias;
     const hit = Math.random() < chance;
     const aim = playerEye.clone().add(new THREE.Vector3(0, -0.35, 0));
     if (!hit) aim.add(new THREE.Vector3(rand(-1, 1), rand(-0.6, 0.8), rand(-1, 1)).multiplyScalar(0.6 + dist * 0.02));
     spawnTracer(muzzle, aim, 0xcccccc);
     playShot(clamp(1.2 - dist / 40, 0.12, 0.8), 0.85);
+    startleFauna(muzzle.x, muzzle.z, 26);      // the flock reacts to bot fire exactly as it does to yours
     // Bot lethality tuned down a notch: base 5–10 → 4–8 and the headshot-style crit 6%/×1.8 →
     // 5%/×1.6. Avg per hit ≈7.9 → ≈6.2 (~22% softer). Hit chance is left untouched so bots still
     // land shots with the same frequency — each one just stings less.
-    if (hit) damagePlayer(Math.round(rand(4, 8) * (Math.random() < 0.05 ? 1.6 : 1)), this);
+    if (hit) damagePlayer(Math.round(rand(4, 8) * (Math.random() < 0.05 ? 1.6 : 1) * this.dmgMul), this);
   }
 
   update(dt) {
@@ -3243,27 +5001,46 @@ class Bot {
       this.faceToward(player.pos.x, player.pos.z, dt, 10);
       this.reaction -= dt;
 
+      // An archetype changes the pace of this branch, never its shape: same reaction timer, same line
+      // of sight, same shot. `contact` is the one new idea, and it is a substitution rather than an
+      // addition — a bot that is leaning on you has no reason to still be firing.
+      const contact = this.contactRange > 0 && dist < this.contactRange;
       this.strafeTimer -= dt;
       if (this.strafeTimer <= 0) { this.strafeDir = [-1, 0, 1][(Math.random() * 3) | 0]; this.strafeTimer = rand(0.5, 1.4); }
-      if (this.strafeDir) {
+      if (this.rush) {
+        // The infected does not trade, it closes: no strafe, straight in, at a pace you have to back
+        // away from rather than sidestep.
+        const s = 3.4 * this.speedMul;
+        this.moveToward(player.pos.x, player.pos.z, s, dt);
+        moveSpeed = s;
+      } else if (this.strafeDir) {
         const sx = (dz / dist) * this.strafeDir, sz = (-dx / dist) * this.strafeDir;
-        this.pos.x += sx * 1.6 * dt; this.pos.z += sz * 1.6 * dt;
-        moveSpeed = 1.6;
+        this.pos.x += sx * 1.6 * this.speedMul * dt; this.pos.z += sz * 1.6 * this.speedMul * dt;
+        moveSpeed = 1.6 * this.speedMul;
       }
-      if (dist > 22) { this.moveToward(player.pos.x, player.pos.z, 2.0, dt); moveSpeed = 2.0; }
+      if (dist > 22) { const s = 2.0 * this.speedMul; this.moveToward(player.pos.x, player.pos.z, s, dt); moveSpeed = s; }
 
       if (this.reaction <= 0) {
         this.shootCD -= dt;
         if (this.shootCD <= 0) {
-          this.shoot(dist);
-          this.shootCD = Math.random() < 0.4 ? rand(0.1, 0.16) : rand(0.35, 0.8);
+          if (contact) {
+            // A bite rather than a bullet: heavier than a shot and not dodgeable at this range, but it
+            // costs a full second to coil — that pause is the window to read the lunge and get clear.
+            damagePlayer(Math.round(rand(9, 14) * this.dmgMul), this);
+            playBeep(120, 0.14, 0.22, 'sawtooth');
+            this.shootCD = rand(1.0, 1.4);
+          } else {
+            this.shoot(dist);
+            this.shootCD = (Math.random() < 0.4 ? rand(0.1, 0.16) : rand(0.35, 0.8)) * this.cdMul;
+          }
         }
       }
     } else if (this.alert) {
       this.lostTimer += dt;
       this.faceToward(this.lastSeen.x, this.lastSeen.z, dt);
-      const d = this.moveToward(this.lastSeen.x, this.lastSeen.z, 3.6, dt);
-      moveSpeed = 3.6;
+      const s = 3.6 * this.speedMul;
+      const d = this.moveToward(this.lastSeen.x, this.lastSeen.z, s, dt);
+      moveSpeed = s;
       if (d < 1.2 || this.lostTimer > 7) { this.alert = false; this.target = null; }
     } else if (this.patrolCenter) {
       // Circular patrol behavior for mission enemies
@@ -3271,18 +5048,25 @@ class Bot {
       const targetX = this.patrolCenter.x + Math.cos(this.patrolAngle) * this.patrolRadius;
       const targetZ = this.patrolCenter.y + Math.sin(this.patrolAngle) * this.patrolRadius;
       this.faceToward(targetX, targetZ, dt, 5);
-      const d = this.moveToward(targetX, targetZ, 2.4, dt);
-      moveSpeed = 2.4;
+      const s = 2.4 * this.speedMul;
+      const d = this.moveToward(targetX, targetZ, s, dt);
+      moveSpeed = s;
     } else {
       if (!this.target) this.pickWaypoint();
       this.faceToward(this.target.x, this.target.y, dt, 5);
-      const d = this.moveToward(this.target.x, this.target.y, 2.4, dt);
-      moveSpeed = 2.4;
+      const s = 2.4 * this.speedMul;
+      const d = this.moveToward(this.target.x, this.target.y, s, dt);
+      moveSpeed = s;
       if (d < 0.8) this.pickWaypoint();
     }
 
-    collide(this.pos, 0.4, 1.8, STEP);
+    // Bots get the same cliff rule as the player: `before` is this frame's pre-move position, so a
+    // face steeper than the climb limit stops them rather than lifting them up it.
+    collide(this.pos, 0.4, 1.8, STEP, before);
     this.pos.y = groundHeight(this.pos, 0.4);
+    // Steep ground slows a bot the same way it slows the player, so the gait animation and the
+    // "did it actually get anywhere" stuck test both see the reduced pace.
+    moveSpeed *= terrainPace(this.pos.x, this.pos.z);
 
     // Footsteps: distance-triggered gait (same per-bot, no global rate limiter),
     // culled completely beyond the audible range so idle bots cost nothing.
@@ -3367,7 +5151,7 @@ function fire() {
   if (w.def.melee) {
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     shootRay.set(camera.position, fwd); shootRay.far = w.def.meleeRange;
-    const targets = worldMeshes.concat(...aliveBots().map(b => b.parts));
+    const targets = worldMeshes.concat(turretMeshes, ...aliveBots().map(b => b.parts));
     const hit = shootRay.intersectObjects(targets, false)[0];
     if (hit && hit.object.userData.bot && hit.object.userData.part) {
       const bot = hit.object.userData.bot, part = hit.object.userData.part;
@@ -3392,10 +5176,16 @@ function fire() {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
     const ang = Math.random() * Math.PI * 2, rad = Math.random() * spread;
     const dir = fwd.clone().addScaledVector(right, Math.cos(ang) * rad).addScaledVector(up, Math.sin(ang) * rad).normalize();
-    shootRay.set(camera.position, dir); shootRay.far = 200;
-    const targets = worldMeshes.concat(...aliveBots().map(b => b.parts));
+    const shotFar = terrainShotRange(camera.position, dir, 200);
+    shootRay.set(camera.position, dir); shootRay.far = shotFar;
+    const targets = worldMeshes.concat(turretMeshes, ...aliveBots().map(b => b.parts));
     const hit = shootRay.intersectObjects(targets, false)[0];
-    const end = hit ? hit.point : camera.position.clone().addScaledVector(dir, 200);
+    // Nothing meshed stopped it but the hill did, so the round still has somewhere to land.
+    const end = hit ? hit.point : camera.position.clone().addScaledVector(dir, shotFar);
+    if (!hit && shotFar < 200 && p === 0) {
+      const rock = camera.position.clone().addScaledVector(dir, shotFar);
+      spawnParticles(rock, new THREE.Vector3(0, 1, 0), dustMat, 5, 2.2);
+    }
     if (p === 0) spawnTracer(muzzleWorld, end);
     if (hit) {
       const ud = hit.object.userData;
@@ -3406,6 +5196,12 @@ function fire() {
         if (killed) { game.kills++; hud.kills.textContent = game.kills;
           killFeed('You', bot.name, part === 'head', false);
           hud.enemies.textContent = aliveBots().length; if (aliveBots().length === 0) endRound('CT'); }
+      } else if (ud.turret) {
+        // Mission 03's security grid. Bullets work on a mount, badly: the head is the only soft
+        // point and the housing is a fraction of the bot hitboxes in screen size, so shooting your
+        // way through six guns stays the long answer to a two-terminal question.
+        const killed = ud.turret.damage(w.def.dmg * PART_MULT.body);
+        if (p === 0) { showHit(killed); playBeep(killed ? 1500 : 1900, 0.03, 0.1); }
       } else if (hit.face && p === 0) {
         const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
         spawnHole(hit.point, n); spawnParticles(hit.point, n, Math.random() < 0.5 ? sparkMat : dustMat, 5, 2.5);
@@ -3425,6 +5221,9 @@ function fire() {
   }
 
   for (const b of aliveBots()) if (b.pos.distanceTo(player.pos) < 28) b.hear(player.pos);
+  // The shot goes out to the hillside as a GROUND position, not a camera position: a round put up
+  // the spur from the col must not startle a lamb on the crest forty metres above the muzzle.
+  startleFauna(muzzleWorld.x, muzzleWorld.z);
   ws.recoil = Math.min(ws.recoil + w.def.recoil, 0.09);
   player.pitch = clamp(player.pitch + w.def.kick * rand(0.6, 1), -1.5, 1.5);
   player.yaw += rand(-0.5, 0.5) * w.def.kick * 0.6;
@@ -4143,6 +5942,225 @@ const MISSIONS = [
       xp: 15,
       coins: 15
     }
+  },
+  {
+    id: 'mission_3',
+    codeName: 'THE HUMAN LEDGER',
+    title: 'Sector Zero: The Ledger Burns',
+    briefing: 'Greyhaven\'s hillside conceals Sector Zero — a cold-synthesis lab the official record denies exists. RAVEN intercepted a fragment: the facility\'s auto-defence grid is live, the containment field is failing, and a cleanup squad arrived 40 minutes ago. SABLE wants the ledger destroyed. ROOK wants the people inside alive. Tonight those may not be the same thing.',
+    map: 'industrial_mountain',
+    // requires: 'mission_2',   // TEMP: unlocked for local testing
+    objectives: [
+      // ── Scene One: the blast door ──
+      {
+        id: 'obj_3_0',
+        type: 'dialogue_sequence',
+        title: 'Briefing',
+        description: 'Listen to SABLE',
+        dialogueId: 'opening',
+        completed: false
+      },
+      {
+        id: 'obj_3_1',
+        type: 'interact',
+        title: 'Reach the blast door',
+        description: 'Cross the compound, enter the hills, find T1',
+        location: { x: 12, z: 58.4, radius: 5 },
+        triggerDistance: 4,
+        dialogueAfter: 't1_blast_door',
+        completed: false
+      },
+      // ── Scene Two: seal three containment breaches ──
+      {
+        id: 'obj_3_2',
+        type: 'interact',
+        title: 'Seal Breach One',
+        description: 'Reach the west decontamination line on T2',
+        location: { x: -27.5, z: 57, radius: 4 },
+        triggerDistance: 3,
+        completed: false
+      },
+      {
+        id: 'obj_3_3',
+        type: 'interact',
+        title: 'Seal Breach Two',
+        description: 'East apron, under the maintenance spur on T3',
+        location: { x: 31.5, z: 60.5, radius: 4 },
+        triggerDistance: 3,
+        completed: false
+      },
+      {
+        id: 'obj_3_4',
+        type: 'interact',
+        title: 'Seal Breach Three',
+        description: 'Generator terrace retaining wall on T4',
+        location: { x: -3, z: 63.2, radius: 4 },
+        triggerDistance: 3,
+        dialogueAfter: 't2_breaches_sealed',
+        completed: false
+      },
+      // ── Scene Three: restore power via three circuit breakers (hold) ──
+      {
+        id: 'obj_3_5',
+        type: 'hold_console',
+        title: 'Restore generator power',
+        description: 'Hold each breaker for 5 s',
+        points: [
+          { x: -9.5, z: 68.6, label: 'BREAKER 1' },
+          { x: -2.5, z: 69.2, label: 'BREAKER 2' },
+          { x: -6, z: 71.8, label: 'BREAKER 3' }
+        ],
+        holdSeconds: 5,
+        triggerDistance: 2.5,
+        dialogueAfter: 't4_power_restored',
+        completed: false
+      },
+      // ── Scene Four: disable the auto-defence grid ──
+      {
+        id: 'obj_3_6',
+        type: 'hold_console',
+        title: 'Shut down the defence grid',
+        description: 'Hold both security terminals',
+        points: [
+          { x: -32, z: 74.5, label: 'TERMINAL A' },
+          { x: -26.5, z: 79.8, label: 'TERMINAL B' }
+        ],
+        holdSeconds: 7,
+        triggerDistance: 2.5,
+        disableTurrets: true,
+        dialogueAfter: 't5_grid_off',
+        completed: false
+      },
+      // ── Scene Five: defend the synthesis terminal 90 s ──
+      {
+        id: 'obj_3_7',
+        type: 'timed_defense',
+        title: 'Hold the synthesis floor',
+        description: 'Defend the terminal for 90 seconds while the extract runs',
+        zone: { x: 12, z: 76.4, radius: 9 },
+        defendSeconds: 90,
+        firstDelay: 6,
+        waves: [
+          { n: 1, after: 25, pts: [{ x: 17, z: 77, r: 3 }, { x: 7, z: 77, r: 3 }], label: 'HOSTILES BREACHING FROM THE EAST' },
+          { n: 2, after: 30, pts: [{ x: 15, z: 82, r: 3 }, { x: 17, z: 77, r: 3 }], label: 'REINFORCEMENTS — NORTH CORRIDOR' },
+          { n: 3, after: 25, pts: [{ x: 7, z: 77, r: 3 }, { x: 15, z: 82, r: 3 }], label: 'FINAL PUSH — HOLD!' }
+        ],
+        dialogueAfter: 't6_defense_held',
+        completed: false
+      },
+      // ── Scene Six: the moral choice ──
+      {
+        id: 'obj_3_8',
+        type: 'moral_choice',
+        title: 'THE LEDGER',
+        description: 'Choose: distribute the antidote or sterilise the records',
+        prompt: 'Two consoles. One holds the distribution key for the airborne antidote — it saves the workers in T5 but the formula leaks onto the wire. The other triggers thermal sterilisation of the entire synthesis archive, including the ledger. SABLE gets her cover-up. Kessler\'s people get a funeral.',
+        triggerDistance: 3,
+        options: [
+          { id: 'antidote', x: -5.8, z: 83.3, label: 'DISTRIBUTE ANTIDOTE', text: 'Save the workers. Let the formula go public. There is no putting this back.', cost: 'Exposes the programme' },
+          { id: 'sterilise', x: -2.2, z: 83.3, label: 'THERMAL STERILISATION', text: 'Burn the archive. Protect the secret. The ledger dies with everyone in T5.', cost: 'Kessler dies here' }
+        ],
+        dialogueAfter: 't7_choice_made',
+        completed: false
+      },
+      // ── Scene Seven branch A: distribute → fight through to extraction ──
+      {
+        id: 'obj_3_9a',
+        type: 'interact',
+        title: 'Reach the extraction elevator',
+        description: 'Fight through to T8. The cleanup squad knows your face now.',
+        branch: 'antidote',
+        location: { x: 26, z: 85.5, radius: 5 },
+        triggerDistance: 4,
+        completed: false
+      },
+      // ── Scene Seven branch B: sterilise → quieter exit, different dialogue ──
+      {
+        id: 'obj_3_9b',
+        type: 'interact',
+        title: 'Reach the extraction elevator',
+        description: 'The facility is already burning. Move.',
+        branch: 'sterilise',
+        location: { x: 26, z: 85.5, radius: 5 },
+        triggerDistance: 4,
+        completed: false
+      },
+      // ── Scene Eight: hold the lift panel ──
+      {
+        id: 'obj_3_10',
+        type: 'hold_console',
+        title: 'Call the elevator',
+        description: 'Hold the panel — 4 seconds',
+        points: [{ x: 29.5, z: 84, label: 'LIFT PANEL' }],
+        holdSeconds: 4,
+        triggerDistance: 2.5,
+        completed: false
+      },
+      // ── Scene Nine: mission complete ──
+      {
+        id: 'obj_3_11',
+        type: 'dialogue_sequence',
+        title: 'Debrief',
+        description: 'Hear SABLE out',
+        dialogueId: 'mission_complete',
+        completed: false
+      }
+    ],
+    dialogues: {
+      'opening': [
+        { speaker: 'SABLE', text: 'Sector Zero. You\'ve heard the name.', portrait: 'sable' },
+        { speaker: 'ROOK', text: 'In whispers.', portrait: 'rook' },
+        { speaker: 'SABLE', text: 'It\'s a cold-synthesis lab under the hillside behind Greyhaven. Officially it does not exist. A containment failure is in progress — the auto-defence grid is live and someone\'s called a cleanup squad.', portrait: 'sable' },
+        { speaker: 'SABLE', text: 'Your mission: seal the breaches, restore power, take the defence grid offline, reach the synthesis floor, and destroy the ledger.', portrait: 'sable' },
+        { speaker: 'ROOK', text: 'Destroy it.', portrait: 'rook' },
+        { speaker: 'SABLE', text: 'That is the language I was given. Move, ROOK.', portrait: 'sable' }
+      ],
+      't1_blast_door': [
+        { speaker: 'ROOK', text: 'Blast door. Manual controls — the power is out.', portrait: 'rook' },
+        { speaker: 'PATCH', text: 'Copy that, ROOK. Containment field is degrading. You\'ve got minutes before the whole west terrace is a hot zone.', portrait: 'patch' },
+        { speaker: 'ROOK', text: 'Then I\'ll work fast.', portrait: 'rook' }
+      ],
+      't2_breaches_sealed': [
+        { speaker: 'KESSLER', text: 'This is Kessler, T5. Whoever sealed the breaches — thank you. The workers have maybe ten more minutes of breathable air.', portrait: 'kessler' },
+        { speaker: 'ROOK', text: 'Who is this?', portrait: 'rook' },
+        { speaker: 'SABLE', text: 'A voice we don\'t need on this channel. Keep moving.', portrait: 'sable' }
+      ],
+      't4_power_restored': [
+        { speaker: 'ROOK', text: 'Power\'s back. I can hear the scrubbers running.', portrait: 'rook' },
+        { speaker: 'PATCH', text: 'That should kick the defence grid into full cycle. Watch for mounts.', portrait: 'patch' }
+      ],
+      't5_grid_off': [
+        { speaker: 'ROOK', text: 'Grid\'s down. The guns won\'t track me now.', portrait: 'rook' },
+        { speaker: 'RAVEN', text: 'Don\'t get comfortable. Somebody manual will still be on the hillside.', portrait: 'raven' }
+      ],
+      't6_defense_held': [
+        { speaker: 'KESSLER', text: 'The extract is complete. The synthesis data is on a drive in your pocket. Do you understand what that means?', portrait: 'kessler' },
+        { speaker: 'ROOK', text: 'It means people upstairs are going to want it very badly.', portrait: 'rook' },
+        { speaker: 'KESSLER', text: 'It means those people can cure what we made, or bury it. The consoles in T7 — one distributes the antidote formula to every hospital in the region, the other sterilises this entire floor. There\'s no undo.', portrait: 'kessler' },
+        { speaker: 'ROOK', text: 'Where\'s SABLE in this?', portrait: 'rook' },
+        { speaker: 'KESSLER', text: 'SABLE ordered the sterilisation six hours ago. You\'re the only one who can override.', portrait: 'kessler' }
+      ],
+      't7_choice_made': [
+        { speaker: 'ROOK', text: 'It\'s done.', portrait: 'rook' },
+        { speaker: 'SABLE', text: 'Report what you chose.', portrait: 'sable' },
+        { speaker: 'ROOK', text: 'No. Not over this channel.', portrait: 'rook' },
+        { speaker: 'SABLE', text: 'Extraction\'s at T8. Get out. Now.', portrait: 'sable' }
+      ],
+      'mission_complete': [
+        { speaker: 'RAVEN', text: 'You\'re alive. That\'s more than I expected.', portrait: 'raven' },
+        { speaker: 'ROOK', text: 'Barely.', portrait: 'rook' },
+        { speaker: 'SABLE', text: 'Sector Zero\'s status?', portrait: 'sable' },
+        { speaker: 'ROOK', text: 'Closed. The ledger is where it belongs.', portrait: 'rook' },
+        { speaker: 'SABLE', text: 'Understood. Return to base. Debrief in person.', portrait: 'sable' },
+        { speaker: 'ROOK', text: 'In person. Right.', portrait: 'rook' },
+        { speaker: 'RAVEN', text: 'Whatever you picked in there — they\'ll come asking. You and me both.', portrait: 'raven' },
+        { speaker: 'ROOK', text: 'Let them come.', portrait: 'rook' }
+      ]
+    },
+    rewards: {
+      xp: 25,
+      coins: 25
+    }
   }
 ];
 
@@ -4174,7 +6192,14 @@ let missionState = {
   escortNPC: null,
   escortHealth: 100,
   extractionTimer: 0,
-  extractionStartTime: 0
+  extractionStartTime: 0,
+  // ── Mission 03 engines. Owned by resetMission03State(); these defaults exist so the fields are
+  // never undefined on the first frame of a mission that reached them without that reset. ──
+  hold: { points: [], progress: 0, active: false, nag: false, held: [] },
+  defense: { active: false, timeLeft: 0, inZone: false, nag: false, waveIndex: 0, nextWave: 0 },
+  choice: null,
+  choiceOpen: false,
+  _holdArmed: null
 };
 
 // Evidence spawn positions — scattered inside SW duplex (-33, -30) on both floors
@@ -4324,6 +6349,11 @@ function startMission(missionId) {
     _findScenePlayed: false,
     escNag: false
   };
+  // The Mission-03 engines live in their own reset because the literal above is copied shape by
+  // shape by hand, and a hand-copied second copy of a state object is how a retry ends up resuming
+  // last run's half-held console. Called BEFORE the map is built so nothing can observe a stale one.
+  resetMission03State();
+  clearTurrets();
   
   // Reset objectives
   mission.objectives.forEach(obj => obj.completed = false);
@@ -4512,7 +6542,9 @@ function spawnClue(x, z, type, id) {
   const indicator = part(new THREE.OctahedronGeometry(0.1, 0), glow, 0, 1.0, 0);
   indicator.userData.isIndicator = true;
 
-  group.position.set(x, 0, z);
+  // A clue dropped on the hillside has to sit on the hillside, so a zero here means "measure it"
+  // rather than "the compound floor". Every older map calls this with the ground at zero anyway.
+  group.position.set(x, groundOn(x, z, 0), z);
   group.userData = { type: 'clue', clueType: type, id: id };
   scene.add(group);
   missionState.clues.push(group);
@@ -4633,7 +6665,7 @@ function spawnEvidence(x, z, y, type, id, label) {
     spk.userData.isIndicator = true;
   }
 
-  group.position.set(x, y || 0, z);
+  group.position.set(x, groundOn(x, z, y), z);
   group.userData = { type: 'evidence', evidenceType: type, id: id, label: label };
   scene.add(group);
   missionState.evidence.push(group);
@@ -4721,7 +6753,9 @@ function spawnNPC(x, z, name, id, y = 0) {
   tag.position.set(0, 2.3, 0);
   group.add(tag);
 
-  group.position.set(x, y, z);
+  // An NPC standing on the hillside is placed on the surface, not on the compound's zero plane;
+  // a declared level (Kessler on the duplex slab at 3.8) is still taken literally.
+  group.position.set(x, groundOn(x, z, y), z);
   group.userData = { type: 'npc', name: name, id: id };
   scene.add(group);
   missionState.npcs.push(group);
@@ -4991,7 +7025,7 @@ function spawnPurpleBud(x, z, y, id) {
   const ind = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), glow);
   ind.position.set(0, H + 0.58, 0); ind.userData.isIndicator = true; group.add(ind);
 
-  group.position.set(x, y, z);
+  group.position.set(x, groundOn(x, z, y), z);
   group.userData = { type: 'item', itemType: 'purple_bud', id: id };
   scene.add(group);
   missionState.items.push(group);
@@ -5024,7 +7058,7 @@ function spawnChargeAnchor(x, z, label, id, y = 0) {
   // Floor chalk ring
   part(new THREE.TorusGeometry(0.42, 0.015, 4, 14), dark, 0, 0.015, 0.1, Math.PI / 2, 0, 0);
 
-  group.position.set(x, y, z);
+  group.position.set(x, groundOn(x, z, y), z);
   group.userData = { type: 'charge', id: id, label: label, planted: false };
   scene.add(group);
   missionState.charges.push(group);
@@ -5094,7 +7128,7 @@ function spawnResupplyItem(x, z, y, type, id) {
   // Floating indicator
   part(new THREE.OctahedronGeometry(0.09, 0), glow, 0, 0.75, 0).userData.isIndicator = true;
 
-  group.position.set(x, y, z);
+  group.position.set(x, groundOn(x, z, y), z);
   group.userData = { type: 'supply', supplyType: type, id: id };
   scene.add(group);
   missionState.supplies.push(group);
@@ -5103,6 +7137,7 @@ function spawnResupplyItem(x, z, y, type, id) {
 function spawnMissionEnemies() {
   if (!currentMission) return;
   if (currentMission.id === 'mission_2') { spawnMission2Enemies(); return; }
+  if (currentMission.id === 'mission_3') { spawnMission3Enemies(); spawnMission3Turrets(); return; }
   
   // Strategic enemy placements — mostly INSIDE buildings (both floors)
   // Player spawns in SW corner (-41, -41), route leads through buildings NE
@@ -5146,7 +7181,9 @@ function spawnMissionEnemies() {
       }
     }
     
-    const spawnY = placement.upperFloor ? 3.8 : 0;
+    // On a hill you cannot assume the ground is at zero, so the level is measured. The upper-floor
+    // literal still wins on the flat compound maps, where 3.8 is the catwalk deck.
+    const spawnY = placement.upperFloor ? 3.8 : groundHeight(new THREE.Vector3(placement.x, 0, placement.z), 0.4);
     const bot = new Bot(placement.x, placement.z, names[i % names.length]);
     bot.pos.y = spawnY;
     bot.yaw = Math.PI;
@@ -5219,7 +7256,9 @@ function spawnMission2Enemies() {
       }
     }
 
-    const spawnY = placement.upperFloor ? 3.8 : 0;
+    // Same rule as the wave spawner: the level is measured, not assumed, so an operative sent over
+    // the ridge lands on the ridge instead of inside it.
+    const spawnY = placement.upperFloor ? 3.8 : groundHeight(new THREE.Vector3(placement.x, 0, placement.z), 0.4);
     const bot = new Bot(placement.x, placement.z, names[i % names.length]);
     bot.pos.y = spawnY;
     bot.yaw = Math.PI;
@@ -5236,6 +7275,73 @@ function spawnMission2Enemies() {
   });
 
   console.log('[CS] Spawned', enemyPlacements.length, 'Mission-02 east-sector enemies');
+}
+
+// ── Mission 03 enemy placements ─────────────────────────────────────────────────────────────────
+// Bots are placed at anchor-relative offsets so that if cs-map.js repositions a terrace the hostiles
+// walk with them. Standard Greyline behaviour (patrol or static), same as missions 1 and 2.
+function spawnMission3Enemies() {
+  const A = CSMap.MTN.anchors;
+  const placements = [
+    // T1 — outside the blast door
+    { x: A.blastDoor.x + 4,   z: A.blastDoor.z - 3 },
+    { x: A.panelT1.x - 3,     z: A.panelT1.z + 1 },
+    // T2 — breach field
+    { x: A.breach1.x + 3,     z: A.breach1.z + 2 },
+    { x: A.breach3.x - 4,     z: A.breach3.z + 1, patrol: true },
+    { x: A.breach2.x - 3,     z: A.breach2.z + 2 },
+    // T4 — gen pit / breakers
+    { x: A.genPit.x + 3,      z: A.genPit.z - 2, patrol: true },
+    { x: A.breaker2.x - 2,    z: A.breaker2.z + 2 },
+    // T5 — atrium + terminals
+    { x: A.atrium.x + 3,      z: A.atrium.z - 2 },
+    { x: A.terminalA.x + 2,   z: A.terminalA.z + 1 },
+    { x: A.terminalB.x - 2,   z: A.terminalB.z - 1 },
+    // T6 — synthesis floor
+    { x: A.synth.x + 4,       z: A.synth.z },
+    { x: A.centrifuge.x - 3,  z: A.centrifuge.z + 2, patrol: true },
+    // T7 — air-scrubber / choice consoles
+    { x: A.hvac.x + 3,        z: A.hvac.z - 2 },
+    // T8 — extraction
+    { x: A.lift.x - 3,        z: A.lift.z + 2 },
+    { x: A.liftPanel.x + 2,   z: A.liftPanel.z - 1, patrol: true },
+  ];
+
+  const names = [...BOT_NAMES].sort(() => Math.random() - 0.5);
+  placements.forEach((p, i) => {
+    const spot = findFreeNear(p.x, p.z, 0.6);
+    if (!spot) return;
+    const b = new Bot(spot.x, spot.z, names[i % names.length]);
+    b.pos.y = groundHeight(new THREE.Vector3(spot.x, 0, spot.z), 0.4);
+    if (p.patrol) {
+      b.patrolCenter = new THREE.Vector2(spot.x, spot.z);
+      b.patrolRadius = 5;
+      b.patrolAngle = Math.random() * Math.PI * 2;
+      b.patrolSpeed = 1.6 + Math.random() * 0.6;
+    }
+    bots.push(b);
+  });
+  hud.enemies.textContent = aliveBots().length;
+  console.log('[CS] Mission-03: %d hostiles placed', placements.length);
+}
+
+// Six mounts across the sector. Turrets are powered when the mission starts; the player must
+// reach and hold the security terminals (Scene Four) to shut the grid down.
+function spawnMission3Turrets() {
+  const A = CSMap.MTN.anchors;
+  const mounts = [
+    { ...A.blastDoor,  label: 'T1-GATE',   yaw: 0 },
+    { ...A.panelT1,    label: 'T1-PANEL',  yaw: Math.PI },
+    { ...A.genPit,     label: 'T4-GEN',    yaw: -0.5 },
+    { ...A.atrium,     label: 'T5-ATR',    yaw: 0.7 },
+    { ...A.chokeA,     label: 'T6-E',      yaw: Math.PI / 2 },
+    { ...A.chokeB,     label: 'T6-W',      yaw: -Math.PI / 2 },
+  ];
+  mounts.forEach(m => {
+    const y = groundHeight(new THREE.Vector3(m.x, 0, m.z), 0) + 1.1;
+    turrets.push(new Turret(m.x, m.z, y, m.label, m.yaw));
+  });
+  console.log('[CS] Mission-03: %d turrets online', turrets.length);
 }
 
 // ── Escort System — RAVEN follows player during extraction ──
@@ -5386,6 +7492,358 @@ function spawnFuseReinforcements() {
   });
 }
 
+// ══ Mission 03 · the automated defence grid ════════════════════════════════════════════════════
+// A turret is deliberately NOT a bot with its legs taken off. The difference that makes the scene
+// work is that it cannot be lured, provokes no idle animation and never calls for help: it is an
+// obstacle with a firing solution, which is why Scene Five's objective is two security terminals
+// rather than a firefight. Four numbers carry the whole behaviour and they are sized against the
+// sector's own geometry: 34 m reaches across a bench but not across the hill, and 1.1 rad is about
+// 63° of tolerance, so ground that hides you from a man hides you from a gun.
+const turretMats = {
+  mount: new THREE.MeshStandardMaterial({ color: 0x3a3a3e, roughness: 0.6, metalness: 0.5 }),
+  head: new THREE.MeshStandardMaterial({ color: 0xd0d0d0, roughness: 0.75 }),
+  barrel: new THREE.MeshStandardMaterial({ color: 0x1e1e20, roughness: 0.35, metalness: 0.7 }),
+  optic: new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.25, metalness: 0.3 }),
+};
+const TURRET_SPEC = {
+  range: 34, arc: 1.1, spin: 2.4, acquire: 0.55, loseT: 2.4,
+  burst: 3, burstGap: 0.13, burstPause: 1.15, dmg: [3, 6], hitChance: 0.4, health: 120,
+};
+const turrets = [];
+const turretMeshes = [];      // its own list, NOT worldMeshes: the builders freeze every worldMesh's
+                              // matrix after build, and a frozen yoke cannot turn to face you
+
+class Turret {
+  constructor(x, z, baseY, label, homeYaw = 0) {
+    this.label = label; this.homeYaw = homeYaw;
+    this.pos = new THREE.Vector3(x, baseY, z);
+    this.powered = true; this.dead = false; this.health = TURRET_SPEC.health;
+    this.yaw = homeYaw; this.lockT = 0; this.shootCD = 0; this.burst = 0;
+    this.tracking = false; this._lastSeen = false; this._los = (turrets.length % 3);
+
+    const g = this.group = new THREE.Group();
+    g.position.copy(this.pos);
+    const mesh = (geo, mat, px, py, pz, parent = g) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(px, py, pz); m.castShadow = true;
+      m.userData.turret = this;
+      parent.add(m); scene.add(m); turretMeshes.push(m); return m;
+    };
+    // Pedestal, mast, then a yawing yoke carrying the head and a barrel fixed to it. The yoke is a
+    // separate node so the gun slews by rotating one object instead of rebuilding four.
+    mesh(new THREE.CylinderGeometry(0.44, 0.54, 0.26, 12), turretMats.mount, 0, 0.13, 0);
+    mesh(new THREE.CylinderGeometry(0.15, 0.19, 1.1, 10), turretMats.mount, 0, 0.82, 0);
+    const yoke = this.yoke = new THREE.Group(); yoke.position.set(0, 1.48, 0); g.add(yoke);
+    mesh(new THREE.BoxGeometry(0.44, 0.34, 0.58), turretMats.head, 0, 0, 0, yoke);
+    // The sensor eye: a small dark window on the face of the housing. It is the only part that reads
+    // as "this is looking at me", so it is worth its own three triangles.
+    mesh(new THREE.BoxGeometry(0.14, 0.1, 0.06), turretMats.optic, 0, 0.07, 0.31, yoke);
+    mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.92, 8), turretMats.barrel, 0, -0.03, 0.66, yoke)
+      .rotation.x = Math.PI / 2;
+    scene.add(g);
+    // A mount you can walk through is a mount that has no cover value, so the pedestal gets one
+    // small collider and nothing above it does — the gun can still be lined up from any side.
+    colliders.push({ minX: x - 0.5, maxX: x + 0.5, minZ: z - 0.5, maxZ: z + 0.5,
+      minY: baseY, maxY: baseY + 1.6 });
+    turrets.push(this);
+  }
+
+  eye(out = new THREE.Vector3()) { return out.set(this.pos.x, this.pos.y + 1.48, this.pos.z); }
+
+  update(dt) {
+    if (this.dead) return;
+    if (!this.powered) {
+      // Dark, but still standing: a turret that vanished would tell the player nothing about what the
+      // terminals did to it. It slews back to its watch bearing and stays there for the rest of the run.
+      this.yaw += (this.homeYaw - this.yaw) * Math.min(1, dt * 1.1);
+      this.tracking = false; this.lockT = 0;
+      this.yoke.rotation.y = this.yaw;
+      return;
+    }
+    // Staggered LOS, exactly the way bots do it: this ray-marches the same 600-odd boxes and a
+    // grid of six guns checking every frame would be the most expensive thing in the scene.
+    this._los = (this._los + 1) % 3;
+    const dx = player.pos.x - this.pos.x, dz = player.pos.z - this.pos.z;
+    const dist = Math.hypot(dx, dz);
+    const want = Math.atan2(dx, dz);
+    let seen = false;
+    if (player.alive && dist < TURRET_SPEC.range) {
+      if (this._los === 0) {
+        seen = hasLOS(this.eye(), new THREE.Vector3(player.pos.x, camera.position.y - 0.3, player.pos.z));
+        this._lastSeen = seen;
+      } else seen = this._lastSeen;
+    }
+    if (seen) { this.lockT = TURRET_SPEC.acquire; this.tracking = true; }
+    else { this.lockT -= dt; this.tracking = this.lockT > 0; }
+
+    // It only pulls the trigger when it is genuinely on target, and the slew rate is finite, which is
+    // the whole of how a turret is beaten: you move, you do not out-shoot it.
+    let diff = want - this.yaw;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    const maxStep = TURRET_SPEC.spin * dt;
+    this.yaw += clamp(diff, -maxStep, maxStep);
+    this.yoke.rotation.y = this.yaw;
+
+    if (this.tracking && Math.abs(diff) < 0.18) {
+      this.shootCD -= dt;
+      if (this.shootCD <= 0) {
+        this.fire(dist);
+        if (this.burst > 1) { this.burst--; this.shootCD = TURRET_SPEC.burstGap; }
+        else { this.burst = TURRET_SPEC.burst; this.shootCD = TURRET_SPEC.burstPause; }
+      }
+    } else {
+      this.burst = TURRET_SPEC.burst;
+      if (this.shootCD < 0) this.shootCD = 0;
+    }
+  }
+
+  fire(dist) {
+    // The tracer starts at the muzzle, not at the housing: a round that appears inside the gun reads
+    // as the mount flickering rather than as anyone shooting.
+    const muzzle = this.eye().add(new THREE.Vector3(Math.sin(this.yaw) * 0.9, -0.03, Math.cos(this.yaw) * 0.9));
+    // Fixed, lower accuracy than a soldier and no round-scaling: a turret's threat is the volume of
+    // the burst, and a player who breaks line of sight partway through it should survive that.
+    const hit = Math.random() < clamp(TURRET_SPEC.hitChance - dist * 0.006, 0.08, TURRET_SPEC.hitChance);
+    const aim = camera.position.clone().add(new THREE.Vector3(0, -0.3, 0));
+    if (!hit) aim.add(new THREE.Vector3(rand(-1.6, 1.6), rand(-0.9, 1.1), rand(-1.6, 1.6)));
+    spawnTracer(muzzle, aim, 0xe8e8e8);
+    playShot(clamp(1.4 - dist / 40, 0.2, 0.9), 0.7);
+    startleFauna(muzzle.x, muzzle.z, 26);
+    if (hit) damagePlayer(Math.round(rand(TURRET_SPEC.dmg[0], TURRET_SPEC.dmg[1])), null);
+  }
+
+  // Destroyable, but as the LONG way round: about nine magazines at a mount, against walking to a
+  // terminal and holding a key for eight seconds. Both are real answers and only one is the mission.
+  damage(amount) {
+    if (this.dead || !this.powered) return false;
+    this.health -= amount;
+    spawnParticles(this.eye(), null, sparkMat, 6, 2.4);
+    if (this.health > 0) return false;
+    this.dead = true; this.tracking = false;
+    this.yoke.rotation.z = -0.7;                       // the head hangs on its mount
+    spawnParticles(this.eye(), new THREE.Vector3(0, 1, 0), dustMat, 14, 3.2);
+    playBeep(90, 0.25, 0.3, 'sawtooth');
+    console.log('[CS] turret destroyed —', this.label);
+    return true;
+  }
+
+  remove() {
+    this.group.traverse(o => {
+      const i = turretMeshes.indexOf(o);
+      if (i >= 0) turretMeshes.splice(i, 1);
+      if (o.isMesh) scene.remove(o);
+    });
+    scene.remove(this.group);
+  }
+}
+
+function setTurretsPowered(on) {
+  for (const t of turrets) { if (!t.dead) t.powered = on; }
+  const live = turrets.filter(t => !t.dead && t.powered).length;
+  console.log(`[CS] security grid ${on ? 'ONLINE' : 'DOWN'} — ${live} mount(s) still armed`);
+}
+
+function updateTurrets(dt) {
+  for (const t of turrets) t.update(dt);
+}
+
+function clearTurrets() {
+  for (const t of turrets) t.remove();
+  turrets.length = 0; turretMeshes.length = 0;
+}
+
+// ── Mission 03 · hold, defence and choice engines ───────────────────────────────────────────────
+// Three objective shapes the earlier missions never needed, because Mission 03 is the first one whose
+// story is about a person doing a task under time rather than a person arriving at a place. Each is a
+// small state object on missionState, driven from the frame loop and drawn by updateMissionHud, so
+// none of them can leave a counter stale when the mission is retried.
+const HOLD_SPEC = { decay: 2.0 };     // progress lost per second of interruption, ×2 the rate gained
+
+// One console, one key, one wait. `label` is what the HUD row and the interrupt nag both speak.
+function updateHoldObjective(obj, dt, playerPos) {
+  const st = missionState.hold;
+  if (!st.points.length) return;
+  if (!st.active) { st.active = true; showMissionNotification(`HOLD ${st.points[0].label} — ${obj.holdSeconds}s`); }
+  const pt = st.points[0];
+  const d = Math.hypot(playerPos.x - pt.x, playerPos.z - pt.z);
+  if (d <= obj.triggerDistance) {
+    st.progress = Math.min(1, st.progress + dt / obj.holdSeconds);
+    st.nag = false;
+    if (st.progress >= 1) {
+      st.held.push(pt.label);
+      st.points.shift();
+      st.progress = 0;
+      playBeep(700, 0.05, 0.12);
+      if (!st.points.length) { completeObjective(obj); return; }
+      showMissionNotification(`${pt.label} DONE — ${st.points.length} to go: ${st.points[0].label}`);
+      return;
+    }
+  } else if (st.progress > 0) {
+    // It unwinds rather than resetting: a slipped foot or a stray bullet should cost you the few
+    // seconds you actually lost, not the whole panel. Unwinding at 2× still punishes loitering out.
+    st.progress = Math.max(0, st.progress - dt / obj.holdSeconds * HOLD_SPEC.decay);
+    if (!st.nag) {
+      st.nag = true;
+      showMissionNotification(`GET BACK TO ${pt.label}!`);
+      setTimeout(() => { st.nag = false; }, 4000);
+    }
+  }
+}
+
+// The synthesis-floor defence: a countdown you must physically stay inside for, with timed pushes
+// arriving at the chokepoints the terrain actually leaves open. Leaving does not fail the mission —
+// it stops the clock, which is the honest reading of "hold this position" and does not punish a
+// retreat to cover with a restart.
+function updateDefenseObjective(obj, dt, playerPos) {
+  const st = missionState.defense;
+  if (!st.active) {
+    st.active = true; st.timeLeft = obj.defendSeconds; st.nextWave = obj.firstDelay || 5;
+    showMissionNotification(`DEFEND THE SYNTHESIS TERMINAL — ${obj.defendSeconds} SECONDS`);
+  }
+  const d = Math.hypot(playerPos.x - obj.zone.x, playerPos.z - obj.zone.z);
+  st.inZone = d <= (obj.zone.radius || 9);
+  if (st.timeLeft <= 0) {
+    completeObjective(obj);
+    return;
+  }
+  if (!st.inZone) {
+    // Paused, not lost. The nag is throttled because this branch is live every frame the player is
+    // out, and an unthrottled call would fill the log with the same sentence.
+    if (!st.nag) {
+      st.nag = true;
+      showMissionNotification('GET BACK INSIDE THE DEFENCE PERIMETER — CLOCK HELD');
+      setTimeout(() => { st.nag = false; }, 5000);
+    }
+  } else {
+    st.nag = false;
+    st.timeLeft -= dt;
+  }
+  // Waves run on their own clock and keep running while the clock is held: the enemy is not
+  // obliged to wait because you stepped out. Pausing the pushes as well would make leaving free.
+  st.nextWave -= dt;
+  if (st.nextWave <= 0 && st.waveIndex < (obj.waves || []).length) {
+    const wave = obj.waves[st.waveIndex++];
+    st.nextWave = wave.after || 20;
+    spawnDefenseWave(wave);
+  }
+  if (st.timeLeft <= 0) showMissionNotification('PERIMETER HELD');
+}
+
+// A wave of the hillside's own enemies. Archetype is per wave so a push can be all fever or all
+// armour, and every spawn point is pushed through findFreeNear so one tree trunk can never cancel
+// a scene's entire third wave.
+function spawnDefenseWave(wave) {
+  const kind = wave.archetype || null;
+  const names = [...BOT_NAMES].sort(() => Math.random() - 0.5);
+  let born = 0;
+  (wave.pts || []).forEach((ep, i) => {
+    const spot = findFreeNear(ep.x, ep.z, 0.6);
+    if (!spot) return;
+    const b = new Bot(spot.x, spot.z, names[i % names.length]);
+    if (kind) b.setArchetype(kind);
+    b.patrolCenter = new THREE.Vector2(spot.x, spot.z);
+    b.patrolRadius = ep.r || 4;
+    b.patrolAngle = Math.random() * Math.PI * 2;
+    b.patrolSpeed = 2;
+    b.missionGuard = !!wave.count;              // opt-in: a wave may be required to be cleared
+    bots.push(b); born++;
+  });
+  hud.enemies.textContent = aliveBots().length;
+  if (wave.label) showMissionNotification(wave.label);
+  console.log(`[CS] defence wave ${wave.n || '?'} — ${born} ${kind || 'greyline'} pushed in`);
+}
+
+// ── Mission 03 · the moral choice ───────────────────────────────────────────────────────────────
+// The choice is made by walking to one of two consoles, not by picking a menu item: the panel only
+// ever offers what the room actually contains, and the player's feet are what decided it. The overlay
+// then confirms, because a decision this large should not be able to happen by brushing a prop.
+function openChoiceOverlay(obj, presetId) {
+  const overlay = document.getElementById('choiceOverlay');
+  if (!overlay) {                       // no DOM means no panel, and a silent freeze is worse than
+    missionState.choice = presetId;     // a flat default — the branch still has to resolve
+    console.warn('[CS] #choiceOverlay missing — defaulting to', presetId);
+    return;
+  }
+  missionState.choiceOpen = true;
+  missionState.dialogueActive = true;   // the existing freeze: objectives stop, movement stops
+  if (document.exitPointerLock) document.exitPointerLock();
+  const title = document.getElementById('choiceTitle');
+  const lead = document.getElementById('choiceLead');
+  if (title) title.textContent = obj.title;
+  if (lead) lead.textContent = obj.prompt || obj.description;
+  overlay.querySelectorAll('.choice-option').forEach(card => {
+    const id = card.dataset.choice;
+    const opt = (obj.options || []).find(o => o.id === id);
+    if (!opt) { card.style.display = 'none'; return; }
+    card.style.display = 'block';
+    card.classList.toggle('preset', id === presetId);
+    const h = card.querySelector('.choice-opt-title');
+    const b = card.querySelector('.choice-opt-body');
+    const c = card.querySelector('.choice-opt-cost');
+    if (h) h.textContent = opt.label;
+    if (b) b.textContent = opt.text;
+    if (c) c.textContent = opt.cost || '';
+    card.onclick = () => resolveChoice(obj, id);
+  });
+  overlay.style.display = 'flex';
+}
+
+// Idempotent, and it clears the freeze flag as well as the panel: the overlay is opened by setting
+// dialogueActive, so a teardown path that only hid the DOM would leave the game frozen with no
+// visible reason. Every lifecycle function that ends a run calls this.
+function closeChoiceOverlay() {
+  missionState.choiceOpen = false;
+  if (missionState.dialogueActive && missionState.choice) missionState.dialogueActive = false;
+  const overlay = document.getElementById('choiceOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function resolveChoice(obj, id) {
+  const opt = (obj.options || []).find(o => o.id === id);
+  missionState.choice = id;
+  closeChoiceOverlay();
+  missionState.dialogueActive = false;
+  if (!isTouchDevice && renderer && renderer.domElement) renderer.domElement.requestPointerLock();
+  console.log('[CS] MISSION 03 choice —', id, opt ? opt.label : '');
+  showMissionNotification(opt ? opt.confirm || `DECISION: ${opt.label}` : `DECISION: ${id}`);
+  applyBranch();
+  completeObjective(obj);
+  if (obj.dialogueAfter) playDialogue(obj.dialogueAfter);
+}
+
+// The road not taken is marked completed rather than deleted, so the briefing checklist keeps
+// showing what the mission contained and what you specifically gave up on it.
+function applyBranch() {
+  if (!currentMission || !missionState.choice) return;
+  let skipped = 0;
+  for (const o of currentMission.objectives) {
+    if (o.branch && o.branch !== missionState.choice && !o.completed) { o.completed = true; o.skipped = true; skipped++; }
+  }
+  if (skipped) console.log(`[CS] branch ${missionState.choice}: ${skipped} objective(s) skipped`);
+}
+
+// Fresh per-run state for the three Mission-03 engines. Called from startMission so a retry can
+// never inherit a half-held console or a running defence clock — the same reason the escort and
+// fuse flags are re-made there.
+function resetMission03State() {
+  missionState.hold = { points: [], progress: 0, active: false, nag: false, held: [] };
+  missionState.defense = { active: false, timeLeft: 0, inZone: false, nag: false, waveIndex: 0, nextWave: 0 };
+  missionState.choice = null;
+  missionState.choiceOpen = false;
+  missionState._holdArmed = null;
+}
+
+// Builds the hold queue for the console objective the player is now on. Copied, not referenced:
+// the objective rows are static data shared by every retry of the mission.
+function armHoldObjective(obj) {
+  const pts = (obj.points || []).map(p => ({ x: p.x, z: p.z, label: p.label || 'CONSOLE' }));
+  missionState.hold = { points: pts, progress: 0, active: false, nag: false, held: [] };
+  if (pts.length) {
+    const first = pts[0];
+    showMissionNotification(`${pts.length} PANEL(S) — START WITH ${first.label}`);
+  }
+}
+
 function updateMissionHud() {
   if (!currentMission || !missionState.active) return;
   
@@ -5488,9 +7946,63 @@ function updateMissionHud() {
       escortEl.style.display = 'none';
     }
   }
+
+  // ── Mission 03 rows ──
+  const holdEl = document.getElementById('holdHud');
+  if (holdEl) {
+    const st = missionState.hold;
+    if (obj && obj.type === 'hold_console' && !obj.completed && st && st.points.length) {
+      holdEl.style.display = 'flex';
+      const lab = document.getElementById('holdLabel');
+      const bar = document.getElementById('holdBar');
+      const pct = document.getElementById('holdPct');
+      if (lab) lab.textContent = `HOLDING ${st.points[0].label}`;
+      if (bar) bar.style.width = `${Math.round((st.progress || 0) * 100)}%`;
+      if (pct) pct.textContent = `${Math.ceil((1 - (st.progress || 0)) * obj.holdSeconds)}s`;
+    } else {
+      holdEl.style.display = 'none';
+    }
+  }
+
+  const defEl = document.getElementById('defenseHud');
+  if (defEl) {
+    const st = missionState.defense;
+    if (obj && obj.type === 'timed_defense' && !obj.completed && st && st.active) {
+      defEl.style.display = 'flex';
+      const t = document.getElementById('defenseTimer');
+      if (t) {
+        const left = Math.max(0, Math.ceil(st.timeLeft));
+        // HELD is spelled out rather than implied by a stopped number: a paused clock and a
+        // finished one both read as "it isn't moving", and only one of them is bad news.
+        t.textContent = st.inZone ? `0:${String(left).padStart(2, '0')}` : 'HELD';
+        t.classList.toggle('urgent', st.inZone && left <= 15);
+      }
+      const n = document.getElementById('defenseHostiles');
+      if (n) n.textContent = `${aliveBots().length} HOSTILE`;
+    } else {
+      defEl.style.display = 'none';
+    }
+  }
+
+  const turEl = document.getElementById('turretHud');
+  if (turEl) {
+    // Only ever shown while the grid is live, which is only on this map: on the compound the array
+    // is empty and the row would be a permanent, meaningless "0 ONLINE".
+    const armed = turrets.filter(t => !t.dead && t.powered).length;
+    if (turrets.length && armed > 0) {
+      turEl.style.display = 'block';
+      const ts = document.getElementById('turretStatus');
+      if (ts) ts.textContent = `AUTO-DEFENCE ${armed} ONLINE`;
+    } else {
+      turEl.style.display = 'none';
+    }
+  }
 }
 
-function checkMissionObjectives() {
+// `dt` is passed in rather than read from the clock: the hold and defence objectives integrate real
+// seconds, and a function that sampled the clock itself would advance them twice on any frame where
+// something else in the loop had already read it.
+function checkMissionObjectives(dt) {
   if (!currentMission || !missionState.active || missionState.dialogueActive) return;
   
   const obj = currentMission.objectives[missionState.currentObjective];
@@ -5678,6 +8190,36 @@ function checkMissionObjectives() {
       }
       break;
     }
+
+    // ── Mission 03 objective types ──
+    case 'interact': {
+      const loc = obj.location;
+      if (loc && Math.hypot(playerPos.x - loc.x, playerPos.z - loc.z) < obj.triggerDistance) {
+        completeObjective(obj);
+      }
+      break;
+    }
+
+    case 'hold_console':
+      // Armed once per objective, on the frame it becomes current. The guard lives OUTSIDE the hold
+      // object because armHoldObjective replaces that object — guarding on a field inside it would
+      // re-arm every single frame and silently reset any progress the player had banked.
+      if (missionState._holdArmed !== obj.id) { missionState._holdArmed = obj.id; armHoldObjective(obj); }
+      if (missionState.hold.points.length) updateHoldObjective(obj, dt, playerPos);
+      break;
+
+    case 'timed_defense':
+      updateDefenseObjective(obj, dt, playerPos);
+      break;
+
+    case 'moral_choice': {
+      if (missionState.choice) { completeObjective(obj); break; }     // already decided — retry safety
+      if (missionState.choiceOpen) break;                            // panel is up; one open at a time
+      const near = (obj.options || []).find(o =>
+        Math.hypot(playerPos.x - o.x, playerPos.z - o.z) < obj.triggerDistance);
+      if (near) openChoiceOverlay(obj, near.id);
+      break;
+    }
   }
 
   // Check if escort should activate (after raven_extraction / kessler_contact dialogue ends)
@@ -5725,6 +8267,8 @@ function completeObjective(obj) {
   if (obj.escort) {
     missionState.escortActive = false;
   }
+  // Mission 03: shutting the grid takes every turret offline in one call
+  if (obj.disableTurrets) setTurretsPowered(false);
   
   showMissionNotification(`Objective Complete: ${obj.title}`);
   
@@ -5745,8 +8289,14 @@ function completeObjective(obj) {
     playDialogue(obj.dialogueAfter);
   }
   
-  // Check if mission complete
-  if (missionState.currentObjective >= currentMission.objectives.length) {
+  // Check if mission complete. The walk steps over SKIPPED branch objectives as it goes: a moral
+  // choice marks the road not taken completed-but-unreachable, and a tracker that stopped on one
+  // would deadlock, because nothing can ever complete it again.
+  const objs = currentMission.objectives;
+  while (missionState.currentObjective < objs.length && objs[missionState.currentObjective].completed) {
+    missionState.currentObjective++;
+  }
+  if (missionState.currentObjective >= objs.length) {
     completeMission();
   } else {
     updateMissionHud();
@@ -5759,6 +8309,10 @@ function completeMission() {
   missionState.escortActive = false;
   missionState.fuseActive = false;
   missionState.elapsedTime = Date.now() - missionState.startTime;
+  // Mission 03's own layers: a turret the mission no longer needs would keep tracking (and shooting
+  // at) the player through the results screen, and the choice panel must not survive into a retry.
+  closeChoiceOverlay();
+  clearTurrets();
   
   // Remove escort NPC from scene
   if (missionState.escortNPC) {
@@ -5937,6 +8491,32 @@ function updateMissionMarkers() {
   // Clear the canvas and draw radar background (buildings, bots, player triangle)
   // — in mission mode updateHud() is skipped, so drawRadar() never runs otherwise
   drawRadar();
+
+  // A fixed gun earns a static blip rather than a hunt marker: it never moves, so the useful
+  // information is only where it is and whether it has you. Drawn BEFORE the objective code below,
+  // which returns whenever the current objective has no position — a defence or a choice would
+  // otherwise leave the grid invisible exactly when it matters most.
+  if (turrets.length) {
+    const tc = radarCtx, tS = 170, tScale = 2.4, tR = tS / 2 - 4;
+    tc.save();
+    tc.translate(tS / 2, tS / 2);
+    tc.rotate(player.yaw);
+    for (const t of turrets) {
+      if (t.dead) continue;
+      const bx = (t.pos.x - player.pos.x) * tScale, bz = (t.pos.z - player.pos.z) * tScale;
+      if (Math.hypot(bx, bz) > tR) continue;
+      // Powered and unpowered mounts both stay on the map — a dead gun you can see is a route
+      // decision, one you cannot is a surprise. Only the brightness differs (monochrome, as ever).
+      tc.fillStyle = t.powered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.22)';
+      tc.fillRect(bx - 2.5, bz - 2.5, 5, 5);
+      if (t.tracking) {
+        tc.strokeStyle = 'rgba(255,255,255,0.85)';
+        tc.lineWidth = 1.5;
+        tc.beginPath(); tc.arc(bx, bz, 6.5, 0, Math.PI * 2); tc.stroke();
+      }
+    }
+    tc.restore();
+  }
   
   const obj = currentMission.objectives[missionState.currentObjective];
   if (!obj || obj.completed) return;
@@ -5951,6 +8531,9 @@ function updateMissionMarkers() {
   if (obj.type === 'enter_zone' || obj.type === 'escape_zone') {
     targetX = obj.zone.x;
     targetZ = obj.zone.z;
+  } else if (obj.type === 'interact') {
+    targetX = obj.location.x;
+    targetZ = obj.location.z;
   } else if (obj.type === 'find_clue') {
     const clue = missionState.clues.find(cl => cl.userData.id === obj.id);
     if (clue) {
@@ -6000,6 +8583,25 @@ function updateMissionMarkers() {
       if (d < nearDist) { nearDist = d; nearest = sp; }
     }
     if (nearest) { targetX = nearest.position.x; targetZ = nearest.position.z; }
+  } else if (obj.type === 'hold_console') {
+    // The queue is in STORY order and the radar marks the NEXT panel, not the nearest one. These are
+    // a sequence — pointing at the last console first would tell the player to walk past the panel
+    // they are supposed to be standing at, and a hold objective has no other way to say "this one".
+    const pt = missionState.hold && missionState.hold.points[0];
+    if (pt) { targetX = pt.x; targetZ = pt.z; }
+  } else if (obj.type === 'timed_defense') {
+    // The clock is the objective, so the marker sits on what is being defended rather than on
+    // whichever push is closest — the player's job is to stay, not to hunt.
+    targetX = obj.zone.x; targetZ = obj.zone.z;
+  } else if (obj.type === 'moral_choice') {
+    // Nearest console. The beat is a decision between two specific machines, so the radar's only
+    // honest job is to bring the player to the room; both are in it, three metres apart.
+    let nearest = null, nearDist = Infinity;
+    for (const o of obj.options || []) {
+      const d = Math.hypot(o.x - player.pos.x, o.z - player.pos.z);
+      if (d < nearDist) { nearDist = d; nearest = o; }
+    }
+    if (nearest) { targetX = nearest.x; targetZ = nearest.z; }
   } else if (obj.type === 'escort_npc') {
     // Find phase marks Kessler; once he is moving, the extraction zone takes over
     if (missionState.escortActive) {
@@ -6094,7 +8696,7 @@ function resetPlayer() {
   if (inMission) {
     // Mission: spawn in the southwest corner, far from enemies and objective
     do { x = rand(-44, -38); z = rand(-44, -38); tries++; } while (!isFree(x, z, 0.5) && tries < 200);
-    player.pos.set(x, 0, z);
+    player.pos.set(x, groundHeight(new THREE.Vector3(x, 0, z), 0.5), z);
     player.vel.set(0, 0, 0);
     // Face northeast toward the map center / objective direction
     player.yaw = Math.PI * 1.25; player.pitch = 0;
@@ -6104,7 +8706,7 @@ function resetPlayer() {
     // The try cap matters: a spawn band that a map edit has filled in would otherwise spin here
     // forever and take the whole page down with it.
     do { x = rand(-8, 8); z = rand(ctZMin, ctZMax); tries++; } while (!isFree(x, z, 0.5) && tries < 200);
-    player.pos.set(x, 0, z);
+    player.pos.set(x, groundHeight(new THREE.Vector3(x, 0, z), 0.5), z);
     player.vel.set(0, 0, 0);
     player.yaw = Math.PI; player.pitch = 0;
   }
@@ -6171,6 +8773,10 @@ function triggerGameOver() {
   missionState.escortActive = false;
   missionState.escortNPC = null;
   missionState.fuseActive = false;
+  // The death screen must not leave a live gun on the hill tracking the corpse, and a choice panel
+  // left open would sit on top of the game-over screen with its freeze flag still set.
+  closeChoiceOverlay();
+  clearTurrets();
   // Release pointer lock
   if (document.pointerLockElement) document.exitPointerLock();
   // Show game over screen with stats
@@ -6188,8 +8794,10 @@ function triggerGameOver() {
 }
 
 function startNewGame() {
-  // The marsh expansion belongs to Mission 02 alone — never carry it into fresh rounds
-  if (selectedMap === 'industrial_east') selectedMap = 'industrial';
+  // The marsh expansion belongs to Mission 02 alone — never carry it into fresh rounds. Same rule
+  // for Sector Zero: the 139 m hillside is Mission 03's, and a classic round on it would spawn
+  // waypoints up a 20 m of relief the round logic was never sized for.
+  if (selectedMap === 'industrial_east' || selectedMap === 'industrial_mountain') selectedMap = 'industrial';
   buildMap();
   if (hud.coopBoard) hud.coopBoard.innerHTML = '';
   game.round = 0; game.ct = 0; game.t = 0; game.kills = 0;
@@ -6219,6 +8827,11 @@ function startNewGame() {
   missionState.escortName = 'RAVEN';
   missionState._pendingEscortActivation = false;
   missionState._pendingEscortName = null;
+  // Mission 03's engines and its hardware, same reasoning as the escort: nothing here throws if it
+  // is left behind, it just quietly misbehaves on the next run.
+  resetMission03State();
+  closeChoiceOverlay();
+  clearTurrets();
   
   // Hide mission HUD and restore round-based HUD
   if (missionHud) missionHud.style.display = 'none';
@@ -6390,11 +9003,14 @@ function updatePlayer(dt) {
 
   const crouch = isTouchDevice ? touch.crouch : (keys.KeyC || keys.ControlLeft);
   const walk = isTouchDevice ? false : (keys.ShiftLeft || keys.ShiftRight);
-  // Wading drag (Mission-02 marsh): ankle-deep shallows take the edge off, chest-deep water
-  // nearly halves pace. Dry maps have an empty pool list, so this is a no-op there.
-  const wade = marshPools.length ? wadeDepth(player.pos.x, player.pos.z) : 0;
+  // Wading drag (Mission-02 marsh, Mission-03 generator pit): ankle-deep shallows take the edge
+  // off, chest-deep water nearly halves pace. Dry maps have an empty pool list and no pit, so this
+  // is a no-op there.
+  const wade = (marshPools.length || genPit) ? wadeDepth(player.pos.x, player.pos.z) : 0;
   player.wade = wade;
-  const drag = wade === 2 ? 0.5 : wade === 1 ? 0.78 : 1;
+  // Ground underfoot takes pace off in two different ways: water because it is thick, a slope
+  // because you are holding yourself up. Both are 1.0 on every map that predates them.
+  const drag = (wade === 2 ? 0.5 : wade === 1 ? 0.78 : 1) * terrainPace(player.pos.x, player.pos.z);
   const speed = (crouch ? 2.2 : walk ? 3 : current.def.speed) * (1 - 0.4 * weaponState.ads) * drag;
   const accel = player.onGround ? (wade ? 7 : 12) : 2.5;
   const k = Math.min(1, accel * dt);
@@ -6410,9 +9026,10 @@ function updatePlayer(dt) {
   }
   player.vel.y -= 20 * dt;
 
+  _moveFrom.copy(player.pos);
   player.pos.x += player.vel.x * dt;
   player.pos.z += player.vel.z * dt;
-  collide(player.pos, P_RADIUS, P_HEIGHT, player.onGround ? STEP : 0.02);
+  collide(player.pos, P_RADIUS, P_HEIGHT, player.onGround ? STEP : 0.02, _moveFrom);
 
   player.pos.y += player.vel.y * dt;
   const gh = groundHeight(player.pos, P_RADIUS);
@@ -8700,16 +11317,19 @@ function frame() {
   }
 
   // Living water: the caustic texture creeps across every pond at once (one shared map) and the
-  // sheen breathes — marsh only, costs nothing on the dry arena.
-  if (marshPools.length) {
+  // sheen breathes — water maps only, costs nothing on the dry arena. The bayou sheet only drifts
+  // where a bayou was actually built, so the Mission-03 pit never animates a surface it has none of.
+  if (marshPools.length || genPit) {
     const wt = clock.elapsedTime;
     waterTex.offset.x = Math.sin(wt * 0.11) * 0.015 + wt * 0.0035;
     waterTex.offset.y = Math.cos(wt * 0.08) * 0.012 + wt * 0.0026;
     mats.water.opacity = 0.52 + Math.sin(wt * 1.35) * 0.03;
-    // the bayou sheet drifts on its own slower vector so pond patches and flood never pulse in lockstep
-    floodTex.offset.x = Math.sin(wt * 0.07) * 0.01 - wt * 0.0021;
-    floodTex.offset.y = Math.cos(wt * 0.05) * 0.008 + wt * 0.0017;
-    mats.flood.opacity = 0.40 + Math.sin(wt * 0.9 + 1.7) * 0.025;
+    if (floodRect) {
+      // the bayou sheet drifts on its own slower vector so pond patches and flood never pulse in lockstep
+      floodTex.offset.x = Math.sin(wt * 0.07) * 0.01 - wt * 0.0021;
+      floodTex.offset.y = Math.cos(wt * 0.05) * 0.008 + wt * 0.0017;
+      mats.flood.opacity = 0.40 + Math.sin(wt * 0.9 + 1.7) * 0.025;
+    }
   }
 
   // Apply touch look on mobile
@@ -8750,10 +11370,11 @@ function frame() {
       updateMonsterTrucks(dt);
       updateEffects(dt);
       updateMissionHud();
-      checkMissionObjectives();
+      checkMissionObjectives(dt);
       updateMissionMarkers();
       updateEscort(dt);
       updateFuse(dt);
+      updateTurrets(dt);
       // Animate evidence indicators (floating bob)
       const t = performance.now() * 0.001;
       for (const ev of missionState.evidence) {
@@ -9825,6 +12446,7 @@ function emitFx(list) {
         const wall = CSMap.rayBlock(colliders, _emitO.x, _emitO.y, _emitO.z, _emitD.x, _emitD.y, _emitD.z, 60, 1);
         _emitTracerEnd.copy(_emitO).addScaledVector(_emitD, wall ? wall.dist : 60);
         spawnTracer(_emitO, _emitTracerEnd);
+        startleFauna(_emitO.x, _emitO.z);          // a partner's rifle is as loud as yours
       }
     } else if (ev.e === 'tracer') {
       const rig = onlineBots.get(String(ev.id));
@@ -9832,6 +12454,7 @@ function emitFx(list) {
       _emitFrom.set(rig.pos.x, rig.pos.y + 1.45, rig.pos.z);
       _emitTo.set(ev.to[0], ev.to[1], ev.to[2]);
       spawnTracer(_emitFrom, _emitTo, 0xd0d0d0);
+      startleFauna(_emitFrom.x, _emitFrom.z, 26);
       if (!ev.hit) spawnParticles(_emitTo, null, dustMat, 3, 1.6);
     } else if (ev.e === 'hit') {
       if (ev.bot !== undefined) {

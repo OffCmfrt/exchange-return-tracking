@@ -1684,18 +1684,58 @@ app.get('/auth/callback', async (req, res) => {
 // ==================== API RETRY HELPER ====================
 
 /**
+ * Default per-attempt deadline for every outbound API call made through
+ * fetchWithRetry. Before this existed the helper had no timeout at all, so one
+ * carrier/Shopify endpoint that accepted the socket and never answered would
+ * hold the request open indefinitely - past the 30s response guard in the
+ * middleware, which only abandons the *client* response and never aborts the
+ * handler. Kept generous (rather than tight) because the bulk Admin list calls
+ * (orders/products at limit=250) legitimately take many seconds; latency
+ * critical paths should override it per call with options.timeoutMs.
+ */
+const OUTBOUND_TIMEOUT_MS = Math.max(1000, parseInt(process.env.OUTBOUND_TIMEOUT_MS, 10) || 20000);
+
+/**
  * A wrapper around fetch that retries on network errors (like ECONNRESET)
  * @param {string} url - The URL to fetch
- * @param {object} options - Fetch options
+ * @param {object} options - Fetch options. `options.timeoutMs` overrides the
+ *                           per-attempt deadline for this call only.
  * @param {number} retries - Maximum number of retries
  * @param {number} backoff - Initial backoff delay in ms
  */
 async function fetchWithRetry(url, options = {}, retries = 3, backoff = 500) {
+    const { timeoutMs, signal: callerSignal, ...fetchOptions } = options;
+    const attemptTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : OUTBOUND_TIMEOUT_MS;
+
     for (let i = 0; i < retries; i++) {
+        // The deadline covers headers *and* body consumption, since a stalled
+        // response body is exactly the hang being guarded against. A caller's
+        // own signal (caller cancellation) is combined with ours, never dropped.
+        const timeoutSignal = AbortSignal.timeout(attemptTimeoutMs);
+        const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal;
+
         try {
-            const response = await fetch(url, options);
+            const response = await fetch(url, { ...fetchOptions, signal });
             return response;
         } catch (error) {
+            // Caller cancelled on purpose - surface as-is, don't relabel or retry.
+            if (callerSignal && callerSignal.aborted) throw error;
+
+            const timedOut = error.name === 'TimeoutError' || error.name === 'AbortError';
+            if (timedOut) {
+                let host = url;
+                try { host = new URL(url).host; } catch (_) { /* relative or malformed url - log as given */ }
+                console.warn(`[Outbound Timeout] ${host} did not respond within ${attemptTimeoutMs}ms (${url})`);
+                // Deliberately not retried: a timeout means "we never saw an
+                // answer", not "nothing happened" - the carrier may well have
+                // created the shipment. A blind second attempt risks a
+                // duplicate booking. Connection errors below stay retryable.
+                const wrapped = new Error(`Request to ${host} timed out after ${attemptTimeoutMs}ms`);
+                wrapped.isTimeout = true;
+                wrapped.cause = error;
+                throw wrapped;
+            }
+
             // If it's the last retry, throw the error
             if (i === retries - 1) throw error;
 
@@ -1704,6 +1744,23 @@ async function fetchWithRetry(url, options = {}, retries = 3, backoff = 500) {
             backoff *= 2; // Exponential backoff
         }
     }
+}
+
+/**
+ * Runs an advisory (non-essential) lookup with its own budget so a slow
+ * third-party can't eat the whole request while the shopper waits. The caller
+ * decides what to do with the TimeoutError - typically log and carry on.
+ */
+function withDeadline(promise, ms, label) {
+    let timer;
+    const budget = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            const error = new Error(`${label} did not finish within ${ms}ms`);
+            error.isTimeout = true;
+            reject(error);
+        }, ms);
+    });
+    return Promise.race([promise, budget]).finally(() => clearTimeout(timer));
 }
 
 // ==================== SHOPIFY API HELPER ====================
@@ -2267,35 +2324,68 @@ app.post('/api/bundle/create-discount', writeLimiter, async (req, res) => {
             return res.status(400).json({ error: 'A maximum of 12 bundle groups is allowed' });
         }
 
-        const bundles = await Promise.all(requestedBundles.map(async (bundle) => {
-            const ids = bundle && bundle.variantIds;
-            const amount = parseFloat(bundle && bundle.discountAmount);
-            if (!Array.isArray(ids) || ids.length < 2 || ids.length > 3 || !bundle.bundleId) {
-                throw new Error('Each bundle requires 2-3 variantIds, discountAmount, and bundleId');
+        // Each group is checked on its own and returns its own verdict rather
+        // than throwing. One stale group used to fail the whole call, which
+        // meant a shopper who had removed a single piece of one combo lost the
+        // discount on every other combo in the cart too (and the log line said
+        // nothing about which group was at fault).
+        const results = await Promise.all(requestedBundles.map(async (bundle, index) => {
+            const idsRaw = bundle ? bundle.variantIds : undefined;
+            const ids = Array.isArray(idsRaw) ? idsRaw : null;
+            // Goes into every rejection reason so the next occurrence is
+            // self-explanatory in the logs.
+            const identity = `group ${index + 1}/${requestedBundles.length} (bundleId=${bundle && bundle.bundleId ? String(bundle.bundleId).slice(0, 24) : 'MISSING'}, variantIds=${ids ? `${ids.length}: ${ids.join(',')}`.slice(0, 120) : `not an array (${idsRaw === undefined ? 'undefined' : typeof idsRaw})`})`;
+
+            if (!ids || ids.length < 2 || ids.length > 3 || !bundle.bundleId) {
+                return { status: 'invalid', reason: `needs 2-3 variantIds and a bundleId - ${identity}` };
             }
             if (!ids.every(id => /^\d+$/.test(String(id)))) {
-                throw new Error('variantIds must all be positive integers');
+                return { status: 'invalid', reason: `variantIds must all be positive integers - ${identity}` };
             }
             const normalizedIds = ids.map(id => String(Number(id)));
             if (new Set(normalizedIds).size !== normalizedIds.length) {
-                throw new Error('Each bundle must contain different variants');
+                return { status: 'invalid', reason: `contains the same variant twice - ${identity}` };
             }
+            const amount = parseFloat(bundle.discountAmount);
             if (!amount || amount <= 0) {
-                throw new Error('discountAmount must be a positive number');
+                return { status: 'invalid', reason: `discountAmount must be a positive number (got ${JSON.stringify(bundle.discountAmount)}) - ${identity}` };
             }
 
-            const variants = await Promise.all(normalizedIds.map(getVariantForBundle));
+            let variants;
+            try {
+                variants = await Promise.all(normalizedIds.map(getVariantForBundle));
+            } catch (error) {
+                // A Shopify lookup failure says nothing about this cart being
+                // wrong, so it must not be swallowed as a skipped group.
+                return { status: 'error', error };
+            }
             const familyKey = variants[0].familyKey;
             if (variants.some(variant => variant.familyKey !== familyKey)) {
-                throw new Error('All items in each bundle must be from the same product family');
+                return { status: 'invalid', reason: `mixes product families (${variants.map(variant => variant.productTitle).join(' + ')}) - ${identity}` };
             }
 
             const subtotal = variants.reduce((sum, variant) => sum + variant.price, 0);
             if (amount >= subtotal) {
-                throw new Error('discountAmount cannot exceed the combined price of a bundle');
+                return { status: 'invalid', reason: `discountAmount ${amount} is not under the combined price ${subtotal} - ${identity}` };
             }
-            return { bundleId: String(bundle.bundleId).slice(0, 64), variantIds: normalizedIds, amount, subtotal };
+            return { status: 'ok', bundle: { bundleId: String(bundle.bundleId).slice(0, 64), variantIds: normalizedIds, amount, subtotal } };
         }));
+
+        const hardFailure = results.find(result => result.status === 'error');
+        if (hardFailure) {
+            console.error('[bundle-discount] create-discount error:', hardFailure.error.message);
+            return res.status(502).json({ error: 'Could not verify the bundle items right now' });
+        }
+
+        const bundles = results.filter(result => result.status === 'ok').map(result => result.bundle);
+        results.forEach(result => {
+            if (result.status === 'invalid') {
+                console.warn(`[bundle-discount] Skipping incomplete or invalid combo: ${result.reason}`);
+            }
+        });
+        if (!bundles.length) {
+            return res.status(400).json({ error: 'No complete bundle group of 2-3 variants in this cart' });
+        }
 
         const compositeVariantIds = [...new Set(bundles.flatMap(bundle => bundle.variantIds))];
         const totalDiscount = bundles.reduce((sum, bundle) => sum + bundle.amount, 0);
@@ -2306,10 +2396,7 @@ app.post('/api/bundle/create-discount', writeLimiter, async (req, res) => {
         res.json({ success: true, code: result.code });
     } catch (error) {
         console.error('[bundle-discount] create-discount error:', error.message);
-        // TEMPORARY: surfacing the real error to diagnose the GraphQL
-        // discount migration live, since Render logs aren't reachable
-        // right now - revert this once the root cause is confirmed.
-        res.status(500).json({ error: 'Failed to create bundle discount code', debug: error.message });
+        res.status(500).json({ error: 'Failed to create bundle discount code' });
     }
 });
 
@@ -5962,16 +6049,23 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                 const fwdCarrier = detectCarrierForAwb(fwdAwb, null, null, null);
                 let fwdStatus = null;
                 try {
-                    if (fwdCarrier === 'delhivery') {
-                        const t = await getDelhiveryTracking(fwdAwb);
-                        if (t?.shipments?.[0]) fwdStatus = (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
-                    } else if (fwdCarrier === 'ekart') {
-                        const t = await getEkartTracking(fwdAwb);
-                        if (t?.shipments?.[0]) fwdStatus = (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
-                    } else {
+                    // This check is advisory, so it gets a tight budget of its own:
+                    // one slow carrier tracking API should not eat the seconds the
+                    // shopper is spending waiting for the submission itself. On
+                    // budget exhaustion we carry on with fwdStatus unknown, exactly
+                    // as when the lookup simply returns nothing.
+                    fwdStatus = await withDeadline((async () => {
+                        if (fwdCarrier === 'delhivery') {
+                            const t = await getDelhiveryTracking(fwdAwb);
+                            return t?.shipments?.[0] ? (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_') : null;
+                        }
+                        if (fwdCarrier === 'ekart') {
+                            const t = await getEkartTracking(fwdAwb);
+                            return t?.shipments?.[0] ? (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_') : null;
+                        }
                         const t = await getShiprocketTracking(fwdAwb);
-                        if (t) fwdStatus = (t.current_status || t.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_');
-                    }
+                        return t ? (t.current_status || t.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_') : null;
+                    })(), 6000, 'Forward tracking safety net');
                 } catch (e) { console.warn(`[${requestId}] Forward tracking safety net failed:`, e.message); }
                 if (fwdStatus) {
                     const stillInTransit = ['in_transit', 'out_for_delivery', 'shipped', 'picked_up', 'ready_to_ship'].includes(fwdStatus);
@@ -6298,16 +6392,23 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                 const fwdCarrier = detectCarrierForAwb(fwdAwb, null, null, null);
                 let fwdStatus = null;
                 try {
-                    if (fwdCarrier === 'delhivery') {
-                        const t = await getDelhiveryTracking(fwdAwb);
-                        if (t?.shipments?.[0]) fwdStatus = (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
-                    } else if (fwdCarrier === 'ekart') {
-                        const t = await getEkartTracking(fwdAwb);
-                        if (t?.shipments?.[0]) fwdStatus = (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_');
-                    } else {
+                    // This check is advisory, so it gets a tight budget of its own:
+                    // one slow carrier tracking API should not eat the seconds the
+                    // shopper is spending waiting for the submission itself. On
+                    // budget exhaustion we carry on with fwdStatus unknown, exactly
+                    // as when the lookup simply returns nothing.
+                    fwdStatus = await withDeadline((async () => {
+                        if (fwdCarrier === 'delhivery') {
+                            const t = await getDelhiveryTracking(fwdAwb);
+                            return t?.shipments?.[0] ? (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_') : null;
+                        }
+                        if (fwdCarrier === 'ekart') {
+                            const t = await getEkartTracking(fwdAwb);
+                            return t?.shipments?.[0] ? (t.shipments[0].status || t.shipments[0].status_type || '').toLowerCase().replace(/\s+/g, '_') : null;
+                        }
                         const t = await getShiprocketTracking(fwdAwb);
-                        if (t) fwdStatus = (t.current_status || t.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_');
-                    }
+                        return t ? (t.current_status || t.shipment_track?.[0]?.current_status || '').toLowerCase().replace(/\s+/g, '_') : null;
+                    })(), 6000, 'Forward tracking safety net');
                 } catch (e) { console.warn(`[${requestId}] Forward tracking safety net failed:`, e.message); }
                 if (fwdStatus) {
                     const stillInTransit = ['in_transit', 'out_for_delivery', 'shipped', 'picked_up', 'ready_to_ship'].includes(fwdStatus);
