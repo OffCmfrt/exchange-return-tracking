@@ -207,8 +207,17 @@ function createHealthRouter(deps = {}) {
     });
 
     router.get('/health', (req, res) => {
+        const memory = process.memoryUsage();
+        const body = report.livenessEnvelope({ version });
+        body.nodeVersion = process.version;
+        body.memory = {
+            heapUsedMB: Math.round(memory.heapUsed / 1024 / 1024),
+            heapTotalMB: Math.round(memory.heapTotal / 1024 / 1024),
+            rssMB: Math.round(memory.rss / 1024 / 1024)
+        };
+        body.breakers = typeof deps.getBreakers === 'function' ? deps.getBreakers() : {};
         res.set('Cache-Control', 'no-store');
-        res.json(report.livenessEnvelope({ version }));
+        res.json(body);
     });
 
     router.get('/ready', authorize, async (req, res) => {
