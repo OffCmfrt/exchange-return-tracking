@@ -16645,6 +16645,37 @@ const otpLimiter = rateLimit({
     handler: rateLimitHandler
 });
 
+// Login audit trail for the support desk "Logins" card (customer_login_events,
+// see supabase_migration_add_customer_login_events.sql). Fire-and-forget on
+// purpose: analytics must never add latency to or fail a login. If the table
+// is missing (migration not applied yet) the error is logged once per type so
+// the flood stays readable.
+const loginEventWarned = new Set();
+function logLoginEvent(phoneDigits, eventType) {
+    if (!phoneDigits) return;
+    // async wrapper, not .then/.catch on the builder — the PostgREST query
+    // builder is thenable but does not implement .catch()
+    (async () => {
+        try {
+            const { error } = await supabase.from('customer_login_events')
+                .insert({ phone: String(phoneDigits), event_type: eventType });
+            if (error && !loginEventWarned.has(eventType)) {
+                loginEventWarned.add(eventType);
+                console.warn('[LoginEvents] insert failed (' + eventType + '):', error.message);
+            }
+        } catch (_) { /* analytics must never break a login */ }
+    })();
+}
+
+// IST calendar-day key (YYYY-MM-DD) for a UTC Date — the desk reads these
+// trends as Indian business days, and the app's general day-boundary
+// convention is already IST.
+function istDayKey(date) {
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(date);
+}
+
 // Step 1: send OTP to the customer's phone
 app.post('/api/auth/otp/send', otpLimiter, async (req, res) => {
     try {
@@ -16653,6 +16684,10 @@ app.post('/api/auth/otp/send', otpLimiter, async (req, res) => {
         if (!normalized) {
             return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number' });
         }
+
+        // Guest OTP attempts (unknown number → sendOtp throws before verify)
+        // still count as interest, so record the send too.
+        logLoginEvent(normalized, 'otp_sent');
 
         const result = await otpService.sendOtp(normalized);
         res.json({
@@ -16685,14 +16720,92 @@ app.post('/api/auth/otp/verify', otpLimiter, async (req, res) => {
         await otpService.verifyOtp(normalized, otp);
 
         const login = await otpService.issueStorefrontLogin(normalized);
+        logLoginEvent(normalized, 'login');
         console.log(`[OTP] Login response for +${normalized}:`, JSON.stringify(login));
         res.json({ success: true, login });
     } catch (err) {
         if (err instanceof otpService.OtpError) {
+            // Wrong/expired OTP against a known-normalized phone → failed login
+            if (req.body && req.body.phone) {
+                const failedPhone = otpService.normalizeIndianPhone(req.body.phone);
+                if (failedPhone) logLoginEvent(failedPhone, 'login_failed');
+            }
             return res.status(err.status).json({ error: err.message, code: err.code });
         }
         console.error('[OTP] verify error:', err.message);
         res.status(500).json({ error: 'Login failed. Please try again.' });
+    }
+});
+
+// GET /api/internal/login-stats — aggregated storefront OTP login activity
+// for the support desk (/desk) "Logins" card. Auth: x-internal-token, same
+// contract as /api/internal/inventory-open-requests.
+// ?days = 1..90 (trend window, default 7).
+// Reads at most the last PAGE_SIZE events inside the window (created_at DESC,
+// served by idx_customer_login_events_created) and aggregates in memory —
+// this keeps the query inside the PostgREST 1000-row cap regardless of the
+// DB timezone and avoids a COUNT round-trip per bucket.
+const LOGIN_STATS_PAGE_SIZE = 1000;
+app.get('/api/internal/login-stats', async (req, res) => {
+    try {
+        const expectedToken = process.env.WHATSAPP_INTERNAL_TOKEN;
+        if (expectedToken && req.headers['x-internal-token'] !== expectedToken) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        const days = Math.max(1, Math.min(parseInt(req.query.days, 10) || 7, 90));
+        const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+        const [{ data: loginRows, error: loginErr }, { count: sentCount, error: sentErr }] = await Promise.all([
+            supabase.from('customer_login_events')
+                .select('phone, event_type, created_at')
+                .eq('event_type', 'login')
+                .gte('created_at', since)
+                .order('created_at', { ascending: false })
+                .range(0, LOGIN_STATS_PAGE_SIZE - 1),
+            supabase.from('customer_login_events')
+                .select('phone', { count: 'exact', head: true })
+                .eq('event_type', 'otp_sent')
+                .gte('created_at', since)
+        ]);
+        const error = loginErr || sentErr;
+        if (error) throw error;
+
+        // Daily buckets (IST): login events + distinct logged-in phones
+        const dayMap = new Map();
+        const distinctLogins = new Set();
+        for (const row of (loginRows || [])) {
+            const key = istDayKey(new Date(row.created_at));
+            if (!dayMap.has(key)) dayMap.set(key, { logins: 0, distinct: new Set() });
+            const bucket = dayMap.get(key);
+            bucket.logins += 1;
+            bucket.distinct.add(row.phone);
+            distinctLogins.add(row.phone);
+        }
+        const trend = Array.from(dayMap.entries())
+            .map(([date, b]) => ({ date, logins: b.logins, distinct_logins: b.distinct.size }))
+            .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+        // Recent logins for the agent-facing table (newest first)
+        const recent = (loginRows || []).slice(0, 50).map(r => ({
+            phone: r.phone,
+            at: r.created_at
+        }));
+
+        res.json({
+            success: true,
+            days,
+            window: { since, until: new Date().toISOString() },
+            totals: {
+                login_events: (loginRows || []).length,
+                distinct_logged_in: distinctLogins.size,
+                otp_sent: sentCount || 0
+            },
+            trend,
+            recent
+        });
+    } catch (error) {
+        console.error('Login-stats endpoint error:', error.message);
+        res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 
