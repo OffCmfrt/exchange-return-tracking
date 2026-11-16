@@ -5,7 +5,8 @@
  * Default provider is Groq (llama-3.3-70b-versatile), switchable via env:
  *   AI_PROVIDER  — groq | openai | deepseek | gemini (default: groq)
  *   AI_API_KEY   — provider API key (required)
- *   AI_MODEL     — model override (default per provider)
+ *   AI_MODEL     — model override (default per provider; must match the provider,
+ *                  a groq key against gemini fails with "Invalid API Key")
  *   AI_BASE_URL  — base URL override (default per provider)
  */
 
@@ -32,7 +33,7 @@ const PROVIDER_DEFAULTS = {
     },
     gemini: {
         baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-3.1-flash-lite',
         inputCostPer1M: 0.10,
         outputCostPer1M: 0.40
     }

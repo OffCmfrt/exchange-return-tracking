@@ -348,7 +348,7 @@ async function createDepartment(record) {
     const { data, error } = await supabase.from('company_departments').insert(row).select().single();
     if (error) throw error;
     // Every department gets its own dept channel, lazily but once.
-    await ensureDeptChannel(data.slug).catch(() => {});
+    await ensureDeptChannel(data.slug).catch((e) => console.warn('[CompanyOps] dept channel ensure failed:', e.message));
     return toUi(data, 'departments');
 }
 
@@ -408,7 +408,7 @@ async function createStaff(record) {
     // Auto-join the member's department channel so chat works from day one.
     ensureDeptChannel(member.department)
         .then((ch) => ch && joinChannel(ch.id, member.id, 'member'))
-        .catch(() => {});
+        .catch((e) => console.warn('[CompanyOps] dept channel auto-join failed:', e.message));
     return member;
 }
 
@@ -974,7 +974,7 @@ async function ensureTaskThread(task, actor) {
     const channel = toUi(data, 'channels');
     const members = new Set([task.createdBy, task.assignedTo].filter(Boolean));
     for (const w of (task.watchers || [])) members.add(w);
-    for (const sid of members) await joinChannel(channel.id, sid, 'member').catch(() => {});
+    for (const sid of members) await joinChannel(channel.id, sid, 'member').catch((e) => console.warn('[CompanyOps] task thread join failed:', e.message));
     return channel;
 }
 
@@ -987,7 +987,7 @@ async function createChannel({ type, name, department, staffIds, createdBy, task
     if (error) throw error;
     const channel = toUi(data, 'channels');
     const ids = new Set([...(staffIds || []), createdBy].filter(Boolean));
-    for (const sid of ids) await joinChannel(channel.id, sid, sid === createdBy ? 'owner' : 'member').catch(() => {});
+    for (const sid of ids) await joinChannel(channel.id, sid, sid === createdBy ? 'owner' : 'member').catch((e) => console.warn('[CompanyOps] channel join failed:', e.message));
     return channel;
 }
 
@@ -1010,11 +1010,13 @@ async function findOrCreateDirect(staffA, staffB) {
 }
 
 async function joinChannel(channelId, staffId, role = 'member') {
+    // onConflict/ignoreDuplicates are upsert options; on an insert they throw.
     const { error } = await supabase
         .from('company_chat_channel_members')
-        .insert({ channel_id: channelId, staff_id: staffId, role })
-        .onConflict('channel_id,staff_id')
-        .ignoreDuplicates();
+        .upsert({ channel_id: channelId, staff_id: staffId, role }, {
+            onConflict: 'channel_id,staff_id',
+            ignoreDuplicates: true
+        });
     if (error) throw error;
 }
 
@@ -1070,6 +1072,33 @@ async function isChannelMember(channelId, staffId) {
         .maybeSingle();
     if (error) throw error;
     return !!data;
+}
+
+async function getChannel(channelId) {
+    const { data, error } = await supabase
+        .from('company_chat_channels')
+        .select('*')
+        .eq('id', channelId)
+        .maybeSingle();
+    if (error) throw error;
+    return data ? toUi(data, 'channels') : null;
+}
+
+// The one channel-access rule, shared by the HTTP routes and the socket hub so
+// both halves agree. Members always read; a lead browsing inside their
+// department scope joins a department channel on first open (so posting and
+// read receipts work from then on); platform admins may read but are not joined.
+async function resolveChannelAccess(channelId, actor = {}) {
+    if (actor.platformAdmin) return true;
+    if (!actor.staffId) return false;
+    if (await isChannelMember(channelId, actor.staffId)) return true;
+    if (!actor.isAdmin) return false;
+    const ch = await getChannel(channelId);
+    if (!ch || ch.type !== 'dept' || !ch.department) return false;
+    const visible = [actor.department, ...(actor.canViewDepartments || [])].filter(Boolean);
+    if (!visible.includes(ch.department)) return false;
+    await joinChannel(channelId, actor.staffId, 'member');
+    return true;
 }
 
 async function setChannelMuted(channelId, staffId, muted) {
@@ -1383,6 +1412,7 @@ module.exports = {
     // Chat
     ensureDeptChannel, ensureTaskThread, createChannel, findOrCreateDirect,
     joinChannel, listChannelsForStaff, listAllChannels, getChannelMembers,
+    getChannel, resolveChannelAccess,
     isChannelMember, setChannelMuted, pinMessages,
     sendMessage, listMessages, listMessagesSince, markRead, getUnreadCounts,
     editMessage, deleteMessage, toggleReaction

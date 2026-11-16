@@ -18056,7 +18056,7 @@ app.post('/api/company/login', async (req, res) => {
         // make sure the dept channel exists and they are in it
         companyOpsDB.ensureDeptChannel(staff.department)
             .then((ch) => ch && companyOpsDB.joinChannel(ch.id, staff.id))
-            .catch(() => {});
+            .catch((e) => console.warn('[CompanyOps] login auto-join failed:', e.message));
         res.json({ success: true, token, staff });
     } catch (error) {
         companyErr(res, 'Login', error);
@@ -18460,7 +18460,7 @@ app.post('/api/company/chat/channels', authenticateCompanyStaff, async (req, res
 });
 app.get('/api/company/chat/channels/:id/messages', authenticateCompanyStaff, async (req, res) => {
     try {
-        if (!(await companyOpsDB.isChannelMember(req.params.id, req.companyActor.staffId))) {
+        if (!(await companyOpsDB.resolveChannelAccess(req.params.id, req.companyActor))) {
             return res.status(403).json({ error: 'Not a member of that channel' });
         }
         const messages = await companyOpsDB.listMessages(req.params.id, {
@@ -18472,7 +18472,7 @@ app.get('/api/company/chat/channels/:id/messages', authenticateCompanyStaff, asy
 });
 app.get('/api/company/chat/channels/:id/members', authenticateCompanyStaff, async (req, res) => {
     try {
-        if (!(await companyOpsDB.isChannelMember(req.params.id, req.companyActor.staffId))) {
+        if (!(await companyOpsDB.resolveChannelAccess(req.params.id, req.companyActor))) {
             return res.status(403).json({ error: 'Not a member of that channel' });
         }
         const members = await companyOpsDB.getChannelMembers(req.params.id);
@@ -18501,6 +18501,9 @@ app.post('/api/company/chat/channels/:id/mute', authenticateCompanyStaff, async 
 });
 app.post('/api/company/chat/channels/:id/pin', authenticateCompanyStaff, async (req, res) => {
     try {
+        if (!(await companyOpsDB.resolveChannelAccess(req.params.id, req.companyActor))) {
+            return res.status(403).json({ error: 'Not a member of that channel' });
+        }
         const channel = await companyOpsDB.pinMessages(req.params.id, req.body.messageIds || []);
         res.json({ success: true, channel });
     } catch (error) { companyErr(res, 'Pin messages', error); }
@@ -18509,7 +18512,7 @@ app.post('/api/company/chat/channels/:id/pin', authenticateCompanyStaff, async (
 // socket is down, and give the admin console moderation paths).
 app.post('/api/company/chat/channels/:id/messages', authenticateCompanyStaff, async (req, res) => {
     try {
-        if (!(await companyOpsDB.isChannelMember(req.params.id, req.companyActor.staffId))) {
+        if (!(await companyOpsDB.resolveChannelAccess(req.params.id, req.companyActor))) {
             return res.status(403).json({ error: 'Not a member of that channel' });
         }
         const message = await companyOpsDB.sendMessage({

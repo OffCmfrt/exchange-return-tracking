@@ -108,9 +108,11 @@ function createHub({ verifyToken, db }) {
         if (t === 'sub') {
             const channelId = String(msg.c || '');
             if (!channelId) return send(ws, { t: 'err', m: 'sub needs channel' });
-            let ok = ws.actor.platformAdmin;
-            if (!ok && ws.actor.staffId) {
-                try { ok = await db.isChannelMember(channelId, ws.actor.staffId); } catch (e) { ok = false; }
+            let ok = false;
+            if (ws.actor.staffId || ws.actor.platformAdmin) {
+                // Same rule the HTTP routes use, so a channel is never readable
+                // down one half and refused down the other.
+                try { ok = await db.resolveChannelAccess(channelId, ws.actor); } catch (e) { ok = false; }
             }
             if (!ok) return send(ws, { t: 'err', m: 'not a member of that channel' });
             ws.subs.add(channelId);
@@ -277,7 +279,14 @@ function createHub({ verifyToken, db }) {
             const claims = token ? verifyToken(token) : null;
             let actor = null;
             if (claims && claims.role === 'company_staff' && claims.staffId) {
-                actor = { staffId: claims.staffId, name: claims.name || claims.username, platformAdmin: false };
+                actor = {
+                    staffId: claims.staffId,
+                    name: claims.name || claims.username,
+                    platformAdmin: false,
+                    isAdmin: !!claims.isAdmin,
+                    department: claims.department,
+                    canViewDepartments: claims.canViewDepartments || []
+                };
             } else if (claims && (claims.role === 'admin' || claims.role === 'operator')) {
                 actor = { staffId: null, name: claims.username || 'Admin', platformAdmin: true };
             }
