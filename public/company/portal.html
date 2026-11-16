@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Company Ops — Staff Portal</title>
+<link rel="stylesheet" href="assets/company.css">
+</head>
+<body>
+
+<div id="login" class="login-wrap hidden">
+    <form class="login-box" id="loginForm">
+        <div class="brand"><h1>Company Ops</h1><p class="mlabel">Staff Portal</p></div>
+        <div class="field"><label class="mlabel">Username</label><input id="lUser" autocomplete="username" required></div>
+        <div class="field"><label class="mlabel">Mobile</label><input id="lMob" autocomplete="tel" required></div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" id="lGo">Sign in</button>
+        <p class="small faint mt16">Use the username and mobile number registered by your department lead.</p>
+    </form>
+</div>
+
+<div id="shell" class="shell hidden">
+    <aside class="side">
+        <div class="brand"><h1>Company Ops</h1><p class="mlabel" id="scopeLabel">Staff Portal</p></div>
+        <nav id="nav"></nav>
+        <div class="side-foot">
+            <span id="meAv"></span>
+            <span class="who"><b id="meName">—</b><span class="mlabel" id="meDept"></span></span>
+            <a class="btn btn-ghost btn-sm right hidden" id="consoleLink" href="/company/admin" title="Control Tower">Tower</a>
+            <button class="btn btn-ghost btn-sm" id="logoutBtn" title="Sign out"></button>
+        </div>
+    </aside>
+    <div class="main">
+        <div class="topbar">
+            <h2 id="viewTitle">My Tasks</h2>
+            <span class="spacer"></span>
+            <div class="hstack" id="tools" style="gap:8px"></div>
+        </div>
+        <div class="view" id="view"></div>
+    </div>
+</div>
+
+<!-- task drawer -->
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer">
+    <div class="dr-head">
+        <div style="flex:1;min-width:0"><h3 id="drTitle">Task</h3><div class="hstack mt8" id="drChips"></div></div>
+        <button class="btn btn-ghost btn-sm" id="drClose"></button>
+    </div>
+    <div class="dr-body">
+        <div class="dr-main" id="drMain"></div>
+        <div class="dr-chat" id="drChat"></div>
+    </div>
+</div>
+
+<!-- profile modal -->
+<div class="modal" id="modal"><div class="sheet"><h3 id="mdTitle">Edit</h3><div id="mdBody"></div><div class="sheet-foot"><button class="btn" id="mdCancel">Cancel</button><button class="btn btn-primary" id="mdSave">Save</button></div></div></div>
+
+<div class="toasts"></div>
+
+<script>/* mock dataset is preview-only: never fetched unless ?mock=1 */
+if (new URLSearchParams(location.search).has('mock')) document.write('<script src="assets/mock-data.js"><\/script>');</script>
+<script src="assets/company-app.js"></script>
+<script src="assets/chat-pane.js"></script>
+<script>
+(function () {
+'use strict';
+const A = window.CompanyApp;
+const { icon, esc, avatar, toast, api } = A;
+const $ = (s) => document.querySelector(s);
+const LANE_DEFS = [['todo', 'Todo'], ['in_progress', 'In Progress'], ['review', 'Review'], ['blocked', 'Blocked'], ['done', 'Done']];
+const PRIO_COLOR = { critical: 'var(--danger)', high: 'var(--warn)', medium: '#4a4a52', low: '#33333a' };
+const WF_LABEL = (w) => String(w || '').replace(/_/g, ' ');
+
+const state = {
+    me: null, tasks: [], departments: [], projects: [], workflow: {}, directory: [], channels: [], unread: {},
+    stats: null, presence: new Set(), client: null, chat: null, mode: 'board',
+    filters: { status: '', priority: '', q: '' }
+};
+
+// ---- boot ---------------------------------------------------------------------
+function boot() {
+    if (A.useMock()) {
+        return api.get('/api/company/me').then((r) => { useStaff(r.staff); enter(); });
+    }
+    if (!api.token) return showLogin();
+    api.get('/api/company/me').then((r) => { useStaff(r.staff); enter(); }).catch(() => showLogin());
+}
+function showLogin() { $('#login').classList.remove('hidden'); $('#shell').classList.add('hidden'); }
+function useStaff(s) {
+    state.me = { id: s.id, name: s.fullName, department: s.department, isAdmin: !!s.isAdmin, role: s.role, staff: s };
+    $('#scopeLabel').textContent = s.isAdmin ? 'Staff Portal · Lead' : 'Staff Portal';
+}
+
+$('#loginForm').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const btn = $('#lGo'); btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+        const r = await api.post('/api/company/login', { username: $('#lUser').value, mobile: $('#lMob').value });
+        api.setSession(r.token, { id: r.staff.id, name: r.staff.fullName, department: r.staff.department });
+        useStaff(r.staff);
+        await enter();
+    } catch (e) { toast(e.message, 'bad'); }
+    btn.disabled = false; btn.textContent = 'Sign in';
+};
+
+async function enter() {
+    $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
+    $('#meName').textContent = state.me.name;
+    $('#meDept').textContent = WF_LABEL(state.me.department);
+    $('#meAv').innerHTML = avatar(state.me.name, null, false);
+    $('#logoutBtn').innerHTML = icon('logout');
+    $('#logoutBtn').onclick = () => { api.clear(); localStorage.clear(); location.href = '/company/portal'; };
+    if (state.me.isAdmin) $('#consoleLink').classList.remove('hidden');
+    await loadBase();
+    buildNav();
+    route();
+    connectChat();
+}
+
+async function loadBase() {
+    const [t, ref, ch] = await Promise.all([
+        api.get('/api/company/my/tasks'),
+        api.get('/api/company/my/reference'),
+        api.get('/api/company/chat/channels')
+    ]);
+    state.tasks = t.tasks;
+    state.departments = ref.departments || [];
+    state.projects = ref.projects || [];
+    state.workflow = ref.workflow || {};
+    state.channels = ch.channels || [];
+    state.unread = ch.unread || {};
+    try { state.directory = (await api.get('/api/company/directory')).directory || []; }
+    catch (e) { state.directory = []; }
+}
+
+const deptBySlug = (slug) => state.departments.find((d) => d.slug === slug);
+const deptName = (slug) => { const d = deptBySlug(slug); return d ? d.name : (slug || '—'); };
+const deptColor = (slug) => { const d = deptBySlug(slug); return d && d.color ? d.color : '#55555e'; };
+const chipDept = (slug) => slug ? `<span class="chip" style="--dept-color:${esc(deptColor(slug))}"><span class="dot"></span>${esc(deptName(slug))}</span>` : '';
+const prioTag = (p) => `<span class="prio ${esc(p)}">${esc(p)}</span>`;
+const stTag = (t) => `<span class="st ${esc(t.workflowState || t.status)}">${esc(WF_LABEL(t.workflowState || t.status))}</span>`;
+const person = (id) => state.directory.find((d) => String(d.id) === String(id));
+const projectName = (id) => { const p = state.projects.find((x) => String(x.id) === String(id)); return p ? p.name : null; };
+const unreadTotal = () => Object.values(state.unread).reduce((a, b) => a + (b || 0), 0);
+const nextStates = (t) => [t.workflowState].concat(state.workflow[t.workflowState] || []);
+
+// ---- navigation -----------------------------------------------------------------
+const VIEWS = [['tasks', 'My Tasks', 'kanban'], ['chat', 'Messages', 'chat'], ['me', 'My Profile', 'people']];
+function buildNav() {
+    $('#nav').innerHTML = VIEWS.map(([id, label, ic]) =>
+        `<button class="nav-item" data-v="${id}">${icon(ic)}<span class="lbl">${label}</span><span class="count num" id="navc-${id}"></span></button>`).join('');
+    $('#nav').querySelectorAll('.nav-item').forEach((b) => { b.onclick = () => { location.hash = '#/' + b.dataset.v; }; });
+    window.addEventListener('hashchange', route);
+    refreshCounts();
+}
+function refreshCounts() {
+    const open = state.tasks.filter((t) => t.status !== 'done').length;
+    const late = state.tasks.filter(A.isLate).length;
+    const set = (id, n, alert) => { const el = $('#navc-' + id); if (el) { el.textContent = n || ''; el.classList.toggle('alert', !!alert); } };
+    set('tasks', open);
+    set('chat', unreadTotal(), unreadTotal() > 0);
+    set('me', late, late > 0);
+}
+function route() {
+    const v = (location.hash.replace('#/', '') || 'tasks');
+    const def = VIEWS.find((x) => x[0] === v) || VIEWS[0];
+    if (def[0] !== 'chat' && state.chat) { state.chat.destroy(); state.chat = null; }
+    $('#nav').querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.v === def[0]));
+    $('#viewTitle').textContent = def[1];
+    $('#view').classList.toggle('no-scroll', def[0] === 'chat' || (def[0] === 'tasks' && state.mode === 'board'));
+    $('#tools').innerHTML = '';
+    ({ tasks: tasksView, chat: chatView, me: meView })[def[0]]();
+    refreshCounts();
+}
+
+// ---- my tasks ---------------------------------------------------------------------
+function tasksView() {
+    renderTools();
+    if (state.mode === 'board') renderBoard(); else renderList();
+}
+function renderTools() {
+    $('#tools').innerHTML = `
+        <button class="btn btn-sm ${state.mode === 'board' ? 'btn-primary' : ''}" id="mBoard">${icon('kanban')} Board</button>
+        <button class="btn btn-sm ${state.mode === 'list' ? 'btn-primary' : ''}" id="mList">${icon('list')} List</button>`;
+    $('#mBoard').onclick = () => { state.mode = 'board'; route(); };
+    $('#mList').onclick = () => { state.mode = 'list'; route(); };
+}
+function filterBar() {
+    return `<div class="filters" style="padding:12px 14px;border-bottom:1px solid var(--line)">
+        <span class="flt"><select id="fState"><option value="">Any state</option>${LANE_DEFS.map(([v, l]) => `<option value="${v}" ${state.filters.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></span>
+        <span class="flt"><select id="fPrio"><option value="">Any priority</option>${['critical', 'high', 'medium', 'low'].map((p) => `<option ${state.filters.priority === p ? 'selected' : ''}>${p}</option>`).join('')}</select></span>
+        <span class="search" style="flex:1;max-width:240px">${icon('search')}<input id="fQ" placeholder="Search my tasks" value="${esc(state.filters.q)}"></span>
+        <span class="right mlabel num" id="fCount"></span>
+    </div>`;
+}
+function wireFilters() {
+    $('#fState').onchange = () => { state.filters.status = $('#fState').value; state.mode === 'board' ? renderBoard() : renderList(); };
+    $('#fPrio').onchange = () => { state.filters.priority = $('#fPrio').value; state.mode === 'board' ? renderBoard() : renderList(); };
+    $('#fQ').oninput = () => { state.filters.q = $('#fQ').value; state.mode === 'board' ? renderBoard() : renderList(); };
+}
+function myTasks() {
+    const f = state.filters;
+    return state.tasks.filter((t) =>
+        (!f.status || t.status === f.status) &&
+        (!f.priority || t.priority === f.priority) &&
+        (!f.q || String(t.title).toLowerCase().includes(f.q.toLowerCase())));
+}
+function renderBoard() {
+    $('#view').innerHTML = `<div style="display:flex;flex-direction:column;height:100%;min-height:0">
+        ${filterBar()}<div class="board" id="lanes" style="flex:1;min-height:0"></div></div>`;
+    wireFilters();
+    const list = myTasks();
+    $('#lanes').innerHTML = LANE_DEFS.map(([lane, label]) => {
+        const cards = list.filter((t) => t.status === lane);
+        return `<div class="lane" data-lane="${lane}"><header><span class="mlabel">${label}</span><span class="n num">${cards.length}</span></header>
+            <div class="cards">${cards.map(taskCard).join('') || '<div class="empty" style="padding:16px;font-size:12px">Nothing here</div>'}</div></div>`;
+    }).join('');
+    wireCards();
+}
+function taskCard(t) {
+    const subs = t.subtasks || [];
+    const subDone = subs.filter((s) => s.done).length;
+    const unacked = !t.acknowledgedAt && t.status !== 'done';
+    return `<div class="tcard" data-id="${esc(t.id)}" style="--prio-color:${PRIO_COLOR[t.priority] || 'var(--line-2)'}">
+        <div class="ttl">${esc(t.title)}</div>
+        <div class="meta"><span class="num faint" style="font:500 9.5px var(--mono)">${subs.length ? subDone + '/' + subs.length : ''}</span><div class="bar"><i style="width:${t.progress || 0}%"></i></div><span class="num faint" style="font:500 9.5px var(--mono)">${t.progress || 0}%</span></div>
+        <div class="foot">${chipDept(t.department)}${prioTag(t.priority)}${unacked ? '<span class="tag">new</span>' : ''}</div>
+        ${t.dueDate ? `<div class="foot"><span class="due ${A.isLate(t) ? 'late' : ''}">${A.isLate(t) ? 'late ' : 'due '}${esc(A.fmtDay(t.dueDate))}</span></div>` : ''}
+    </div>`;
+}
+function wireCards() {
+    const listEl = $('#lanes');
+    if (!listEl) return;
+    listEl.querySelectorAll('.tcard').forEach((el) => {
+        el.draggable = true;
+        el.ondragstart = (ev) => { ev.dataTransfer.setData('text/plain', el.dataset.id); el.classList.add('ghost'); };
+        el.ondragend = () => el.classList.remove('ghost');
+        el.onclick = () => openTask(el.dataset.id);
+    });
+    listEl.querySelectorAll('.lane').forEach((lane) => {
+        lane.ondragover = (ev) => { ev.preventDefault(); lane.classList.add('drag-over'); };
+        lane.ondragleave = () => lane.classList.remove('drag-over');
+        lane.ondrop = (ev) => {
+            ev.preventDefault(); lane.classList.remove('drag-over');
+            const t = state.tasks.find((x) => x.id === ev.dataTransfer.getData('text/plain'));
+            if (!t || t.status === lane.dataset.lane) return;
+            const target = laneTargetState(t, lane.dataset.lane);
+            if (!target) return toast(`That move needs your lead — ${WF_LABEL(t.workflowState)} cannot go straight to ${WF_LABEL(lane.dataset.lane)}`, 'bad');
+            setState(t, target);
+        };
+    });
+}
+// staff may only drop into a lane reachable from their current state (no force)
+function laneTargetState(t, lane) {
+    const allowed = state.workflow[t.workflowState] || [];
+    const LANE_OF = { draft: 'todo', assigned: 'todo', in_progress: 'in_progress', blocked: 'blocked', review: 'review', rework: 'in_progress', done: 'done', cancelled: 'done' };
+    return allowed.find((ws) => LANE_OF[ws] === lane) || null;
+}
+function renderList() {
+    const list = myTasks().slice().sort((a, b) => (A.isLate(b) ? 1 : 0) - (A.isLate(a) ? 1 : 0) || String(a.dueDate || '9').localeCompare(String(b.dueDate || '9')));
+    $('#view').innerHTML = `<div class="card" style="padding:0;overflow:hidden">
+        <table class="grid"><thead><tr><th>Task</th><th>Department</th><th>State</th><th>Priority</th><th>Progress</th><th>Due</th><th>Thread</th></tr></thead><tbody>
+        ${list.map((t) => `<tr data-open="${esc(t.id)}" style="cursor:pointer">
+            <td><div style="font-weight:500">${esc(t.title)}</div>${(t.subtasks || []).length ? `<div class="s faint" style="font:10px var(--mono);margin-top:3px">${t.subtasks.filter((s) => s.done).length}/${t.subtasks.length} checks</div>` : ''}</td>
+            <td>${chipDept(t.department)}</td><td>${stTag(t)}</td><td>${prioTag(t.priority)}</td>
+            <td style="width:120px"><div class="bar"><i style="width:${t.progress || 0}%"></i></div><span class="num faint" style="font:10px var(--mono)">${t.progress || 0}%</span></td>
+            <td class="num ${A.isLate(t) ? '' : 'faint'}" style="${A.isLate(t) ? 'color:var(--danger)' : ''}">${t.dueDate ? esc(A.fmtDay(t.dueDate)) : '—'}</td>
+            <td class="num faint">${threadFor(t) ? '1' : '—'}</td>
+        </tr>`).join('') || '<tr><td colspan="7" class="empty">No tasks assigned to you</td></tr>'}
+        </tbody></table></div>`;
+    wireFilters();
+    $('#view').querySelectorAll('[data-open]').forEach((r) => r.onclick = () => openTask(r.dataset.open));
+}
+
+// ---- task drawer ---------------------------------------------------------------------
+let drChat = null, drTask = null;
+const threadFor = (t) => state.channels.find((c) => c.taskId && String(c.taskId) === String(t.id));
+
+async function openTask(id) {
+    const t = state.tasks.find((x) => x.id === id);
+    if (!t) return;
+    drTask = t;
+    $('#scrim').classList.add('open'); $('#drawer').classList.add('open');
+    $('#drTitle').textContent = t.title;
+    $('#drClose').innerHTML = icon('x');
+    $('#drChips').innerHTML = `${chipDept(t.department)}${prioTag(t.priority)}${stTag(t)}${!t.acknowledgedAt && t.status !== 'done' ? '<span class="tag" style="color:var(--warn);border-color:var(--warn)">awaiting ack</span>' : ''}`;
+    renderDrMain(t);
+    renderDrThread(t);
+}
+function renderDrMain(t) {
+    const subs = t.subtasks || [];
+    const logs = t.timeLogged || [];
+    const hist = (t.stageHistory || []).slice().reverse();
+    const opts = nextStates(t);
+    $('#drMain').innerHTML = `
+        <div class="sect"><span class="mlabel">Work</span>
+            <div class="hstack mt8" style="flex-wrap:wrap">
+                <span class="flt"><select id="dState" style="width:auto">${opts.map((w) => `<option value="${esc(w)}" ${t.workflowState === w ? 'selected' : ''}>${WF_LABEL(w)}</option>`).join('')}</select></span>
+                <input id="dProg" type="number" min="0" max="100" step="5" value="${t.progress || 0}" style="width:78px">
+                <button class="btn btn-sm" id="dSave">Apply</button>
+                ${!t.acknowledgedAt && t.status !== 'done' ? `<button class="btn btn-sm btn-primary" id="dAck">Acknowledge</button>` : ''}
+            </div>
+            ${t.acknowledgedAt ? `<div class="s faint small mt8">Acknowledged ${esc(A.fmtDay(t.acknowledgedAt))}</div>` : ''}
+        </div>
+        <div class="sect"><span class="mlabel">Progress — ${t.progress || 0}%</span><div class="bar mt8"><i style="width:${t.progress || 0}%"></i></div></div>
+        <div class="sect"><span class="mlabel">Brief</span><p class="small dim mt8" style="white-space:pre-wrap">${esc(t.description || 'No description provided.')}</p></div>
+        ${subs.length ? `<div class="sect"><span class="mlabel">Checklist — ${subs.filter((x) => x.done).length}/${subs.length}</span>
+            ${subs.map((s, i) => `<div class="check ${s.done ? 'done' : ''}" data-sub="${i}"><span class="box">${icon('check')}</span><span class="lbl" style="flex:1">${esc(s.title)}</span></div>`).join('')}
+        </div>` : ''}
+        <div class="sect"><span class="mlabel">Log time</span>
+            ${logs.length ? `<div class="rows">${logs.slice(-5).reverse().map((l) => `<div class="row"><div class="grow"><div class="t">${esc(l.note || 'Work log')}</div><div class="s">${esc(A.fmtDay(l.at))}</div></div><span class="num small">${l.minutes}m</span></div>`).join('')}</div>` : '<div class="s faint small">Nothing logged yet.</div>'}
+            <div class="hstack mt8"><input id="logMin" type="number" placeholder="min" style="width:70px;font-size:12.5px"><input id="logNote" placeholder="What you did" style="font-size:12.5px"><button class="btn btn-sm" id="logAdd">Add</button></div>
+            <div class="s faint small mt8">Estimate ${t.estimatedHours || 0} h · logged ${t.actualHours || 0} h</div>
+        </div>
+        <div class="sect"><span class="mlabel">Details</span>
+            <div class="kv mt8">
+                <span class="k">Assigned by</span><span>${esc(t.createdBy && t.createdBy === state.me.id ? 'you' : (person(t.createdBy) || {}).name || 'lead')}</span>
+                <span class="k">Project</span><span>${esc(projectName(t.projectId) || '—')}</span>
+                <span class="k">Due</span><span class="num">${t.dueDate ? esc(A.fmtDay(t.dueDate)) : '—'}</span>
+                <span class="k">Category</span><span>${esc(t.category || '—')}</span>
+                <span class="k">Tags</span><span>${(t.tags || []).map((x) => `<span class="tag">${esc(x)}</span>`).join(' ') || '—'}</span>
+            </div>
+        </div>
+        <div class="sect"><span class="mlabel">Stage history</span>
+            <div class="timeline mt8">${hist.map((h) => `<div class="ev"><time>${esc(A.fmtDay(h.at))}</time><div class="d"><b>${esc(h.by || 'system')}</b> ${esc(WF_LABEL(h.from || 'new'))} → ${esc(WF_LABEL(h.to))}</div></div>`).join('') || '<div class="s faint small">No transitions recorded.</div>'}</div>
+        </div>`;
+    $('#dSave').onclick = async () => {
+        const ws = $('#dState').value;
+        const prog = Math.max(0, Math.min(100, parseInt($('#dProg').value, 10) || 0));
+        const body = {};
+        if (ws !== t.workflowState) body.workflowState = ws;
+        if (prog !== (t.progress || 0)) body.progress = prog;
+        if (!Object.keys(body).length) return;
+        await patchTask(t, body);
+    };
+    const ack = $('#dAck');
+    if (ack) ack.onclick = async () => {
+        try { const r = await api.post(`/api/company/my/tasks/${t.id}/acknowledge`, {}); Object.assign(t, r.task); toast('Acknowledged', 'good'); afterTaskChange(t); }
+        catch (e) { toast(e.message, 'bad'); }
+    };
+    $('#drMain').querySelectorAll('[data-sub]').forEach((el) => {
+        el.onclick = async () => {
+            const next = subs.map((s, i) => i === +el.dataset.sub ? Object.assign({}, s, { done: !s.done }) : s);
+            const done = next.filter((x) => x.done).length;
+            await patchTask(t, { subtasks: next, progress: Math.round((done / next.length) * 100) });
+        };
+    });
+    $('#logAdd').onclick = async () => {
+        const minutes = parseInt($('#logMin').value, 10);
+        if (!minutes) return toast('Enter minutes first', 'bad');
+        try {
+            const r = await api.post(`/api/company/my/tasks/${t.id}/log`, { minutes, note: $('#logNote').value });
+            Object.assign(t, r.task);
+            toast('Time logged', 'good');
+            $('#logMin').value = ''; $('#logNote').value = '';
+            afterTaskChange(t);
+        } catch (e) { toast(e.message, 'bad'); }
+    };
+}
+async function patchTask(t, body) {
+    try {
+        const r = await api.put('/api/company/my/tasks/' + t.id, body);
+        Object.assign(t, r.task);
+        afterTaskChange(t);
+    } catch (e) {
+        if (e.status === 422) toast('That state change needs a lead — ask in the task thread', 'bad');
+        else toast(e.message, 'bad');
+    }
+}
+function afterTaskChange(t) {
+    if (drTask === t) {
+        $('#drChips').innerHTML = `${chipDept(t.department)}${prioTag(t.priority)}${stTag(t)}${!t.acknowledgedAt && t.status !== 'done' ? '<span class="tag" style="color:var(--warn);border-color:var(--warn)">awaiting ack</span>' : ''}`;
+        renderDrMain(t);
+    }
+    route();
+}
+function renderDrThread(t) {
+    if (drChat) { drChat.destroy(); drChat = null; }
+    const host = $('#drChat');
+    host.innerHTML = '';
+    const ch = threadFor(t);
+    if (!ch) { host.innerHTML = '<div class="empty small" style="padding:16px">No thread yet — your lead opens one with the assignment.</div>'; return; }
+    if (!state.client) { host.innerHTML = '<div class="empty small" style="padding:16px">Chat connection unavailable.</div>'; return; }
+    drChat = window.mountChat(host, {
+        client: state.client, me: state.me, compact: true,
+        channels: async () => ({ channels: [ch], unread: {}, directory: directoryWithMe() }),
+        mockMessages: () => []
+    });
+    drChat.reloadChannels();
+}
+function directoryWithMe() {
+    if (state.directory.some((d) => String(d.id) === String(state.me.id))) return state.directory;
+    return [{ id: state.me.id, name: state.me.name, department: state.me.department, username: (state.me.staff || {}).username || '' }].concat(state.directory);
+}
+function closeDrawer() {
+    $('#scrim').classList.remove('open'); $('#drawer').classList.remove('open');
+    if (drChat) { drChat.destroy(); drChat = null; }
+    drTask = null;
+}
+$('#drClose').onclick = closeDrawer;
+$('#scrim').onclick = closeDrawer;
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeDrawer(); $('#modal').classList.remove('open'); } });
+
+// ---- chat view --------------------------------------------------------------------------
+function chatView() {
+    $('#view').innerHTML = '<div style="flex:1;min-width:0;min-height:0" id="chatHost"></div>';
+    const host = $('#chatHost');
+    if (!state.client) { host.innerHTML = '<div class="empty">Chat connection unavailable</div>'; return; }
+    state.chat = window.mountChat(host, {
+        client: state.client, me: state.me,
+        channels: async () => {
+            const r = await api.get('/api/company/chat/channels');
+            state.channels = r.channels || [];
+            state.unread = r.unread || {};
+            refreshCounts();
+            return { channels: state.channels, unread: state.unread, directory: directoryWithMe() };
+        },
+        refreshDirectory: async () => directoryWithMe()
+    });
+    state.chat.reloadChannels();
+}
+
+// ---- my profile -----------------------------------------------------------------------------
+async function meView() {
+    let s = state.stats;
+    if (!s) {
+        try { s = (await api.get('/api/company/my/stats')).stats; state.stats = s; }
+        catch (e) { $('#view').innerHTML = '<div class="empty">Could not load your profile data</div>'; return; }
+    }
+    const st = state.me.staff || {};
+    $('#view').innerHTML = `
+        <div class="card">
+            <div class="hstack" style="align-items:flex-start">
+                ${avatar(state.me.name, st.avatarUrl, false, true)}
+                <div style="min-width:0">
+                    <div style="font-size:15px;font-weight:600">${esc(state.me.name)}</div>
+                    <div class="mlabel mt8">@${esc(st.username || '—')} · ${esc(st.role || 'member')} · ${esc(WF_LABEL(st.hierarchy || ''))}</div>
+                </div>
+                <div class="right hstack" style="gap:8px">${chipDept(state.me.department)}<button class="btn btn-sm" id="editMe">${icon('edit')} Edit</button></div>
+            </div>
+            <div class="kv mt16">
+                <span class="k">Mobile</span><span class="num">${esc(st.mobile || '—')}</span>
+                <span class="k">Email</span><span>${esc(st.email || '—')}</span>
+                <span class="k">Location</span><span>${esc(st.location || '—')}</span>
+                <span class="k">Joined</span><span class="num">${st.joinDate ? esc(A.fmtDay(st.joinDate)) : '—'}</span>
+                <span class="k">Reports to</span><span>${esc((person(st.reportsTo) || {}).name || '—')}</span>
+                <span class="k">Cross-dept view</span><span>${(st.canViewDepartments || []).map(chipDept).join(' ') || '—'}</span>
+            </div>
+        </div>
+        <div class="kpi-row mt16">
+            <div class="kpi ${s.overdue ? 'warn' : ''}"><span class="mlabel">Open</span><div class="v">${s.totalTasks - s.completed}</div><div class="sub">${s.totalTasks} assigned</div></div>
+            <div class="kpi"><span class="mlabel">Completed</span><div class="v">${s.completed}</div><div class="sub">all time</div></div>
+            <div class="kpi ${s.overdue ? 'bad' : ''}"><span class="mlabel">Overdue</span><div class="v">${s.overdue}</div><div class="sub">past due</div></div>
+            <div class="kpi"><span class="mlabel">Rating</span><div class="v">${esc(s.avgRating || '—')}</div><div class="sub">${s.reviewCount} reviews</div></div>
+            <div class="kpi"><span class="mlabel">Goals live</span><div class="v">${s.activeGoals}</div><div class="sub">${s.activeOkrs} OKRs · ${s.skillCount} skills</div></div>
+        </div>
+        <div class="split mt16">
+            <div class="stack">
+                <div class="card"><span class="mlabel">Reviews</span>
+                    ${(s.reviews || []).length ? `<div class="rows mt8">${s.reviews.map((r) => `<div class="row" style="align-items:flex-start"><div class="grow"><div class="t">${esc(r.reviewPeriod || '—')} · ${esc(r.reviewType || '')}</div><div class="s">${esc(r.strengths || '')}</div><div class="s" style="color:var(--faint)">To improve — ${esc(r.improvements || '—')}</div></div><span class="num" style="font-size:15px">${esc(r.overallRating || '—')}</span></div>`).join('')}</div>` : '<div class="empty" style="padding:16px">No reviews yet</div>'}
+                </div>
+                <div class="card"><span class="mlabel">OKRs</span>
+                    ${(s.okrs || []).length ? `<div class="stack mt8">${s.okrs.map((o) => `<div><div class="hstack"><span style="font-size:13px">${esc(o.objectiveText)}</span><span class="right tag">${esc(o.period || '')}</span></div><div class="bar mt8"><i style="width:${o.progress || 0}%"></i></div>${(o.keyResults || []).length ? `<div class="s faint small mt8">${o.keyResults.map((k) => esc(k.text) + (k.target ? ` (${k.current || 0}/${k.target})` : '')).join(' · ')}</div>` : ''}</div>`).join('')}</div>` : '<div class="empty" style="padding:16px">No OKRs</div>'}
+                </div>
+                <div class="card"><span class="mlabel">Goals</span>
+                    ${(s.goals || []).length ? `<div class="stack mt8">${s.goals.map((g) => `<div><div class="hstack"><span style="font-size:13px">${esc(g.goalText)}</span><span class="right tag">${esc(g.status)}</span></div><div class="bar mt8"><i style="width:${g.progress || 0}%"></i></div>${(g.milestones || []).length ? `<div class="hstack mt8" style="flex-wrap:wrap;gap:6px">${g.milestones.map((m) => `<span class="tag" style="${m.done ? 'color:var(--text);border-color:var(--line-2)' : ''}">${esc(m.text)}</span>`).join('')}</div>` : ''}</div>`).join('')}</div>` : '<div class="empty" style="padding:16px">No goals</div>'}
+                </div>
+            </div>
+            <div class="stack">
+                <div class="card" style="padding:0;overflow:hidden"><div style="padding:16px 16px 0"><span class="mlabel">Skills</span></div>
+                    ${(s.skills || []).length ? `<table class="grid mtx"><thead><tr><th>Skill</th><th>Level</th><th>Yrs</th></tr></thead><tbody>
+                    ${s.skills.map((k) => `<tr><td>${esc(k.skillName)}<div class="s faint" style="font:10px var(--mono)">${esc(k.category || '')}</div></td><td><span class="lv" title="${k.proficiency}/5">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= k.proficiency ? 'on' : ''}"></i>`).join('')}</span></td><td class="num faint">${k.yearsExperience || '—'}</td></tr>`).join('')}
+                    </tbody></table>` : '<div class="empty" style="padding:16px">No skills logged</div>'}
+                </div>
+                <div class="card"><span class="mlabel">Achievements</span>
+                    ${(s.achievements || []).length ? `<div class="rows mt8">${s.achievements.map((a) => `<div class="row" style="align-items:flex-start"><span style="color:var(--dim)">${icon('flag')}</span><div class="grow"><div class="t">${esc(a.title)}</div><div class="s">${esc(a.description || '')}</div></div><span class="s faint num">${esc(A.fmtDay(a.createdAt))}</span></div>`).join('')}</div>` : '<div class="empty" style="padding:16px">Nothing awarded yet</div>'}
+                </div>
+                <div class="card"><span class="mlabel">My done work</span>
+                    <div class="rows mt8">${((s.tasks || []).filter((t) => t.status === 'done').slice(0, 6)).map((t) => `<div class="row"><div class="grow"><div class="t">${esc(t.title)}</div><div class="s">${esc(deptName(t.department))}</div></div><span class="s faint num">${t.completedAt ? esc(A.fmtDay(t.completedAt)) : '—'}</span></div>`).join('') || '<div class="empty" style="padding:14px">No completed tasks yet</div>'}</div>
+                </div>
+            </div>
+        </div>`;
+    $('#editMe').onclick = profileModal;
+}
+
+function profileModal() {
+    const st = state.me.staff || {};
+    const f = (label, html) => `<div class="field"><label class="mlabel">${label}</label>${html}</div>`;
+    const i = (key, val, type) => `<input data-f="${key}" type="${type || 'text'}" value="${esc(val == null ? '' : val)}">`;
+    $('#mdTitle').textContent = 'Edit profile';
+    $('#mdBody').innerHTML = `<div class="form-grid">
+        ${f('Full name', i('fullName', st.fullName))}
+        ${f('Email', i('email', st.email, 'email'))}
+        ${f('Mobile', i('mobile', st.mobile))}
+        ${f('Location', i('location', st.location))}
+        ${f('Avatar URL', i('avatarUrl', st.avatarUrl))}
+        </div>`;
+    $('#modal').classList.add('open');
+    $('#mdCancel').onclick = () => $('#modal').classList.remove('open');
+    $('#mdSave').onclick = async () => {
+        const body = {};
+        $('#mdBody').querySelectorAll('[data-f]').forEach((el) => { if (el.value) body[el.dataset.f] = el.value; });
+        try {
+            const r = await api.put('/api/company/me', body);
+            const s = r.staff || Object.assign({}, st, body);
+            state.me.staff = s;
+            state.me.name = s.fullName || state.me.name;
+            $('#meName').textContent = state.me.name;
+            $('#meAv').innerHTML = avatar(state.me.name, s.avatarUrl, false);
+            $('#modal').classList.remove('open');
+            state.stats = null;
+            toast('Profile saved', 'good');
+            meView();
+        } catch (e) { toast(e.message, 'bad'); }
+    };
+}
+
+// ---- realtime wiring ---------------------------------------------------------------------------
+function connectChat() {
+    state.client = new A.ChatClient({
+        on: (m) => {
+            if (m.t === 'ack') state.client.ackFrame(m);
+            if (m.t === 'presence') state.presence = new Set((m.on || []).map(String));
+            if (m.t === 'msg' && m.message && state.chat && String(m.message.channelId) !== String((state.chat.currentChannel() || {}).id)) {
+                state.unread[m.message.channelId] = (state.unread[m.message.channelId] || 0) + 1;
+                refreshCounts();
+            }
+            if (state.chat) state.chat.handleFrame(m);
+            if (drChat) drChat.handleFrame(m);
+        }
+    });
+    try { state.client.connect(); } catch (e) { state.client = null; }
+}
+
+boot();
+})();
+</script>
+</body>
+</html>

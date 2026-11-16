@@ -17960,6 +17960,775 @@ app.get('/api/tech-team/my-stats', authenticateTeamMember, async (req, res) => {
     }
 });
 
+// ==================== COMPANY OPS PORTAL ====================
+// Company-wide task management + realtime chat for every department.
+// Staff log in with username + mobile; dept leads get scoped admin access,
+// platform admins/operators get the full console. Tech-team portal untouched.
+const companyOpsDB = require('./config/company-ops-db');
+let companyChatHub = null; // assigned where the WebSocket hubs attach
+
+function companyErr(res, tag, error) {
+    console.error(`[CompanyOps] ${tag} error:`, error.message);
+    res.status(error.status || 500).json({ error: error.message || 'Request failed' });
+}
+
+// Staff token middleware (role company_staff).
+function authenticateCompanyStaff(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    const decoded = verifyToken(authHeader.substring(7));
+    if (!decoded || decoded.role !== 'company_staff') {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    req.companyActor = {
+        staffId: decoded.staffId,
+        name: decoded.name || decoded.username,
+        department: decoded.department,
+        isAdmin: !!decoded.isAdmin,
+        canViewDepartments: decoded.canViewDepartments || [],
+        platformAdmin: false
+    };
+    next();
+}
+
+// Combined console middleware: platform admin/operator sees everything,
+// staff with is_admin sees their scoped departments only.
+async function authenticateCompanyConsole(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    const decoded = verifyToken(authHeader.substring(7));
+    if (!decoded) return res.status(401).json({ error: 'Invalid or expired token' });
+    if (decoded.role === 'admin' || decoded.role === 'operator') {
+        req.companyScope = { all: true, actor: { name: decoded.username || 'Admin', staffId: null, platformAdmin: true } };
+        return next();
+    }
+    if (decoded.role === 'company_staff') {
+        const staff = await companyOpsDB.getStaff(decoded.staffId).catch(() => null);
+        if (!staff || !staff.active) return res.status(401).json({ error: 'Account deactivated' });
+        if (!staff.isAdmin) return res.status(403).json({ error: 'Console access requires a department lead' });
+        req.companyScope = {
+            all: false,
+            departments: [staff.department, ...(staff.canViewDepartments || [])].filter(Boolean),
+            actor: { staffId: staff.id, name: staff.fullName, department: staff.department, platformAdmin: false }
+        };
+        return next();
+    }
+    return res.status(401).json({ error: 'Invalid token role' });
+}
+
+// ---------- Pages ----------
+const COMPANY_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://exchange-return-tracking.onrender.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com wss:;";
+app.get('/company/admin', (req, res) => {
+    res.setHeader('Content-Security-Policy', COMPANY_CSP);
+    res.sendFile(path.join(__dirname, 'public', 'company', 'admin.html'));
+});
+app.get('/company/portal', (req, res) => {
+    res.setHeader('Content-Security-Policy', COMPANY_CSP);
+    res.sendFile(path.join(__dirname, 'public', 'company', 'portal.html'));
+});
+
+// ---------- Auth ----------
+app.post('/api/company/login', async (req, res) => {
+    try {
+        const { username, mobile } = req.body;
+        if (!username || !mobile) {
+            return res.status(400).json({ error: 'Username and mobile number are required' });
+        }
+        const staff = await companyOpsDB.getStaffByLogin(username, mobile);
+        if (!staff) {
+            trackSuspicious(req.ip, 'failed_company_login');
+            return res.status(401).json({ error: 'Invalid credentials or account deactivated' });
+        }
+        const token = generateToken({
+            role: 'company_staff',
+            staffId: staff.id,
+            username: staff.username,
+            name: staff.fullName,
+            department: staff.department,
+            isAdmin: !!staff.isAdmin,
+            canViewDepartments: staff.canViewDepartments || [],
+            timestamp: Date.now()
+        });
+        // make sure the dept channel exists and they are in it
+        companyOpsDB.ensureDeptChannel(staff.department)
+            .then((ch) => ch && companyOpsDB.joinChannel(ch.id, staff.id))
+            .catch(() => {});
+        res.json({ success: true, token, staff });
+    } catch (error) {
+        companyErr(res, 'Login', error);
+    }
+});
+
+app.get('/api/company/me', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const staff = await companyOpsDB.getStaff(req.companyActor.staffId);
+        if (!staff) return res.status(404).json({ error: 'Staff not found' });
+        res.json({ success: true, staff });
+    } catch (error) {
+        companyErr(res, 'Get me', error);
+    }
+});
+
+app.put('/api/company/me', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const allowed = ['fullName', 'email', 'avatarUrl', 'bio', 'location', 'timezone', 'mobile'];
+        const updates = {};
+        for (const k of allowed) if (req.body[k] !== undefined) updates[k] = req.body[k];
+        const staff = await companyOpsDB.updateStaff(req.companyActor.staffId, updates);
+        res.json({ success: true, staff });
+    } catch (error) {
+        companyErr(res, 'Update me', error);
+    }
+});
+
+// ---------- Console: departments ----------
+app.get('/api/company/console/departments', authenticateCompanyConsole, async (req, res) => {
+    try {
+        res.json({ success: true, departments: await companyOpsDB.listDepartments() });
+    } catch (error) { companyErr(res, 'List departments', error); }
+});
+app.post('/api/company/console/departments', authenticateCompanyConsole, async (req, res) => {
+    try {
+        if (!req.companyScope.all) return res.status(403).json({ error: 'Only platform admins can create departments' });
+        res.json({ success: true, department: await companyOpsDB.createDepartment(req.body) });
+    } catch (error) { companyErr(res, 'Create department', error); }
+});
+app.put('/api/company/console/departments/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        if (!req.companyScope.all) return res.status(403).json({ error: 'Only platform admins can edit departments' });
+        res.json({ success: true, department: await companyOpsDB.updateDepartment(req.params.id, req.body) });
+    } catch (error) { companyErr(res, 'Update department', error); }
+});
+app.delete('/api/company/console/departments/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        if (!req.companyScope.all) return res.status(403).json({ error: 'Only platform admins can archive departments' });
+        await companyOpsDB.deleteDepartment(req.params.id);
+        res.json({ success: true });
+    } catch (error) { companyErr(res, 'Delete department', error); }
+});
+
+// ---------- Console: staff ----------
+app.get('/api/company/console/staff', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const staff = await companyOpsDB.listStaff(req.companyScope, {
+            department: req.query.department || undefined,
+            activeOnly: req.query.activeOnly === 'true'
+        });
+        res.json({ success: true, staff });
+    } catch (error) { companyErr(res, 'List staff', error); }
+});
+app.post('/api/company/console/staff', authenticateCompanyConsole, async (req, res) => {
+    try {
+        companyOpsDB.assertDeptAccess(req.companyScope, req.body.department);
+        const staff = await companyOpsDB.createStaff(req.body);
+        res.json({ success: true, staff });
+    } catch (error) { companyErr(res, 'Create staff', error); }
+});
+app.put('/api/company/console/staff/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const target = await companyOpsDB.getStaff(req.params.id);
+        if (!target) return res.status(404).json({ error: 'Staff not found' });
+        companyOpsDB.assertDeptAccess(req.companyScope, target.department, { allowUnscoped: false });
+        if (req.body.department) companyOpsDB.assertDeptAccess(req.companyScope, req.body.department);
+        const staff = await companyOpsDB.updateStaff(req.params.id, req.body);
+        res.json({ success: true, staff });
+    } catch (error) { companyErr(res, 'Update staff', error); }
+});
+app.delete('/api/company/console/staff/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const target = await companyOpsDB.getStaff(req.params.id);
+        if (!target) return res.status(404).json({ error: 'Staff not found' });
+        companyOpsDB.assertDeptAccess(req.companyScope, target.department, { allowUnscoped: false });
+        await companyOpsDB.deleteStaff(req.params.id);
+        res.json({ success: true });
+    } catch (error) { companyErr(res, 'Delete staff', error); }
+});
+
+// ---------- Console: projects ----------
+app.get('/api/company/console/projects', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const projects = await companyOpsDB.listProjects(req.companyScope, {
+            department: req.query.department || undefined,
+            status: req.query.status || undefined
+        });
+        res.json({ success: true, projects });
+    } catch (error) { companyErr(res, 'List projects', error); }
+});
+app.post('/api/company/console/projects', authenticateCompanyConsole, async (req, res) => {
+    try {
+        companyOpsDB.assertDeptAccess(req.companyScope, req.body.department);
+        res.json({ success: true, project: await companyOpsDB.createProject(req.body) });
+    } catch (error) { companyErr(res, 'Create project', error); }
+});
+app.put('/api/company/console/projects/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        res.json({ success: true, project: await companyOpsDB.updateProject(req.params.id, req.body) });
+    } catch (error) { companyErr(res, 'Update project', error); }
+});
+app.delete('/api/company/console/projects/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        await companyOpsDB.deleteProject(req.params.id);
+        res.json({ success: true });
+    } catch (error) { companyErr(res, 'Delete project', error); }
+});
+
+// ---------- Console: tasks ----------
+app.get('/api/company/console/tasks', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const tasks = await companyOpsDB.listTasks(req.companyScope, {
+            status: req.query.status || undefined,
+            workflowState: req.query.workflowState || undefined,
+            assignedTo: req.query.assignedTo || undefined,
+            projectId: req.query.projectId || undefined,
+            priority: req.query.priority || undefined,
+            category: req.query.category || undefined,
+            department: req.query.department || undefined,
+            topLevelOnly: req.query.topLevelOnly === 'true'
+        });
+        res.json({ success: true, tasks });
+    } catch (error) { companyErr(res, 'List tasks', error); }
+});
+app.get('/api/company/console/tasks/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const task = await companyOpsDB.getTask(req.params.id);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+        companyOpsDB.assertDeptAccess(req.companyScope, task.department);
+        const [comments, thread] = await Promise.all([
+            companyOpsDB.listTaskComments(task.id),
+            companyOpsDB.ensureTaskThread(task, req.companyScope.actor)
+        ]);
+        res.json({ success: true, task, comments, channelId: thread ? thread.id : null });
+    } catch (error) { companyErr(res, 'Get task', error); }
+});
+app.post('/api/company/console/tasks', authenticateCompanyConsole, async (req, res) => {
+    try {
+        companyOpsDB.assertDeptAccess(req.companyScope, req.body.department);
+        if (!req.body.createdBy && req.companyScope.actor.staffId) req.body.createdBy = req.companyScope.actor.staffId;
+        const task = await companyOpsDB.createTask(req.body, req.companyScope.actor);
+        if (req.body.assignedTo && companyChatHub) {
+            companyChatHub.pushTaskEvent(task.id, `Task assigned by ${req.companyScope.actor.name}`);
+        }
+        res.json({ success: true, task });
+    } catch (error) { companyErr(res, 'Create task', error); }
+});
+app.put('/api/company/console/tasks/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const existing = await companyOpsDB.getTask(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Task not found' });
+        companyOpsDB.assertDeptAccess(req.companyScope, existing.department, { allowUnscoped: false });
+        const force = req.query.force === 'true';
+        const task = await companyOpsDB.updateTask(req.params.id, req.body, { actor: req.companyScope.actor, force });
+        if (req.body.workflowState && req.body.workflowState !== existing.workflowState && companyChatHub) {
+            companyChatHub.pushTaskEvent(task.id, `${req.companyScope.actor.name} moved this task to ${req.body.workflowState}`);
+        }
+        res.json({ success: true, task });
+    } catch (error) { companyErr(res, 'Update task', error); }
+});
+app.delete('/api/company/console/tasks/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const existing = await companyOpsDB.getTask(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Task not found' });
+        companyOpsDB.assertDeptAccess(req.companyScope, existing.department, { allowUnscoped: false });
+        await companyOpsDB.deleteTask(req.params.id);
+        res.json({ success: true });
+    } catch (error) { companyErr(res, 'Delete task', error); }
+});
+app.post('/api/company/console/tasks/:id/log', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const task = await companyOpsDB.logTaskTime(req.params.id, req.body, req.companyScope.actor);
+        res.json({ success: true, task });
+    } catch (error) { companyErr(res, 'Log time', error); }
+});
+app.post('/api/company/console/tasks/:id/comments', authenticateCompanyConsole, async (req, res) => {
+    try {
+        if (!req.body.text) return res.status(400).json({ error: 'Comment text is required' });
+        const comment = await companyOpsDB.addTaskComment({
+            taskId: req.params.id,
+            authorId: req.companyScope.actor.staffId,
+            authorName: req.companyScope.actor.name,
+            text: req.body.text,
+            parentId: req.body.parentId || null
+        });
+        res.json({ success: true, comment });
+    } catch (error) { companyErr(res, 'Add comment', error); }
+});
+
+// ---------- Console: stats, feed ----------
+app.get('/api/company/console/stats', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const scope = req.query.department
+            ? { all: false, departments: [req.query.department] }
+            : req.companyScope;
+        res.json({ success: true, stats: await companyOpsDB.getStats(scope) });
+    } catch (error) { companyErr(res, 'Stats', error); }
+});
+app.get('/api/company/console/premium-stats', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const scope = req.query.department
+            ? { all: false, departments: [req.query.department] }
+            : req.companyScope;
+        res.json({ success: true, stats: await companyOpsDB.getPremiumStats(scope) });
+    } catch (error) { companyErr(res, 'Premium stats', error); }
+});
+app.get('/api/company/console/feed', authenticateCompanyConsole, async (req, res) => {
+    try {
+        res.json({ success: true, feed: await companyOpsDB.getFeed(req.companyScope, { limit: parseInt(req.query.limit, 10) || 40 }) });
+    } catch (error) { companyErr(res, 'Feed', error); }
+});
+
+// ---------- Console: HR modules (reviews / skills / okrs / meetings / achievements / goals) ----------
+app.get('/api/company/console/reviews', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const reviews = await companyOpsDB.listReviews(req.companyScope, {
+            staffId: req.query.staffId || undefined,
+            period: req.query.period || undefined,
+            reviewType: req.query.reviewType || undefined,
+            department: req.query.department || undefined
+        });
+        res.json({ success: true, reviews });
+    } catch (error) { companyErr(res, 'List reviews', error); }
+});
+app.post('/api/company/console/reviews', authenticateCompanyConsole, async (req, res) => {
+    try {
+        if (!req.body.reviewerId && req.companyScope.actor.staffId) req.body.reviewerId = req.companyScope.actor.staffId;
+        res.json({ success: true, review: await companyOpsDB.createReview(req.body) });
+    } catch (error) { companyErr(res, 'Create review', error); }
+});
+app.put('/api/company/console/reviews/:id', authenticateCompanyConsole, async (req, res) => {
+    try {
+        res.json({ success: true, review: await companyOpsDB.updateReview(req.params.id, req.body) });
+    } catch (error) { companyErr(res, 'Update review', error); }
+});
+app.delete('/api/company/console/reviews/:id', authenticateCompanyConsole, async (req, res) => {
+    try { await companyOpsDB.deleteReview(req.params.id); res.json({ success: true }); }
+    catch (error) { companyErr(res, 'Delete review', error); }
+});
+
+app.get('/api/company/console/skills', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const skills = await companyOpsDB.listSkills({
+            staffId: req.query.staffId || undefined,
+            category: req.query.category || undefined,
+            skillName: req.query.skillName || undefined
+        });
+        res.json({ success: true, skills });
+    } catch (error) { companyErr(res, 'List skills', error); }
+});
+app.get('/api/company/console/skill-matrix', authenticateCompanyConsole, async (req, res) => {
+    try {
+        res.json({ success: true, matrix: await companyOpsDB.getSkillMatrix(req.companyScope) });
+    } catch (error) { companyErr(res, 'Skill matrix', error); }
+});
+app.post('/api/company/console/skills', authenticateCompanyConsole, async (req, res) => {
+    try { res.json({ success: true, skill: await companyOpsDB.createSkill(req.body) }); }
+    catch (error) { companyErr(res, 'Create skill', error); }
+});
+app.put('/api/company/console/skills/:id', authenticateCompanyConsole, async (req, res) => {
+    try { res.json({ success: true, skill: await companyOpsDB.updateSkill(req.params.id, req.body) }); }
+    catch (error) { companyErr(res, 'Update skill', error); }
+});
+app.delete('/api/company/console/skills/:id', authenticateCompanyConsole, async (req, res) => {
+    try { await companyOpsDB.deleteSkill(req.params.id); res.json({ success: true }); }
+    catch (error) { companyErr(res, 'Delete skill', error); }
+});
+
+app.get('/api/company/console/okrs', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const okrs = await companyOpsDB.listOkrs({
+            staffId: req.query.staffId || undefined,
+            deptId: req.query.deptId || undefined,
+            period: req.query.period || undefined,
+            status: req.query.status || undefined
+        });
+        res.json({ success: true, okrs });
+    } catch (error) { companyErr(res, 'List OKRs', error); }
+});
+app.post('/api/company/console/okrs', authenticateCompanyConsole, async (req, res) => {
+    try { res.json({ success: true, okr: await companyOpsDB.createOkr(req.body) }); }
+    catch (error) { companyErr(res, 'Create OKR', error); }
+});
+app.put('/api/company/console/okrs/:id', authenticateCompanyConsole, async (req, res) => {
+    try { res.json({ success: true, okr: await companyOpsDB.updateOkr(req.params.id, req.body) }); }
+    catch (error) { companyErr(res, 'Update OKR', error); }
+});
+app.delete('/api/company/console/okrs/:id', authenticateCompanyConsole, async (req, res) => {
+    try { await companyOpsDB.deleteOkr(req.params.id); res.json({ success: true }); }
+    catch (error) { companyErr(res, 'Delete OKR', error); }
+});
+
+app.get('/api/company/console/meetings', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const meetings = await companyOpsDB.listMeetings({
+            staffId: req.query.staffId || undefined,
+            meetingType: req.query.meetingType || undefined,
+            department: req.query.department || undefined,
+            fromDate: req.query.fromDate || undefined,
+            toDate: req.query.toDate || undefined
+        });
+        res.json({ success: true, meetings });
+    } catch (error) { companyErr(res, 'List meetings', error); }
+});
+app.post('/api/company/console/meetings', authenticateCompanyConsole, async (req, res) => {
+    try { res.json({ success: true, meeting: await companyOpsDB.createMeeting(req.body) }); }
+    catch (error) { companyErr(res, 'Create meeting', error); }
+});
+app.put('/api/company/console/meetings/:id', authenticateCompanyConsole, async (req, res) => {
+    try { res.json({ success: true, meeting: await companyOpsDB.updateMeeting(req.params.id, req.body) }); }
+    catch (error) { companyErr(res, 'Update meeting', error); }
+});
+app.delete('/api/company/console/meetings/:id', authenticateCompanyConsole, async (req, res) => {
+    try { await companyOpsDB.deleteMeeting(req.params.id); res.json({ success: true }); }
+    catch (error) { companyErr(res, 'Delete meeting', error); }
+});
+
+app.get('/api/company/console/achievements', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const achievements = await companyOpsDB.listAchievements({
+            staffId: req.query.staffId || undefined,
+            category: req.query.category || undefined,
+            department: req.query.department || undefined
+        });
+        res.json({ success: true, achievements });
+    } catch (error) { companyErr(res, 'List achievements', error); }
+});
+app.post('/api/company/console/achievements', authenticateCompanyConsole, async (req, res) => {
+    try {
+        if (!req.body.awardedBy && req.companyScope.actor.staffId) req.body.awardedBy = req.companyScope.actor.staffId;
+        res.json({ success: true, achievement: await companyOpsDB.createAchievement(req.body) });
+    } catch (error) { companyErr(res, 'Create achievement', error); }
+});
+app.delete('/api/company/console/achievements/:id', authenticateCompanyConsole, async (req, res) => {
+    try { await companyOpsDB.deleteAchievement(req.params.id); res.json({ success: true }); }
+    catch (error) { companyErr(res, 'Delete achievement', error); }
+});
+
+app.get('/api/company/console/goals', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const goals = await companyOpsDB.listGoals({
+            staffId: req.query.staffId || undefined,
+            category: req.query.category || undefined,
+            status: req.query.status || undefined,
+            department: req.query.department || undefined
+        });
+        res.json({ success: true, goals });
+    } catch (error) { companyErr(res, 'List goals', error); }
+});
+app.post('/api/company/console/goals', authenticateCompanyConsole, async (req, res) => {
+    try { res.json({ success: true, goal: await companyOpsDB.createGoal(req.body) }); }
+    catch (error) { companyErr(res, 'Create goal', error); }
+});
+app.put('/api/company/console/goals/:id', authenticateCompanyConsole, async (req, res) => {
+    try { res.json({ success: true, goal: await companyOpsDB.updateGoal(req.params.id, req.body) }); }
+    catch (error) { companyErr(res, 'Update goal', error); }
+});
+app.delete('/api/company/console/goals/:id', authenticateCompanyConsole, async (req, res) => {
+    try { await companyOpsDB.deleteGoal(req.params.id); res.json({ success: true }); }
+    catch (error) { companyErr(res, 'Delete goal', error); }
+});
+
+// ---------- Chat HTTP (REST half; realtime half lives in ChatHub) ----------
+app.get('/api/company/chat/channels', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const [channels, unread] = await Promise.all([
+            companyOpsDB.listChannelsForStaff(req.companyActor.staffId),
+            companyOpsDB.getUnreadCounts(req.companyActor.staffId)
+        ]);
+        res.json({ success: true, channels, unread });
+    } catch (error) { companyErr(res, 'List channels', error); }
+});
+app.post('/api/company/chat/channels', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const type = req.body.type === 'direct' ? 'direct' : 'group';
+        const staffIds = Array.isArray(req.body.staffIds) ? req.body.staffIds : [];
+        if (type === 'direct' && staffIds.length === 1) {
+            const channel = await companyOpsDB.findOrCreateDirect(req.companyActor.staffId, staffIds[0]);
+            return res.json({ success: true, channel });
+        }
+        const channel = await companyOpsDB.createChannel({
+            type,
+            name: req.body.name,
+            department: req.body.department || null,
+            staffIds: [...new Set([...staffIds, req.companyActor.staffId])],
+            createdBy: req.companyActor.staffId
+        });
+        res.json({ success: true, channel });
+    } catch (error) { companyErr(res, 'Create channel', error); }
+});
+app.get('/api/company/chat/channels/:id/messages', authenticateCompanyStaff, async (req, res) => {
+    try {
+        if (!(await companyOpsDB.isChannelMember(req.params.id, req.companyActor.staffId))) {
+            return res.status(403).json({ error: 'Not a member of that channel' });
+        }
+        const messages = await companyOpsDB.listMessages(req.params.id, {
+            limit: parseInt(req.query.limit, 10) || 50,
+            beforeId: req.query.beforeId || null
+        });
+        res.json({ success: true, messages });
+    } catch (error) { companyErr(res, 'List messages', error); }
+});
+app.get('/api/company/chat/channels/:id/members', authenticateCompanyStaff, async (req, res) => {
+    try {
+        if (!(await companyOpsDB.isChannelMember(req.params.id, req.companyActor.staffId))) {
+            return res.status(403).json({ error: 'Not a member of that channel' });
+        }
+        const members = await companyOpsDB.getChannelMembers(req.params.id);
+        const staff = await companyOpsDB.listStaff({ all: true });
+        const byId = new Map(staff.map((s) => [String(s.id), s]));
+        res.json({
+            success: true,
+            members: members.map((m) => {
+                const s = byId.get(String(m.staffId));
+                return { ...m, name: s ? s.fullName : 'Unknown', department: s ? s.department : null, avatarUrl: s ? s.avatarUrl : null };
+            })
+        });
+    } catch (error) { companyErr(res, 'Channel members', error); }
+});
+app.post('/api/company/chat/channels/:id/read', authenticateCompanyStaff, async (req, res) => {
+    try {
+        await companyOpsDB.markRead(req.params.id, req.companyActor.staffId);
+        res.json({ success: true });
+    } catch (error) { companyErr(res, 'Mark read', error); }
+});
+app.post('/api/company/chat/channels/:id/mute', authenticateCompanyStaff, async (req, res) => {
+    try {
+        await companyOpsDB.setChannelMuted(req.params.id, req.companyActor.staffId, !!req.body.muted);
+        res.json({ success: true });
+    } catch (error) { companyErr(res, 'Mute channel', error); }
+});
+app.post('/api/company/chat/channels/:id/pin', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const channel = await companyOpsDB.pinMessages(req.params.id, req.body.messageIds || []);
+        res.json({ success: true, channel });
+    } catch (error) { companyErr(res, 'Pin messages', error); }
+});
+// REST send/edit/delete fallback (WS is primary; these keep chat usable if the
+// socket is down, and give the admin console moderation paths).
+app.post('/api/company/chat/channels/:id/messages', authenticateCompanyStaff, async (req, res) => {
+    try {
+        if (!(await companyOpsDB.isChannelMember(req.params.id, req.companyActor.staffId))) {
+            return res.status(403).json({ error: 'Not a member of that channel' });
+        }
+        const message = await companyOpsDB.sendMessage({
+            channelId: req.params.id,
+            senderId: req.companyActor.staffId,
+            senderName: req.companyActor.name,
+            text: req.body.text,
+            replyTo: req.body.replyTo || null,
+            attachments: req.body.attachments || []
+        });
+        res.json({ success: true, message });
+    } catch (error) { companyErr(res, 'Send message', error); }
+});
+app.delete('/api/company/chat/messages/:id', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const channelId = await companyOpsDB.deleteMessage(req.params.id, { staffId: req.companyActor.staffId });
+        if (companyChatHub) companyChatHub.broadcast(channelId, { t: 'deleted', m: req.params.id });
+        res.json({ success: true });
+    } catch (error) { companyErr(res, 'Delete message', error); }
+});
+app.put('/api/company/chat/messages/:id', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const message = await companyOpsDB.editMessage(req.params.id, req.companyActor.staffId, req.body.text);
+        if (companyChatHub) companyChatHub.broadcast(message.channelId, { t: 'edited', m: message.id, text: message.text, editedAt: message.editedAt });
+        res.json({ success: true, message });
+    } catch (error) { companyErr(res, 'Edit message', error); }
+});
+app.post('/api/company/chat/messages/:id/react', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const emoji = String(req.body.emoji || '').slice(0, 16);
+        if (!emoji) return res.status(400).json({ error: 'emoji required' });
+        const message = await companyOpsDB.toggleReaction(req.params.id, req.companyActor.staffId, emoji);
+        if (message && companyChatHub) {
+            companyChatHub.broadcast(message.channelId, { t: 'reaction', m: message.id, e: emoji, users: (message.reactions || {})[emoji] || [] });
+        }
+        res.json({ success: true, message });
+    } catch (error) { companyErr(res, 'Toggle reaction', error); }
+});
+
+// Console (any authenticated staff lead or platform admin) channel browser
+app.get('/api/company/console/channels', authenticateCompanyConsole, async (req, res) => {
+    try {
+        res.json({ success: true, channels: await companyOpsDB.listAllChannels(req.companyScope) });
+    } catch (error) { companyErr(res, 'List all channels', error); }
+});
+app.post('/api/company/console/channels/:id/moderate', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const { action, messageId } = req.body;
+        if (action === 'delete') {
+            const channelId = await companyOpsDB.deleteMessage(messageId, { moderator: true });
+            if (companyChatHub) companyChatHub.broadcast(channelId, { t: 'deleted', m: messageId });
+        } else {
+            return res.status(400).json({ error: 'Unknown moderation action' });
+        }
+        res.json({ success: true });
+    } catch (error) { companyErr(res, 'Moderate', error); }
+});
+
+// ---------- Staff self-scoped routes (portal) ----------
+app.get('/api/company/my/tasks', authenticateCompanyStaff, async (req, res) => {
+    try {
+        res.json({ success: true, tasks: await companyOpsDB.getStaffTasks(req.companyActor.staffId) });
+    } catch (error) { companyErr(res, 'My tasks', error); }
+});
+app.put('/api/company/my/tasks/:id', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const task = await companyOpsDB.getTask(req.params.id);
+        if (!task || String(task.assignedTo) !== String(req.companyActor.staffId)) {
+            return res.status(404).json({ error: 'Task not found or not assigned to you' });
+        }
+        const allowed = ['workflowState', 'status', 'progress', 'subtasks', 'notes'];
+        const updates = {};
+        for (const k of allowed) if (req.body[k] !== undefined) updates[k] = req.body[k];
+        const actor = { staffId: req.companyActor.staffId, name: req.companyActor.name };
+        const updated = await companyOpsDB.updateTask(req.params.id, updates, { actor });
+        res.json({ success: true, task: updated });
+    } catch (error) { companyErr(res, 'Update my task', error); }
+});
+app.post('/api/company/my/tasks/:id/acknowledge', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const task = await companyOpsDB.getTask(req.params.id);
+        if (!task || String(task.assignedTo) !== String(req.companyActor.staffId)) {
+            return res.status(404).json({ error: 'Task not found or not assigned to you' });
+        }
+        res.json({ success: true, task: await companyOpsDB.acknowledgeTask(req.params.id, req.companyActor) });
+    } catch (error) { companyErr(res, 'Acknowledge task', error); }
+});
+app.post('/api/company/my/tasks/:id/log', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const task = await companyOpsDB.getTask(req.params.id);
+        if (!task || String(task.assignedTo) !== String(req.companyActor.staffId)) {
+            return res.status(404).json({ error: 'Task not found or not assigned to you' });
+        }
+        res.json({ success: true, task: await companyOpsDB.logTaskTime(req.params.id, req.body, req.companyActor) });
+    } catch (error) { companyErr(res, 'Log my time', error); }
+});
+app.get('/api/company/my/stats', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const staffId = req.companyActor.staffId;
+        const [tasks, reviews, skills, okrs, goals, achievements, member] = await Promise.all([
+            companyOpsDB.getStaffTasks(staffId),
+            companyOpsDB.listReviews(null, { staffId }),
+            companyOpsDB.listSkills({ staffId }),
+            companyOpsDB.listOkrs({ staffId }),
+            companyOpsDB.listGoals({ staffId }),
+            companyOpsDB.listAchievements({ staffId }),
+            companyOpsDB.getStaff(staffId)
+        ]);
+        const completed = tasks.filter((t) => t.status === 'done').length;
+        const overdue = tasks.filter((t) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done').length;
+        res.json({
+            success: true,
+            stats: {
+                totalTasks: tasks.length, completed, overdue,
+                avgRating: member ? member.overallRating : 0,
+                reviewCount: reviews.length,
+                skillCount: skills.length,
+                activeOkrs: okrs.filter((o) => o.status === 'active').length,
+                activeGoals: goals.filter((g) => g.status === 'active').length,
+                achievementCount: achievements.length,
+                reviews, skills, okrs, goals, achievements, tasks
+            }
+        });
+    } catch (error) { companyErr(res, 'My stats', error); }
+});
+// Staff directory (roster of the visible depts, for DMs and assignment pickers)
+app.get('/api/company/directory', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const scope = { all: false, departments: [req.companyActor.department, ...(req.companyActor.canViewDepartments || [])].filter(Boolean) };
+        const staff = await companyOpsDB.listStaff(req.companyActor.isAdmin ? scope : { all: true }, { activeOnly: true });
+        res.json({
+            success: true,
+            directory: staff
+                .filter((s) => String(s.id) !== String(req.companyActor.staffId))
+                .map((s) => ({ id: s.id, name: s.fullName, department: s.department, role: s.role, avatarUrl: s.avatarUrl }))
+        });
+    } catch (error) { companyErr(res, 'Directory', error); }
+});
+
+// Self-scoped reference data for the portal: department chips, project names,
+// legal workflow moves. Everything is read-only and filtered to what the staff
+// member may see.
+app.get('/api/company/my/reference', authenticateCompanyStaff, async (req, res) => {
+    try {
+        const departments = (await companyOpsDB.listDepartments()).filter((d) => d.active !== false);
+        const visible = { all: false, departments: [req.companyActor.department, ...(req.companyActor.canViewDepartments || [])].filter(Boolean) };
+        const projects = (await companyOpsDB.listProjects(visible))
+            .map((p) => ({ id: p.id, name: p.name, department: p.department, status: p.status }));
+        res.json({ success: true, departments, projects, workflow: companyOpsDB.WORKFLOW_TRANSITIONS });
+    } catch (error) { companyErr(res, 'My reference', error); }
+});
+
+// ---------- Company Ops AI assistant ----------
+app.post('/api/company/console/ai/chat', authenticateCompanyConsole, async (req, res) => {
+    try {
+        const { message } = req.body;
+        if (!message || !String(message).trim()) {
+            return res.status(400).json({ success: false, error: 'Message is required' });
+        }
+        const { chatCompletion, isConfigured } = require('./config/ai/aiClient');
+        if (!isConfigured()) {
+            return res.json({ success: true, reply: 'AI is not configured. Set AI_API_KEY in the server environment.' });
+        }
+        const companyOpsTools = require('./config/ai/companyOpsTools');
+        const deptNote = req.companyScope.all ? 'the whole company' : `departments: ${(req.companyScope.departments || []).join(', ')}`;
+        const SYSTEM_PROMPT = `You are the Company Ops AI assistant. You help manage internal task management across departments (${deptNote}) by querying staff, task, review and chat data, and generating professional text.
+
+Rules:
+- Use the provided tools to fetch real data. Never invent names, tasks, or statistics.
+- Keep answers concise and formatted for a chat panel: short paragraphs, dashes for lists.
+- When generating text (reviews, descriptions, agendas), fetch the relevant data first, then write based on it.
+- Be professional, constructive, and specific.`;
+        const messages = [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: String(message).trim().substring(0, 4000) }
+        ];
+        const toolSchemas = companyOpsTools.getToolSchemas();
+        const toolCtx = { scope: req.companyScope };
+        let reply = null;
+        const MAX_ROUNDS = 4;
+        for (let round = 0; round <= MAX_ROUNDS; round++) {
+            const { message: msg } = await chatCompletion({ messages, tools: toolSchemas, maxTokens: 1024 });
+            const toolCalls = msg.tool_calls || [];
+            if (!toolCalls.length) {
+                reply = msg.content || 'Done.';
+                break;
+            }
+            if (round === MAX_ROUNDS) {
+                reply = 'I hit the tool-call limit. Try asking something more specific.';
+                break;
+            }
+            messages.push(msg);
+            for (const call of toolCalls) {
+                const name = call.function?.name;
+                let args = {};
+                try { args = JSON.parse(call.function?.arguments || '{}'); } catch {}
+                const tool = companyOpsTools.getTool(name);
+                let resultJson;
+                if (!tool) {
+                    resultJson = JSON.stringify({ error: `Unknown tool: ${name}` });
+                } else {
+                    try {
+                        const result = await tool.execute(args, toolCtx);
+                        resultJson = JSON.stringify(result);
+                        if (resultJson.length > 8000) resultJson = resultJson.substring(0, 8000) + '... (truncated)';
+                    } catch (err) {
+                        resultJson = JSON.stringify({ error: err.message });
+                    }
+                }
+                messages.push({ role: 'tool', tool_call_id: call.id, content: resultJson });
+            }
+        }
+        res.json({ success: true, reply });
+    } catch (error) {
+        console.error('[CompanyOps] AI chat error:', error.message);
+        res.status(500).json({ success: false, error: 'AI request failed: ' + error.message });
+    }
+});
+
 // ==================== ERROR HANDLING ====================
 
 // ==================== ATHLETE PROGRAM (FM-OFC-03) ====================
@@ -18054,3 +18823,11 @@ const httpServer = app.listen(PORT, () => {
 
 // Live presence, lobbies and multiplayer Rooftop Race (WebSocket on /ws/race)
 require('./services/athlete-program/RaceHub').attachDefault(httpServer);
+
+// Company Ops realtime chat (WebSocket on /company-chat); both hubs filter
+// the shared upgrade event by pathname, so order does not matter.
+companyChatHub = require('./services/company-ops/ChatHub').createHub({
+    verifyToken,
+    db: companyOpsDB
+});
+companyChatHub.attach(httpServer);

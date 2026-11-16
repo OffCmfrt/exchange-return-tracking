@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Company Ops — Control Tower</title>
+<link rel="stylesheet" href="assets/company.css">
+</head>
+<body>
+
+<div id="login" class="login-wrap hidden">
+    <form class="login-box" id="loginForm">
+        <div class="brand"><h1>Company Ops</h1><p class="mlabel">Control Tower — Internal</p></div>
+        <div class="field"><label class="mlabel">Username</label><input id="lUser" autocomplete="username" required></div>
+        <div class="field"><label class="mlabel">Mobile</label><input id="lMob" autocomplete="tel" required></div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" id="lGo">Sign in</button>
+        <p class="small faint mt16">Department leads sign in with their staff credentials. Platform admins may use the main admin session.</p>
+    </form>
+</div>
+
+<div id="shell" class="shell hidden">
+    <aside class="side">
+        <div class="brand"><h1>Company Ops</h1><p class="mlabel" id="scopeLabel">Control Tower</p></div>
+        <nav id="nav"></nav>
+        <div class="side-foot">
+            <span id="meAv"></span>
+            <span class="who"><b id="meName">—</b><span class="mlabel" id="meDept"></span></span>
+            <button class="btn btn-ghost btn-sm right" id="logoutBtn" title="Sign out"></button>
+        </div>
+    </aside>
+    <div class="main">
+        <div class="topbar">
+            <h2 id="viewTitle">Overview</h2>
+            <span class="spacer"></span>
+            <button class="btn btn-sm hidden" id="newBtn"></button>
+            <button class="btn btn-sm" id="aiBtn">AI</button>
+        </div>
+        <div class="view" id="view"></div>
+    </div>
+</div>
+
+<!-- task drawer -->
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer">
+    <div class="dr-head">
+        <div style="flex:1;min-width:0"><h3 id="drTitle">Task</h3><div class="hstack mt8" id="drChips"></div></div>
+        <button class="btn btn-ghost btn-sm" id="drClose"></button>
+    </div>
+    <div class="dr-body">
+        <div class="dr-main" id="drMain"></div>
+        <div class="dr-chat" id="drChat"></div>
+    </div>
+</div>
+
+<!-- generic modal -->
+<div class="modal" id="modal"><div class="sheet"><h3 id="mdTitle">Edit</h3><div id="mdBody"></div><div class="sheet-foot"><button class="btn" id="mdCancel">Cancel</button><button class="btn btn-primary" id="mdSave">Save</button></div></div></div>
+
+<!-- AI panel -->
+<div class="drawer" id="aiPanel" style="width:min(420px,94vw)">
+    <div class="dr-head"><h3>Ops Assistant</h3><span class="spacer" style="flex:1"></span><button class="btn btn-ghost btn-sm" id="aiClose"></button></div>
+    <div style="flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px" id="aiMsgs"></div>
+    <div class="chat"><div class="pane" style="border-top:1px solid var(--line)"><div class="composer" style="border-top:none"><textarea id="aiIn" rows="1" placeholder="Ask about workload, delays, reviews…"></textarea><button class="btn btn-primary btn-sm" id="aiSend"></button></div></div></div>
+</div>
+
+<div class="toasts"></div>
+
+<script>/* mock dataset is preview-only: never fetched unless ?mock=1 */
+if (new URLSearchParams(location.search).has('mock')) document.write('<script src="assets/mock-data.js"><\/script>');</script>
+<script src="assets/company-app.js"></script>
+<script src="assets/chat-pane.js"></script>
+<script>
+(function () {
+'use strict';
+const A = window.CompanyApp;
+const { icon, esc, avatar, toast, api } = A;
+const $ = (s) => document.querySelector(s);
+const state = { me: null, departments: [], staff: [], projects: [], tasks: [], stats: null, premium: null, chat: null, client: null, directory: [], presence: new Set() };
+const LANE_DEFS = [['todo', 'Todo'], ['in_progress', 'In Progress'], ['review', 'Review'], ['blocked', 'Blocked'], ['done', 'Done']];
+const PRIO_COLOR = { critical: 'var(--danger)', high: 'var(--warn)', medium: '#4a4a52', low: '#33333a' };
+const WF_OF_LANE = { todo: 'assigned', in_progress: 'in_progress', review: 'review', blocked: 'blocked', done: 'done' };
+
+function boot() {
+    if (A.useMock()) {
+        state.me = { id: 's1', name: 'Simran Kohli', department: 'operations', isAdmin: true, platformAdmin: true };
+        api.setSession('mock', state.me);
+        return enter();
+    }
+    if (!api.token) return showLogin();
+    api.get('/api/company/me').then((r) => {
+        if (!r.staff.isAdmin) { location.href = '/company/portal'; return; }
+        state.me = { id: r.staff.id, name: r.staff.fullName, department: r.staff.department, isAdmin: true };
+        enter();
+    }).catch(() => showLogin());
+}
+function showLogin() { $('#login').classList.remove('hidden'); $('#shell').classList.add('hidden'); }
+$('#loginForm').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const btn = $('#lGo'); btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+        const r = await api.post('/api/company/login', { username: $('#lUser').value, mobile: $('#lMob').value });
+        if (!r.staff.isAdmin) throw new Error('This account has no console access — use the staff portal');
+        api.setSession(r.token, { id: r.staff.id, name: r.staff.fullName, department: r.staff.department, isAdmin: true });
+        state.me = api.me; enter();
+    } catch (e) { toast(e.message, 'bad'); }
+    btn.disabled = false; btn.textContent = 'Sign in';
+};
+
+async function enter() {
+    $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
+    $('#meName').textContent = state.me.name;
+    $('#meDept').textContent = (state.me.department || '').replace(/_/g, ' ');
+    $('#meAv').innerHTML = avatar(state.me.name, null, false);
+    $('#logoutBtn').innerHTML = icon('logout');
+    $('#logoutBtn').onclick = () => { api.clear(); localStorage.clear(); location.reload(); };
+    await loadBase();
+    buildNav();
+    route();
+    connectChat();
+}
+
+async function loadBase() {
+    const [d, s, p, t] = await Promise.all([
+        api.get('/api/company/console/departments'),
+        api.get('/api/company/console/staff'),
+        api.get('/api/company/console/projects'),
+        api.get('/api/company/console/tasks')
+    ]);
+    state.departments = d.departments.filter((x) => x.active !== false);
+    state.staff = s.staff; state.projects = p.projects; state.tasks = t.tasks;
+    try { const dir = await api.get('/api/company/directory'); state.directory = dir.directory; } catch (e) { state.directory = state.staff.map((x) => ({ id: x.id, name: x.fullName, username: x.username, department: x.department })); }
+}
+const staffById = (id) => state.staff.find((x) => String(x.id) === String(id));
+const staffName = (id) => { const s = staffById(id); return s ? s.fullName : 'Unassigned'; };
+const deptName = (slug) => { const d = state.departments.find((x) => x.slug === slug); return d ? d.name : (slug || '—'); };
+const deptColor = (slug) => { const d = state.departments.find((x) => x.slug === slug); return d && d.color ? d.color : '#55555e'; };
+const chipDept = (slug) => slug ? `<span class="chip" style="--dept-color:${esc(deptColor(slug))}"><span class="dot"></span>${esc(deptName(slug))}</span>` : '';
+const prioTag = (p) => `<span class="prio ${esc(p)}">${esc(p)}</span>`;
+const stTag = (t) => `<span class="st ${esc(t.workflowState || t.status)}">${esc((t.workflowState || t.status).replace(/_/g, ' '))}</span>`;
+
+// ---- navigation -------------------------------------------------------------
+const VIEWS = [
+    ['overview', 'Overview', 'overview'], ['board', 'Task Board', 'board'], ['projects', 'Projects', 'folders'],
+    ['departments', 'Departments', 'dept'], ['people', 'People', 'people'], ['messages', 'Messages', 'chat'],
+    ['reviews', 'Reviews', 'star'], ['skills', 'Skills Matrix', 'cog'], ['okrs', 'OKRs', 'target'],
+    ['meetings', 'Meetings', 'calendar'], ['achievements', 'Achievements', 'flag'], ['goals', 'Goals', 'bolt'],
+    ['reports', 'Reports', 'chart']
+];
+function buildNav() {
+    $('#nav').innerHTML = VIEWS.map(([id, label, ic]) =>
+        `<button class="nav-item" data-v="${id}">${icon(ic)}<span class="lbl">${label}</span><span class="count num" id="navc-${id}"></span></button>`).join('');
+    $('#nav').querySelectorAll('.nav-item').forEach((b) => { b.onclick = () => location.hash = '#/' + b.dataset.v; });
+    window.addEventListener('hashchange', route);
+    refreshCounts();
+}
+function refreshCounts() {
+    const late = state.tasks.filter(A.isLate).length;
+    const set = (id, n, alert) => { const el = $('#navc-' + id); if (el) { el.textContent = n || ''; el.classList.toggle('alert', !!alert); } };
+    set('board', state.tasks.filter((t) => t.status !== 'done').length);
+    set('overview', late, late > 0);
+    set('people', state.staff.filter((s) => s.active !== false).length);
+}
+const NEW_ACTIONS = {
+    board: { label: 'New Task', fn: () => taskModal() },
+    projects: { label: 'New Project', fn: () => projectModal() },
+    departments: { label: 'New Department', fn: () => deptModal() },
+    people: { label: 'Add Staff', fn: () => staffModal() },
+    reviews: { label: 'New Review', fn: () => reviewModal() },
+    okrs: { label: 'New OKR', fn: () => okrModal() },
+    meetings: { label: 'Schedule Meeting', fn: () => meetingModal() },
+    achievements: { label: 'Award Achievement', fn: () => achieveModal() },
+    goals: { label: 'New Goal', fn: () => goalModal() }
+};
+function route() {
+    const v = (location.hash.replace('#/', '') || 'overview');
+    const def = VIEWS.find((x) => x[0] === v) || VIEWS[0];
+    if (def[0] !== 'messages' && state.chat) { state.chat.destroy(); state.chat = null; }
+    document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.v === def[0]));
+    $('#viewTitle').textContent = def[1];
+    const nb = $('#newBtn');
+    const na = NEW_ACTIONS[def[0]];
+    nb.classList.toggle('hidden', !na);
+    if (na) { nb.innerHTML = icon('plus') + na.label; nb.onclick = na.fn; }
+    $('#view').classList.toggle('no-scroll', def[0] === 'board' || def[0] === 'messages');
+    ({ overview, board, projects, departments, people, messages, reviews, skills, okrs, meetings, achievements, goals, reports })[def[0]]();
+}
+
+// ---- overview -----------------------------------------------------------------
+async function overview() {
+    const [s, feed] = await Promise.all([api.get('/api/company/console/premium-stats'), api.get('/api/company/console/feed?limit=14')]);
+    state.premium = s.stats;
+    const st = s.stats, late = state.tasks.filter(A.isLate);
+    const maxV = Math.max(1, ...st.velocity.map((w) => w.count));
+    $('#view').innerHTML = `
+    <div class="kpi-row">
+        <div class="kpi"><span class="mlabel">Open tasks</span><div class="v">${st.totalTasks - (st.byStatus ? st.byStatus.done : 0)}</div><div class="sub">${st.totalTasks} total</div></div>
+        <div class="kpi ${late.length ? 'warn' : ''}"><span class="mlabel">Overdue</span><div class="v">${late.length}</div><div class="sub">past due, not done</div></div>
+        <div class="kpi"><span class="mlabel">On-time rate</span><div class="v">${st.onTimeRate}<small>%</small></div><div class="sub">completed vs due</div></div>
+        <div class="kpi"><span class="mlabel">Staff</span><div class="v">${st.totalStaff}</div><div class="sub">${Object.keys(st.byDepartment).length} departments</div></div>
+        <div class="kpi"><span class="mlabel">Avg rating</span><div class="v">${st.avgRating || '—'}</div><div class="sub">${st.totalReviews} reviews</div></div>
+    </div>
+    <div class="split mt16">
+        <div class="stack">
+            <div class="card">
+                <span class="mlabel">Velocity — tasks completed / week</span>
+                <div class="spark">${st.velocity.map((w) => `<div class="col ${w.count === maxV && maxV > 0 ? 'hot' : ''}"><i style="height:${Math.round((w.count / maxV) * 72)}px"></i><em>${new Date(w.week).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</em></div>`).join('')}</div>
+            </div>
+            <div class="card">
+                <span class="mlabel">Departments</span>
+                <div class="rows mt8">${Object.entries(st.byDepartment).map(([d, v]) => `
+                    <div class="row"><span style="width:8px;height:8px;background:${esc(deptColor(d))}"></span>
+                        <div class="grow"><div class="t">${esc(deptName(d))}</div><div class="s num">${v.members} staff · ${v.tasks} tasks</div></div>
+                        <div style="width:120px"><div class="bar"><i style="width:${v.tasks ? Math.round((v.done / v.tasks) * 100) : 0}%"></i></div></div>
+                        <span class="num faint small" style="width:36px;text-align:right">${v.tasks ? Math.round((v.done / v.tasks) * 100) : 0}%</span>
+                    </div>`).join('') || '<div class="empty">No data</div>'}</div>
+            </div>
+        </div>
+        <div class="stack">
+            <div class="card">
+                <span class="mlabel">Overdue watchlist</span>
+                <div class="rows mt8">${late.slice(0, 8).map((t) => `
+                    <div class="row" data-open="${esc(t.id)}" style="cursor:pointer">
+                        <div class="grow"><div class="t">${esc(t.title)}</div><div class="s">${esc(staffName(t.assignedTo))}</div></div>
+                        <span class="due late" style="font:500 10px var(--mono);color:var(--danger)">${esc(A.fmtDay(t.dueDate))}</span>
+                    </div>`).join('') || '<div class="empty" style="padding:18px">Nothing overdue</div>'}</div>
+            </div>
+            <div class="card">
+                <span class="mlabel">Activity</span>
+                <div class="timeline mt8">${feed.feed.map((e) => `<div class="ev"><time>${esc(A.fmtDay(e.at))}</time><div class="d"><b>${esc(e.by || '—')}</b> · ${esc(e.detail || '')}<br><span class="faint">${esc(e.taskTitle || '')}</span></div></div>`).join('') || '<div class="empty" style="padding:18px">No recent activity</div>'}</div>
+            </div>
+        </div>
+    </div>`;
+    $('#view').querySelectorAll('[data-open]').forEach((r) => r.onclick = () => openTask(r.dataset.open));
+}
+
+// ---- kanban board ---------------------------------------------------------------
+let filters = { department: '', assignedTo: '', priority: '', q: '' };
+async function board() {
+    $('#view').innerHTML = `
+        <div style="display:flex;flex-direction:column;height:100%;min-height:0">
+            <div class="filters" style="padding:12px 14px;border-bottom:1px solid var(--line)">
+                <select id="fDept"><option value="">All departments</option>${state.departments.map((d) => `<option value="${esc(d.slug)}" ${filters.department === d.slug ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>
+                <select id="fAssignee"><option value="">Anyone</option><option value="__none">Unassigned</option>${state.staff.map((s) => `<option value="${esc(s.id)}" ${filters.assignedTo === s.id ? 'selected' : ''}>${esc(s.fullName)}</option>`).join('')}</select>
+                <select id="fPrio"><option value="">Any priority</option>${['critical', 'high', 'medium', 'low'].map((p) => `<option ${filters.priority === p ? 'selected' : ''}>${p}</option>`).join('')}</select>
+                <span class="search" style="flex:1;max-width:260px">${icon('search')}<input id="fQ" placeholder="Search titles" value="${esc(filters.q)}"></span>
+                <span class="right mlabel num" id="fCount"></span>
+            </div>
+            <div class="board" id="lanes" style="flex:1;min-height:0"></div>
+        </div>`;
+    ['fDept', 'fAssignee', 'fPrio'].forEach((id) => { $('#' + id).onchange = () => { filters = { department: $('#fDept').value, assignedTo: $('#fAssignee').value, priority: $('#fPrio').value, q: $('#fQ').value }; renderLanes(); }; });
+    $('#fQ').oninput = () => { filters.q = $('#fQ').value; renderLanes(); };
+    renderLanes();
+}
+function filteredTasks() {
+    return state.tasks.filter((t) =>
+        (!filters.department || t.department === filters.department) &&
+        (!filters.priority || t.priority === filters.priority) &&
+        (!filters.assignedTo || (filters.assignedTo === '__none' ? !t.assignedTo : String(t.assignedTo) === filters.assignedTo)) &&
+        (!filters.q || t.title.toLowerCase().includes(filters.q.toLowerCase())));
+}
+function renderLanes() {
+    const list = filteredTasks();
+    const c = $('#fCount'); if (c) c.textContent = list.length + ' tasks';
+    $('#lanes').innerHTML = LANE_DEFS.map(([lane, label]) => {
+        const cards = list.filter((t) => t.status === lane);
+        return `<div class="lane" data-lane="${lane}"><header><span class="mlabel">${label}</span><span class="n num">${cards.length}</span></header>
+            <div class="cards">${cards.map(taskCard).join('') || '<div class="empty" style="padding:18px;font-size:12px">Empty</div>'}</div></div>`;
+    }).join('');
+    $('#lanes').querySelectorAll('.tcard').forEach((el) => {
+        el.draggable = true;
+        el.ondragstart = (ev) => { ev.dataTransfer.setData('text/plain', el.dataset.id); el.classList.add('ghost'); };
+        el.ondragend = () => el.classList.remove('ghost');
+        el.onclick = () => openTask(el.dataset.id);
+    });
+    $('#lanes').querySelectorAll('.lane').forEach((lane) => {
+        lane.ondragover = (ev) => { ev.preventDefault(); lane.classList.add('drag-over'); };
+        lane.ondragleave = () => lane.classList.remove('drag-over');
+        lane.ondrop = async (ev) => {
+            ev.preventDefault(); lane.classList.remove('drag-over');
+            const id = ev.dataTransfer.getData('text/plain');
+            const task = state.tasks.find((x) => x.id === id);
+            if (!task || task.status === lane.dataset.lane) return;
+            await moveTask(task, lane.dataset.lane);
+        };
+    });
+}
+async function moveTask(task, lane, forced) {
+    const body = { workflowState: WF_OF_LANE[lane] };
+    if (lane === 'done') body.progress = 100;
+    try {
+        const r = await api.put('/api/company/console/tasks/' + task.id + (forced ? '?force=true' : ''), body);
+        Object.assign(task, r.task);
+        toast('Moved to ' + lane.replace(/_/g, ' '), 'good');
+    } catch (e) {
+        if (/Illegal transition/i.test(e.message)) {
+            // in-page confirmation, not a native dialog
+            const ok = await askConfirm('Force state change', esc(e.message) + '<br><br>The move will be flagged as forced in the audit trail.', 'Force move');
+            if (ok) return moveTask(task, lane, true);
+        } else toast(e.message, 'bad');
+    }
+    renderLanes(); refreshCounts();
+}
+function taskCard(t) {
+    const subs = t.subtasks || [];
+    const subDone = subs.filter((s) => s.done).length;
+    return `<div class="tcard" data-id="${esc(t.id)}" style="--prio-color:${PRIO_COLOR[t.priority] || 'var(--line-2)'}">
+        <div class="ttl">${esc(t.title)}</div>
+        <div class="meta"><span class="num faint" style="font:500 9.5px var(--mono)">${subs.length ? subDone + '/' + subs.length : ''}</span><div class="bar"><i style="width:${t.progress || 0}%"></i></div><span class="num faint" style="font:500 9.5px var(--mono)">${t.progress || 0}%</span></div>
+        <div class="foot">${chipDept(t.department)}${prioTag(t.priority)}<span class="right">${avatar(staffName(t.assignedTo), null, false)}</span></div>
+        ${t.dueDate ? `<div class="foot"><span class="due ${A.isLate(t) ? 'late' : ''}">${A.isLate(t) ? 'late ' : 'due '}${esc(A.fmtDay(t.dueDate))}</span></div>` : ''}
+    </div>`;
+}
+
+// ---- task drawer ----------------------------------------------------------------
+let drChat = null, drTask = null;
+async function openTask(id) {
+    let detail;
+    try { detail = await api.get('/api/company/console/tasks/' + id); } catch (e) { return toast(e.message, 'bad'); }
+    const t = detail.task; drTask = t;
+    $('#scrim').classList.add('open'); $('#drawer').classList.add('open');
+    $('#drTitle').textContent = t.title;
+    $('#drChips').innerHTML = `${chipDept(t.department)}${prioTag(t.priority)}${stTag(t)}${t.projectId ? `<span class="tag">${esc((state.projects.find((p) => p.id === t.projectId) || {}).name || 'project')}</span>` : ''}`;
+    $('#drClose').innerHTML = icon('x');
+    renderDrMain(t);
+    // task thread chat
+    if (drChat) { drChat.destroy(); drChat = null; }
+    const host = $('#drChat');
+    host.innerHTML = '';
+    if (detail.channelId) {
+        if (!state.client) { host.innerHTML = '<div class="empty small" style="padding:16px">Chat offline</div>'; return; }
+        const ch = { id: detail.channelId, type: 'task', name: t.title, pinnedMessageIds: [], memberStaffIds: [] };
+        drChat = window.mountChat(host, { client: state.client, me: state.me, compact: true, channels: async () => ({ channels: [ch], unread: {}, directory: state.directory }), mockMessages: () => [] });
+        drChat.reloadChannels();
+    } else {
+        host.innerHTML = '<div class="empty small" style="padding:16px">No thread for this task</div>';
+    }
+}
+function renderDrMain(t) {
+    const subs = t.subtasks || [];
+    const hist = (t.stageHistory || []).slice().reverse();
+    const logs = (t.timeLogged || []);
+    $('#drMain').innerHTML = `
+        <div class="sect"><span class="mlabel">Assign &amp; dates</span>
+            <div class="hstack mt8" style="flex-wrap:wrap">
+                <select id="dAssign" style="width:auto"><option value="">Unassigned</option>${state.staff.map((s) => `<option value="${esc(s.id)}" ${String(t.assignedTo) === String(s.id) ? 'selected' : ''}>${esc(s.fullName)} — ${esc(deptName(s.department))}</option>`).join('')}</select>
+                <select id="dState" style="width:auto">${['draft', 'assigned', 'in_progress', 'blocked', 'review', 'rework', 'done', 'cancelled'].map((w) => `<option value="${w}" ${t.workflowState === w ? 'selected' : ''}>${w.replace(/_/g, ' ')}</option>`).join('')}</select>
+                <label class="mlabel">Due</label><input type="date" id="dDue" style="width:auto" value="${esc(t.dueDate || '')}">
+                <button class="btn btn-sm" id="dSave">Apply</button>
+            </div>
+            ${t.acknowledgedAt ? `<div class="s faint small mt8">Acknowledged ${esc(A.fmtDay(t.acknowledgedAt))}</div>` : (t.assignedTo ? '<div class="s faint small mt8">Awaiting acknowledgement</div>' : '')}
+        </div>
+        <div class="sect"><span class="mlabel">Progress — ${t.progress || 0}%</span>
+            <div class="bar mt8"><i style="width:${t.progress || 0}%"></i></div>
+            <div class="hstack mt8"><input id="dProg" type="number" min="0" max="100" step="5" value="${t.progress || 0}" style="width:80px;font-size:12.5px"><button class="btn btn-sm" id="dProgSet">Set progress</button><span class="s faint small">subtasks override this while they are checked off</span></div>
+        </div>
+        <div class="sect"><span class="mlabel">Description</span><p class="small dim mt8" style="white-space:pre-wrap">${esc(t.description || 'No description.')}</p></div>
+        <div class="sect"><span class="mlabel">Subtasks — ${subs.filter((x) => x.done).length}/${subs.length}</span>
+            ${subs.map((s, i) => `<div class="check ${s.done ? 'done' : ''}" data-sub="${i}"><span class="box">${icon('check')}</span><span class="lbl" style="flex:1">${esc(s.title)}</span></div>`).join('')}
+            <div class="hstack mt8"><input id="subIn" placeholder="Add subtask" style="font-size:12.5px"><button class="btn btn-sm" id="subAdd">Add</button></div>
+        </div>
+        <div class="sect"><span class="mlabel">Details</span>
+            <div class="kv mt8">
+                <span class="k">Created by</span><span>${esc(staffName(t.createdBy))}</span>
+                <span class="k">Estimate</span><span class="num">${t.estimatedHours || 0} h · logged ${t.actualHours || 0} h</span>
+                <span class="k">Category</span><span>${esc(t.category || '—')}</span>
+                <span class="k">Tags</span><span>${(t.tags || []).map((x) => `<span class="tag">${esc(x)}</span>`).join(' ') || '—'}</span>
+                <span class="k">Depends on</span><span>${(t.dependsOn || []).map((d) => `<span class="tag">${esc((state.tasks.find((x) => x.id === d) || {}).title || d)}</span>`).join(' ') || '—'}</span>
+            </div>
+        </div>
+        <div class="sect"><span class="mlabel">Time log</span>
+            ${logs.length ? `<div class="rows">${logs.slice(-6).reverse().map((l) => `<div class="row"><div class="grow"><div class="t">${esc(l.note || 'Work log')}</div><div class="s">${esc(l.by || '')} · ${esc(A.fmtDay(l.at))}</div></div><span class="num small">${l.minutes}m</span></div>`).join('')}</div>` : '<div class="s faint small mt8">No entries.</div>'}
+            <div class="hstack mt8"><input id="logMin" type="number" placeholder="min" style="width:70px;font-size:12.5px"><input id="logNote" placeholder="What was done" style="font-size:12.5px"><button class="btn btn-sm" id="logAdd">Log</button></div>
+        </div>
+        <div class="sect"><span class="mlabel">Stage history</span>
+            <div class="timeline mt8">${hist.map((h) => `<div class="ev"><time>${esc(A.fmtDay(h.at))}</time><div class="d"><b>${esc(h.by || 'system')}</b> ${esc(h.from || 'new')} → ${esc(h.to)}${h.forced ? ' <span class="tag">forced</span>' : ''}</div></div>`).join('') || '<div class="s faint small">No transitions recorded.</div>'}</div>
+        </div>
+        <div class="hstack" style="border-top:1px solid var(--line);padding-top:14px">
+            <button class="btn btn-sm" id="dEdit">${icon('edit')} Edit</button>
+            <button class="btn btn-sm btn-danger right" id="dDelete">${icon('trash')} Delete</button>
+        </div>`;
+    $('#dSave').onclick = async () => {
+        try {
+            const r = await api.put('/api/company/console/tasks/' + t.id, { assignedTo: $('#dAssign').value || null, workflowState: $('#dState').value, dueDate: $('#dDue').value || null });
+            syncTask(t, r.task);
+            toast('Task updated', 'good');
+        } catch (e) {
+            if (/Illegal transition/i.test(e.message) && await askConfirm('Force state change', esc(e.message) + '<br><br>The move will be flagged as forced in the audit trail.', 'Force move')) {
+                const r = await api.put('/api/company/console/tasks/' + t.id + '?force=true', { workflowState: $('#dState').value });
+                syncTask(t, r.task);
+                toast('Forced transition logged', 'good');
+            } else toast(e.message, 'bad');
+        }
+    };
+    $('#subAdd').onclick = async () => {
+        const v = $('#subIn').value.trim(); if (!v) return;
+        const next = subs.concat([{ id: 's' + Date.now(), title: v, done: false }]);
+        const r = await api.put('/api/company/console/tasks/' + t.id, { subtasks: next });
+        syncTask(t, r.task);
+    };
+    $('#drMain').querySelectorAll('[data-sub]').forEach((el) => {
+        el.onclick = async () => {
+            const next = subs.map((s, i) => i === +el.dataset.sub ? Object.assign({}, s, { done: !s.done }) : s);
+            const doneCount = next.filter((x) => x.done).length;
+            const r = await api.put('/api/company/console/tasks/' + t.id, { subtasks: next, progress: Math.round((doneCount / next.length) * 100) });
+            syncTask(t, r.task);
+        };
+    });
+    $('#dProgSet').onclick = async () => {
+        const p = Math.max(0, Math.min(100, parseInt($('#dProg').value, 10) || 0));
+        const r = await api.put('/api/company/console/tasks/' + t.id, { progress: p });
+        syncTask(t, r.task);
+    };
+    $('#logAdd').onclick = async () => {
+        const minutes = parseInt($('#logMin').value, 10); if (!minutes) return toast('Minutes required', 'bad');
+        const r = await api.post(`/api/company/console/tasks/${t.id}/log`, { minutes, note: $('#logNote').value });
+        syncTask(t, r.task);
+    };
+    $('#dEdit').onclick = () => taskModal(t);
+    $('#dDelete').onclick = async () => {
+        const title = esc(t.title);
+        if (!await askConfirm('Delete task', `“${title}” and its checklist, time log and chat thread will be removed. This cannot be undone.`, 'Delete')) return;
+        await api.del('/api/company/console/tasks/' + t.id);
+        state.tasks = state.tasks.filter((x) => x.id !== t.id);
+        closeDrawer(); toast('Task deleted'); renderLanesIfBoard(); refreshCounts();
+    };
+}
+function renderLanesIfBoard() { if (location.hash.includes('board')) renderLanes(); refreshCounts(); }
+// The drawer holds its own copy of the task; the board, counts and reports read
+// state.tasks, so every write has to land in both.
+function syncTask(drawerTask, fresh) {
+    if (!fresh) return;
+    Object.assign(drawerTask, fresh);
+    const local = state.tasks.find((x) => x.id === drawerTask.id);
+    if (local) Object.assign(local, fresh);
+    renderDrMain(drawerTask);
+    renderLanesIfBoard();
+}
+function closeDrawer() {
+    $('#scrim').classList.remove('open'); $('#drawer').classList.remove('open');
+    if (drChat) { drChat.destroy(); drChat = null; }
+}
+$('#drClose').onclick = closeDrawer;
+$('#scrim').onclick = closeDrawer;
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeDrawer(); pendingConfirmClose && pendingConfirmClose(false); $('#modal').classList.remove('open'); } });
+
+// ---- in-page confirmation -----------------------------------------------------------
+// Native confirm() is unavailable in embedded webviews and cannot carry the design
+// system, so destructive/forced actions reuse the generic modal sheet.
+let pendingConfirmClose = null;
+function askConfirm(title, messageHtml, okLabel) {
+    return new Promise((resolve) => {
+        const finish = (val) => {
+            if (pendingConfirmClose !== finish) return;
+            pendingConfirmClose = null;
+            $('#modal').classList.remove('open');
+            resolve(val);
+        };
+        pendingConfirmClose = finish;
+        $('#mdTitle').textContent = title;
+        $('#mdBody').innerHTML = `<div class="small dim" style="line-height:1.65">${messageHtml}</div>`;
+        $('#mdSave').textContent = okLabel || 'Confirm';
+        $('#mdSave').className = 'btn btn-danger';
+        $('#mdSave').onclick = () => finish(true);
+        $('#mdCancel').onclick = () => finish(false);
+        $('#modal').classList.add('open');
+    });
+}
+
+// ---- generic modal helper --------------------------------------------------------
+function modal(title, fieldsHtml, onSave) {
+    $('#mdTitle').textContent = title;
+    $('#mdBody').innerHTML = fieldsHtml;
+    $('#mdSave').textContent = 'Save';
+    $('#mdSave').className = 'btn btn-primary';
+    $('#modal').classList.add('open');
+    $('#mdSave').onclick = async () => {
+        const vals = {};
+        $('#mdBody').querySelectorAll('[data-f]').forEach((el) => { vals[el.dataset.f] = el.type === 'checkbox' ? el.checked : el.value; });
+        try { await onSave(vals); $('#modal').classList.remove('open'); await loadBase(); route(); }
+        catch (e) { toast(e.message, 'bad'); }
+    };
+    $('#mdCancel').onclick = () => $('#modal').classList.remove('open');
+}
+const f = (key, label, inputHtml) => `<div class="field"><label class="mlabel">${label}</label>${inputHtml}</div>`;
+const sel = (key, opts, val) => `<select data-f="${key}">${opts.map((o) => `<option value="${esc(o[0])}" ${String(o[0]) === String(val || '') ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`;
+const inp = (key, val, type) => `<input data-f="${key}" type="${type || 'text'}" value="${esc(val == null ? '' : val)}">`;
+
+function taskModal(t) {
+    const isNew = !t; t = t || {};
+    modal(isNew ? 'New Task' : 'Edit Task', `<div class="form-grid">
+        ${f('title', 'Title', inp('title', t.title))}
+        ${f('department', 'Department', sel('department', state.departments.map((d) => [d.slug, d.name]), t.department))}
+        ${f('assignedTo', 'Assignee', sel('assignedTo', [['', 'Unassigned']].concat(state.staff.map((s) => [s.id, s.fullName])), t.assignedTo))}
+        ${f('projectId', 'Project', sel('projectId', [['', 'None']].concat(state.projects.map((p) => [p.id, p.name])), t.projectId))}
+        ${f('priority', 'Priority', sel('priority', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['critical', 'Critical']], t.priority || 'medium'))}
+        ${f('dueDate', 'Due date', inp('dueDate', t.dueDate, 'date'))}
+        ${f('estimatedHours', 'Estimated hours', inp('estimatedHours', t.estimatedHours, 'number'))}
+        ${f('category', 'Category', inp('category', t.category))}
+        ${f('tags', 'Tags (comma separated)', inp('tags', (t.tags || []).join(', ')))}
+        ${f('description', 'Description', `<textarea data-f="description" rows="4">${esc(t.description || '')}</textarea>`)}
+        </div>`, async (v) => {
+        const body = { title: v.title, department: v.department, assignedTo: v.assignedTo || null, projectId: v.projectId || null, priority: v.priority, dueDate: v.dueDate || null, estimatedHours: parseInt(v.estimatedHours, 10) || null, category: v.category || null, tags: v.tags ? v.tags.split(',').map((x) => x.trim()).filter(Boolean) : [], description: v.description };
+        if (isNew) await api.post('/api/company/console/tasks', body);
+        else await api.put('/api/company/console/tasks/' + t.id, body);
+        toast(isNew ? 'Task created' : 'Task saved', 'good');
+    });
+}
+
+// ---- projects ----------------------------------------------------------------------
+async function projects() {
+    $('#view').innerHTML = `<table class="grid"><thead><tr><th>Project</th><th>Department</th><th>Owner</th><th>Status</th><th>Target</th><th>Tasks</th><th></th></tr></thead><tbody>
+        ${state.projects.map((p) => {
+            const n = state.tasks.filter((t) => t.projectId === p.id);
+            return `<tr><td style="font-weight:500">${esc(p.name)}</td><td>${chipDept(p.department)}</td><td>${esc(staffName(p.ownerId))}</td><td><span class="st ${p.status === 'completed' ? 'done' : 'in_progress'}">${esc(p.status)}</span></td><td class="num faint">${p.targetDate ? esc(A.fmtDay(p.targetDate)) : '—'}</td><td class="num">${n.filter((x) => x.status === 'done').length}/${n.length}</td>
+            <td class="right"><button class="btn btn-ghost btn-sm" data-edit="${esc(p.id)}">${icon('edit')}</button></td></tr>`;
+        }).join('')}</tbody></table>`;
+    $('#view').querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => projectModal(state.projects.find((x) => x.id === b.dataset.edit)));
+}
+function projectModal(p) {
+    const isNew = !p; p = p || {};
+    modal(isNew ? 'New Project' : 'Edit Project', `<div class="form-grid">
+        ${f('name', 'Name', inp('name', p.name))}
+        ${f('department', 'Department', sel('department', state.departments.map((d) => [d.slug, d.name]), p.department))}
+        ${f('ownerId', 'Owner', sel('ownerId', [['', '—']].concat(state.staff.map((s) => [s.id, s.fullName])), p.ownerId))}
+        ${f('status', 'Status', sel('status', [['planning', 'Planning'], ['active', 'Active'], ['on_hold', 'On hold'], ['completed', 'Completed']], p.status || 'active'))}
+        ${f('targetDate', 'Target date', inp('targetDate', p.targetDate, 'date'))}
+        ${f('description', 'Description', `<textarea data-f="description" rows="3">${esc(p.description || '')}</textarea>`)}
+        </div>`, async (v) => {
+        if (isNew) await api.post('/api/company/console/projects', v); else await api.put('/api/company/console/projects/' + p.id, v);
+        toast('Project saved', 'good');
+    });
+}
+
+// ---- departments ---------------------------------------------------------------------
+async function departments() {
+    const head = (id) => staffName(id);
+    $('#view').innerHTML = `<table class="grid"><thead><tr><th>Department</th><th>Head</th><th>Staff</th><th>Open tasks</th><th>Done</th><th></th></tr></thead><tbody>
+        ${state.departments.map((d) => {
+            const ts = state.tasks.filter((t) => t.department === d.slug);
+            return `<tr><td><span class="hstack"><span style="width:8px;height:8px;background:${esc(d.color || '#55555e')}"></span><b style="font-weight:600">${esc(d.name)}</b><span class="tag">${esc(d.slug)}</span></span></td>
+            <td>${esc(head(d.headStaffId))}</td><td class="num">${state.staff.filter((s) => s.department === d.slug && s.active !== false).length}</td>
+            <td class="num">${ts.filter((t) => t.status !== 'done').length}</td><td class="num">${ts.filter((t) => t.status === 'done').length}</td>
+            <td class="right"><button class="btn btn-ghost btn-sm" data-edit="${esc(d.id)}">${icon('edit')}</button></td></tr>`;
+        }).join('')}</tbody></table>`;
+    $('#view').querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => deptModal(state.departments.find((x) => x.id === b.dataset.edit)));
+}
+function deptModal(d) {
+    const isNew = !d; d = d || {};
+    modal(isNew ? 'New Department' : 'Edit Department', `<div class="form-grid">
+        ${f('name', 'Name', inp('name', d.name))}
+        ${isNew ? f('slug', 'Slug (lowercase)', inp('slug', d.slug)) : f('_s', 'Slug', `<input value="${esc(d.slug)}" disabled>`)}
+        ${f('headStaffId', 'Head', sel('headStaffId', [['', '—']].concat(state.staff.map((s) => [s.id, s.fullName])), d.headStaffId))}
+        ${f('color', 'Accent color', inp('color', d.color || '#7a8caa', 'color'))}
+        </div>`, async (v) => {
+        const body = { name: v.name, headStaffId: v.headStaffId || null, color: v.color };
+        if (isNew) body.slug = v.slug;
+        if (isNew) await api.post('/api/company/console/departments', body); else await api.put('/api/company/console/departments/' + d.id, body);
+        toast('Department saved', 'good');
+    });
+}
+
+// ---- people -----------------------------------------------------------------------------
+function people() {
+    $('#view').innerHTML = `<table class="grid"><thead><tr><th>Name</th><th>Role</th><th>Department</th><th>Reports to</th><th>Console</th><th>Rating</th><th>Load</th><th></th></tr></thead><tbody>
+        ${state.staff.map((s) => `<tr>
+            <td><span class="hstack">${avatar(s.fullName, s.avatarUrl)}<span><div style="font-weight:500">${esc(s.fullName)}</div><div class="s faint" style="font:10px var(--mono)">@${esc(s.username)}</div></span></span></td>
+            <td class="dim">${esc(s.role || '—')}<div class="s faint" style="font:10px var(--mono)">${esc(s.hierarchy || '')}</div></td>
+            <td>${chipDept(s.department)}</td><td>${esc(staffName(s.reportsTo))}</td>
+            <td>${s.isAdmin ? '<span class="tag">lead</span>' : ''}${(s.canViewDepartments || []).length ? `<span class="tag">+${s.canViewDepartments.length}</span>` : ''}</td>
+            <td class="num">${esc(s.overallRating || '—')}</td>
+            <td class="num">${state.tasks.filter((t) => String(t.assignedTo) === String(s.id) && t.status !== 'done').length}</td>
+            <td class="right"><button class="btn btn-ghost btn-sm" data-edit="${esc(s.id)}">${icon('edit')}</button></td></tr>`).join('')}
+        </tbody></table>`;
+    $('#view').querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => staffModal(state.staff.find((x) => x.id === b.dataset.edit)));
+}
+function staffModal(s) {
+    const isNew = !s; s = s || {};
+    modal(isNew ? 'Add Staff' : 'Edit Staff', `<div class="form-grid">
+        ${f('fullName', 'Full name', inp('fullName', s.fullName))}
+        ${f('username', 'Username', inp('username', s.username))}
+        ${f('mobile', 'Mobile', inp('mobile', s.mobile))}
+        ${f('email', 'Email', inp('email', s.email, 'email'))}
+        ${f('department', 'Department', sel('department', state.departments.map((d) => [d.slug, d.name]), s.department))}
+        ${f('role', 'Role', inp('role', s.role))}
+        ${f('hierarchy', 'Hierarchy', sel('hierarchy', ['intern', 'junior', 'mid', 'senior', 'lead', 'manager', 'head', 'director'].map((h) => [h, h]), s.hierarchy))}
+        ${f('reportsTo', 'Reports to', sel('reportsTo', [['', '—']].concat(state.staff.map((x) => [x.id, x.fullName])), s.reportsTo))}
+        ${f('isAdmin', 'Console access (dept lead)', `<input type="checkbox" data-f="isAdmin" ${s.isAdmin ? 'checked' : ''}>`)}
+        ${f('canViewDepartments', 'Extra visible depts (comma slugs)', inp('canViewDepartments', (s.canViewDepartments || []).join(',')))}
+        </div>`, async (v) => {
+        const body = { fullName: v.fullName, username: v.username, mobile: v.mobile, email: v.email || null, department: v.department, role: v.role || 'executive', hierarchy: v.hierarchy || 'junior', reportsTo: v.reportsTo || null, isAdmin: !!v.isAdmin, canViewDepartments: v.canViewDepartments ? v.canViewDepartments.split(',').map((x) => x.trim()).filter(Boolean) : [] };
+        if (isNew) await api.post('/api/company/console/staff', body); else await api.put('/api/company/console/staff/' + s.id, body);
+        toast('Staff saved', 'good');
+    });
+}
+
+// ---- messages (admin browser) -------------------------------------------------------------
+async function messages() {
+    // #view is re-rendered on every route, so the previous mount target no longer
+    // exists in the DOM: drop that instance and mount a fresh pane into the host.
+    if (state.chat) { state.chat.destroy(); state.chat = null; }
+    $('#view').innerHTML = '<div style="flex:1;min-width:0;min-height:0" id="chatHost"></div>';
+    const host = $('#chatHost');
+    if (!state.client) { host.innerHTML = '<div class="empty">Chat connection unavailable</div>'; return; }
+    state.chat = window.mountChat(host, {
+        client: state.client, me: state.me,
+        channels: async () => {
+            const r = await api.get('/api/company/chat/channels');
+            const all = r.channels || [];
+            let extra = [];
+            try { extra = (await api.get('/api/company/console/channels')).channels.filter((c) => !all.find((x) => x.id === c.id)).map((c) => Object.assign(c, { memberStaffIds: [] })); } catch (e) {}
+            return { channels: all.concat(extra), unread: r.unread || {}, directory: state.directory };
+        },
+        refreshDirectory: async () => state.directory
+    });
+    await state.chat.reloadChannels();
+}
+
+// ---- reviews / skills / okrs / meetings / achievements / goals ----------------------------------
+function reviews() {
+    api.get('/api/company/console/reviews').then((r) => {
+        $('#view').innerHTML = `<table class="grid"><thead><tr><th>Staff</th><th>Period</th><th>Type</th><th>Rating</th><th>Timeliness</th><th>Quality</th><th>Comms</th><th>Strengths</th></tr></thead><tbody>
+        ${r.reviews.map((x) => `<tr><td>${esc(staffName(x.staffId))}</td><td class="num">${esc(x.reviewPeriod || '—')}</td><td><span class="tag">${esc(x.reviewType)}</span></td><td class="num">${esc(x.overallRating || '—')}</td><td class="num">${x.timeliness || '—'}</td><td class="num">${x.quality || '—'}</td><td class="num">${x.communication || '—'}</td><td class="dim small" style="max-width:280px">${esc((x.strengths || '').slice(0, 90))}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No reviews yet</td></tr>'}
+        </tbody></table>`;
+    });
+}
+function reviewModal() {
+    modal('New Review', `<div class="form-grid">
+        ${f('staffId', 'Staff', sel('staffId', state.staff.map((s) => [s.id, s.fullName])))}
+        ${f('reviewPeriod', 'Period', inp('reviewPeriod', new Date().getFullYear() + '-Q' + (Math.floor(new Date().getMonth() / 3) + 1)))}
+        ${f('reviewType', 'Type', sel('reviewType', [['manager', 'Manager'], ['peer', 'Peer'], ['self', 'Self']]))}
+        ${f('overallRating', 'Overall (1-5)', inp('overallRating', '4'))}
+        ${['timeliness', 'quality', 'communication', 'collaboration', 'initiative', 'problemSolving'].map((k) => f(k, k, sel(k, [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']], 3))).join('')}
+        ${f('strengths', 'Strengths', `<textarea data-f="strengths" rows="2"></textarea>`)}
+        ${f('improvements', 'Improvements', `<textarea data-f="improvements" rows="2"></textarea>`)}
+        </div>`, async (v) => {
+        const body = { staffId: v.staffId, reviewPeriod: v.reviewPeriod, reviewType: v.reviewType, overallRating: v.overallRating, strengths: v.strengths, improvements: v.improvements, department: (staffById(v.staffId) || {}).department };
+        ['timeliness', 'quality', 'communication', 'collaboration', 'initiative', 'problemSolving'].forEach((k) => body[k] = parseInt(v[k], 10));
+        await api.post('/api/company/console/reviews', body);
+        toast('Review saved', 'good');
+    });
+}
+function skills() {
+    api.get('/api/company/console/skill-matrix').then((r) => {
+        const names = [...new Set(r.matrix.flatMap((m) => Object.keys(m.skills)))].sort();
+        $('#view').innerHTML = `<div style="overflow-x:auto"><table class="grid mtx"><thead><tr><th>Staff</th>${names.map((n) => `<th style="white-space:nowrap">${esc(n)}</th>`).join('')}</tr></thead><tbody>
+        ${r.matrix.map((m) => `<tr><td style="white-space:nowrap">${esc(m.member.fullName)}</td>${names.map((n) => {
+            const s = m.skills[n];
+            return `<td>${s ? `<span class="lv" title="${s.proficiency}/5">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= s.proficiency ? 'on' : ''}"></i>`).join('')}</span>` : '<span class="faint">·</span>'}</td>`;
+        }).join('')}</tr>`).join('')}</tbody></table></div>`;
+    });
+}
+function okrs() {
+    api.get('/api/company/console/okrs').then((r) => {
+        $('#view').innerHTML = `<div class="stack">${r.okrs.map((o) => `<div class="card">
+            <div class="hstack"><b>${esc(o.objectiveText)}</b><span class="right tag">${esc(o.period || '—')}</span><span class="tag">${esc(o.status)}</span></div>
+            <div class="hstack mt8 faint small">${o.staffId ? esc(staffName(o.staffId)) : ''}${o.deptId ? ` · ${esc(deptName(o.deptId))}` : ''}</div>
+            <div class="bar mt8"><i style="width:${o.progress || 0}%"></i></div>
+            ${(o.keyResults || []).length ? `<ul class="small dim" style="margin:8px 0 0 16px">${o.keyResults.map((k) => `<li>${esc(k.text)}${k.target ? ` — ${k.current || 0}/${k.target}` : ''}</li>`).join('')}</ul>` : ''}
+        </div>`).join('') || '<div class="empty">No OKRs</div>'}</div>`;
+    });
+}
+function okrModal() {
+    modal('New OKR', `<div class="form-grid">
+        ${f('objectiveText', 'Objective', inp('objectiveText', ''))}
+        ${f('period', 'Period', inp('period', new Date().getFullYear() + '-Q' + (Math.floor(new Date().getMonth() / 3) + 1)))}
+        ${f('deptId', 'Department', sel('deptId', [['', 'Personal']].concat(state.departments.map((d) => [d.slug, d.name]))))}
+        ${f('staffId', 'Owner', sel('staffId', [['', '—']].concat(state.staff.map((s) => [s.id, s.fullName]))) )}
+        ${f('keyResults', 'Key results (one per line)', `<textarea data-f="keyResults" rows="3"></textarea>`)}
+        </div>`, async (v) => {
+        await api.post('/api/company/console/okrs', { objectiveText: v.objectiveText, period: v.period, deptId: v.deptId || null, staffId: v.staffId || null, status: 'active', progress: 0, keyResults: v.keyResults.split('\n').filter(Boolean).map((t) => ({ text: t })) });
+        toast('OKR created', 'good');
+    });
+}
+function meetings() {
+    api.get('/api/company/console/meetings').then((r) => {
+        $('#view').innerHTML = `<table class="grid"><thead><tr><th>Title</th><th>Type</th><th>Staff</th><th>Scheduled</th><th>Action items</th></tr></thead><tbody>
+        ${r.meetings.map((m) => `<tr><td style="font-weight:500">${esc(m.title)}</td><td><span class="tag">${esc(m.meetingType)}</span></td><td>${esc(staffName(m.staffId))}</td><td class="num dim">${m.scheduledAt ? esc(A.fmtDay(m.scheduledAt) + ' ' + A.fmtTime(m.scheduledAt)) : '—'}</td><td class="num">${(m.actionItems || []).filter((x) => !x.done).length} open</td></tr>`).join('') || '<tr><td colspan="5" class="empty">No meetings logged</td></tr>'}
+        </tbody></table>`;
+    });
+}
+function meetingModal() {
+    modal('Schedule Meeting', `<div class="form-grid">
+        ${f('title', 'Title', inp('title', ''))}
+        ${f('meetingType', 'Type', sel('meetingType', [['1on1', '1:1'], ['team', 'Team'], ['review', 'Review'], ['retro', 'Retro'], ['planning', 'Planning']]))}
+        ${f('staffId', 'With', sel('staffId', state.staff.map((s) => [s.id, s.fullName])))}
+        ${f('scheduledAt', 'When', inp('scheduledAt', new Date(Date.now() + 864e5).toISOString().slice(0, 16), 'datetime-local'))}
+        ${f('durationMinutes', 'Minutes', inp('durationMinutes', '30', 'number'))}
+        </div>`, async (v) => {
+        await api.post('/api/company/console/meetings', { title: v.title, meetingType: v.meetingType, staffId: v.staffId, scheduledAt: new Date(v.scheduledAt).toISOString(), durationMinutes: parseInt(v.durationMinutes, 10) || 30, actionItems: [], attendees: [v.staffId] });
+        toast('Meeting scheduled', 'good');
+    });
+}
+function achievements() {
+    api.get('/api/company/console/achievements').then((r) => {
+        $('#view').innerHTML = `<div class="kpi-row" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">${r.achievements.map((a) => `<div class="card" style="border:1px solid var(--line)"><div class="hstack">${icon('flag')}<b>${esc(a.title)}</b></div><p class="small dim mt8">${esc(a.description || '')}</p><div class="s faint mt8" style="font:10px var(--mono)">${esc(staffName(a.staffId))} · ${esc(A.fmtDay(a.createdAt))}</div></div>`).join('') || '<div class="empty">No achievements yet</div>'}</div>`;
+    });
+}
+function achieveModal() {
+    modal('Award Achievement', `<div class="form-grid">
+        ${f('staffId', 'Staff', sel('staffId', state.staff.map((s) => [s.id, s.fullName])))}
+        ${f('title', 'Title', inp('title', ''))}
+        ${f('category', 'Category', sel('category', [['impact', 'Impact'], ['quality', 'Quality'], ['speed', 'Speed'], ['teamwork', 'Teamwork']]))}
+        ${f('description', 'Description', `<textarea data-f="description" rows="2"></textarea>`)}
+        </div>`, async (v) => {
+        await api.post('/api/company/console/achievements', { staffId: v.staffId, title: v.title, category: v.category, description: v.description, department: (staffById(v.staffId) || {}).department });
+        toast('Achievement awarded', 'good');
+    });
+}
+function goals() {
+    api.get('/api/company/console/goals').then((r) => {
+        $('#view').innerHTML = `<div class="stack">${r.goals.map((g) => `<div class="card"><div class="hstack"><b>${esc(g.goalText)}</b><span class="right tag">${esc(g.status)}</span></div><div class="faint small mt8">${esc(staffName(g.staffId))} · target ${g.targetDate ? esc(A.fmtDay(g.targetDate)) : '—'}</div><div class="bar mt8"><i style="width:${g.progress || 0}%"></i></div></div>`).join('') || '<div class="empty">No goals</div>'}</div>`;
+    });
+}
+function goalModal() {
+    modal('New Goal', `<div class="form-grid">
+        ${f('staffId', 'Staff', sel('staffId', state.staff.map((s) => [s.id, s.fullName])))}
+        ${f('goalText', 'Goal', inp('goalText', ''))}
+        ${f('category', 'Category', sel('category', [['growth', 'Growth'], ['skills', 'Skills'], ['process', 'Process']]))}
+        ${f('targetDate', 'Target', inp('targetDate', datePlus(30), 'date'))}
+        </div>`, async (v) => {
+        await api.post('/api/company/console/goals', { staffId: v.staffId, goalText: v.goalText, category: v.category, targetDate: v.targetDate, status: 'active', progress: 0, milestones: [] });
+        toast('Goal created', 'good');
+    });
+}
+const datePlus = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
+
+// ---- reports --------------------------------------------------------------------------------
+function reports() {
+    const byDept = {};
+    for (const t of state.tasks) {
+        const d = t.department || 'unassigned';
+        byDept[d] = byDept[d] || { total: 0, done: 0, late: 0, est: 0, act: 0 };
+        byDept[d].total++;
+        if (t.status === 'done') byDept[d].done++;
+        if (A.isLate(t)) byDept[d].late++;
+        byDept[d].est += t.estimatedHours || 0;
+        byDept[d].act += t.actualHours || 0;
+    }
+    const rows = Object.entries(byDept).map(([d, v]) => [deptName(d), v.total, v.done, v.late, v.est, v.act, v.total ? Math.round((v.done / v.total) * 100) + '%' : '0%']);
+    const memberRows = state.staff.map((s) => {
+        const ts = state.tasks.filter((t) => String(t.assignedTo) === String(s.id));
+        return [s.fullName, deptName(s.department), ts.length, ts.filter((t) => t.status === 'done').length, ts.filter(A.isLate).length, ts.reduce((a, t) => a + (t.actualHours || 0), 0)];
+    }).filter((r) => r[2] > 0);
+    const csv = (head, rows) => [head.join(',')].concat(rows.map((r) => r.map((x) => '"' + String(x).replace(/"/g, '""') + '"').join(','))).join('\n');
+    $('#view').innerHTML = `
+        <div class="card mb8" style="display:flex;justify-content:space-between;align-items:center">
+            <span class="mlabel">Department load &amp; delivery</span>
+            <button class="btn btn-sm" id="csvDept">${icon('doc')} Export CSV</button>
+        </div>
+        <table class="grid"><thead><tr><th>Department</th><th>Tasks</th><th>Done</th><th>Overdue</th><th>Est hrs</th><th>Actual hrs</th><th>Completion</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr>${r.map((c, i) => `<td class="${i ? 'num' : ''}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        <div class="card mt16 mb8" style="display:flex;justify-content:space-between;align-items:center">
+            <span class="mlabel">Per-person</span>
+            <button class="btn btn-sm" id="csvMem">${icon('doc')} Export CSV</button>
+        </div>
+        <table class="grid"><thead><tr><th>Name</th><th>Department</th><th>Assigned</th><th>Done</th><th>Overdue</th><th>Hours logged</th></tr></thead><tbody>
+        ${memberRows.map((r) => `<tr>${r.map((c, i) => `<td class="${i > 1 ? 'num' : ''}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    const dl = (name, text) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+        a.download = name; a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    };
+    $('#csvDept').onclick = () => dl('company-report-departments.csv', csv(['Department', 'Tasks', 'Done', 'Overdue', 'Estimated hrs', 'Actual hrs', 'Completion'], rows));
+    $('#csvMem').onclick = () => dl('company-report-staff.csv', csv(['Name', 'Department', 'Assigned', 'Done', 'Overdue', 'Hours logged'], memberRows));
+}
+
+// ---- chat client wiring ----------------------------------------------------------------------
+function connectChat() {
+    state.client = new A.ChatClient({
+        on: (m) => {
+            if (m.t === 'ack') state.client.ackFrame(m);
+            if (m.t === 'presence') state.presence = new Set((m.on || []).map(String));
+            if (state.chat) state.chat.handleFrame(m);
+            if (drChat) drChat.handleFrame(m);
+        }
+    });
+    try { state.client.connect(); } catch (e) { state.client = null; }
+}
+
+// ---- AI panel ------------------------------------------------------------------------------------
+$('#aiBtn').onclick = () => $('#aiPanel').classList.add('open');
+$('#aiClose').innerHTML = icon('x');
+$('#aiClose').onclick = () => $('#aiPanel').classList.remove('open');
+async function aiSay(role, text) {
+    const el = document.createElement('div');
+    el.className = 'card small';
+    el.style.cssText = role === 'user' ? 'align-self:flex-end;border-color:var(--line-2)' : '';
+    el.textContent = text;
+    $('#aiMsgs').appendChild(el);
+    $('#aiMsgs').scrollTop = 1e9;
+    return el;
+}
+$('#aiSend').innerHTML = icon('send');
+async function aiAsk() {
+    const v = $('#aiIn').value.trim(); if (!v) return;
+    $('#aiIn').value = '';
+    await aiSay('user', v);
+    const busy = await aiSay('ai', '…');
+    try {
+        const r = await api.post('/api/company/console/ai/chat', { message: v });
+        busy.textContent = r.reply;
+    } catch (e) { busy.textContent = 'AI error: ' + e.message; }
+}
+$('#aiSend').onclick = aiAsk;
+$('#aiIn').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiAsk(); } });
+
+boot();
+})();
+</script>
+</body>
+</html>
