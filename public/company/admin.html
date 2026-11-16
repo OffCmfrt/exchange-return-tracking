@@ -574,7 +574,7 @@ function people() {
             <td><span class="hstack">${avatar(s.fullName, s.avatarUrl)}<span><div style="font-weight:500">${esc(s.fullName)}</div><div class="s faint" style="font:10px var(--mono)">@${esc(s.username)}</div></span></span></td>
             <td class="dim">${esc(s.role || '—')}<div class="s faint" style="font:10px var(--mono)">${esc(s.hierarchy || '')}</div></td>
             <td>${chipDept(s.department)}</td><td>${esc(staffName(s.reportsTo))}</td>
-            <td>${s.isAdmin ? '<span class="tag">lead</span>' : ''}${(s.canViewDepartments || []).length ? `<span class="tag">+${s.canViewDepartments.length}</span>` : ''}</td>
+            <td>${s.platformAdmin ? '<span class="tag" style="--dept-color:#c9a24b"><span class="dot"></span>platform</span>' : ''}${s.isAdmin ? '<span class="tag">lead</span>' : ''}${(s.canViewDepartments || []).length ? `<span class="tag">+${s.canViewDepartments.length}</span>` : ''}</td>
             <td class="num">${esc(s.overallRating || '—')}</td>
             <td class="num">${state.tasks.filter((t) => String(t.assignedTo) === String(s.id) && t.status !== 'done').length}</td>
             <td class="right"><button class="btn btn-ghost btn-sm" data-edit="${esc(s.id)}">${icon('edit')}</button></td></tr>`).join('')}
@@ -593,9 +593,11 @@ function staffModal(s) {
         ${f('hierarchy', 'Hierarchy', sel('hierarchy', ['intern', 'junior', 'mid', 'senior', 'lead', 'manager', 'head', 'director'].map((h) => [h, h]), s.hierarchy))}
         ${f('reportsTo', 'Reports to', sel('reportsTo', [['', '—']].concat(state.staff.map((x) => [x.id, x.fullName])), s.reportsTo))}
         ${f('isAdmin', 'Console access (dept lead)', `<input type="checkbox" data-f="isAdmin" ${s.isAdmin ? 'checked' : ''}>`)}
+        ${state.me.platformAdmin ? f('platformAdmin', 'Platform admin (see & change everything)', `<input type="checkbox" data-f="platformAdmin" ${s.platformAdmin ? 'checked' : ''}>`) : ''}
         ${f('canViewDepartments', 'Extra visible depts (comma slugs)', inp('canViewDepartments', (s.canViewDepartments || []).join(',')))}
         </div>`, async (v) => {
         const body = { fullName: v.fullName, username: v.username, mobile: v.mobile, email: v.email || null, department: v.department, role: v.role || 'executive', hierarchy: v.hierarchy || 'junior', reportsTo: v.reportsTo || null, isAdmin: !!v.isAdmin, canViewDepartments: v.canViewDepartments ? v.canViewDepartments.split(',').map((x) => x.trim()).filter(Boolean) : [] };
+        if (state.me.platformAdmin) body.platformAdmin = !!v.platformAdmin;
         if (isNew) await api.post('/api/company/console/staff', body); else await api.put('/api/company/console/staff/' + s.id, body);
         toast('Staff saved', 'good');
     });

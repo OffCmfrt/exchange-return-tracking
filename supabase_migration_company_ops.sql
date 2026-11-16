@@ -54,6 +54,20 @@ CREATE INDEX IF NOT EXISTS idx_company_staff_username   ON company_staff(usernam
 CREATE INDEX IF NOT EXISTS idx_company_staff_department ON company_staff(department);
 CREATE INDEX IF NOT EXISTS idx_company_staff_active     ON company_staff(active);
 
+-- 2b. Platform-admin flag (added later; idempotent). A staff row with
+--     platform_admin=true gets full-company console access (scope.all),
+--     bypassing department scoping. Only existing platform admins may set it.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'company_staff' AND column_name = 'platform_admin'
+    ) THEN
+        ALTER TABLE company_staff
+            ADD COLUMN platform_admin BOOLEAN NOT NULL DEFAULT false;
+    END IF;
+END $$;
+
 -- --------------------------------------------------------------------------
 -- 3. Projects
 -- --------------------------------------------------------------------------

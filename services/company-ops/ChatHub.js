@@ -282,7 +282,7 @@ function createHub({ verifyToken, db }) {
                 actor = {
                     staffId: claims.staffId,
                     name: claims.name || claims.username,
-                    platformAdmin: false,
+                    platformAdmin: !!claims.platformAdmin,
                     isAdmin: !!claims.isAdmin,
                     department: claims.department,
                     canViewDepartments: claims.canViewDepartments || []

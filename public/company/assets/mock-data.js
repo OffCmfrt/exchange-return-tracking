@@ -20,7 +20,7 @@
     ];
 
     const staff = [
-        { id: 's1', username: 'admin', fullName: 'Simran Kohli', mobile: '9000000001', email: 'simran@offcomfrt.in', role: 'ops-lead', department: 'operations', hierarchy: 'head', isAdmin: true, canViewDepartments: ['warehouse', 'customer_support', 'finance', 'marketing'], active: true, overallRating: '4.6', reviewCount: 3, achievementCount: 5, location: 'Delhi NCR', joinDate: '2023-02-01' },
+        { id: 's1', username: 'admin', fullName: 'Simran Kohli', mobile: '9000000001', email: 'simran@offcomfrt.in', role: 'ops-lead', department: 'operations', hierarchy: 'head', isAdmin: true, platformAdmin: true, canViewDepartments: ['warehouse', 'customer_support', 'finance', 'marketing'], active: true, overallRating: '4.6', reviewCount: 3, achievementCount: 5, location: 'Delhi NCR', joinDate: '2023-02-01' },
         { id: 's2', username: 'vikram', fullName: 'Vikram Mehta', mobile: '9000000002', role: 'manager', department: 'operations', hierarchy: 'manager', isAdmin: true, canViewDepartments: [], active: true, overallRating: '4.1', reviewCount: 2, achievementCount: 2, location: 'Delhi NCR' },
         { id: 's3', username: 'neha', fullName: 'Neha Saran', mobile: '9000000003', role: 'growth-lead', department: 'marketing', hierarchy: 'lead', isAdmin: true, canViewDepartments: [], active: true, overallRating: '4.4', reviewCount: 2, achievementCount: 4, location: 'Mumbai' },
         { id: 's4', username: 'rahul', fullName: 'Rahul Nair', mobile: '9000000004', role: 'warehouse-exec', department: 'warehouse', hierarchy: 'mid', isAdmin: false, canViewDepartments: [], active: true, overallRating: '3.9', reviewCount: 1, achievementCount: 1, location: 'Bhiwandi' },

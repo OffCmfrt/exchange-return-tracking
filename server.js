@@ -17987,8 +17987,8 @@ function authenticateCompanyStaff(req, res, next) {
         name: decoded.name || decoded.username,
         department: decoded.department,
         isAdmin: !!decoded.isAdmin,
-        canViewDepartments: decoded.canViewDepartments || [],
-        platformAdmin: false
+        platformAdmin: !!decoded.platformAdmin,
+        canViewDepartments: decoded.canViewDepartments || []
     };
     next();
 }
@@ -18009,6 +18009,12 @@ async function authenticateCompanyConsole(req, res, next) {
     if (decoded.role === 'company_staff') {
         const staff = await companyOpsDB.getStaff(decoded.staffId).catch(() => null);
         if (!staff || !staff.active) return res.status(401).json({ error: 'Account deactivated' });
+        // A staff row flagged platform_admin gets the full-company console,
+        // even if it is not a department lead (is_admin).
+        if (staff.platformAdmin) {
+            req.companyScope = { all: true, actor: { staffId: staff.id, name: staff.fullName, department: staff.department, platformAdmin: true } };
+            return next();
+        }
         if (!staff.isAdmin) return res.status(403).json({ error: 'Console access requires a department lead' });
         req.companyScope = {
             all: false,
@@ -18050,6 +18056,7 @@ app.post('/api/company/login', async (req, res) => {
             name: staff.fullName,
             department: staff.department,
             isAdmin: !!staff.isAdmin,
+            platformAdmin: !!staff.platformAdmin,
             canViewDepartments: staff.canViewDepartments || [],
             timestamp: Date.now()
         });
@@ -18132,6 +18139,7 @@ app.get('/api/company/console/staff', authenticateCompanyConsole, async (req, re
 app.post('/api/company/console/staff', authenticateCompanyConsole, async (req, res) => {
     try {
         companyOpsDB.assertDeptAccess(req.companyScope, req.body.department);
+        if (!req.companyScope.actor.platformAdmin) delete req.body.platformAdmin;
         const staff = await companyOpsDB.createStaff(req.body);
         res.json({ success: true, staff });
     } catch (error) { companyErr(res, 'Create staff', error); }
@@ -18142,6 +18150,7 @@ app.put('/api/company/console/staff/:id', authenticateCompanyConsole, async (req
         if (!target) return res.status(404).json({ error: 'Staff not found' });
         companyOpsDB.assertDeptAccess(req.companyScope, target.department, { allowUnscoped: false });
         if (req.body.department) companyOpsDB.assertDeptAccess(req.companyScope, req.body.department);
+        if (!req.companyScope.actor.platformAdmin) delete req.body.platformAdmin;
         const staff = await companyOpsDB.updateStaff(req.params.id, req.body);
         res.json({ success: true, staff });
     } catch (error) { companyErr(res, 'Update staff', error); }

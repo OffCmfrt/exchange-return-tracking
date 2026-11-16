@@ -37,6 +37,7 @@ const TABLES = {
             hierarchy: 'text',
             reportsTo: 'uuid',
             isAdmin: 'bool',
+            platformAdmin: 'bool',
             canViewDepartments: 'array',
             skills: 'json',
             avatarUrl: 'text',
