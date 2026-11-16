@@ -90,9 +90,11 @@ function boot() {
         api.get('/api/company/me'),
         api.get('/api/company/console/session').catch(() => ({ platformAdmin: false }))
     ]).then(([r, sess]) => {
-        if (!r.staff.isAdmin) { location.href = '/company/portal'; return; }
-        state.me = { id: r.staff.id, name: r.staff.fullName, department: r.staff.department, isAdmin: true,
-                     platformAdmin: !!sess.platformAdmin };
+        const pa = !!sess.platformAdmin;
+        // A platform admin gets console access even without the dept-lead flag.
+        if (!r.staff.isAdmin && !pa) { location.href = '/company/portal'; return; }
+        state.me = { id: r.staff.id, name: r.staff.fullName, department: r.staff.department,
+                     isAdmin: !!r.staff.isAdmin || pa, platformAdmin: pa };
         enter();
     }).catch(() => showLogin());
 }
@@ -102,10 +104,13 @@ $('#loginForm').onsubmit = async (ev) => {
     const btn = $('#lGo'); btn.disabled = true; btn.textContent = 'Signing in…';
     try {
         const r = await api.post('/api/company/login', { username: $('#lUser').value, mobile: $('#lMob').value });
-        if (!r.staff.isAdmin) throw new Error('This account has no console access — use the staff portal');
+        // Store the token first so the session probe below is authenticated.
+        api.setSession(r.token, { id: r.staff.id, name: r.staff.fullName, department: r.staff.department, isAdmin: !!r.staff.isAdmin, platformAdmin: false });
         const sess = await api.get('/api/company/console/session').catch(() => ({ platformAdmin: false }));
-        state.me = { id: r.staff.id, name: r.staff.fullName, department: r.staff.department, isAdmin: true,
-                     platformAdmin: !!sess.platformAdmin };
+        const pa = !!sess.platformAdmin;
+        if (!r.staff.isAdmin && !pa) { api.clear(); throw new Error('This account has no console access — use the staff portal'); }
+        state.me = { id: r.staff.id, name: r.staff.fullName, department: r.staff.department,
+                     isAdmin: !!r.staff.isAdmin || pa, platformAdmin: pa };
         api.setSession(r.token, state.me); enter();
     } catch (e) { toast(e.message, 'bad'); }
     btn.disabled = false; btn.textContent = 'Sign in';
