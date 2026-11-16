@@ -169,6 +169,25 @@
             return ok({ success: true, staff: clone(staff[0]) });
         }
         if (method === 'GET' && u === '/api/company/console/departments') return ok({ success: true, departments: clone(departments) });
+        // preview staff s1 is the platform admin, so dept CRUD is allowed here
+        if (method === 'GET' && u === '/api/company/console/session') return ok({ success: true, platformAdmin: true });
+        if (method === 'POST' && u === '/api/company/console/departments') {
+            const d = { id: nid('d'), slug: body.slug || nid('dept_'), name: body.name, color: body.color, headStaffId: body.headStaffId || null, active: true };
+            departments.push(d);
+            return ok({ success: true, department: clone(d) });
+        }
+        const deptPut = /^\/api\/company\/console\/departments\/([^/]+)$/.exec(u);
+        if (method === 'PUT' && deptPut) {
+            const d = departments.find((x) => x.id === deptPut[1]);
+            if (!d) return Promise.reject(new Error('Department not found'));
+            Object.assign(d, body);
+            return ok({ success: true, department: clone(d) });
+        }
+        if (method === 'DELETE' && deptPut) {
+            const d = departments.find((x) => x.id === deptPut[1]);
+            if (d) d.active = false;
+            return ok({ success: true });
+        }
         if (method === 'GET' && u === '/api/company/console/staff') return ok({ success: true, staff: clone(staff) });
         if (method === 'GET' && u === '/api/company/directory') return ok({ success: true, directory: staff.filter((s) => s.id !== 's1').map((s) => ({ id: s.id, name: s.fullName, username: s.username, department: s.department, role: s.role, avatarUrl: null })) });
         if (method === 'GET' && u === '/api/company/console/projects') return ok({ success: true, projects: clone(projects) });

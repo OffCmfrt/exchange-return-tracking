@@ -18085,6 +18085,14 @@ app.put('/api/company/me', authenticateCompanyStaff, async (req, res) => {
     }
 });
 
+// Lightweight session probe: the console uses this to decide which
+// platform-admin-only affordances (department create/edit/archive) to show.
+app.get('/api/company/console/session', authenticateCompanyConsole, async (req, res) => {
+    try {
+        res.json({ success: true, platformAdmin: !!req.companyScope.actor.platformAdmin });
+    } catch (error) { companyErr(res, 'Console session', error); }
+});
+
 // ---------- Console: departments ----------
 app.get('/api/company/console/departments', authenticateCompanyConsole, async (req, res) => {
     try {

@@ -86,9 +86,13 @@ function boot() {
         return enter();
     }
     if (!api.token) return showLogin();
-    api.get('/api/company/me').then((r) => {
+    Promise.all([
+        api.get('/api/company/me'),
+        api.get('/api/company/console/session').catch(() => ({ platformAdmin: false }))
+    ]).then(([r, sess]) => {
         if (!r.staff.isAdmin) { location.href = '/company/portal'; return; }
-        state.me = { id: r.staff.id, name: r.staff.fullName, department: r.staff.department, isAdmin: true };
+        state.me = { id: r.staff.id, name: r.staff.fullName, department: r.staff.department, isAdmin: true,
+                     platformAdmin: !!sess.platformAdmin };
         enter();
     }).catch(() => showLogin());
 }
@@ -99,8 +103,10 @@ $('#loginForm').onsubmit = async (ev) => {
     try {
         const r = await api.post('/api/company/login', { username: $('#lUser').value, mobile: $('#lMob').value });
         if (!r.staff.isAdmin) throw new Error('This account has no console access — use the staff portal');
-        api.setSession(r.token, { id: r.staff.id, name: r.staff.fullName, department: r.staff.department, isAdmin: true });
-        state.me = api.me; enter();
+        const sess = await api.get('/api/company/console/session').catch(() => ({ platformAdmin: false }));
+        state.me = { id: r.staff.id, name: r.staff.fullName, department: r.staff.department, isAdmin: true,
+                     platformAdmin: !!sess.platformAdmin };
+        api.setSession(r.token, state.me); enter();
     } catch (e) { toast(e.message, 'bad'); }
     btn.disabled = false; btn.textContent = 'Sign in';
 };
@@ -162,7 +168,7 @@ function refreshCounts() {
 const NEW_ACTIONS = {
     board: { label: 'New Task', fn: () => taskModal() },
     projects: { label: 'New Project', fn: () => projectModal() },
-    departments: { label: 'New Department', fn: () => deptModal() },
+    departments: { label: 'New Department', fn: () => deptModal() },   // hidden for non platform admins in route()
     people: { label: 'Add Staff', fn: () => staffModal() },
     reviews: { label: 'New Review', fn: () => reviewModal() },
     okrs: { label: 'New OKR', fn: () => okrModal() },
@@ -178,7 +184,7 @@ function route() {
     $('#viewTitle').textContent = def[1];
     const nb = $('#newBtn');
     const na = NEW_ACTIONS[def[0]];
-    nb.classList.toggle('hidden', !na);
+    nb.classList.toggle('hidden', !na || (def[0] === 'departments' && !state.me.platformAdmin));
     if (na) { nb.innerHTML = icon('plus') + na.label; nb.onclick = na.fn; }
     $('#view').classList.toggle('no-scroll', def[0] === 'board' || def[0] === 'messages');
     ({ overview, board, projects, departments, people, messages, reviews, skills, okrs, meetings, achievements, goals, reports })[def[0]]();
@@ -532,6 +538,8 @@ function projectModal(p) {
 
 // ---- departments ---------------------------------------------------------------------
 async function departments() {
+    // department CRUD is platform-admin-only on the server; dept leads get a read-only table
+    const canManage = !!state.me.platformAdmin;
     const head = (id) => staffName(id);
     $('#view').innerHTML = `<table class="grid"><thead><tr><th>Department</th><th>Head</th><th>Staff</th><th>Open tasks</th><th>Done</th><th></th></tr></thead><tbody>
         ${state.departments.map((d) => {
@@ -539,11 +547,12 @@ async function departments() {
             return `<tr><td><span class="hstack"><span style="width:8px;height:8px;background:${esc(d.color || '#55555e')}"></span><b style="font-weight:600">${esc(d.name)}</b><span class="tag">${esc(d.slug)}</span></span></td>
             <td>${esc(head(d.headStaffId))}</td><td class="num">${state.staff.filter((s) => s.department === d.slug && s.active !== false).length}</td>
             <td class="num">${ts.filter((t) => t.status !== 'done').length}</td><td class="num">${ts.filter((t) => t.status === 'done').length}</td>
-            <td class="right"><button class="btn btn-ghost btn-sm" data-edit="${esc(d.id)}">${icon('edit')}</button></td></tr>`;
-        }).join('')}</tbody></table>`;
+            <td class="right">${canManage ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(d.id)}">${icon('edit')}</button>` : ''}</td></tr>`;
+        }).join('')}${canManage ? '' : '<tr><td colspan="6" class="faint" style="padding:12px 14px">Only platform admins can create or edit departments.</td></tr>'}</tbody></table>`;
     $('#view').querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => deptModal(state.departments.find((x) => x.id === b.dataset.edit)));
 }
 function deptModal(d) {
+    if (!state.me.platformAdmin) { toast('Only platform admins can edit departments', 'bad'); return; }
     const isNew = !d; d = d || {};
     modal(isNew ? 'New Department' : 'Edit Department', `<div class="form-grid">
         ${f('name', 'Name', inp('name', d.name))}
