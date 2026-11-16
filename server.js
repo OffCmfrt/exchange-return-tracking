@@ -2967,7 +2967,7 @@ async function createShiprocketReturnOrder(requestData, shopifyOrder) {
         let shippingCountry = 'IN';
         let shippingPincode = '123028';
         let shippingEmail = 'returns@offcomfort.com';
-        let shippingPhone = '9138514222';
+        let shippingPhone = '7419990277';
 
         if (warehouseLocation) {
             shippingCustomerName = warehouseLocation.name || shippingCustomerName;
@@ -3472,7 +3472,7 @@ async function createDelhiveryReturnOrder(requestData, shopifyOrder) {
         let returnCountry = 'IN';
         let returnPincode = '123028';
         let returnEmail = 'returns@offcomfort.com';
-        let returnPhone = '9138514222';
+        let returnPhone = '7419990277';
 
         if (warehouseLocation) {
             returnName = warehouseLocation.name || returnName;
@@ -5703,7 +5703,7 @@ Thank you for your cooperation, and we sincerely apologize for the inconvenience
     variables: [
         { name: 'request_type', example: 'Return/Exchange' },
         { name: 'warehouse_address', example: 'BURB MANUFACTURES PRIVATE LIMITED, K NO 181/169, K NO 229, Vill. BAIRAWAS, Distt. Mahendergarh, Haryana - 123028' },
-        { name: 'warehouse_phone', example: '+91 82959 88424' },
+        { name: 'warehouse_phone', example: '+91 74199 90277' },
         { name: 'order_number', example: '#12345' },
         { name: 'request_id', example: 'REQ-67796' }
     ]
@@ -5782,9 +5782,13 @@ async function sendSelfShipRequiredWhatsApp({ phone, requestId, orderNumber, typ
  */
 async function resolveWarehouseAddress() {
     const warehouseLocation = await getSetting('warehouse_location', null);
+    // Customer-facing self-ship contact number lives in its own setting.
+    // NEVER fall back to warehouseLocation.phone — that is the courier-registered
+    // warehouse number (Shiprocket/Delhivery pickup profile), not a support line.
+    const selfShipContactPhone = await getSetting('self_ship_contact_phone', null);
 
     let address = 'BURB MANUFACTURES PRIVATE LIMITED, K NO 181/169, K NO 229, Vill. BAIRAWAS, Distt. Mahendergarh, Haryana - 123028';
-    let phone = '8295988424';
+    let phone = selfShipContactPhone || '7419990277';
 
     if (warehouseLocation) {
         const parts = [
@@ -5796,7 +5800,6 @@ async function resolveWarehouseAddress() {
             warehouseLocation.pin_code || warehouseLocation.pincode
         ].filter(Boolean);
         if (parts.length > 0) address = parts.join(', ');
-        if (warehouseLocation.phone) phone = warehouseLocation.phone;
     }
 
     // Format for WhatsApp display: 10-digit number → "+91 XXXXX XXXXX"
@@ -7978,6 +7981,7 @@ app.get('/api/admin/settings', authenticateAdmin, async (req, res) => {
             auto_approve_reasons: await getSetting('auto_approve_reasons', ['size', 'fit']),
             warehouse_location: await getSetting('warehouse_location', null),
             delhivery_pickup_location: await getSetting('delhivery_pickup_location', null),
+            self_ship_contact_phone: await getSetting('self_ship_contact_phone', '7419990277'),
             cutoff_date_enabled: await getSetting('cutoff_date_enabled', false),
             cutoff_date: await getSetting('cutoff_date', null),
             allow_shopper_hub_orders: await getSetting('allow_shopper_hub_orders', true),
