@@ -61,7 +61,9 @@
         mkTask('t12', 'Docket weight tolerance policy', 'operations', 'review', 'high', 's2', { progress: 80 }),
         mkTask('t13', 'Sign off courier incentive revision', 'operations', 'in_progress', 'critical', 's1', { projectId: 'p1', progress: 40, dueDate: dateStr(2), subtasks: [{ id: 'a', title: 'Compare Q3 payouts', done: true }, { id: 'b', title: 'Draft revised slab', done: false }], stageHistory: [{ from: 'assigned', to: 'in_progress', by: 'Simran Kohli', at: iso(2 * day) }] }),
         mkTask('t14', 'Publish RTO policy to support macros', 'customer_support', 'assigned', 'medium', 's1', { dueDate: dateStr(-1) }),
-        mkTask('t15', 'Approve annual warehouse capex note', 'warehouse', 'blocked', 'high', 's1', { stageHistory: [{ from: 'in_progress', to: 'blocked', by: 'Simran Kohli', at: iso(30 * 3600000) }] })
+        mkTask('t15', 'Approve annual warehouse capex note', 'warehouse', 'blocked', 'high', 's1', { stageHistory: [{ from: 'in_progress', to: 'blocked', by: 'Simran Kohli', at: iso(30 * 3600000) }] }),
+        mkTask('t16', 'Daily dispatch cut-off manifest', 'warehouse', 'assigned', 'high', 's4', { dueDate: dateStr(0), isRecurring: true, recurrenceRule: 'daily' }),
+        mkTask('t17', 'Weekly RTO credit-note reconciliation', 'finance', 'in_progress', 'high', 's6', { progress: 20, dueDate: dateStr(2), isRecurring: true, recurrenceRule: 'weekly' })
     ];
 
     const reviews = [
@@ -158,6 +160,23 @@
     const clone = (x) => JSON.parse(JSON.stringify(x));
     const ok = (o) => Promise.resolve(o);
 
+    // Mirrors the server rule: first done-move of a recurring task unshifts
+    // the next open occurrence with the due date advanced by the cadence.
+    function rollRecurring(t) {
+        if (!t.isRecurring || !t.recurrenceRule || t.status !== 'done') return;
+        if (tasks.some((x) => x.id !== t.id && x.title === t.title && x.department === t.department && x.isRecurring && x.status !== 'done' && x.status !== 'cancelled')) return;
+        const gap = { daily: 1, weekly: 7, biweekly: 14 }[t.recurrenceRule] || 1;
+        const due = t.dueDate ? new Date(t.dueDate + 'T00:00:00').getTime() : now;
+        const base = Math.max(due, now);
+        const nd = new Date(base);
+        if (t.recurrenceRule === 'monthly') nd.setMonth(nd.getMonth() + 1); else nd.setDate(nd.getDate() + gap);
+        tasks.unshift(mkTask(nid('t'), t.title, t.department, t.assignedTo ? 'assigned' : 'draft', t.priority, t.assignedTo, {
+            dueDate: nd.toISOString().slice(0, 10), projectId: t.projectId || null, description: t.description,
+            category: t.category, tags: t.tags || [], estimatedHours: t.estimatedHours,
+            isRecurring: true, recurrenceRule: t.recurrenceRule
+        }));
+    }
+
     function handle(method, url, body) {
         const u = url.split('?')[0];
         const q = new URLSearchParams(url.split('?')[1] || '');
@@ -198,7 +217,7 @@
             return ok({ success: true, tasks: list });
         }
         if (method === 'POST' && u === '/api/company/console/tasks') {
-            const t = mkTask(nid('t'), body.title || 'Untitled', body.department || 'operations', body.workflowState || 'draft', body.priority || 'medium', body.assignedTo || null, { progress: body.progress || 0, dueDate: body.dueDate || null });
+            const t = mkTask(nid('t'), body.title || 'Untitled', body.department || 'operations', body.workflowState || 'draft', body.priority || 'medium', body.assignedTo || null, { progress: body.progress || 0, dueDate: body.dueDate || null, projectId: body.projectId || null, description: body.description || ('Mock description for ' + (body.title || 'Untitled')), category: body.category || 'operations', tags: body.tags || [], estimatedHours: body.estimatedHours || 8, isRecurring: !!body.recurrenceRule, recurrenceRule: body.recurrenceRule || null });
             tasks.unshift(t);
             return ok({ success: true, task: clone(t) });
         }
@@ -206,8 +225,11 @@
         if (method === 'PUT' && taskPut) {
             const t = tasks.find((x) => x.id === taskPut[1]);
             if (!t) return Promise.reject(new Error('Task not found'));
+            const wasDone = t.status === 'done';
             Object.assign(t, body);
+            if (body.recurrenceRule !== undefined) t.isRecurring = !!t.recurrenceRule;
             if (body.workflowState) t.status = ({ draft: 'todo', assigned: 'todo', in_progress: 'in_progress', blocked: 'blocked', review: 'review', rework: 'in_progress', done: 'done', cancelled: 'done' })[body.workflowState] || t.status;
+            if (!wasDone) rollRecurring(t);
             return ok({ success: true, task: clone(t) });
         }
         const taskGet = /^\/api\/company\/console\/tasks\/([^/]+)$/.exec(u);
@@ -231,8 +253,10 @@
         if (method === 'PUT' && myPut) {
             const t = tasks.find((x) => x.id === myPut[1]);
             if (!t) return Promise.reject(new Error('Task not found or not assigned to you'));
+            const wasDone = t.status === 'done';
             Object.assign(t, body);
             if (body.workflowState) t.status = ({ draft: 'todo', assigned: 'todo', in_progress: 'in_progress', blocked: 'blocked', review: 'review', rework: 'in_progress', done: 'done', cancelled: 'done' })[body.workflowState] || t.status;
+            if (!wasDone) rollRecurring(t);
             return ok({ success: true, task: clone(t) });
         }
         const myAck = /^\/api\/company\/my\/tasks\/([^/]+)\/acknowledge$/.exec(u);

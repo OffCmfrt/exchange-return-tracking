@@ -301,6 +301,12 @@ async function moveTask(task, lane, forced) {
         const r = await api.put('/api/company/console/tasks/' + task.id + (forced ? '?force=true' : ''), body);
         Object.assign(task, r.task);
         toast('Moved to ' + lane.replace(/_/g, ' '), 'good');
+        // Completing a recurring task rolls the series server-side; refetch so
+        // the fresh occurrence appears on the board immediately.
+        if (lane === 'done' && task.isRecurring) {
+            await loadBase().catch(() => {});
+            toast('Next occurrence added', 'good');
+        }
     } catch (e) {
         if (/Illegal transition/i.test(e.message)) {
             // in-page confirmation, not a native dialog
@@ -316,7 +322,7 @@ function taskCard(t) {
     return `<div class="tcard" data-id="${esc(t.id)}" style="--prio-color:${PRIO_COLOR[t.priority] || 'var(--line-2)'}">
         <div class="ttl">${esc(t.title)}</div>
         <div class="meta"><span class="num faint" style="font:500 9.5px var(--mono)">${subs.length ? subDone + '/' + subs.length : ''}</span><div class="bar"><i style="width:${t.progress || 0}%"></i></div><span class="num faint" style="font:500 9.5px var(--mono)">${t.progress || 0}%</span></div>
-        <div class="foot">${chipDept(t.department)}${prioTag(t.priority)}<span class="right">${avatar(staffName(t.assignedTo), null, false)}</span></div>
+        <div class="foot">${chipDept(t.department)}${prioTag(t.priority)}${t.recurrenceRule ? `<span class="tag" title="Repeats ${esc(t.recurrenceRule)} — completing this task creates the next one">\u21bb ${esc(t.recurrenceRule)}</span>` : ''}<span class="right">${avatar(staffName(t.assignedTo), null, false)}</span></div>
         ${t.dueDate ? `<div class="foot"><span class="due ${A.isLate(t) ? 'late' : ''}">${A.isLate(t) ? 'late ' : 'due '}${esc(A.fmtDay(t.dueDate))}</span></div>` : ''}
     </div>`;
 }
@@ -329,7 +335,7 @@ async function openTask(id) {
     const t = detail.task; drTask = t;
     $('#scrim').classList.add('open'); $('#drawer').classList.add('open');
     $('#drTitle').textContent = t.title;
-    $('#drChips').innerHTML = `${chipDept(t.department)}${prioTag(t.priority)}${stTag(t)}${t.projectId ? `<span class="tag">${esc((state.projects.find((p) => p.id === t.projectId) || {}).name || 'project')}</span>` : ''}`;
+    $('#drChips').innerHTML = `${chipDept(t.department)}${prioTag(t.priority)}${stTag(t)}${t.recurrenceRule ? `<span class="tag" title="Repeats ${esc(t.recurrenceRule)} — completing this task creates the next one">\u21bb ${esc(t.recurrenceRule)}</span>` : ''}${t.projectId ? `<span class="tag">${esc((state.projects.find((p) => p.id === t.projectId) || {}).name || 'project')}</span>` : ''}`;
     $('#drClose').innerHTML = icon('x');
     renderDrMain(t);
     // task thread chat
@@ -373,6 +379,7 @@ function renderDrMain(t) {
                 <span class="k">Created by</span><span>${esc(staffName(t.createdBy))}</span>
                 <span class="k">Estimate</span><span class="num">${t.estimatedHours || 0} h · logged ${t.actualHours || 0} h</span>
                 <span class="k">Category</span><span>${esc(t.category || '—')}</span>
+                <span class="k">Recurrence</span><span>${t.recurrenceRule ? `\u21bb repeats ${esc(t.recurrenceRule)}` : 'does not repeat'}</span>
                 <span class="k">Tags</span><span>${(t.tags || []).map((x) => `<span class="tag">${esc(x)}</span>`).join(' ') || '—'}</span>
                 <span class="k">Depends on</span><span>${(t.dependsOn || []).map((d) => `<span class="tag">${esc((state.tasks.find((x) => x.id === d) || {}).title || d)}</span>`).join(' ') || '—'}</span>
             </div>
@@ -389,10 +396,16 @@ function renderDrMain(t) {
             <button class="btn btn-sm btn-danger right" id="dDelete">${icon('trash')} Delete</button>
         </div>`;
     $('#dSave').onclick = async () => {
+        const prevWs = t.workflowState;
         try {
             const r = await api.put('/api/company/console/tasks/' + t.id, { assignedTo: $('#dAssign').value || null, workflowState: $('#dState').value, dueDate: $('#dDue').value || null });
             syncTask(t, r.task);
             toast('Task updated', 'good');
+            if (r.task.isRecurring && r.task.workflowState === 'done' && prevWs !== 'done') {
+                await loadBase().catch(() => {});
+                renderLanesIfBoard();
+                toast('Next occurrence added', 'good');
+            }
         } catch (e) {
             if (/Illegal transition/i.test(e.message) && await askConfirm('Force state change', esc(e.message) + '<br><br>The move will be flagged as forced in the audit trail.', 'Force move')) {
                 const r = await api.put('/api/company/console/tasks/' + t.id + '?force=true', { workflowState: $('#dState').value });
@@ -504,12 +517,13 @@ function taskModal(t) {
         ${f('projectId', 'Project', sel('projectId', [['', 'None']].concat(state.projects.map((p) => [p.id, p.name])), t.projectId))}
         ${f('priority', 'Priority', sel('priority', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['critical', 'Critical']], t.priority || 'medium'))}
         ${f('dueDate', 'Due date', inp('dueDate', t.dueDate, 'date'))}
+        ${f('recurrence', 'Recurrence', sel('recurrence', [['', 'Does not repeat'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['biweekly', 'Every 2 weeks'], ['monthly', 'Monthly']], t.recurrenceRule || ''))}
         ${f('estimatedHours', 'Estimated hours', inp('estimatedHours', t.estimatedHours, 'number'))}
         ${f('category', 'Category', inp('category', t.category))}
         ${f('tags', 'Tags (comma separated)', inp('tags', (t.tags || []).join(', ')))}
         ${f('description', 'Description', `<textarea data-f="description" rows="4">${esc(t.description || '')}</textarea>`)}
         </div>`, async (v) => {
-        const body = { title: v.title, department: v.department, assignedTo: v.assignedTo || null, projectId: v.projectId || null, priority: v.priority, dueDate: v.dueDate || null, estimatedHours: parseInt(v.estimatedHours, 10) || null, category: v.category || null, tags: v.tags ? v.tags.split(',').map((x) => x.trim()).filter(Boolean) : [], description: v.description };
+        const body = { title: v.title, department: v.department, assignedTo: v.assignedTo || null, projectId: v.projectId || null, priority: v.priority, dueDate: v.dueDate || null, isRecurring: !!v.recurrence, recurrenceRule: v.recurrence || null, estimatedHours: parseInt(v.estimatedHours, 10) || null, category: v.category || null, tags: v.tags ? v.tags.split(',').map((x) => x.trim()).filter(Boolean) : [], description: v.description };
         if (isNew) await api.post('/api/company/console/tasks', body);
         else await api.put('/api/company/console/tasks/' + t.id, body);
         toast(isNew ? 'Task created' : 'Task saved', 'good');
@@ -613,7 +627,7 @@ async function messages() {
     // #view is re-rendered on every route, so the previous mount target no longer
     // exists in the DOM: drop that instance and mount a fresh pane into the host.
     if (state.chat) { state.chat.destroy(); state.chat = null; }
-    $('#view').innerHTML = '<div style="flex:1;min-width:0;min-height:0" id="chatHost"></div>';
+    $('#view').innerHTML = '<div style="flex:1;min-width:0;min-height:0;display:flex" id="chatHost"></div>';
     const host = $('#chatHost');
     if (!state.client) { host.innerHTML = '<div class="empty">Chat connection unavailable</div>'; return; }
     state.chat = window.mountChat(host, {

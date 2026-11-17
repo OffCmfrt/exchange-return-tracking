@@ -73,6 +73,8 @@ const TABLES = {
             workflowState: 'text',
             priority: 'text',
             assignedTo: 'uuid',
+            assigneeIds: 'array',
+            assigneeState: 'json',
             createdBy: 'uuid',
             projectId: 'uuid',
             department: 'text',
@@ -250,6 +252,122 @@ const workflowToLane = (ws) => ({
     done: 'done', cancelled: 'done'
 }[ws] || 'todo');
 
+// Recurrence: a completed task rolls itself forward as a fresh open occurrence
+// with the due date advanced by the rule. is_recurring is derived from the
+// rule so a stray flag without a valid cadence can never spawn a ghost series.
+const RECURRENCE_RULES = ['daily', 'weekly', 'biweekly', 'monthly'];
+const RECURRENCE_DAYS = { daily: 1, weekly: 7, biweekly: 14 };
+const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+function nextOccurrenceDate(baseDate, rule) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // Roll from the due date, but a late completion starts from today so the
+    // next occurrence never lands already overdue.
+    let base = baseDate ? new Date(String(baseDate).slice(0, 10) + 'T00:00:00') : today;
+    if (base < today) base = today;
+    if (rule === 'monthly') base.setMonth(base.getMonth() + 1);
+    else base.setDate(base.getDate() + (RECURRENCE_DAYS[rule] || 1));
+    return fmtDate(base);
+}
+
+// Mutates an already-snake_cased toDb row: drops unknown cadences and keeps
+// the flag and the rule consistent.
+function normalizeRecurrence(row) {
+    if (row.recurrence_rule !== undefined && !RECURRENCE_RULES.includes(row.recurrence_rule)) row.recurrence_rule = null;
+    if (row.is_recurring !== undefined || row.recurrence_rule !== undefined) {
+        row.is_recurring = !!row.recurrence_rule;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Assignees
+// ---------------------------------------------------------------------------
+// Seniority ladder used for delegation rights. Unknown levels rank -1, so they
+// can never be outranked (nobody may assign them) rather than silently reading
+// as the most junior person in the department.
+const HIERARCHY_RANK = { intern: 0, junior: 1, mid: 2, senior: 3, lead: 4, manager: 5, head: 6, director: 7 };
+const rankOf = (h) => {
+    const r = HIERARCHY_RANK[String(h || '').trim().toLowerCase()];
+    return r == null ? -1 : r;
+};
+
+// Order-preserving dedupe; every id leaves as a trimmed string.
+function dedupeIds(list) {
+    const seen = new Set();
+    const out = [];
+    for (const raw of (Array.isArray(list) ? list : [])) {
+        const v = raw == null ? '' : String(raw).trim();
+        if (!v || seen.has(v)) continue;
+        seen.add(v);
+        out.push(v);
+    }
+    return out;
+}
+
+// Everyone on a task, primary first. Falls back to the single owner so a row
+// written before the assignee columns existed still reads as one assignee.
+function assigneesOf(task) {
+    if (!task) return [];
+    const ids = dedupeIds(task.assigneeIds || []);
+    if (ids.length) return ids;
+    return task.assignedTo ? [String(task.assignedTo)] : [];
+}
+
+// Rebuild the per-person audit map, carrying forward anything already recorded.
+function assigneeStateFor(ids, existing, actor) {
+    const prev = existing && typeof existing === 'object' && !Array.isArray(existing) ? existing : {};
+    const now = new Date().toISOString();
+    const by = (actor && (actor.name || actor.staffId)) || 'system';
+    const out = {};
+    ids.forEach((id, i) => {
+        const p = prev[id] || prev[String(id)] || {};
+        out[id] = {
+            addedBy: p.addedBy || by,
+            addedAt: p.addedAt || now,
+            ackedAt: p.ackedAt || null,
+            primary: i === 0
+        };
+    });
+    return out;
+}
+
+// The assignee columns are added by hand in the Supabase SQL editor (PostgREST
+// cannot run DDL), so the feature must degrade to a single owner until section 4b
+// is applied rather than 500 every task write.
+let assignColsReady = null;
+const isMissingColumnError = (e) => /PGRST204|42703/i.test(String((e && (e.code || '')) + ' ' + ((e && e.message) || e)));
+const dropAssigneeCols = (row) => { delete row.assignee_ids; delete row.assignee_state; };
+function warnAssignColsOnce() {
+    if (warnAssignColsOnce.shown) return;
+    warnAssignColsOnce.shown = true;
+    console.warn('[CompanyOps] company_tasks.assignee_ids/assignee_state are missing — run section 4b of supabase_migration_company_ops.sql to enable multi-assignee tasks; until then only the primary owner is stored.');
+}
+
+async function assignColsAvailable() {
+    if (assignColsReady !== null) return assignColsReady;
+    const { error } = await supabase.from('company_tasks').select('assignee_ids').limit(1);
+    assignColsReady = !error;
+    if (!assignColsReady) warnAssignColsOnce();
+    return assignColsReady;
+}
+
+// Insert/update that retries once without the assignee columns when the error
+// says they do not exist yet. Any other error is thrown as-is.
+async function writeTaskRow(build, row) {
+    const { data, error } = await build(row).select().single();
+    if (!error) return data;
+    if ((row.assignee_ids !== undefined || row.assignee_state !== undefined) && isMissingColumnError(error)) {
+        assignColsReady = false;
+        warnAssignColsOnce();
+        dropAssigneeCols(row);
+        const retry = await build(row).select().single();
+        if (retry.error) throw retry.error;
+        return retry.data;
+    }
+    throw error;
+}
+
 const camelize = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const snakeify = (s) => s.replace(/([A-Z])/g, (c) => '_' + c.toLowerCase());
 
@@ -388,6 +506,69 @@ async function getStaff(id) {
     return toUi(data, 'staff');
 }
 
+// ---------------------------------------------------------------------------
+// Delegation: who a person may put on a task
+// ---------------------------------------------------------------------------
+// A portal staff member may only delegate downward - strictly junior within
+// their own department, or anyone reporting to them directly. Department leads
+// and platform admins are not rank-restricted inside scope they already hold.
+// Ineligible people are returned flagged rather than hidden, so the picker can
+// explain why a name is greyed out instead of looking like missing data.
+async function listAssignableStaff(actor, { department } = {}) {
+    const me = actor && actor.staffId ? await getStaff(actor.staffId) : null;
+    if (!me) throw Object.assign(new Error('Your staff record was not found'), { status: 404 });
+    const dept = department || me.department;
+    const wide = !!(actor && actor.platformAdmin) || !!me.isAdmin;
+    const [staff, tasks] = await Promise.all([
+        listStaff({ all: true }, { activeOnly: true, department: dept }),
+        listTasks({ all: true }, { department: dept })
+    ]);
+    const myRank = rankOf(me.hierarchy);
+    return staff.map((s) => {
+        const rank = rankOf(s.hierarchy);
+        const reports = String(s.reportsTo || '') === String(me.id);
+        let canAssign = String(s.id) !== String(me.id);
+        let reason = canAssign ? '' : 'that is you';
+        if (canAssign && !wide && !reports && !(rank >= 0 && rank < myRank)) {
+            canAssign = false;
+            reason = rank < 0 ? 'no level set for them'
+                : rank >= myRank ? `${s.hierarchy} is not junior to you`
+                : 'not in your reporting line';
+        }
+        return {
+            id: s.id, name: s.fullName, username: s.username, role: s.role,
+            department: s.department, hierarchy: s.hierarchy || null, rank,
+            reportsTo: s.reportsTo || null, directReport: reports,
+            avatarUrl: s.avatarUrl || null,
+            load: tasks.filter((t) => t.status !== 'done' && assigneesOf(t).includes(String(s.id))).length,
+            canAssign, reason
+        };
+    }).sort((a, b) => (b.canAssign - a.canAssign) || (a.rank - b.rank) || String(a.name).localeCompare(String(b.name)));
+}
+
+// Throws 403 unless every id may be assigned by this actor. `extra` ids are
+// always allowed (the actor themself, the task creator, people already on the
+// task) so shrinking a list never needs rights the actor does not have.
+async function assertAssigneesAllowed(actor, department, ids, extra = []) {
+    const wanted = dedupeIds(ids);
+    if (!wanted.length) return wanted;
+    const eligible = await listAssignableStaff(actor, { department });
+    const ok = new Set(eligible.filter((e) => e.canAssign).map((e) => String(e.id)));
+    for (const id of dedupeIds(extra)) ok.add(String(id));
+    const bad = wanted.filter((id) => !ok.has(String(id)));
+    if (bad.length) {
+        const names = bad.map((id) => {
+            const e = eligible.find((x) => String(x.id) === String(id));
+            return e ? e.name : 'someone outside your department';
+        });
+        throw Object.assign(
+            new Error(`You may only assign to juniors in your own department (${names.join(', ')})`),
+            { status: 403 }
+        );
+    }
+    return wanted;
+}
+
 async function getStaffByLogin(username, mobile) {
     const { data, error } = await supabase
         .from('company_staff')
@@ -469,7 +650,6 @@ async function listTasks(scope, filters = {}) {
     let query = supabase.from('company_tasks').select('*');
     if (filters.status) query = query.eq('status', filters.status);
     if (filters.workflowState) query = query.eq('workflow_state', filters.workflowState);
-    if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo);
     if (filters.projectId) query = query.eq('project_id', filters.projectId);
     if (filters.priority) query = query.eq('priority', filters.priority);
     if (filters.category) query = query.eq('category', filters.category);
@@ -483,7 +663,15 @@ async function listTasks(scope, filters = {}) {
     }
     const { data, error } = await query.order('created_at', { ascending: false }).limit(1000);
     if (error) throw error;
-    return (data || []).map((r) => toUi(r, 'tasks'));
+    let rows = (data || []).map((r) => toUi(r, 'tasks'));
+    // "assigned to" means on the task in any role, which a plain eq on the
+    // primary owner cannot express; filtered after mapping (the set is already
+    // capped at 1000 rows above).
+    if (filters.assignedTo) {
+        const id = String(filters.assignedTo);
+        rows = rows.filter((t) => assigneesOf(t).includes(id));
+    }
+    return rows;
 }
 
 async function getTask(id) {
@@ -492,15 +680,28 @@ async function getTask(id) {
     return toUi(data, 'tasks');
 }
 
+// Everything a person is on, as owner or as a co-assignee. Runs two keyed
+// queries rather than an `or()` on an array containment so the uuid never has
+// to survive PostgREST's comma-delimited filter syntax.
 async function getStaffTasks(staffId) {
-    const { data, error } = await supabase
+    const base = () => supabase
         .from('company_tasks')
         .select('*')
-        .eq('assigned_to', staffId)
         .order('created_at', { ascending: false })
         .limit(500);
+    const { data, error } = await base().eq('assigned_to', staffId);
     if (error) throw error;
-    return (data || []).map((r) => toUi(r, 'tasks'));
+    const rows = data || [];
+    if (await assignColsAvailable()) {
+        const { data: extra, error: extraErr } = await base().contains('assignee_ids', [staffId]);
+        if (extraErr) console.warn('[CompanyOps] co-assignee lookup failed, showing owned tasks only:', extraErr.message);
+        else {
+            const seen = new Set(rows.map((r) => r.id));
+            for (const r of (extra || [])) if (!seen.has(r.id)) rows.push(r);
+        }
+        rows.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+    return rows.map((r) => toUi(r, 'tasks'));
 }
 
 function validateWorkflowTransition(from, to, force) {
@@ -512,12 +713,20 @@ function validateWorkflowTransition(from, to, force) {
 
 async function createTask(record, actor) {
     const row = toDb('tasks', record);
+    normalizeRecurrence(row);
+    // Assignees are authoritative as a list; assigned_to mirrors its head so the
+    // many existing single-owner readers never need to know about the array.
+    const ids = dedupeIds(record.assigneeIds !== undefined ? record.assigneeIds : (record.assignedTo ? [record.assignedTo] : []));
+    row.assigned_to = ids[0] || null;
+    if (await assignColsAvailable()) {
+        row.assignee_ids = ids;
+        row.assignee_state = assigneeStateFor(ids, null, actor);
+    }
     const ws = row.workflow_state || 'draft';
     row.workflow_state = ws;
     row.status = row.status && row.status !== 'todo' ? row.status : workflowToLane(ws);
     row.stage_history = [{ from: null, to: ws, by: (actor && (actor.name || actor.staffId)) || 'system', at: new Date().toISOString() }];
-    const { data, error } = await supabase.from('company_tasks').insert(row).select().single();
-    if (error) throw error;
+    const data = await writeTaskRow((r) => supabase.from('company_tasks').insert(r), row);
     const task = toUi(data, 'tasks');
     ensureTaskThread(task, actor).catch(() => {});
     return task;
@@ -527,6 +736,24 @@ async function updateTask(id, record, { actor = null, force = false } = {}) {
     const current = await getTask(id);
     if (!current) throw Object.assign(new Error('Task not found'), { status: 404 });
     const row = toDb('tasks', record, { partial: true });
+    normalizeRecurrence(row);
+    // assigneeIds is the authoritative list. A lone assignedTo keeps the
+    // co-assignees and just reorders the owner (or clears everyone when null),
+    // which is what the older single-picker clients send.
+    let nextIds = null;
+    if (record.assigneeIds !== undefined) nextIds = dedupeIds(record.assigneeIds);
+    else if (record.assignedTo !== undefined) {
+        nextIds = record.assignedTo
+            ? dedupeIds([record.assignedTo].concat(assigneesOf(current).filter((x) => String(x) !== String(record.assignedTo))))
+            : [];
+    }
+    if (nextIds) {
+        row.assigned_to = nextIds[0] || null;
+        if (await assignColsAvailable()) {
+            row.assignee_ids = nextIds;
+            row.assignee_state = assigneeStateFor(nextIds, current.assigneeState, actor);
+        }
+    }
     const nextWs = row.workflow_state;
     if (nextWs && nextWs !== current.workflowState) {
         if (!validateWorkflowTransition(current.workflowState, nextWs, force)) {
@@ -550,19 +777,61 @@ async function updateTask(id, record, { actor = null, force = false } = {}) {
     }
     if (row.status && !LANES.includes(row.status)) delete row.status;
     row.updated_at = new Date().toISOString();
-    const { data, error } = await supabase.from('company_tasks').update(row).eq('id', id).select().single();
-    if (error) throw error;
+    const data = await writeTaskRow((r) => supabase.from('company_tasks').update(r).eq('id', id), row);
     const task = toUi(data, 'tasks');
+    // First completion of a recurring task spawns the next open occurrence.
+    // Reopens keep completedAt cleared (see transition block above), so a
+    // second done-move on the same row rolls a second instance just like any
+    // other cycle; spawnNextOccurrence's open-copy guard stops double rolls.
+    if (nextWs === 'done' && nextWs !== current.workflowState && !current.completedAt
+        && current.isRecurring && RECURRENCE_RULES.includes(current.recurrenceRule)) {
+        await spawnNextOccurrence(current, actor).catch((e) =>
+            console.error(`[company-ops] recurring rollover failed for task ${id}: ${e.message}`));
+    }
     // Parent progress follows subtask completion ratio.
     if (task.parentTaskId) await refreshParentProgress(task.parentTaskId).catch(() => {});
-    if (record.assignedTo && record.assignedTo !== current.assignedTo) {
-        // assignment auto-advances draft -> assigned (silently when legal)
-        if (task.workflowState === 'draft') {
+    const assigneesChanged = !!nextIds && nextIds.join('|') !== assigneesOf(current).join('|');
+    if (assigneesChanged) {
+        if (nextIds.length && task.workflowState === 'draft') {
+            // assignment auto-advances draft -> assigned (silently when legal)
             await updateTask(id, { workflowState: 'assigned' }, { actor }).catch(() => {});
         }
         ensureTaskThread(task, actor).catch(() => {});
     }
     return task;
+}
+
+async function spawnNextOccurrence(completed, actor) {
+    // Never stack a second open copy of the same series (double done-move,
+    // or two console tabs completing at once).
+    let open = supabase
+        .from('company_tasks')
+        .select('id')
+        .eq('title', completed.title)
+        .eq('is_recurring', true)
+        .in('status', LANES.filter((l) => l !== 'done'))
+        .limit(1);
+    open = completed.department ? open.eq('department', completed.department) : open.is('department', null);
+    const { data: existing, error } = await open;
+    if (error) throw error;
+    if (existing && existing.length) return null;
+    return createTask({
+        title: completed.title,
+        description: completed.description || null,
+        department: completed.department || null,
+        projectId: completed.projectId || null,
+        assignedTo: completed.assignedTo || null,
+        assigneeIds: assigneesOf(completed),
+        createdBy: completed.createdBy || (actor && actor.staffId) || null,
+        priority: completed.priority || 'medium',
+        category: completed.category || null,
+        tags: Array.isArray(completed.tags) ? completed.tags : [],
+        estimatedHours: completed.estimatedHours || null,
+        dueDate: nextOccurrenceDate(completed.dueDate, completed.recurrenceRule),
+        workflowState: completed.assignedTo ? 'assigned' : 'draft',
+        isRecurring: true,
+        recurrenceRule: completed.recurrenceRule
+    }, actor || { name: 'recurrence' });
 }
 
 async function refreshParentProgress(parentId) {
@@ -597,14 +866,20 @@ async function logTaskTime(id, entry, actor) {
 }
 
 async function acknowledgeTask(id, actor) {
-    const { data, error } = await supabase
-        .from('company_tasks')
-        .update({ acknowledged_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-        .eq('id', id)
-        .select()
-        .single();
-    if (error) throw error;
-    void actor;
+    const current = await getTask(id);
+    if (!current) throw Object.assign(new Error('Task not found'), { status: 404 });
+    const now = new Date().toISOString();
+    const patch = { acknowledged_at: now, updated_at: now };
+    // With several people on one task the shared timestamp says nothing about
+    // who has actually seen it, so each acknowledgement is also recorded per
+    // assignee. Left as a bare timestamp until the assignee columns exist.
+    if (actor && actor.staffId && await assignColsAvailable()) {
+        const state = assigneeStateFor(assigneesOf(current), current.assigneeState, actor);
+        const sid = String(actor.staffId);
+        state[sid] = Object.assign({ addedBy: actor.name || sid, addedAt: now, ackedAt: null, primary: false }, state[sid], { ackedAt: now });
+        patch.assignee_state = state;
+    }
+    const data = await writeTaskRow((r) => supabase.from('company_tasks').update(r).eq('id', id), patch);
     return toUi(data, 'tasks');
 }
 
@@ -671,6 +946,15 @@ async function getStats(scope) {
         if (t.assignedTo && byMember[t.assignedTo]) {
             byMember[t.assignedTo][t.status] = (byMember[t.assignedTo][t.status] || 0) + 1;
             byMember[t.assignedTo].total++;
+        }
+        // Co-assignees carry the same weight as the owner: the point of the
+        // figure is who has work on their plate, not who was listed first.
+        for (const sid of assigneesOf(t)) {
+            const b = byMember[sid];
+            if (b && String(sid) !== String(t.assignedTo)) {
+                b[t.status] = (b[t.status] || 0) + 1;
+                b.total++;
+            }
         }
         const dept = t.department || 'unassigned';
         if (!byDepartment[dept]) byDepartment[dept] = { members: 0, tasks: 0, done: 0 };
@@ -973,7 +1257,7 @@ async function ensureTaskThread(task, actor) {
         .single();
     if (error) throw error;
     const channel = toUi(data, 'channels');
-    const members = new Set([task.createdBy, task.assignedTo].filter(Boolean));
+    const members = new Set([task.createdBy].concat(assigneesOf(task)).filter(Boolean));
     for (const w of (task.watchers || [])) members.add(w);
     for (const sid of members) await joinChannel(channel.id, sid, 'member').catch((e) => console.warn('[CompanyOps] task thread join failed:', e.message));
     return channel;
@@ -1389,11 +1673,14 @@ module.exports = {
     listDepartments, createDepartment, updateDepartment, deleteDepartment,
     // Staff
     listStaff, getStaff, getStaffByLogin, createStaff, updateStaff, deleteStaff,
+    // Assignees + delegation rights
+    HIERARCHY_RANK, rankOf, assigneesOf, listAssignableStaff, assertAssigneesAllowed,
     // Projects
     listProjects, createProject, updateProject, deleteProject,
     // Tasks
     listTasks, getTask, getStaffTasks, createTask, updateTask, logTaskTime, acknowledgeTask, deleteTask,
     refreshParentProgress,
+    RECURRENCE_RULES, nextOccurrenceDate, spawnNextOccurrence,
     // Comments
     listTaskComments, addTaskComment, deleteTaskComment,
     // Stats
