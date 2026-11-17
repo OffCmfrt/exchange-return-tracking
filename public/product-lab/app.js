@@ -71,7 +71,8 @@ if(Lab.mock)Store.mode='demo';
 // is locked to the person their account is linked to.
 const labManage=()=>!!(Lab.id&&Lab.id.canManage);
 const credFor=pid=>(Lab.users||[]).find(u=>u.personId===pid)||null;
-function actingPeople(){const ps=people();if(!Lab.id||Lab.id.canManage)return ps;const own=ps.filter(p=>p.id===Lab.id.personId);return own.length?own:ps}
+// In the live workspace nobody picks their identity: it comes from the sign-in,
+// so the top bar shows who you are instead of a picker (the demo keeps one).
 
 /* ============ storage ============ */
 function defaultConfig(){return {id:'main',people:[{id:'p-founder',name:'Founder',role:'founder'},{id:'p-lead',name:'Product Lead',role:'lead'}],collections:[],company:'OFFCOMFRT',currency:'INR'}}
@@ -107,7 +108,7 @@ function renderLabLogin(){
     <form id="lablogin">
       <div class="field"><input class="inp" type="email" id="labem" placeholder="Email" autocomplete="username" value="${esc((Lab.id&&Lab.id.email)||'')}"></div>
       <div class="field" style="margin-top:8px"><input class="inp" type="password" id="labpw" placeholder="Password" autocomplete="current-password"></div>
-      <div class="tiny muted" style="margin-top:6px">The Founder signs in with the admin password; the email is optional.</div>
+      <div class="tiny muted" style="margin-top:6px">The Founder signs in with the admin password (email optional). Everyone else uses the email and password the Founder created for them.</div>
       ${Lab.loginMsg?`<div class="err" style="margin-top:6px">${esc(Lab.loginMsg)}</div>`:''}
       <div class="qa" style="margin-top:12px"><button class="btn pri" type="submit">Sign in</button><button class="btn" type="button" data-act="setmode" data-mode="demo">Open demo instead</button></div></form>
   </div></div>`;
@@ -126,10 +127,13 @@ function renderLabLogin(){
   });
   const i=$('#labem');const p=$('#labpw');if(i&&!i.value)i.focus();else if(p)p.focus();
 }
-// A member always acts as the person their account is linked to.
+// Your sign-in is your identity: the Founder acts as the Founder person,
+// everyone else as the person their account is linked to. Nothing to switch.
 function labApplyIdentity(){
-  if(!Lab.id||Lab.id.canManage||!Lab.id.personId)return;
-  S.me=Lab.id.personId;try{localStorage.setItem('ofc-me',S.me)}catch(e){}
+  if(!Lab.id)return;
+  const pid=Lab.id.personId||'';
+  S.me=person(pid)?pid:'';
+  try{localStorage.setItem('ofc-me',S.me)}catch(e){}
 }
 function labLoadUsers(){
   return labApi('/users').then(d=>{Lab.users=d.users||[];if(Store.backend==='db')render();return Lab.users}).catch(()=>{Lab.users=[];return []});
@@ -138,7 +142,7 @@ async function initStore(){
   Store.ready=false;
   if(Lab.timer){clearInterval(Lab.timer);Lab.timer=null}
   COLLS.forEach(c=>D[c]={});
-  if(Store.mode==='demo'){Store.backend='local';loadLocal();Store.ready=true;render();return}
+  if(Store.mode==='demo'){Store.backend='local';loadLocal();if(!person(S.me)){S.me=(people().find(p=>p.role==='lead')||people()[0]||{}).id||'';try{localStorage.setItem('ofc-me',S.me)}catch(e){}}Store.ready=true;render();return}
   if(!Lab.token){showLabLogin();return}
   Store.backend=null;render();
   try{
@@ -199,10 +203,10 @@ function log(text,pid,kind,extra){const a=Object.assign({id:uid(),ts:new Date().
 const people=()=>cfg().people||[];
 const person=id=>people().find(p=>p.id===id);
 const pname=id=>(person(id)||{}).name||'Unassigned';
-const me=()=>person(S.me)||people()[0]||{id:'',name:'—',role:'lead'};
+const me=()=>person(S.me)||(Lab.id?{id:Lab.id.personId||'',name:Lab.id.name||Lab.id.email||'Signed in',role:Lab.id.canManage?'founder':'member'}:people()[0]||{id:'',name:'—',role:'lead'});
 const myRole=()=>me().role;
 function canEdit(){if(S.readOnly)return false;return ['founder','lead','member'].includes(myRole())}
-function guardEdit(){if(canEdit())return true;toast(S.readOnly?'This workspace is read-only for you.':`Acting as ${ROLES[myRole()]}: you can view this, but editing products belongs to the product team.`);return false}
+function guardEdit(){if(canEdit())return true;toast(S.readOnly?'This workspace is read-only for you.':`Signed in as ${ROLES[myRole()]}: you can view this, but editing products belongs to the product team.`);return false}
 
 /* ============ derived data ============ */
 const products=()=>Object.values(D.products);
@@ -408,7 +412,7 @@ function renderShell(){
       <button class="searchbtn" data-act="palette">${ic('search')}<span>Search products, collections, tasks</span><kbd>Ctrl K</kbd></button>
       <div class="spacer"></div>
       <button class="ws-badge ${demo?'demo':''}" data-act="go" data-to="setup" title="Workspace">${demo?'Demo':esc(storageNote)}</button>
-      <select class="inp sm" id="actas" title="Acting as" aria-label="Acting as" ${Lab.id&&!labManage()?'disabled':''}>${actingPeople().map(p=>`<option value="${p.id}" ${p.id===S.me?'selected':''}>${esc(p.name)} · ${esc(ROLES[p.role]||p.role)}</option>`).join('')}</select>
+      ${demo?`<select class="inp sm" id="actas" title="View as (demo workspace only)" aria-label="View as">${people().map(p=>`<option value="${p.id}" ${p.id===S.me?'selected':''}>${esc(p.name)} · ${esc(ROLES[p.role]||p.role)}</option>`).join('')}</select>`:`<span class="who" title="Your sign-in decides who you act as — it can’t be switched here">${av(S.me)}<b>${esc(me().name)}</b><i>${esc(ROLES[myRole()]||myRole())}</i></span><button class="btn ghost sm" data-act="labsignout" title="Sign out of the live workspace">Sign out</button>`}
       <button class="btn ghost sm" data-act="theme" title="Light / dark" aria-label="Toggle theme">${ic('moon')}</button>
       <button class="btn pri sm" data-act="newmenu">${ic('plus')}New</button>
     </div>`;
@@ -807,7 +811,7 @@ function vSetup(){
   <div class="panel"><div class="panel-h"><h2 class="h">Workspace</h2></div><div class="panel-b">
     <div class="seg" style="margin-bottom:12px"><button class="${!demo?'on':''}" data-act="setmode" data-mode="live">Live workspace</button><button class="${demo?'on':''}" data-act="setmode" data-mode="demo">Demo workspace</button></div>
     <p class="small">${demo?'You’re in the <b>demo workspace</b>: fictional products stored only in this browser. It never mixes with live data.':Store.backend==='db'?'The <b>live workspace</b> is stored in the team database and syncs to everyone who signs in.':'The <b>live workspace</b> is saving in this browser only, because the server was unreachable. Export a backup regularly.'}</p>
-    <p class="tiny muted">The Founder signs in with the server’s admin password; everyone else uses an email and password set here. “Acting as” sets whose approvals and permissions you see.</p>
+    <p class="tiny muted">The Founder signs in with the server’s admin password; everyone else gets their own email and password below. Your sign-in decides who you act as — it can’t be switched from the top bar.</p>
     ${demo?`<button class="btn" data-act="resetdemo">Reset demo data</button>`:`<div class="qa" style="margin-top:4px"><button class="btn" data-act="labretry">Re-sync now</button><button class="btn" data-act="labsignout">Sign out of live workspace</button></div>`}
   </div></div>
   <div class="panel"><div class="panel-h"><h2 class="h">People & roles</h2><button class="btn ghost sm" data-act="newperson">${ic('plus')}Add person</button></div><div class="panel-b">
@@ -865,11 +869,13 @@ function vAccess(){
   if(Store.mode==='demo'||Store.backend!=='db')return '';
   const who=Lab.id?`${esc(Lab.id.name||Lab.id.email||'—')} · ${labManage()?'Founder (admin password)':'member'}`:'—';
   const loaded=Array.isArray(Lab.users);const us=Lab.users||[];
-  const userRow=u=>`<li class="li"><span class="av">${esc(initials(u.name||u.email))}</span><div style="flex:1"><b>${esc(u.name||u.email)}</b><div class="tiny muted">${esc(u.email)} · ${esc(ROLES[u.role]||u.role)}</div></div>${u.personId?`<span class="pill">${esc(pname(u.personId))}</span>`:'<span class="pill dash" title="Not linked to a person, so they can pick anyone to act as">Not linked</span>'}<button class="btn ghost sm" data-act="edituser" data-id="${u.id}">Edit</button></li>`;
+  const unlinked=us.filter(u=>!u.personId).length;
+  const userRow=u=>`<li class="li"><span class="av">${esc(initials(u.name||u.email))}</span><div style="flex:1"><b>${esc(u.name||u.email)}</b><div class="tiny muted">${esc(u.email)} · ${esc(ROLES[u.role]||u.role)}</div></div>${u.personId?`<span class="pill">${esc(pname(u.personId))}</span>`:'<span class="pill dash" title="Not linked to a person, so their work has nobody to attach to">Not linked</span>'}<button class="btn ghost sm" data-act="edituser" data-id="${u.id}">Edit</button></li>`;
   let body='<p class="tiny muted">Only the Founder can see and manage the list of accounts.</p>';
-  if(labManage())body=loaded&&us.length?`<ul class="list">${us.map(userRow).join('')}</ul>`:'<p class="tiny muted">No sign-ins yet. Give a person an email and password and they can work in this workspace from any browser.</p>';
+  if(labManage())body=loaded&&us.length?`<ul class="list">${us.map(userRow).join('')}</ul>${unlinked?`<p class="tiny err" style="margin-top:8px">${unlinked} account${unlinked>1?'s are':' is'} not linked to a person — edit ${unlinked>1?'them':'it'} and pick one so their work attaches correctly.</p>`:''}`:'<p class="tiny muted">No sign-ins yet. Give a person an email and password and they can work in this workspace from any browser.</p>';
+  const mine=Lab.id&&Lab.id.canManage?'You sign in with the server’s admin password, so there is no account to manage for you. Everyone else gets their own email and password, locked to one person.':(Lab.id&&Lab.id.personId?'Your sign-in is locked to '+esc(pname(S.me))+'. There is nothing to switch.':'Your account isn’t linked to a person yet — ask the Founder to link it in this panel.');
   return `<div class="panel span2"><div class="panel-h"><h2 class="h">Sign-in access</h2>${labManage()?`<button class="btn ghost sm" data-act="newuser">${ic('plus')}Add sign-in</button>`:''}</div><div class="panel-b">
-    <p class="small">Signed in as <b>${who}</b>. ${labManage()?'The Founder uses the server’s admin password, so no account is needed for that sign-in.':'You act as your own person only.'}</p>
+    <p class="small">Signed in as <b>${who}</b>. ${mine}</p>
     ${body}
   </div></div>`;
 }
@@ -877,7 +883,7 @@ function vAccess(){
 /* ---------- permissions by area ---------- */
 const AREA={products:['founder','lead','member'],tasks:['founder','lead','member','ops'],samples:['founder','lead','member'],fabrics:['founder','lead','member'],trims:['founder','lead','member'],suppliers:['founder','lead','member','ops'],ideas:['founder','lead','member'],costsheets:['founder','lead','ops'],finance:['founder','ops'],qc:['founder','lead','member','ops'],hires:['founder','lead'],budget:['founder','lead'],expenses:['founder','lead','ops'],experiments:['founder','lead','member'],people:['founder','lead']};
 function can(area){return !S.readOnly&&(AREA[area]||AREA.products).includes(myRole())}
-function guard(area){if(can(area))return true;toast(S.readOnly?'This workspace is read-only for you.':`Acting as ${ROLES[myRole()]}: you can view this, but changing it belongs to another role.`);return false}
+function guard(area){if(can(area))return true;toast(S.readOnly?'This workspace is read-only for you.':`Signed in as ${ROLES[myRole()]}: you can view this, but changing it belongs to another role.`);return false}
 
 /* ---------- module state ---------- */
 Object.assign(S,{
@@ -1361,7 +1367,7 @@ function userModal(m){
   const u=(m.id&&(Lab.users||[]).find(x=>x.id===m.id))||{name:'',email:'',role:'member',personId:''};
   return `<div class="modal"><form id="userform"><div class="modal-h"><h2 class="h">${m.id?'Edit sign-in':'Add sign-in'}</h2><button type="button" class="btn ghost sm" data-act="close" aria-label="Close">${ic('x')}</button></div>
   <div class="modal-b"><div class="grid2">${fld('name','Name',u.name,{req:true})}${fld('email','Email',u.email,{type:'email',req:true,ph:'name@offcomfrt.in'})}
-    ${fld('personId','Person',u.personId||'',{type:'select',options:[['','Not linked']].concat(people().map(p=>[p.id,p.name+' · '+(ROLES[p.role]||p.role)])),hint:'Which “Acting as” identity this account gets.'})}${fld('role','Access role',u.role,{type:'select',options:Object.entries(ROLES),hint:'Used for approvals until they sign in as that person.'})}
+    ${fld('personId','Person',u.personId||'',{type:'select',req:true,options:[['','Choose a person']].concat(people().map(p=>[p.id,p.name+' · '+(ROLES[p.role]||p.role)])),hint:'This account acts as that person and nobody else.'})}${fld('role','Access role',u.role,{type:'select',options:Object.entries(ROLES),hint:'Taken from the person; decides which approvals they can give.'})}
     ${fld('password','Password','',{type:'password',ph:m.id?'Leave blank to keep the current password':'At least 6 characters',hint:m.id?'Sets a new password on save.':'Required for a new account.'})}</div></div>
   <div class="modal-f">${m.id?`<button type="button" class="btn" data-act="deluser" data-id="${m.id}" style="margin-right:auto">Remove</button>`:''}<button type="button" class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit">Save</button></div></form></div>`;
 }
@@ -1552,6 +1558,7 @@ const SUBMIT2={
     closeModal();toast(synced?'Saved — sign-in updated':'Saved')},
   userform:async f=>{const v=formData(f);const m=S.modal;const errs={};if(!v.name)errs.name='Add a name.';
     if(!/^\S+@\S+\.\S+$/.test(v.email||''))errs.email='Enter a valid email address.';
+    if(!v.personId)errs.personId='Pick the person this sign-in acts as.';
     if(!m.id&&(v.password||'').length<6)errs.password='Choose a password of at least 6 characters.';else if(m.id&&v.password&&v.password.length<6)errs.password='At least 6 characters, or blank to keep the current one.';
     if(!showErr(f,errs))return;
     try{
@@ -1965,7 +1972,7 @@ const ACT={
   pfounder:el=>{S.pulse.founder=el.dataset.v==='1';render()},
   pexport:el=>showMenu(el,[{l:'Pulse as Markdown (.md)',i:'dl',fn:()=>saveFile(`product-pulse-${S.pulse.week}.md`,pulseMarkdown(),'text/markdown')},{l:'Products snapshot (.csv)',i:'dl',fn:()=>ACT.csvproducts()},{l:'Milestones (.csv)',i:'dl',fn:()=>ACT.csvms()}]),
   labretry:()=>{if(Store.mode!=='live'){toast('Already in the demo workspace.');return}Lab.offline=false;initStore();toast('Re-syncing the live workspace…')},
-  labsignout:()=>{if(Lab.timer){clearInterval(Lab.timer);Lab.timer=null}Lab.token='';Lab.id=null;Lab.users=null;try{localStorage.removeItem('ofc-lab-token');localStorage.removeItem('ofc-lab-id')}catch(e){}COLLS.forEach(c=>D[c]={});Store.ready=false;showLabLogin()},
+  labsignout:()=>{if(Lab.timer){clearInterval(Lab.timer);Lab.timer=null}Lab.token='';Lab.id=null;Lab.users=null;S.me='';try{localStorage.removeItem('ofc-lab-token');localStorage.removeItem('ofc-lab-id');localStorage.removeItem('ofc-me')}catch(e){}COLLS.forEach(c=>D[c]={});Store.ready=false;showLabLogin()},
   setmode:el=>{const mode=el.dataset.mode;if(Store.mode===mode)return;Store.mode=mode;try{localStorage.setItem('ofc-mode',mode)}catch(e){}S.readOnly=false;S.f={q:'',dept:'',coll:'',stage:'',owner:'',month:'',pri:''};closeModal();go('overview');initStore();render();toast(mode==='demo'?'Switched to the demo workspace':'Switched to the live workspace')},
   resetdemo:()=>confirmBox('Reset demo data?','The demo workspace returns to its starting products. Live data is not affected.','Reset demo',()=>{try{localStorage.removeItem('ofc-ws-demo')}catch(e){}COLLS.forEach(c=>D[c]={});loadLocal();render();toast('Demo reset')}),
   newperson:()=>{if(guardEdit())openModal({kind:'person'})},
@@ -1975,7 +1982,7 @@ const ACT={
   editperson:el=>{if(guardEdit())openModal({kind:'person',id:el.dataset.id})},
   delperson:el=>confirmBox('Remove this person?','Products and tasks they own will show as unassigned until reassigned.','Remove',()=>{const c=clone(cfg());c.people=c.people.filter(x=>x.id!==el.dataset.id);putConfig(c);const cred=credFor(el.dataset.id);
     if(cred&&labManage()&&Store.backend==='db')labApi('/users/'+encodeURIComponent(cred.id),{method:'DELETE'}).then(()=>{Lab.users=(Lab.users||[]).filter(u=>u.id!==cred.id);render()}).catch(()=>{});
-    if(S.me===el.dataset.id){S.me=c.people[0].id;localStorage.setItem('ofc-me',S.me)}}),
+    if(S.me===el.dataset.id&&!(Lab.id&&Lab.id.personId===el.dataset.id)){S.me=c.people[0].id;localStorage.setItem('ofc-me',S.me)}}),
   exportjson:()=>{const out={app:'offcomfrt-product-lab',version:1,mode:Store.mode,exportedAt:new Date().toISOString()};COLLS.forEach(c=>out[c]=D[c]);saveFile(`offcomfrt-lab-${Store.mode}-${TODAY}.json`,JSON.stringify(out,null,1),'application/json')},
   wipe:()=>confirmBox('Clear the live workspace?','This deletes every product, milestone, task, approval and activity entry in the live workspace for everyone. Export a backup first.','Clear everything',()=>{COLLS.filter(c=>c!=='config').forEach(c=>Object.keys(D[c]).forEach(id=>del(c,id)));toast('Live workspace cleared')},'CLEAR'),
 };
@@ -2009,7 +2016,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target;
-  if(t.id==='actas'){S.me=t.value;try{localStorage.setItem('ofc-me',S.me)}catch(x){}render();toast(`Acting as ${pname(S.me)} (${ROLES[myRole()]})`);return}
+  if(t.id==='actas'){S.me=t.value;try{localStorage.setItem('ofc-me',S.me)}catch(x){}render();toast(`Viewing as ${pname(S.me)} (${ROLES[myRole()]})`);return}
   const on=t.dataset.on;if(!on)return;
   if(CHANGE2[on]){CHANGE2[on](t);return}
   if(on==='filter'){S.f[t.dataset.k]=t.value;render()}
@@ -2052,5 +2059,5 @@ document.addEventListener('submit',e=>{
 /* ============ boot ============ */
 (function boot(){
   try{const th=localStorage.getItem('ofc-theme');if(th)document.documentElement.dataset.theme=th;if(localStorage.getItem('ofc-sb')==='1')document.documentElement.classList.add('sb-collapsed')}catch(e){}
-  readHash();render();initStore().then(()=>{if(!person(S.me)&&people()[0]){S.me=people().find(p=>p.role==='lead')?.id||people()[0].id}render()});
+  readHash();render();initStore().then(()=>{if(!Lab.id&&!person(S.me)&&people()[0]){S.me=people().find(p=>p.role==='lead')?.id||people()[0].id}render()});
 })();

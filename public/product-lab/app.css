@@ -53,6 +53,10 @@ a{color:inherit}
 .spacer{flex:1}
 .ws-badge{font-size:12px;border:1px solid var(--line2);border-radius:20px;padding:3px 10px;color:var(--ink2);background:var(--surface);cursor:pointer;white-space:nowrap}
 .ws-badge.demo{background:var(--ink);color:var(--inv);border-color:var(--ink)}
+.who{display:inline-flex;align-items:center;gap:7px;font-size:12px;border:1px solid var(--line2);border-radius:20px;padding:2px 11px 2px 2px;color:var(--ink2);background:var(--surface);white-space:nowrap}
+.who b{color:var(--ink);font-weight:600}
+.who i{font-style:normal;color:var(--ink3)}
+.who .av{border-color:transparent;background:var(--ink);color:var(--inv)}
 .banner{background:var(--ink);color:var(--inv);font-size:12.5px;padding:8px 28px;display:flex;gap:12px;align-items:center}
 .banner button{background:none;border:1px solid currentColor;color:inherit;border-radius:20px;padding:1px 10px;cursor:pointer;font-size:12px}
 .banner.soft{background:var(--sunk);color:var(--ink2);border-bottom:1px solid var(--line)}
@@ -295,6 +299,7 @@ table.t td.num,table.t th.num{text-align:right}
   .sb-open .sb{transform:none;box-shadow:var(--shadow)}
   .mob-only{display:inline-flex}
   .top{padding:10px 16px}.page{padding:20px 16px 80px}.banner{padding:8px 16px}
+  .who i,.who b{display:none}
   .hero{grid-template-columns:1fr}.hero .date{font-size:40px}
   .kpis{grid-template-columns:repeat(2,1fr)}.kpi{border-left:0;border-top:1px solid var(--line)}.kpi:nth-child(even){border-left:1px solid var(--line)}.kpi:nth-child(-n+2){border-top:0}
   .p-grid{grid-template-columns:1fr}.p-head{grid-template-columns:1fr}.p-head h1{font-size:34px}
