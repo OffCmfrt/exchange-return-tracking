@@ -18773,10 +18773,12 @@ Rules:
 
 // ==================== PRODUCT LAB ====================
 // OFFCOMFRT Product Lab — apparel product development workspace
-// (public/product-lab). One shared workspace password (PRODUCT_LAB_PASSWORD)
-// mints a role 'product_lab' JWT; "Acting as" personas stay client-side in
-// pl_config.main, exactly like the prototype. Doc-style pl_* tables via
-// config/product-lab-db.js; delta sync = snapshot + tombstone polling.
+// (public/product-lab). Two kinds of sign-in: the Founder uses the server's
+// ADMIN_PASSWORD and is the only one who can manage accounts; everyone else
+// signs in with an email + password stored in pl_users. "Acting as" personas
+// still come from pl_config.main, but a non-Founder is locked to their own
+// linked person. Doc-style pl_* tables via config/product-lab-db.js; delta
+// sync = snapshot + tombstone polling.
 const productLabDB = require('./config/product-lab-db');
 
 function productLabErr(res, tag, error) {
@@ -18794,7 +18796,21 @@ function authenticateProductLab(req, res, next) {
     if (!decoded || decoded.role !== 'product_lab') {
         return res.status(401).json({ error: 'Invalid or expired token' });
     }
-    req.labActor = { name: decoded.name || 'Workspace member' };
+    req.labActor = {
+        name: decoded.name || 'Workspace member',
+        email: decoded.email || null,
+        personId: decoded.personId || null,
+        labRole: decoded.labRole || 'member',
+        canManage: decoded.labRole === 'founder'
+    };
+    next();
+}
+
+// Account management is Founder-only (ADMIN_PASSWORD sign-in).
+function requireProductLabFounder(req, res, next) {
+    if (!req.labActor || !req.labActor.canManage) {
+        return res.status(403).json({ error: 'Only the Founder can manage sign-in access' });
+    }
     next();
 }
 
@@ -18812,26 +18828,63 @@ app.get('/product-lab/', (req, res) => {
 });
 
 // ---------- Auth ----------
-// One shared password -> JWT. Timing-safe compare; general /api/ limiter plus
-// writeLimiter already apply to this POST, so brute force is throttled.
-app.post('/api/product-lab/login', (req, res) => {
+// Founder path: password equals ADMIN_PASSWORD (no default fallback here, so
+// an unset env means the Lab stays closed). Member path: email + password
+// checked against pl_users. Both mint the same role; the labRole claim decides
+// who may manage accounts. Throttled by the /api/ limiter plus writeLimiter.
+app.post('/api/product-lab/login', async (req, res) => {
     try {
-        const expected = process.env.PRODUCT_LAB_PASSWORD;
-        if (!expected) {
-            return res.status(503).json({ error: 'Product Lab is not configured yet — set PRODUCT_LAB_PASSWORD on the server' });
+        const body = req.body || {};
+        const password = typeof body.password === 'string' ? body.password : '';
+        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+        const adminPassword = process.env.ADMIN_PASSWORD;
+        if (!adminPassword) {
+            return res.status(503).json({ error: 'Product Lab is not configured yet — set ADMIN_PASSWORD on the server' });
         }
-        const given = typeof req.body === 'object' && req.body && typeof req.body.password === 'string' ? req.body.password : '';
-        const a = crypto.createHash('sha256').update(String(given)).digest();
-        const b = crypto.createHash('sha256').update(String(expected)).digest();
-        if (!crypto.timingSafeEqual(a, b)) {
+        if (!password) return res.status(400).json({ error: 'Enter your password' });
+        const a = crypto.createHash('sha256').update(String(password)).digest();
+        const b = crypto.createHash('sha256').update(String(adminPassword)).digest();
+        if (crypto.timingSafeEqual(a, b)) {
+            const token = generateToken({ role: 'product_lab', labRole: 'founder', name: 'Founder', personId: 'p-founder', email: email || null, timestamp: Date.now() });
+            return res.json({ success: true, token, identity: { name: 'Founder', email: email || null, labRole: 'founder', personId: 'p-founder', canManage: true } });
+        }
+        const user = email ? await productLabDB.verifyUser(email, password) : null;
+        if (!user) {
             trackSuspicious(req.ip, 'failed_product_lab_login');
-            return res.status(401).json({ error: 'That password doesn’t match' });
+            return res.status(401).json({ error: 'That email and password don’t match an account' });
         }
-        const token = generateToken({ role: 'product_lab', name: 'Product Lab', timestamp: Date.now() });
-        res.json({ success: true, token });
+        const token = generateToken({ role: 'product_lab', labRole: 'member', name: user.name, email: user.email, personId: user.personId, timestamp: Date.now() });
+        res.json({ success: true, token, identity: { name: user.name, email: user.email, labRole: 'member', personId: user.personId, canManage: false } });
     } catch (error) {
         productLabErr(res, 'Login', error);
     }
+});
+
+// ---------- Sign-in accounts (Founder only) ----------
+app.get('/api/product-lab/users', authenticateProductLab, requireProductLabFounder, async (req, res) => {
+    try {
+        res.json({ success: true, users: await productLabDB.listUsers() });
+    } catch (error) { productLabErr(res, 'List users', error); }
+});
+
+// Create when id is absent, update when it matches an existing account.
+// password may be blank on update to keep the current one.
+app.post('/api/product-lab/users', authenticateProductLab, requireProductLabFounder, async (req, res) => {
+    try {
+        const { id, name, email, role, personId, password, active } = req.body || {};
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+        const user = await productLabDB.upsertUser({ id, name, email, role, personId, password, active });
+        console.log(`[ProductLab] sign-in ${id ? 'updated' : 'created'} for ${user.email} by ${req.labActor.name}`);
+        res.json({ success: true, user });
+    } catch (error) { productLabErr(res, 'Upsert user', error); }
+});
+
+app.delete('/api/product-lab/users/:id', authenticateProductLab, requireProductLabFounder, async (req, res) => {
+    try {
+        await productLabDB.deleteUser(req.params.id);
+        console.log(`[ProductLab] sign-in removed ${req.params.id} by ${req.labActor.name}`);
+        res.json({ success: true });
+    } catch (error) { productLabErr(res, 'Delete user', error); }
 });
 
 // ---------- Sync endpoints ----------

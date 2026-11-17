@@ -23,7 +23,7 @@ a{color:inherit}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 /* shell */
-.app{display:grid;grid-template-columns:var(--sbw) minmax(0,1fr);height:100%;transition:grid-template-columns .2s ease}
+.app{display:grid;grid-template-columns:var(--sbtpl,var(--sbw) minmax(0,1fr));height:100%;transition:grid-template-columns .2s ease}
 .sb{background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .sb-brand{padding:20px 18px 18px;display:flex;align-items:flex-start;gap:10px;justify-content:space-between;border-bottom:1px solid var(--line)}
 .wordmark{font-family:var(--sans);font-weight:700;letter-spacing:.18em;font-size:13px;line-height:1.1}

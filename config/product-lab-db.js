@@ -7,11 +7,16 @@
  * whole-record put()/del() semantics: a record is stored as {id, ...data}
  * and travels over the API unchanged.
  *
+ * Sign-in model: the Founder authenticates with the server's ADMIN_PASSWORD
+ * (never stored in these tables); everyone else gets a row in pl_users with a
+ * scrypt password hash, created by the Founder from the Setup page.
+ *
  * Sync model: the client loads GET /snapshot once, then polls
  * GET /changes?since=<watermark>. Upserts come from updated_at > since;
  * deletes come from pl_tombstones (deleted_at > since).
  */
 
+const crypto = require('crypto');
 const supabase = require('./supabase');
 
 // client collection name -> table name
@@ -187,4 +192,103 @@ async function replaceWorkspace(payload) {
     return { imported: Object.keys(collections).reduce((n, c) => n + Object.keys(collections[c] || {}).length, 0) };
 }
 
-module.exports = { COLLS, getSnapshot, getChanges, putRecord, deleteRecord, replaceWorkspace };
+// ---------------------------------------------------------------------------
+// Sign-in accounts (pl_users). The Founder is not a row here: they sign in
+// with the server's ADMIN_PASSWORD and is the only one allowed to manage
+// these credentials.
+// ---------------------------------------------------------------------------
+const USER_COLS = 'id,email,name,role,person_id,active,created_at';
+
+function hashPassword(password, salt) {
+    const s = salt || crypto.randomBytes(16).toString('hex');
+    return { salt: s, hash: crypto.scryptSync(String(password), s, 32).toString('hex') };
+}
+
+function safeEqualHex(a, b) {
+    const x = Buffer.from(String(a || ''), 'hex');
+    const y = Buffer.from(String(b || ''), 'hex');
+    if (x.length !== y.length || !x.length) return false;
+    return crypto.timingSafeEqual(x, y);
+}
+
+function toUser(row) {
+    return { id: row.id, email: row.email, name: row.name, role: row.role || 'member', personId: row.person_id || null, active: row.active !== false, createdAt: row.created_at };
+}
+
+async function listUsers() {
+    const { data, error } = await supabase.from('pl_users').select(USER_COLS).order('email', { ascending: true });
+    if (error) throw new Error('pl_users: ' + error.message);
+    return (data || []).map(toUser);
+}
+
+async function findUserByEmail(email) {
+    const needle = String(email || '').trim().toLowerCase();
+    if (!needle) return null;
+    const { data, error } = await supabase.from('pl_users')
+        .select(USER_COLS + ',pw_hash,pw_salt').ilike('email', needle).limit(1);
+    if (error) throw new Error('pl_users lookup: ' + error.message);
+    return data && data.length ? data[0] : null;
+}
+
+async function findUserById(id) {
+    if (!id) return null;
+    const { data, error } = await supabase.from('pl_users')
+        .select(USER_COLS + ',pw_hash,pw_salt').eq('id', String(id)).limit(1);
+    if (error) throw new Error('pl_users lookup: ' + error.message);
+    return data && data.length ? data[0] : null;
+}
+
+// Returns the public user shape on success, null on a bad password / unknown
+// email / deactivated account. Never distinguishes the reason to the caller.
+async function verifyUser(email, password) {
+    const row = await findUserByEmail(email);
+    if (!row || row.active === false) return null;
+    if (!row.pw_hash || !row.pw_salt) return null;
+    const attempt = hashPassword(password, row.pw_salt).hash;
+    if (!safeEqualHex(attempt, row.pw_hash)) return null;
+    return toUser(row);
+}
+
+// Create when id is new, update in place when it exists. password is optional
+// on update: blank keeps the current hash, a value replaces it.
+async function upsertUser(user) {
+    if (!user || !user.email) throw new Error('email is required');
+    const email = String(user.email).trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Enter a valid email address');
+    const row = { id: user.id || ('u-' + crypto.randomBytes(6).toString('hex')),
+        email: email,
+        name: String(user.name || email.split('@')[0]).slice(0, 120),
+        role: String(user.role || 'member').slice(0, 40),
+        person_id: user.personId ? String(user.personId).slice(0, 60) : null,
+        active: user.active !== false,
+        updated_at: new Date().toISOString() };
+    if (user.password && String(user.password).length >= 6) {
+        const h = hashPassword(user.password);
+        row.pw_hash = h.hash; row.pw_salt = h.salt;
+    } else if (user.password) {
+        throw new Error('Password must be at least 6 characters');
+    }
+    if (!row.pw_hash) { // an existing account may keep its current password, a new one can't
+        const existing = user.id ? await findUserById(user.id) : await findUserByEmail(email);
+        if (!existing || !existing.pw_hash) throw new Error('A password of at least 6 characters is required');
+    }
+    const { error } = await supabase.from('pl_users').upsert(row, { onConflict: 'id' });
+    if (error) {
+        // a second account claiming the same email surfaces as a unique violation
+        throw new Error(/duplicate key/i.test(error.message) ? 'That email already has a sign-in' : 'pl_users upsert: ' + error.message);
+    }
+    // drop any other row that had this email (id changed hands)
+    const others = (await listUsers()).filter(u => u.email === email && u.id !== row.id);
+    for (const o of others) await deleteUser(o.id);
+    return toUser({ id: row.id, email: row.email, name: row.name, role: row.role, person_id: row.person_id, active: row.active, created_at: null });
+}
+
+async function deleteUser(id) {
+    if (!id) throw new Error('id is required');
+    const { error } = await supabase.from('pl_users').delete().eq('id', id);
+    if (error) throw new Error('pl_users delete: ' + error.message);
+    return true;
+}
+
+module.exports = { COLLS, getSnapshot, getChanges, putRecord, deleteRecord, replaceWorkspace,
+    listUsers, upsertUser, deleteUser, verifyUser };

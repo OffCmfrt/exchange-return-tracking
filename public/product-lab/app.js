@@ -62,10 +62,16 @@ const S={
   me:localStorage.getItem('ofc-me')||'p-lead',
   readOnly:false
 };
-const Lab={token:localStorage.getItem('ofc-lab-token')||'',since:null,timer:null,offline:false,loginMsg:'',mock:new URLSearchParams(location.search).has('mock')};
+function labIdStored(){try{return JSON.parse(localStorage.getItem('ofc-lab-id')||'null')}catch(e){return null}}
+const Lab={token:localStorage.getItem('ofc-lab-token')||'',id:labIdStored(),since:null,timer:null,offline:false,loginMsg:'',users:null,mock:new URLSearchParams(location.search).has('mock')};
 if(Lab.mock){try{localStorage.setItem('ofc-mode','demo')}catch(e){}}
 const Store={mode:localStorage.getItem('ofc-mode')||'live',backend:null,ready:false,chains:{},pending:{}};
 if(Lab.mock)Store.mode='demo';
+// The Founder (ADMIN_PASSWORD sign-in) manages who else can sign in; a member
+// is locked to the person their account is linked to.
+const labManage=()=>!!(Lab.id&&Lab.id.canManage);
+const credFor=pid=>(Lab.users||[]).find(u=>u.personId===pid)||null;
+function actingPeople(){const ps=people();if(!Lab.id||Lab.id.canManage)return ps;const own=ps.filter(p=>p.id===Lab.id.personId);return own.length?own:ps}
 
 /* ============ storage ============ */
 function defaultConfig(){return {id:'main',people:[{id:'p-founder',name:'Founder',role:'founder'},{id:'p-lead',name:'Product Lead',role:'lead'}],collections:[],company:'OFFCOMFRT',currency:'INR'}}
@@ -94,25 +100,39 @@ async function labApi(path,opts){
 }
 function showLabLogin(){Store.backend='login';Store.ready=true;Lab.loginMsg='';render()}
 function renderLabLogin(){
-  $('#main').innerHTML=`<div class="loading"><div style="width:min(340px,90vw);text-align:left">
+  $('#sb').innerHTML='';$('#sb').style.display='none';$('#top').innerHTML='';document.documentElement.style.setProperty('--sbtpl','1fr');
+  $('#main').innerHTML=`<div class="loading"><div style="width:min(360px,90vw);text-align:left">
     <div class="wordmark" style="margin-bottom:6px">OFFCOMFRT</div>
-    <div class="tiny muted" style="margin-bottom:14px">Product Lab — this workspace is password-protected.</div>
-    <form id="lablogin"><div class="field"><input class="inp" type="password" id="labpw" placeholder="Workspace password" autocomplete="current-password"></div>${Lab.loginMsg?`<div class="err" style="margin-top:6px">${esc(Lab.loginMsg)}</div>`:''}
-    <div class="qa" style="margin-top:12px"><button class="btn pri" type="submit">Sign in</button><button class="btn" type="button" data-act="setmode" data-mode="demo">Open demo instead</button></div></form>
+    <div class="tiny muted" style="margin-bottom:14px">Product Lab — sign in with your workspace account.</div>
+    <form id="lablogin">
+      <div class="field"><input class="inp" type="email" id="labem" placeholder="Email" autocomplete="username" value="${esc((Lab.id&&Lab.id.email)||'')}"></div>
+      <div class="field" style="margin-top:8px"><input class="inp" type="password" id="labpw" placeholder="Password" autocomplete="current-password"></div>
+      <div class="tiny muted" style="margin-top:6px">The Founder signs in with the admin password; the email is optional.</div>
+      ${Lab.loginMsg?`<div class="err" style="margin-top:6px">${esc(Lab.loginMsg)}</div>`:''}
+      <div class="qa" style="margin-top:12px"><button class="btn pri" type="submit">Sign in</button><button class="btn" type="button" data-act="setmode" data-mode="demo">Open demo instead</button></div></form>
   </div></div>`;
   const f=$('#lablogin');
   f.addEventListener('submit',async e=>{
-    e.preventDefault();const pw=$('#labpw').value;const b=f.querySelector('button[type=submit]');
+    e.preventDefault();const em=$('#labem').value.trim();const pw=$('#labpw').value;const b=f.querySelector('button[type=submit]');
     if(b){b.disabled=true;b.textContent='Signing in…'}
     try{
-      const r=await fetch('/api/product-lab/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+      const r=await fetch('/api/product-lab/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em,password:pw})});
       let d={};try{d=await r.json()}catch(x){}
-      if(!r.ok||!d.token){Lab.loginMsg=d.error||'That password doesn’t match.';renderLabLogin();return}
-      Lab.token=d.token;try{localStorage.setItem('ofc-lab-token',Lab.token)}catch(x){}
+      if(!r.ok||!d.token){Lab.loginMsg=d.error||'That email and password don’t match an account.';renderLabLogin();return}
+      Lab.token=d.token;Lab.id=d.identity||null;
+      try{localStorage.setItem('ofc-lab-token',Lab.token);localStorage.setItem('ofc-lab-id',JSON.stringify(Lab.id))}catch(x){}
       Store.backend=null;initStore();
     }catch(err){Lab.loginMsg='Cannot reach the server. Try again.';renderLabLogin()}
   });
-  const i=$('#labpw');if(i)i.focus();
+  const i=$('#labem');const p=$('#labpw');if(i&&!i.value)i.focus();else if(p)p.focus();
+}
+// A member always acts as the person their account is linked to.
+function labApplyIdentity(){
+  if(!Lab.id||Lab.id.canManage||!Lab.id.personId)return;
+  S.me=Lab.id.personId;try{localStorage.setItem('ofc-me',S.me)}catch(e){}
+}
+function labLoadUsers(){
+  return labApi('/users').then(d=>{Lab.users=d.users||[];if(Store.backend==='db')render();return Lab.users}).catch(()=>{Lab.users=[];return []});
 }
 async function initStore(){
   Store.ready=false;
@@ -125,7 +145,8 @@ async function initStore(){
     const snap=await labApi('/snapshot');
     COLLS.forEach(c=>{D[c]=snap.collections[c]||{}});
     Lab.since=snap.since||new Date().toISOString();Lab.offline=false;
-    Store.backend='db';Store.ready=true;render();
+    Store.backend='db';Store.ready=true;labApplyIdentity();render();
+    if(labManage())labLoadUsers();
     if(Lab.timer)clearInterval(Lab.timer);
     Lab.timer=setInterval(labPoll,10000);
   }catch(e){
@@ -149,7 +170,7 @@ async function labPoll(){
 }
 function labWriteErr(e){
   if(e&&e.status===401)return;
-  if(e&&e.status===503)toast('The server has no workspace password configured yet, so this change stayed in this browser.');
+  if(e&&e.status===503)toast('The server has no admin password configured, so this change stayed in this browser.');
   else if(e&&e.status===429)toast('Too many changes at once. Wait a moment and try again.');
   else toast('Couldn’t save that change ('+(e&&e.message||'error')+').');
 }
@@ -368,6 +389,7 @@ const LATER={
 
 /* ============ shell ============ */
 function renderShell(){
+  const sb=$('#sb');if(sb.style.display==='none'){sb.style.display='';document.documentElement.style.removeProperty('--sbtpl');const t=$('#top');if(t)t.innerHTML=''}
   const r=S.route==='product'?'pipeline':S.route;
   $('#sb').innerHTML=`<div class="sb-brand"><div class="wordmark">OFFCOMFRT<small>Product Lab</small></div>
     <button class="btn ghost sm" data-act="collapse" title="Collapse sidebar" aria-label="Collapse sidebar">${ic('side')}</button></div>
@@ -386,7 +408,7 @@ function renderShell(){
       <button class="searchbtn" data-act="palette">${ic('search')}<span>Search products, collections, tasks</span><kbd>Ctrl K</kbd></button>
       <div class="spacer"></div>
       <button class="ws-badge ${demo?'demo':''}" data-act="go" data-to="setup" title="Workspace">${demo?'Demo':esc(storageNote)}</button>
-      <select class="inp sm" id="actas" title="Acting as" aria-label="Acting as">${people().map(p=>`<option value="${p.id}" ${p.id===S.me?'selected':''}>${esc(p.name)} · ${esc(ROLES[p.role]||p.role)}</option>`).join('')}</select>
+      <select class="inp sm" id="actas" title="Acting as" aria-label="Acting as" ${Lab.id&&!labManage()?'disabled':''}>${actingPeople().map(p=>`<option value="${p.id}" ${p.id===S.me?'selected':''}>${esc(p.name)} · ${esc(ROLES[p.role]||p.role)}</option>`).join('')}</select>
       <button class="btn ghost sm" data-act="theme" title="Light / dark" aria-label="Toggle theme">${ic('moon')}</button>
       <button class="btn pri sm" data-act="newmenu">${ic('plus')}New</button>
     </div>`;
@@ -784,13 +806,14 @@ function vSetup(){
   <div class="grid2">
   <div class="panel"><div class="panel-h"><h2 class="h">Workspace</h2></div><div class="panel-b">
     <div class="seg" style="margin-bottom:12px"><button class="${!demo?'on':''}" data-act="setmode" data-mode="live">Live workspace</button><button class="${demo?'on':''}" data-act="setmode" data-mode="demo">Demo workspace</button></div>
-    <p class="small">${demo?'You’re in the <b>demo workspace</b>: fictional products stored only in this browser. It never mixes with live data.':Store.backend==='db'?'The <b>live workspace</b> is stored in the team database and syncs to everyone signed in with the workspace password.':'The <b>live workspace</b> is saving in this browser only, because the server was unreachable. Export a backup regularly.'}</p>
-    <p class="tiny muted">The live workspace is protected by one shared password. “Acting as” sets whose approvals and permissions you see; it is enforced in the app, not on the server.</p>
+    <p class="small">${demo?'You’re in the <b>demo workspace</b>: fictional products stored only in this browser. It never mixes with live data.':Store.backend==='db'?'The <b>live workspace</b> is stored in the team database and syncs to everyone who signs in.':'The <b>live workspace</b> is saving in this browser only, because the server was unreachable. Export a backup regularly.'}</p>
+    <p class="tiny muted">The Founder signs in with the server’s admin password; everyone else uses an email and password set here. “Acting as” sets whose approvals and permissions you see.</p>
     ${demo?`<button class="btn" data-act="resetdemo">Reset demo data</button>`:`<div class="qa" style="margin-top:4px"><button class="btn" data-act="labretry">Re-sync now</button><button class="btn" data-act="labsignout">Sign out of live workspace</button></div>`}
   </div></div>
   <div class="panel"><div class="panel-h"><h2 class="h">People & roles</h2><button class="btn ghost sm" data-act="newperson">${ic('plus')}Add person</button></div><div class="panel-b">
     <ul class="list">${people().map(p=>`<li class="li"><span class="av">${esc(initials(p.name))}</span><div style="flex:1"><b>${esc(p.name)}</b><div class="tiny muted">${esc(ROLES[p.role]||p.role)}</div></div><button class="btn ghost sm" data-act="editperson" data-id="${p.id}">Edit</button></li>`).join('')}</ul>
-    <p class="tiny muted">Roles decide which approvals a person can give: technical by Product Lead, creative by Founder, commercial by Operations or Founder, handover by Operations, bulk QC by Operations or Product Lead.</p></div></div>
+    <p class="tiny muted">Roles decide which approvals a person can give: technical by Product Lead, creative by Founder, commercial by Operations or Founder, handover by Operations, bulk QC by Operations or Product Lead.</p>${labManage()&&Store.backend==='db'?`<p class="tiny muted" style="margin-top:8px">As Founder you can give a person a sign-in here: open <b>Edit</b> and fill in their email and password.</p>`:''}</div></div>
+  ${vAccess()}
   <div class="panel span2"><div class="panel-h"><h2 class="h">Data</h2></div><div class="panel-b">
     <div class="qa"><button class="btn" data-act="exportjson">${ic('dl')}Export full backup (JSON)</button><label class="btn">${ic('ul')}Import backup (JSON)<input type="file" accept=".json,application/json" data-on="importjson" hidden></label>
       <button class="btn" data-act="csvproducts">${ic('dl')}Products CSV</button><button class="btn" data-act="csvtasks">${ic('dl')}Tasks CSV</button><button class="btn" data-act="csvms">${ic('dl')}Milestones CSV</button>
@@ -836,6 +859,20 @@ const pcode=id=>(prod(id)||{}).code||'';
 const roundNum=r=>parseInt(String(r||'').replace(/\D/g,''))||0;
 const samplesFor=pid=>recs('samples').filter(s=>s.pid===pid).sort((a,b)=>roundNum(a.round)-roundNum(b.round));
 const pctTxt=(a,b)=>b?Math.round(a/b*100)+'%':'—';
+
+/* ---------- sign-in access (Founder manages accounts; members see their own) ---------- */
+function vAccess(){
+  if(Store.mode==='demo'||Store.backend!=='db')return '';
+  const who=Lab.id?`${esc(Lab.id.name||Lab.id.email||'—')} · ${labManage()?'Founder (admin password)':'member'}`:'—';
+  const loaded=Array.isArray(Lab.users);const us=Lab.users||[];
+  const userRow=u=>`<li class="li"><span class="av">${esc(initials(u.name||u.email))}</span><div style="flex:1"><b>${esc(u.name||u.email)}</b><div class="tiny muted">${esc(u.email)} · ${esc(ROLES[u.role]||u.role)}</div></div>${u.personId?`<span class="pill">${esc(pname(u.personId))}</span>`:'<span class="pill dash" title="Not linked to a person, so they can pick anyone to act as">Not linked</span>'}<button class="btn ghost sm" data-act="edituser" data-id="${u.id}">Edit</button></li>`;
+  let body='<p class="tiny muted">Only the Founder can see and manage the list of accounts.</p>';
+  if(labManage())body=loaded&&us.length?`<ul class="list">${us.map(userRow).join('')}</ul>`:'<p class="tiny muted">No sign-ins yet. Give a person an email and password and they can work in this workspace from any browser.</p>';
+  return `<div class="panel span2"><div class="panel-h"><h2 class="h">Sign-in access</h2>${labManage()?`<button class="btn ghost sm" data-act="newuser">${ic('plus')}Add sign-in</button>`:''}</div><div class="panel-b">
+    <p class="small">Signed in as <b>${who}</b>. ${labManage()?'The Founder uses the server’s admin password, so no account is needed for that sign-in.':'You act as your own person only.'}</p>
+    ${body}
+  </div></div>`;
+}
 
 /* ---------- permissions by area ---------- */
 const AREA={products:['founder','lead','member'],tasks:['founder','lead','member','ops'],samples:['founder','lead','member'],fabrics:['founder','lead','member'],trims:['founder','lead','member'],suppliers:['founder','lead','member','ops'],ideas:['founder','lead','member'],costsheets:['founder','lead','ops'],finance:['founder','ops'],qc:['founder','lead','member','ops'],hires:['founder','lead'],budget:['founder','lead'],expenses:['founder','lead','ops'],experiments:['founder','lead','member'],people:['founder','lead']};
@@ -1312,10 +1349,21 @@ function vTeam(){
 }
 function personModal(m){
   const x=m.id?person(m.id):{name:'',role:'member',title:'',resp:'',external:false};
+  const cred=m.id?credFor(m.id):null;
+  const signIn=labManage()&&Store.backend==='db';
   return `<div class="modal"><form id="peform"><div class="modal-h"><h2 class="h">${m.id?'Edit person':'Add person'}</h2><button type="button" class="btn ghost sm" data-act="close" aria-label="Close">${ic('x')}</button></div>
   <div class="modal-b"><div class="grid2">${fld('name','Name',x.name,{req:true})}${fld('title','Job title',x.title||'',{ph:'e.g. Associate Designer'})}${fld('role','Access role',x.role,{type:'select',options:Object.entries(ROLES),hint:'Decides which approvals they can give.'})}
-    ${fld('external','Relationship',x.external?'1':'',{type:'select',options:[['','Team member'],['1','External partner']]})}${fld('resp','Responsibilities',x.resp||'',{type:'textarea',cls:'span2',rows:4})}</div></div>
+    ${fld('external','Relationship',x.external?'1':'',{type:'select',options:[['','Team member'],['1','External partner']]})}${fld('resp','Responsibilities',x.resp||'',{type:'textarea',cls:'span2',rows:4})}
+    ${signIn?`<div class="formsec span2">Sign-in</div>${fld('email','Email',cred?cred.email:'',{type:'email',ph:'name@offcomfrt.in',hint:'Blank removes their sign-in. They use this email plus the password below.'})}${fld('password','Password','',{type:'password',ph:cred?'Leave blank to keep the current password':'At least 6 characters',hint:cred?'':'Sets this person’s password on save.'})}`:''}</div></div>
   <div class="modal-f">${m.id&&people().length>1?`<button type="button" class="btn" data-act="delperson" data-id="${m.id}" style="margin-right:auto">Remove</button>`:''}<button type="button" class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit">Save</button></div></form></div>`;
+}
+function userModal(m){
+  const u=(m.id&&(Lab.users||[]).find(x=>x.id===m.id))||{name:'',email:'',role:'member',personId:''};
+  return `<div class="modal"><form id="userform"><div class="modal-h"><h2 class="h">${m.id?'Edit sign-in':'Add sign-in'}</h2><button type="button" class="btn ghost sm" data-act="close" aria-label="Close">${ic('x')}</button></div>
+  <div class="modal-b"><div class="grid2">${fld('name','Name',u.name,{req:true})}${fld('email','Email',u.email,{type:'email',req:true,ph:'name@offcomfrt.in'})}
+    ${fld('personId','Person',u.personId||'',{type:'select',options:[['','Not linked']].concat(people().map(p=>[p.id,p.name+' · '+(ROLES[p.role]||p.role)])),hint:'Which “Acting as” identity this account gets.'})}${fld('role','Access role',u.role,{type:'select',options:Object.entries(ROLES),hint:'Used for approvals until they sign in as that person.'})}
+    ${fld('password','Password','',{type:'password',ph:m.id?'Leave blank to keep the current password':'At least 6 characters',hint:m.id?'Sets a new password on save.':'Required for a new account.'})}</div></div>
+  <div class="modal-f">${m.id?`<button type="button" class="btn" data-act="deluser" data-id="${m.id}" style="margin-right:auto">Remove</button>`:''}<button type="button" class="btn" data-act="close">Cancel</button><button class="btn pri" type="submit">Save</button></div></form></div>`;
 }
 
 /* =================== BUDGET & R&D =================== */
@@ -1461,7 +1509,7 @@ function seedDemo2(){
 /* =================== hooks into the app =================== */
 const MODS={wall:vWall,'fit-room':vFitRoom,fabrics:vFabrics,suppliers:vSuppliers,costing:vCosting,quality:vQuality,team:vTeam,budget:vBudget,pulse:vReports,tasks:vTasks,setup:()=>vSetup()+vAudit()};
 const PTAB={overview:p=>pOverview(p),notes:p=>pNotes(p),techpack:pTechPack,materials:pMaterials,sampling:pSampling,costing:pCosting,quality:pQuality,milestones:p=>pMilestones(p),tasks:pTasks,approvals:p=>pApprovals(p),revisions:p=>pRevisions(p),activity:p=>pActivity(p)};
-const MODAL2={rec:recModal,sample:sampleModal,compare:compareModal,supplier:supModal,task:taskModal,person:personModal};
+const MODAL2={rec:recModal,sample:sampleModal,compare:compareModal,supplier:supModal,task:taskModal,person:personModal,user:userModal};
 const SUBMIT2={
   recform:f=>{const m=S.modal,sc=SCHEMA[m.coll];if(!guard(sc.area||m.coll))return;const v=readRecForm(f,sc);const errs={};
     sc.fields.forEach(([n,,o])=>{if(o.req&&!v[n])errs[n]='Required.';if(o.type==='number'&&v[n]!==''&&(isNaN(+v[n])||+v[n]<0))errs[n]='Enter a positive number.'});
@@ -1496,9 +1544,39 @@ const SUBMIT2={
     if(t.status==='done'&&!t.doneAt)t.doneAt=new Date().toISOString();if(t.status!=='done')t.doneAt='';
     put('tasks',t);if(!old)log(`Task added: ${t.title}${t.due?` (due ${fmtD(t.due)})`:''}`,t.pid,'task');else if(old.status!==t.status&&(t.status==='done'||t.status==='blocked'))log(`Task ${t.status==='done'?'completed':'blocked'}: ${t.title}`,t.pid,'task');
     closeModal();toast(old?'Task saved':'Task added')},
-  peform:f=>{if(!guard('people'))return;const v=formData(f);if(!showErr(f,v.name?{}:{name:'Add a name.'}))return;const c=clone(cfg());const data={name:v.name,role:v.role,title:v.title,resp:v.resp,external:v.external==='1'};
-    if(S.modal.id)Object.assign(c.people.find(p=>p.id===S.modal.id),data);else c.people.push(Object.assign({id:'p-'+uid()},data));putConfig(c);closeModal();toast('Saved')},
+  peform:async f=>{if(!guard('people'))return;const v=formData(f);if(!showErr(f,v.name?{}:{name:'Add a name.'}))return;const c=clone(cfg());const data={name:v.name,role:v.role,title:v.title,resp:v.resp,external:v.external==='1'};
+    let pid=S.modal.id;if(pid)Object.assign(c.people.find(p=>p.id===pid),data);else{pid='p-'+uid();c.people.push(Object.assign({id:pid},data))}putConfig(c);
+    // the Founder's Sign-in fields create or update that person's database account
+    let synced=false;
+    if(labManage()&&Store.backend==='db'&&'email' in v)synced=await syncPersonCred(pid,data,v);
+    closeModal();toast(synced?'Saved — sign-in updated':'Saved')},
+  userform:async f=>{const v=formData(f);const m=S.modal;const errs={};if(!v.name)errs.name='Add a name.';
+    if(!/^\S+@\S+\.\S+$/.test(v.email||''))errs.email='Enter a valid email address.';
+    if(!m.id&&(v.password||'').length<6)errs.password='Choose a password of at least 6 characters.';else if(m.id&&v.password&&v.password.length<6)errs.password='At least 6 characters, or blank to keep the current one.';
+    if(!showErr(f,errs))return;
+    try{
+      const d=await labApi('/users',{method:'POST',body:JSON.stringify({id:m.id||undefined,name:v.name,email:v.email,role:v.role,personId:v.personId||null,password:v.password||undefined})});
+      const u=d.user||{};const i=(Lab.users||[]).findIndex(x=>x.id===u.id);if(i>=0)Lab.users[i]=u;else if(u.id)Lab.users.push(u);
+      closeModal();toast('Sign-in saved');render();
+    }catch(e){labWriteErr(e)}},
 };
+// Person save -> pl_users row: blank email removes their account, a password
+// sets or resets it. Returns whether anything was actually written.
+async function syncPersonCred(pid,person,v){
+  const existing=credFor(pid);const email=(v.email||'').trim();const pw=v.password||'';
+  if(!email){
+    if(!existing)return false;
+    try{await labApi('/users/'+encodeURIComponent(existing.id),{method:'DELETE'});Lab.users=(Lab.users||[]).filter(u=>u.id!==existing.id);toast('Sign-in removed for this person')}catch(e){labWriteErr(e)}
+    return true;
+  }
+  if(!existing&&pw.length<6){toast('Pick a password of at least 6 characters for this person.');return false}
+  if(existing&&pw&&pw.length<6){toast('Password must be at least 6 characters.');return false}
+  try{
+    const d=await labApi('/users',{method:'POST',body:JSON.stringify({id:existing?existing.id:undefined,name:person.name,email:email,role:person.role,personId:pid,password:pw||undefined})});
+    const u=d.user||{};const i=(Lab.users||[]).findIndex(x=>x.id===u.id);if(i>=0)Lab.users[i]=u;else if(u.id)Lab.users.push(u);
+    return true;
+  }catch(e){labWriteErr(e);return false}
+}
 const CHANGE2={
   recimg:t=>{const m=S.modal;m.draft=readRecForm($('#recform'),SCHEMA[m.coll]);readFile(t,url=>compressImage(url,s=>{m.img=s;renderModal()}),true)},
   simg:t=>{capSample();readFile(t,url=>compressImage(url,s=>{S.modal.rec.images.push(s);renderModal()}),true)},
@@ -1594,8 +1672,8 @@ function go(route,param){const h=route==='product'?'product-'+param:route;if(loc
 let rq=null;function scheduleRender(){if(rq)return;rq=requestAnimationFrame(()=>{rq=null;render()})}
 function render(){
   const ae=document.activeElement;const fid=ae&&ae.id&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')?ae.id:null;const sel=fid?[ae.selectionStart,ae.selectionEnd]:null;
-  renderShell();
   if(Store.backend==='login'){if(!$('#lablogin'))renderLabLogin();return}
+  renderShell();
   if(!Store.ready){$('#main').innerHTML=`<div class="loading"><div><div class="wordmark">OFFCOMFRT</div>Connecting to the live workspace…<div style="margin-top:14px"><button class="btn" data-act="setmode" data-mode="demo">Open demo instead</button></div></div></div>`;return}
   const r=S.route;let h;
   try{
@@ -1887,12 +1965,17 @@ const ACT={
   pfounder:el=>{S.pulse.founder=el.dataset.v==='1';render()},
   pexport:el=>showMenu(el,[{l:'Pulse as Markdown (.md)',i:'dl',fn:()=>saveFile(`product-pulse-${S.pulse.week}.md`,pulseMarkdown(),'text/markdown')},{l:'Products snapshot (.csv)',i:'dl',fn:()=>ACT.csvproducts()},{l:'Milestones (.csv)',i:'dl',fn:()=>ACT.csvms()}]),
   labretry:()=>{if(Store.mode!=='live'){toast('Already in the demo workspace.');return}Lab.offline=false;initStore();toast('Re-syncing the live workspace…')},
-  labsignout:()=>{if(Lab.timer){clearInterval(Lab.timer);Lab.timer=null}Lab.token='';try{localStorage.removeItem('ofc-lab-token')}catch(e){}COLLS.forEach(c=>D[c]={});Store.ready=false;showLabLogin()},
+  labsignout:()=>{if(Lab.timer){clearInterval(Lab.timer);Lab.timer=null}Lab.token='';Lab.id=null;Lab.users=null;try{localStorage.removeItem('ofc-lab-token');localStorage.removeItem('ofc-lab-id')}catch(e){}COLLS.forEach(c=>D[c]={});Store.ready=false;showLabLogin()},
   setmode:el=>{const mode=el.dataset.mode;if(Store.mode===mode)return;Store.mode=mode;try{localStorage.setItem('ofc-mode',mode)}catch(e){}S.readOnly=false;S.f={q:'',dept:'',coll:'',stage:'',owner:'',month:'',pri:''};closeModal();go('overview');initStore();render();toast(mode==='demo'?'Switched to the demo workspace':'Switched to the live workspace')},
   resetdemo:()=>confirmBox('Reset demo data?','The demo workspace returns to its starting products. Live data is not affected.','Reset demo',()=>{try{localStorage.removeItem('ofc-ws-demo')}catch(e){}COLLS.forEach(c=>D[c]={});loadLocal();render();toast('Demo reset')}),
   newperson:()=>{if(guardEdit())openModal({kind:'person'})},
+  newuser:()=>{if(!labManage()){toast('Only the Founder can manage sign-ins.');return}labLoadUsers().then(()=>openModal({kind:'user'}))},
+  edituser:el=>{if(!labManage()){toast('Only the Founder can manage sign-ins.');return}openModal({kind:'user',id:el.dataset.id})},
+  deluser:el=>{if(!labManage()){toast('Only the Founder can manage sign-ins.');return}confirmBox('Remove this sign-in?','The person stays in the team; they only lose access to the live workspace.','Remove',()=>{labApi('/users/'+encodeURIComponent(el.dataset.id),{method:'DELETE'}).then(()=>{Lab.users=(Lab.users||[]).filter(u=>u.id!==el.dataset.id);closeModal();toast('Sign-in removed');render()}).catch(labWriteErr)})},
   editperson:el=>{if(guardEdit())openModal({kind:'person',id:el.dataset.id})},
-  delperson:el=>confirmBox('Remove this person?','Products and tasks they own will show as unassigned until reassigned.','Remove',()=>{const c=clone(cfg());c.people=c.people.filter(x=>x.id!==el.dataset.id);putConfig(c);if(S.me===el.dataset.id){S.me=c.people[0].id;localStorage.setItem('ofc-me',S.me)}}),
+  delperson:el=>confirmBox('Remove this person?','Products and tasks they own will show as unassigned until reassigned.','Remove',()=>{const c=clone(cfg());c.people=c.people.filter(x=>x.id!==el.dataset.id);putConfig(c);const cred=credFor(el.dataset.id);
+    if(cred&&labManage()&&Store.backend==='db')labApi('/users/'+encodeURIComponent(cred.id),{method:'DELETE'}).then(()=>{Lab.users=(Lab.users||[]).filter(u=>u.id!==cred.id);render()}).catch(()=>{});
+    if(S.me===el.dataset.id){S.me=c.people[0].id;localStorage.setItem('ofc-me',S.me)}}),
   exportjson:()=>{const out={app:'offcomfrt-product-lab',version:1,mode:Store.mode,exportedAt:new Date().toISOString()};COLLS.forEach(c=>out[c]=D[c]);saveFile(`offcomfrt-lab-${Store.mode}-${TODAY}.json`,JSON.stringify(out,null,1),'application/json')},
   wipe:()=>confirmBox('Clear the live workspace?','This deletes every product, milestone, task, approval and activity entry in the live workspace for everyone. Export a backup first.','Clear everything',()=>{COLLS.filter(c=>c!=='config').forEach(c=>Object.keys(D[c]).forEach(id=>del(c,id)));toast('Live workspace cleared')},'CLEAR'),
 };

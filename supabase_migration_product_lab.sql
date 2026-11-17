@@ -24,6 +24,21 @@ CREATE TABLE IF NOT EXISTS pl_expenses (id text PRIMARY KEY, pid text, data json
 CREATE TABLE IF NOT EXISTS pl_experiments (id text PRIMARY KEY, pid text, data jsonb NOT NULL DEFAULT '{}'::jsonb, updated_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS pl_tombstones (id text PRIMARY KEY, collection text NOT NULL, record_id text NOT NULL, deleted_at timestamptz NOT NULL DEFAULT now());
 
+-- Sign-in accounts (Founder signs in with the server's ADMIN_PASSWORD and is
+-- not a row here; everyone else gets an email + scrypt password hash) -------
+CREATE TABLE IF NOT EXISTS pl_users (
+  id text PRIMARY KEY,
+  email text NOT NULL,
+  name text,
+  role text NOT NULL DEFAULT 'member',
+  person_id text,
+  pw_hash text,
+  pw_salt text,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Per-column idempotency for tables that may already exist in an older shape
 ALTER TABLE pl_products ADD COLUMN IF NOT EXISTS pid text;
 ALTER TABLE pl_products ADD COLUMN IF NOT EXISTS data jsonb NOT NULL DEFAULT '{}'::jsonb;
@@ -76,6 +91,15 @@ ALTER TABLE pl_experiments ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT N
 ALTER TABLE pl_tombstones ADD COLUMN IF NOT EXISTS collection text NOT NULL;
 ALTER TABLE pl_tombstones ADD COLUMN IF NOT EXISTS record_id text NOT NULL;
 ALTER TABLE pl_tombstones ADD COLUMN IF NOT EXISTS deleted_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE pl_users ADD COLUMN IF NOT EXISTS email text;
+ALTER TABLE pl_users ADD COLUMN IF NOT EXISTS name text;
+ALTER TABLE pl_users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'member';
+ALTER TABLE pl_users ADD COLUMN IF NOT EXISTS person_id text;
+ALTER TABLE pl_users ADD COLUMN IF NOT EXISTS pw_hash text;
+ALTER TABLE pl_users ADD COLUMN IF NOT EXISTS pw_salt text;
+ALTER TABLE pl_users ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
+ALTER TABLE pl_users ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE pl_users ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 
 -- Indexes: watermark paging (updated_at) and per-product lookups (pid) --
 CREATE INDEX IF NOT EXISTS pl_products_updated_at ON pl_products (updated_at);
@@ -109,6 +133,7 @@ CREATE INDEX IF NOT EXISTS pl_experiments_updated_at ON pl_experiments (updated_
 CREATE INDEX IF NOT EXISTS pl_experiments_pid ON pl_experiments (pid);
 CREATE INDEX IF NOT EXISTS pl_tombstones_deleted_at ON pl_tombstones (deleted_at);
 CREATE INDEX IF NOT EXISTS pl_tombstones_collection_record ON pl_tombstones (collection, record_id);
+CREATE UNIQUE INDEX IF NOT EXISTS pl_users_email_lower ON pl_users (lower(email));
 
 -- RLS on, no policies: anon/authenticated keys can read nothing;
 -- the server's service role key bypasses RLS.
@@ -129,6 +154,7 @@ ALTER TABLE pl_hires ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pl_expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pl_experiments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pl_tombstones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pl_users ENABLE ROW LEVEL SECURITY;
 
 -- Seed the workspace config row (Founder + Product Lead people) --------
 INSERT INTO pl_config (id, pid, data, updated_at)
