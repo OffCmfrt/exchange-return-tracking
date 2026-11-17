@@ -520,6 +520,28 @@ async function generateUniqueRequestId() {
     return requestId;
 }
 
+// Product Lab backup import arrives before the global parsers below: workspace
+// backups with base64 product photos exceed the 2mb limit, and app-level routes
+// registered later in this file would run AFTER express.json and inherit its cap.
+// This pre-parser authenticates (Bearer JWT, role product_lab — hoisted helper)
+// and stashes the parsed payload on req; the /api/product-lab/import endpoint
+// further down consumes it. Must stay lazy: config/supabase.js may not be
+// required before dotenv has run (load-order contract, see comments up-top).
+app.use((req, res, next) => {
+    if (!(req.method === 'POST' && req.originalUrl && req.originalUrl.split('?')[0] === '/api/product-lab/import')) return next();
+    const authHeader = req.headers.authorization || '';
+    const decoded = authHeader.startsWith('Bearer ') ? verifyToken(authHeader.substring(7)) : null;
+    if (!decoded || decoded.role !== 'product_lab') return res.status(401).json({ error: 'Authentication required' });
+    express.json({ limit: '25mb' })(req, res, (err) => {
+        if (err) {
+            console.error('[ProductLab] import body parse failed:', err.message);
+            return res.status(err.type === 'entity.too.large' ? 413 : 400).json({ error: err.type === 'entity.too.large' ? 'Backup is larger than the 25MB import limit' : 'Invalid JSON backup' });
+        }
+        req.productLabBackup = req.body;
+        next();
+    });
+});
+
 // Body parsing middleware
 app.use(express.json({
     limit: '2mb', // Founder OS workspace state can exceed the default 100kb
@@ -18748,6 +18770,125 @@ Rules:
         res.status(500).json({ success: false, error: 'AI request failed: ' + error.message });
     }
 });
+
+// ==================== PRODUCT LAB ====================
+// OFFCOMFRT Product Lab — apparel product development workspace
+// (public/product-lab). One shared workspace password (PRODUCT_LAB_PASSWORD)
+// mints a role 'product_lab' JWT; "Acting as" personas stay client-side in
+// pl_config.main, exactly like the prototype. Doc-style pl_* tables via
+// config/product-lab-db.js; delta sync = snapshot + tombstone polling.
+const productLabDB = require('./config/product-lab-db');
+
+function productLabErr(res, tag, error) {
+    console.error(`[ProductLab] ${tag} error:`, error.message);
+    res.status(error.status || 500).json({ error: error.message || 'Request failed' });
+}
+
+// Workspace token middleware (role product_lab).
+function authenticateProductLab(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    const decoded = verifyToken(authHeader.substring(7));
+    if (!decoded || decoded.role !== 'product_lab') {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    req.labActor = { name: decoded.name || 'Workspace member' };
+    next();
+}
+
+// ---------- Pages ----------
+// Same shape as COMPANY_CSP: self + inline scripts/styles, Google fonts,
+// data: images (records carry base64 photos), connect-src 'self' for the API.
+const PRODUCT_LAB_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self';";
+app.get('/product-lab', (req, res) => {
+    res.setHeader('Content-Security-Policy', PRODUCT_LAB_CSP);
+    res.sendFile(path.join(__dirname, 'public', 'product-lab', 'index.html'));
+});
+app.get('/product-lab/', (req, res) => {
+    res.setHeader('Content-Security-Policy', PRODUCT_LAB_CSP);
+    res.sendFile(path.join(__dirname, 'public', 'product-lab', 'index.html'));
+});
+
+// ---------- Auth ----------
+// One shared password -> JWT. Timing-safe compare; general /api/ limiter plus
+// writeLimiter already apply to this POST, so brute force is throttled.
+app.post('/api/product-lab/login', (req, res) => {
+    try {
+        const expected = process.env.PRODUCT_LAB_PASSWORD;
+        if (!expected) {
+            return res.status(503).json({ error: 'Product Lab is not configured yet — set PRODUCT_LAB_PASSWORD on the server' });
+        }
+        const given = typeof req.body === 'object' && req.body && typeof req.body.password === 'string' ? req.body.password : '';
+        const a = crypto.createHash('sha256').update(String(given)).digest();
+        const b = crypto.createHash('sha256').update(String(expected)).digest();
+        if (!crypto.timingSafeEqual(a, b)) {
+            trackSuspicious(req.ip, 'failed_product_lab_login');
+            return res.status(401).json({ error: 'That password doesn’t match' });
+        }
+        const token = generateToken({ role: 'product_lab', name: 'Product Lab', timestamp: Date.now() });
+        res.json({ success: true, token });
+    } catch (error) {
+        productLabErr(res, 'Login', error);
+    }
+});
+
+// ---------- Sync endpoints ----------
+app.get('/api/product-lab/snapshot', authenticateProductLab, async (req, res) => {
+    try {
+        res.json(await productLabDB.getSnapshot());
+    } catch (error) { productLabErr(res, 'Snapshot', error); }
+});
+
+app.get('/api/product-lab/changes', authenticateProductLab, async (req, res) => {
+    try {
+        const since = req.query.since;
+        if (!since) return res.status(400).json({ error: 'since query parameter is required' });
+        if (isNaN(new Date(since).getTime())) return res.status(400).json({ error: 'Invalid since watermark' });
+        res.json(await productLabDB.getChanges(since));
+    } catch (error) { productLabErr(res, 'Changes', error); }
+});
+
+// ---------- Whole-record writes ----------
+app.put('/api/product-lab/record', authenticateProductLab, async (req, res) => {
+    try {
+        const { collection, record } = req.body || {};
+        if (!collection || !record || typeof record !== 'object') {
+            return res.status(400).json({ error: 'collection and record are required' });
+        }
+        if (productLabDB.COLLS.indexOf(collection) === -1) {
+            return res.status(400).json({ error: 'Unknown collection: ' + collection });
+        }
+        await productLabDB.putRecord(collection, record);
+        res.json({ success: true });
+    } catch (error) { productLabErr(res, 'Put record', error); }
+});
+
+app.delete('/api/product-lab/record', authenticateProductLab, async (req, res) => {
+    try {
+        const { collection, id } = req.body || {};
+        if (!collection || !id) return res.status(400).json({ error: 'collection and id are required' });
+        if (productLabDB.COLLS.indexOf(collection) === -1) {
+            return res.status(400).json({ error: 'Unknown collection: ' + collection });
+        }
+        await productLabDB.deleteRecord(collection, id);
+        res.json({ success: true });
+    } catch (error) { productLabErr(res, 'Delete record', error); }
+});
+
+// Backup import (replace whole workspace). The 25MB body was parsed by the
+// pre-parser registered above (before the global 2mb express.json).
+app.post('/api/product-lab/import', authenticateProductLab, async (req, res) => {
+    try {
+        const payload = req.productLabBackup || req.body;
+        if (!payload || typeof payload !== 'object') return res.status(400).json({ error: 'Invalid JSON backup' });
+        const result = await productLabDB.replaceWorkspace(payload);
+        console.log(`[ProductLab] workspace replaced by ${req.labActor.name}: ${result.imported} records`);
+        res.json({ success: true, imported: result.imported });
+    } catch (error) { productLabErr(res, 'Import', error); }
+});
+console.log('🧵 Product Lab routes mounted');
 
 // ==================== ERROR HANDLING ====================
 
