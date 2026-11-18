@@ -52,7 +52,6 @@ a{color:inherit}
 .searchbtn kbd{margin-left:auto;font:11px var(--sans);border:1px solid var(--line2);border-radius:4px;padding:0 5px}
 .spacer{flex:1}
 .ws-badge{font-size:12px;border:1px solid var(--line2);border-radius:20px;padding:3px 10px;color:var(--ink2);background:var(--surface);cursor:pointer;white-space:nowrap}
-.ws-badge.demo{background:var(--ink);color:var(--inv);border-color:var(--ink)}
 .who{display:inline-flex;align-items:center;gap:7px;font-size:12px;border:1px solid var(--line2);border-radius:20px;padding:2px 11px 2px 2px;color:var(--ink2);background:var(--surface);white-space:nowrap}
 .who b{color:var(--ink);font-weight:600}
 .who i{font-style:normal;color:var(--ink3)}

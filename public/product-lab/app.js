@@ -63,25 +63,22 @@ const S={
   readOnly:false
 };
 function labIdStored(){try{return JSON.parse(localStorage.getItem('ofc-lab-id')||'null')}catch(e){return null}}
-const Lab={token:localStorage.getItem('ofc-lab-token')||'',id:labIdStored(),since:null,timer:null,offline:false,loginMsg:'',users:null,mock:new URLSearchParams(location.search).has('mock')};
-if(Lab.mock){try{localStorage.setItem('ofc-mode','demo')}catch(e){}}
-const Store={mode:localStorage.getItem('ofc-mode')||'live',backend:null,ready:false,chains:{},pending:{}};
-if(Lab.mock)Store.mode='demo';
+const Lab={token:localStorage.getItem('ofc-lab-token')||'',id:labIdStored(),since:null,timer:null,offline:false,loginMsg:'',users:null};
+const Store={backend:null,ready:false,chains:{},pending:{}};
 // The Founder (ADMIN_PASSWORD sign-in) manages who else can sign in; a member
 // is locked to the person their account is linked to.
 const labManage=()=>!!(Lab.id&&Lab.id.canManage);
 const credFor=pid=>(Lab.users||[]).find(u=>u.personId===pid)||null;
 // In the live workspace nobody picks their identity: it comes from the sign-in,
-// so the top bar shows who you are instead of a picker (the demo keeps one).
+// so the top bar shows who you are instead of a picker.
 
 /* ============ storage ============ */
 function defaultConfig(){return {id:'main',people:[{id:'p-founder',name:'Founder',role:'founder'},{id:'p-lead',name:'Product Lead',role:'lead'}],collections:[],company:'OFFCOMFRT',currency:'INR'}}
 function cfg(){return D.config.main||defaultConfig()}
-function localKey(){return 'ofc-ws-'+Store.mode}
+function localKey(){return 'ofc-ws-live'}
 function loadLocal(){
   let raw=null;try{raw=JSON.parse(localStorage.getItem(localKey())||'null')}catch(e){}
   COLLS.forEach(c=>D[c]=(raw&&raw[c])||{});
-  if(Store.mode==='demo'&&(!raw||!Object.keys(D.products).length||raw.v!==DATA_V)){COLLS.forEach(c=>D[c]={});seedDemo();saveLocal()}
 }
 let saveT=null;
 function saveLocal(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(localKey(),JSON.stringify(Object.assign({v:DATA_V},D)))}catch(e){toast('This browser’s storage is full. Remove large images or export a backup.')}},120)}
@@ -110,7 +107,7 @@ function renderLabLogin(){
       <div class="field" style="margin-top:8px"><input class="inp" type="password" id="labpw" placeholder="Password" autocomplete="current-password"></div>
       <div class="tiny muted" style="margin-top:6px">The Founder signs in with the admin password (email optional). Everyone else uses the email and password the Founder created for them.</div>
       ${Lab.loginMsg?`<div class="err" style="margin-top:6px">${esc(Lab.loginMsg)}</div>`:''}
-      <div class="qa" style="margin-top:12px"><button class="btn pri" type="submit">Sign in</button><button class="btn" type="button" data-act="setmode" data-mode="demo">Open demo instead</button></div></form>
+      <div class="qa" style="margin-top:12px"><button class="btn pri" type="submit">Sign in</button></div></form>
   </div></div>`;
   const f=$('#lablogin');
   f.addEventListener('submit',async e=>{
@@ -142,7 +139,6 @@ async function initStore(){
   Store.ready=false;
   if(Lab.timer){clearInterval(Lab.timer);Lab.timer=null}
   COLLS.forEach(c=>D[c]={});
-  if(Store.mode==='demo'){Store.backend='local';loadLocal();if(!person(S.me)){S.me=(people().find(p=>p.role==='lead')||people()[0]||{}).id||'';try{localStorage.setItem('ofc-me',S.me)}catch(e){}}Store.ready=true;render();return}
   if(!Lab.token){showLabLogin();return}
   Store.backend=null;render();
   try{
@@ -155,11 +151,11 @@ async function initStore(){
     Lab.timer=setInterval(labPoll,10000);
   }catch(e){
     Store.ready=true;
-    if(e.status!==401){Lab.offline=true;Store.backend='local';render();toast('Live workspace unreachable ('+(e.message||'error')+'). Changes are kept in this browser until it responds.')}
+    if(e.status!==401){Lab.offline=true;Store.backend='local';loadLocal();labApplyIdentity();render();toast('Live workspace unreachable ('+(e.message||'error')+'). Changes are kept in this browser until it responds.')}
   }
 }
 async function labPoll(){
-  if(Store.mode!=='live'||Store.backend!=='db'||!Lab.since)return;
+  if(Store.backend!=='db'||!Lab.since)return;
   try{
     const ch=await labApi('/changes?since='+encodeURIComponent(Lab.since));
     let touched=false;const skip=k=>(Store.pending[k]||0)>0;
@@ -297,43 +293,6 @@ function decideApproval(pid,type,action,note){
   toast(`${AP[type].label} ${word} for ${p?p.code:''}`);
 }
 
-/* ============ demo seed (fictional; lives only in the demo workspace) ============ */
-function seedDemo(){
-  const T=TODAY,d=n=>addDays(T,n);
-  D.config.main=Object.assign(defaultConfig(),{collections:[
-    {id:'c-w26',name:'Winter Layers',season:'Winter 2026',start:'2026-11-01',end:'2027-01-31',note:'Demo collection'},
-    {id:'c-ss27',name:'Spring Movement',season:'Spring 2027',start:'2027-02-01',end:'2027-04-30',note:'Demo collection'}]});
-  const mk=(o,ms,ap)=>{const p=newProduct(o);p.updatedAt=new Date(Date.now()-Math.random()*6*864e5).toISOString();D.products[p.id]=p;
-    MS_ORDER.forEach((t,i)=>{const v=ms[i];const m={id:uid(),pid:p.id,type:t,target:'',baseline:'',done:'',note:''};
-      if(v!=null){if(Array.isArray(v)){m.target=d(v[0]);m.baseline=d(v[1]);}else{m.target=d(v);m.baseline=d(v)}}
-      D.milestones[m.id]=m});
-    (ap||[]).forEach(([t,s])=>{D.approvals[p.id+'--'+t]={id:p.id+'--'+t,pid:p.id,type:t,status:s,requestedAt:new Date().toISOString(),requestedBy:'p-lead',decidedAt:s!=='pending'?new Date().toISOString():'',decidedBy:s==='approved'?(AP[t].roles[0]==='founder'?'p-founder':'p-lead'):'',note:'',history:[{ts:new Date().toISOString(),by:'p-lead',action:'request',note:''}]}});
-    return p};
-  const doneUpTo=(p,n)=>msFor(p.id).forEach((m,i)=>{if(i<n){m.done=m.target||T}});
-  const a=mk({code:'SWEATSHIRT-001',name:'Crew sweatshirt (demo)',dept:'Comfort Dept',category:'Sweatshirt',collection:'Winter Layers',season:'Winter 2026',priority:'P1',stage:7,fabric:'Loopback fleece (demo)',colorways:'Black, Ash grey',gsm:'360',composition:'100% cotton (demo)',mrp:'2999',estCost:'980',targetMargin:'65',nextAction:'Founder to review final sample photos for creative sign-off',owner:'p-lead'},
-    [-40,-28,-18,-8,-2,3,8,26,30,36],[['technical','approved'],['creative','pending']]);
-  doneUpTo(a,5);
-  const b=mk({code:'WAFFLE-001',name:'Waffle knit long sleeve (demo)',dept:'Comfort Dept',category:'Long sleeve',collection:'Winter Layers',season:'Winter 2026',priority:'P1',stage:6,fabric:'Cotton waffle (demo)',colorways:'Off-black, Stone',gsm:'240',mrp:'2499',estCost:'760',targetMargin:'65',nextAction:'Review S2 shoulder correction',blockers:'S2 shoulder seam still pulling forward',owner:'p-lead'},
-    [-30,-20,-10,[-3,-6],5,12,18,34,40,[45,40]],[['technical','pending']]);
-  doneUpTo(b,3);
-  const c=mk({code:'LWR-001',name:'LWR-001 (demo)',dept:'Training Dept',category:'Bottoms',collection:'Winter Layers',season:'Winter 2026',priority:'P2',stage:5,fabric:'',colorways:'Black',mrp:'2799',estCost:'',nextAction:'Chase S1 from sampling unit',owner:'p-lead'},
-    [-20,-12,-2,10,15,22,30,48,55,62],[]);
-  doneUpTo(c,2);
-  const e=mk({code:'HENLEY-001',name:'Henley (demo)',dept:'Raw Dept',category:'Top',collection:'Spring Movement',season:'Spring 2027',priority:'P2',stage:3,nextAction:'Finalise placket width and button spec',owner:'p-lead'},
-    [-6,12,30,45,50,60,70,95,100,110],[]);
-  doneUpTo(e,1);
-  mk({code:'HOODIE-001',name:'Washed hoodie concept (demo)',dept:'Comfort Dept',category:'Hoodie',collection:'',season:'Winter 2026',priority:'P3',stage:1,nextAction:'Shortlist two wash units for trial',owner:'p-lead'},[],[]);
-  mk({code:'WMN-001',name:'Women’s Comfort Dept concept (demo)',dept:'Comfort Dept',category:'Womenswear',collection:'',season:'',priority:'P3',stage:0,nextAction:'',owner:'p-founder'},[],[]);
-  const tk=(title,pid,due,status,who)=>{const t={id:uid(),title,pid,due:d(due),status,who:who||'p-lead',priority:'P2',notes:'',createdAt:new Date().toISOString()};D.tasks[t.id]=t};
-  tk('Upload S2 fit photos',b.id,0,'doing');tk('Send shoulder correction to pattern maker',b.id,2,'todo');
-  tk('Confirm rib supplier lead time',a.id,-1,'todo');tk('Review final sample photos',a.id,1,'todo','p-founder');
-  tk('Follow up S1 dispatch',c.id,1,'blocked');tk('Placket sketch options',e.id,6,'todo');
-  const act=(text,pid,h,kind)=>{const x={id:uid(),ts:new Date(Date.now()-h*36e5).toISOString(),pid,by:'p-lead',text,kind:kind||'note'};D.activity[x.id]=x};
-  act('Moved from Fit & Quality Review to Costing & Approval',a.id,30,'stage');act('Technical approval approved',a.id,29,'approval');
-  act('Creative approval requested',a.id,28,'approval');act('S2 received from sampling unit',b.id,50);
-  act('Sample approval moved from '+fmtD(d(-6))+' to '+fmtD(d(-3)),b.id,52,'milestone');act('Product created',e.id,120,'product');
-  seedDemo2();
-}
 /* ============ icons ============ */
 const ICONS={
   home:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
@@ -403,16 +362,14 @@ function renderShell(){
       <button class="nav ${r==='setup'?'on':''}" data-act="go" data-to="setup" title="Workspace setup">${ic('gear')}<span class="lbl">Workspace setup</span></button>
     </nav>
     <div class="sb-foot"><span class="txt">From Thought to Form.</span></div>`;
-  const demo=Store.mode==='demo';
   const storageNote=Lab.offline?'Live · offline':Store.backend==='db'?'Live · synced':'Live · this browser only';
-  $('#top').innerHTML=`${demo?`<div class="banner">Demo workspace: fictional products and dates for trying the Lab. Nothing here touches your live data. <button data-act="setmode" data-mode="live">Back to live workspace</button></div>`:''}
-    ${!demo&&Lab.offline&&Store.ready?`<div class="banner soft">Can’t reach the live workspace right now — changes are saved in this browser only. <button data-act="labretry">Retry</button></div>`:''}
+  $('#top').innerHTML=`${Lab.offline&&Store.ready?`<div class="banner soft">Can’t reach the live workspace right now — changes are saved in this browser only. <button data-act="labretry">Retry</button></div>`:''}
     <div class="top">
       <button class="btn ghost sm mob-only" data-act="mobnav" aria-label="Open navigation">${ic('menu')}</button>
       <button class="searchbtn" data-act="palette">${ic('search')}<span>Search products, collections, tasks</span><kbd>Ctrl K</kbd></button>
       <div class="spacer"></div>
-      <button class="ws-badge ${demo?'demo':''}" data-act="go" data-to="setup" title="Workspace">${demo?'Demo':esc(storageNote)}</button>
-      ${demo?`<select class="inp sm" id="actas" title="View as (demo workspace only)" aria-label="View as">${people().map(p=>`<option value="${p.id}" ${p.id===S.me?'selected':''}>${esc(p.name)} · ${esc(ROLES[p.role]||p.role)}</option>`).join('')}</select>`:`<span class="who" title="Your sign-in decides who you act as — it can’t be switched here">${av(S.me)}<b>${esc(me().name)}</b><i>${esc(ROLES[myRole()]||myRole())}</i></span><button class="btn ghost sm" data-act="labsignout" title="Sign out of the live workspace">Sign out</button>`}
+      <button class="ws-badge" data-act="go" data-to="setup" title="Workspace">${esc(storageNote)}</button>
+      <span class="who" title="Your sign-in decides who you act as — it can’t be switched here">${av(S.me)}<b>${esc(me().name)}</b><i>${esc(ROLES[myRole()]||myRole())}</i></span><button class="btn ghost sm" data-act="labsignout" title="Sign out of the live workspace">Sign out</button>
       <button class="btn ghost sm" data-act="theme" title="Light / dark" aria-label="Toggle theme">${ic('moon')}</button>
       <button class="btn pri sm" data-act="newmenu">${ic('plus')}New</button>
     </div>`;
@@ -439,7 +396,7 @@ function vOverview(){
   const act=ps.filter(isActive);
   if(!ps.length)return `<div class="hero"><div><div class="date">${DOW[d.getDay()]}, ${d.getDate()} ${MONTH[d.getMonth()]}</div><div class="tagline">The Lab is empty. Every number on this page will come from the products you add.</div></div></div>
     <div class="panel">${empty('Start with your first product','Add a product you’re already developing, or log an idea. Stages, milestones and approvals build from there.',
-    `<div class="qa" style="justify-content:center"><button class="btn pri" data-act="newproduct">${ic('plus')}Add product</button><button class="btn" data-act="newidea">Add idea</button><button class="btn" data-act="setmode" data-mode="demo">Explore the demo workspace</button></div>`)}</div>`;
+    `<div class="qa" style="justify-content:center"><button class="btn pri" data-act="newproduct">${ic('plus')}Add product</button><button class="btn" data-act="newidea">Add idea</button></div>`)}</div>`;
   const byStage=STAGES.slice(0,13).map((s,i)=>({i,s,ps:ps.filter(p=>p.stage===i)}));
   const pri=act.filter(p=>p.priority==='P1').concat(act.filter(p=>p.priority==='P2'&&p.stage>=2)).slice(0,6);
   const up=Object.values(D.milestones).filter(m=>!m.done&&m.target&&m.target>=TODAY&&m.target<=addDays(TODAY,14)&&prod(m.pid)&&isActive(prod(m.pid))).sort((a,b)=>a.target<b.target?-1:1);
@@ -805,14 +762,12 @@ function pulseMarkdown(){
 
 /* ============ setup ============ */
 function vSetup(){
-  const c=cfg();const demo=Store.mode==='demo';
-  return `<div class="pagehead"><div><h1 class="title">Workspace setup</h1><p class="sub">People, workspace mode and your data.</p></div></div>
+  return `<div class="pagehead"><div><h1 class="title">Workspace setup</h1><p class="sub">People, sign-in access and your data.</p></div></div>
   <div class="grid2">
   <div class="panel"><div class="panel-h"><h2 class="h">Workspace</h2></div><div class="panel-b">
-    <div class="seg" style="margin-bottom:12px"><button class="${!demo?'on':''}" data-act="setmode" data-mode="live">Live workspace</button><button class="${demo?'on':''}" data-act="setmode" data-mode="demo">Demo workspace</button></div>
-    <p class="small">${demo?'You’re in the <b>demo workspace</b>: fictional products stored only in this browser. It never mixes with live data.':Store.backend==='db'?'The <b>live workspace</b> is stored in the team database and syncs to everyone who signs in.':'The <b>live workspace</b> is saving in this browser only, because the server was unreachable. Export a backup regularly.'}</p>
+    <p class="small">${Store.backend==='db'?'The <b>live workspace</b> is stored in the team database and syncs to everyone who signs in.':'The <b>live workspace</b> is saving in this browser only, because the server was unreachable. Export a backup regularly.'}</p>
     <p class="tiny muted">The Founder signs in with the server’s admin password; everyone else gets their own email and password below. Your sign-in decides who you act as — it can’t be switched from the top bar.</p>
-    ${demo?`<button class="btn" data-act="resetdemo">Reset demo data</button>`:`<div class="qa" style="margin-top:4px"><button class="btn" data-act="labretry">Re-sync now</button><button class="btn" data-act="labsignout">Sign out of live workspace</button></div>`}
+    <div class="qa" style="margin-top:4px"><button class="btn" data-act="labretry">Re-sync now</button><button class="btn" data-act="labsignout">Sign out of live workspace</button></div>
   </div></div>
   <div class="panel"><div class="panel-h"><h2 class="h">People & roles</h2><button class="btn ghost sm" data-act="newperson">${ic('plus')}Add person</button></div><div class="panel-b">
     <ul class="list">${people().map(p=>`<li class="li"><span class="av">${esc(initials(p.name))}</span><div style="flex:1"><b>${esc(p.name)}</b><div class="tiny muted">${esc(ROLES[p.role]||p.role)}</div></div><button class="btn ghost sm" data-act="editperson" data-id="${p.id}">Edit</button></li>`).join('')}</ul>
@@ -822,8 +777,8 @@ function vSetup(){
     <div class="qa"><button class="btn" data-act="exportjson">${ic('dl')}Export full backup (JSON)</button><label class="btn">${ic('ul')}Import backup (JSON)<input type="file" accept=".json,application/json" data-on="importjson" hidden></label>
       <button class="btn" data-act="csvproducts">${ic('dl')}Products CSV</button><button class="btn" data-act="csvtasks">${ic('dl')}Tasks CSV</button><button class="btn" data-act="csvms">${ic('dl')}Milestones CSV</button>
       <label class="btn">${ic('ul')}Import products CSV<input type="file" accept=".csv,text/csv" data-on="importcsv" hidden></label></div>
-    <p class="tiny muted">Products CSV import adds rows whose code doesn’t exist yet and skips the rest. Use the exported file as the template. Importing a JSON backup replaces the ${demo?'demo':'live'} workspace after confirmation.</p>
-    ${!demo?`<button class="btn" data-act="wipe" style="margin-top:6px">${ic('trash')}Clear live workspace</button>`:''}
+    <p class="tiny muted">Products CSV import adds rows whose code doesn’t exist yet and skips the rest. Use the exported file as the template. Importing a JSON backup replaces the live workspace after confirmation.</p>
+    <button class="btn" data-act="wipe" style="margin-top:6px">${ic('trash')}Clear live workspace</button>
   </div></div></div>`;
 }
 function vLater(id){
@@ -866,7 +821,7 @@ const pctTxt=(a,b)=>b?Math.round(a/b*100)+'%':'—';
 
 /* ---------- sign-in access (Founder manages accounts; members see their own) ---------- */
 function vAccess(){
-  if(Store.mode==='demo'||Store.backend!=='db')return '';
+  if(Store.backend!=='db')return '';
   const who=Lab.id?`${esc(Lab.id.name||Lab.id.email||'—')} · ${labManage()?'Founder (admin password)':'member'}`:'—';
   const loaded=Array.isArray(Lab.users);const us=Lab.users||[];
   const unlinked=us.filter(u=>!u.personId).length;
@@ -1474,44 +1429,6 @@ function palExtra(q){
   return out;
 }
 
-/* =================== demo data for new modules =================== */
-function seedDemo2(){
-  const T=TODAY,d=n=>addDays(T,n),now=new Date().toISOString();const P=c=>products().find(p=>p.code===c);
-  const ins=(c,o)=>{const r=Object.assign({id:uid(),createdAt:now,updatedAt:now},o);D[c][r.id]=r;return r};
-  const s1=ins('suppliers',{name:'Demo Knit Mills',category:'Knitting mill',location:'Tiruppur',contact:'Demo contact',status:'Active',leadTime:'21',moq:'300 kg',price:'Demo pricing',capability:'Fleece, waffle, rib',notes:'',log:[{type:'delivery',promised:d(-30),actual:d(-27),note:'Fleece lab dips'},{type:'quality',date:d(-27),ok:true,note:'Shade within tolerance'}]});
-  const s2=ins('suppliers',{name:'Demo Sampling Studio',category:'Sampling unit',location:'Bengaluru',contact:'Demo contact',status:'Active',leadTime:'10',capability:'Knit sampling, small runs',log:[]});
-  const s3=ins('suppliers',{name:'Demo Trims Co.',category:'Trims supplier',location:'Delhi',status:'Trial',leadTime:'14',log:[]});
-  const W=P('WAFFLE-001'),SW=P('SWEATSHIRT-001'),L=P('LWR-001'),H=P('HENLEY-001');
-  ins('fabrics',{code:'FAB-001',name:'Loopback fleece (demo)',category:'Fleece',composition:'100% cotton (demo)',gsm:'360',construction:'Loopback',finish:'Enzyme wash',shrinkage:'Not tested',testStatus:'Testing',supplierId:s1.id,cost:'540',costUnit:'kg',leadTime:'21',moq:'300 kg',pids:SW?[SW.id]:[]});
-  ins('fabrics',{code:'FAB-002',name:'Cotton waffle (demo)',category:'Knit',composition:'Cotton (demo)',gsm:'240',construction:'Waffle',testStatus:'Untested',supplierId:s1.id,cost:'480',costUnit:'kg',leadTime:'25',pids:W?[W.id]:[]});
-  ins('trims',{code:'TRM-001',name:'Flat cotton drawcord (demo)',type:'Drawcord',spec:'10 mm, black',supplierId:s3.id,cost:'6',unit:'piece',pids:L?[L.id]:[]});
-  ins('trims',{code:'TRM-002',name:'1×1 rib (demo)',type:'Rib',spec:'Cuff and hem rib',supplierId:s1.id,pids:SW?[SW.id]:[]});
-  const meas=(a)=>[{pom:'Chest (½)',spec:'58',act:a[0],tol:'1'},{pom:'Body length (HPS)',spec:'70',act:a[1],tol:'1'},{pom:'Shoulder',spec:'50',act:a[2],tol:'0.5'},{pom:'Sleeve length',spec:'62',act:a[3],tol:'1'}];
-  if(W){ins('samples',{pid:W.id,round:'S1',status:'Rejected',requested:d(-26),due:d(-14),received:d(-12),vendorId:s2.id,fabric:'Cotton waffle (demo)',patternVer:'P1',who:'p-lead',meas:meas(['59.5','70.5','51.2','62']),chk:{0:'OK',1:'Issue',9:'OK'},fit:'Shoulder too wide, drops off the body.',corrections:'Reduce shoulder 1 cm, re-balance armhole.',decision:'Rejected due to shoulder fit',images:[]});
-    ins('samples',{pid:W.id,round:'S2',status:'Under Review',requested:d(-10),due:d(-3),received:d(-2),vendorId:s2.id,fabric:'Cotton waffle (demo)',patternVer:'P2',who:'p-lead',meas:meas(['58.4','70.2','50.6','61.5']),chk:{0:'OK',1:'Issue',6:'OK'},fit:'Shoulder better; seam still pulls forward.',corrections:'',decision:'',images:[]})}
-  if(SW)ins('samples',{pid:SW.id,round:'S1',status:'Approved',requested:d(-30),due:d(-18),received:d(-20),vendorId:s2.id,fabric:'Loopback fleece (demo)',patternVer:'P1',who:'p-lead',meas:meas(['58.2','69.8','50.1','62.3']),chk:{0:'OK',1:'OK',2:'OK'},decision:'Approved',images:[]});
-  if(L)ins('samples',{pid:L.id,round:'S1',status:'Awaiting Sample',requested:d(-9),due:d(-2),received:'',vendorId:s2.id,patternVer:'P1',who:'p-lead',meas:[],chk:{},images:[]});
-  if(SW){ins('costsheets',{pid:SW.id,label:'v1 Estimate',basis:'Estimate',lines:{mainFabric:{qty:'0.75',rate:'540',unit:'kg'},secondary:{qty:'0.08',rate:'600',unit:'kg'},labels:{rate:'18'},cutting:{rate:'15'},cmt:{rate:'170'},wash:{rate:'35'},packaging:{rate:'22'},freight:{rate:'12'}},approved:false,createdAt:new Date(Date.now()-20*864e5).toISOString()});
-    ins('costsheets',{pid:SW.id,label:'v2 After S1',basis:'S1 actual',lines:{mainFabric:{qty:'0.8',rate:'540',unit:'kg'},secondary:{qty:'0.08',rate:'600',unit:'kg'},labels:{rate:'18'},print:{rate:'40'},cutting:{rate:'15'},cmt:{rate:'185'},wash:{rate:'35'},packaging:{rate:'22'},testing:{rate:'10'},freight:{rate:'12'}},approved:false,createdAt:now});
-    D.qc[SW.id]={id:SW.id,pid:SW.id,items:{0:{s:'Pass',ts:now,by:'p-lead'},1:{s:'Pass',ts:now,by:'p-lead'},2:{s:'Pass',ts:now,by:'p-lead'},4:{s:'Fail',note:'Body length −4% after 3 washes (demo)',ts:now,by:'p-lead'}}}}
-  ins('ideas',{title:'Brushed-back travel trouser',kind:'Silhouette',category:'Bottoms',status:'Shortlisted',tags:'travel, comfort',notes:'Tapered, hidden zip pocket, soft hand.',sc_brand:'5',sc_diff:'4',sc_need:'4'});
-  ins('ideas',{title:'Grey marl moodboard',kind:'Moodboard',status:'Raw',tags:'winter, grey',notes:'Concrete, wool, overcast light.'});
-  ins('ideas',{title:'Garment-dyed rib trial',kind:'Fabric experiment',status:'Parked',tags:'rib, dye',notes:'Check shrinkage before committing.',sc_feas:'2',sc_cost:'3'});
-  const ex=ins('experiments',{title:'Enzyme vs silicone wash on fleece',type:'Wash treatment',status:'Concluded',outcome:'Learned',date:d(-15),who:'p-lead',pid:SW?SW.id:'',hypothesis:'Which finish keeps the hand soft after 5 washes?',result:'Enzyme held its hand better (demo).',learning:'Default to enzyme on loopback fleece (demo).'});
-  D.config.main.budget={[T.slice(0,7)]:{'Sampling':40000,'Pattern development':15000,'Fabric research':10000,'Laboratory testing':8000}};
-  D.config.main.finance={gst:'5',disc:'10',mkt:'250',ship:'70',fees:'2',returns:'6'};
-  D.config.main.people[1].title='Product Lead';D.config.main.people[1].resp='Runs product development end to end: pipeline, sampling, suppliers, technical approval.';
-  D.config.main.people[0].title='Founder / Creative Director';D.config.main.people[0].resp='Brand, creative direction and creative approval.';
-  ins('expenses',{date:d(-6),category:'Sampling',amount:'6500',desc:'WAFFLE-001 S2 sampling (demo)',pid:W?W.id:'',supplierId:s2.id});
-  ins('expenses',{date:d(-3),category:'Laboratory testing',amount:'3200',desc:'Shrinkage test, fleece (demo)',supplierId:''});
-  ins('expenses',{date:d(-15),category:'Fabric research',amount:'1800',desc:'Wash trial (demo)',expId:ex.id});
-  PLANNED_ROLES.forEach(([r,k],i)=>ins('hires',{role:r,kind:k,priority:i<2?'P1':'P2',stage:'Proposed',reason:'',budget:'',target:''}));
-  Object.values(D.tasks).forEach(t=>{t.type=t.title.includes('photos')||t.title.includes('S1')?'Sampling':t.title.includes('supplier')?'Sourcing':'Product development';t.checklist=[];t.comments=[]});
-  const t1=Object.values(D.tasks).find(t=>t.title.startsWith('Send shoulder'));if(t1)t1.checklist=[{t:'Mark up S2 photos',done:true},{t:'Agree new shoulder measurement',done:false},{t:'Send to pattern maker',done:false}];
-  ins('tasks',{title:'Set up November budget lines',type:'Department',who:'p-lead',due:d(3),priority:'P2',status:'todo',notes:'',checklist:[],comments:[{ts:now,by:'p-founder',text:'Keep sampling under the cap this month.'}]});
-  ins('tasks',{title:'Shortlist two pattern makers',type:'Sourcing',who:'p-lead',due:d(9),priority:'P2',status:'doing',notes:'',checklist:[],comments:[]});
-}
-
 /* =================== hooks into the app =================== */
 const MODS={wall:vWall,'fit-room':vFitRoom,fabrics:vFabrics,suppliers:vSuppliers,costing:vCosting,quality:vQuality,team:vTeam,budget:vBudget,pulse:vReports,tasks:vTasks,setup:()=>vSetup()+vAudit()};
 const PTAB={overview:p=>pOverview(p),notes:p=>pNotes(p),techpack:pTechPack,materials:pMaterials,sampling:pSampling,costing:pCosting,quality:pQuality,milestones:p=>pMilestones(p),tasks:pTasks,approvals:p=>pApprovals(p),revisions:p=>pRevisions(p),activity:p=>pActivity(p)};
@@ -1681,7 +1598,7 @@ function render(){
   const ae=document.activeElement;const fid=ae&&ae.id&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')?ae.id:null;const sel=fid?[ae.selectionStart,ae.selectionEnd]:null;
   if(Store.backend==='login'){if(!$('#lablogin'))renderLabLogin();return}
   renderShell();
-  if(!Store.ready){$('#main').innerHTML=`<div class="loading"><div><div class="wordmark">OFFCOMFRT</div>Connecting to the live workspace…<div style="margin-top:14px"><button class="btn" data-act="setmode" data-mode="demo">Open demo instead</button></div></div></div>`;return}
+  if(!Store.ready){$('#main').innerHTML=`<div class="loading"><div><div class="wordmark">OFFCOMFRT</div>Connecting to the live workspace…</div></div>`;return}
   const r=S.route;let h;
   try{
     h=MODS[r]?MODS[r]():r==='overview'?vOverview():r==='pipeline'?vPipeline():r==='product'?vProduct():r==='roadmap'?vRoadmap():r==='library'?vLibrary():r==='tasks'?vTasks():r==='pulse'?vPulse():r==='setup'?vSetup():LATER[r]?vLater(r):vOverview();
@@ -1971,10 +1888,9 @@ const ACT={
   pweek:el=>{const d=+el.dataset.d;S.pulse.week=d===0?weekStart(TODAY):addDays(S.pulse.week,d);render()},
   pfounder:el=>{S.pulse.founder=el.dataset.v==='1';render()},
   pexport:el=>showMenu(el,[{l:'Pulse as Markdown (.md)',i:'dl',fn:()=>saveFile(`product-pulse-${S.pulse.week}.md`,pulseMarkdown(),'text/markdown')},{l:'Products snapshot (.csv)',i:'dl',fn:()=>ACT.csvproducts()},{l:'Milestones (.csv)',i:'dl',fn:()=>ACT.csvms()}]),
-  labretry:()=>{if(Store.mode!=='live'){toast('Already in the demo workspace.');return}Lab.offline=false;initStore();toast('Re-syncing the live workspace…')},
+  labretry:()=>{Lab.offline=false;initStore();toast('Re-syncing the live workspace…')},
   labsignout:()=>{if(Lab.timer){clearInterval(Lab.timer);Lab.timer=null}Lab.token='';Lab.id=null;Lab.users=null;S.me='';try{localStorage.removeItem('ofc-lab-token');localStorage.removeItem('ofc-lab-id');localStorage.removeItem('ofc-me')}catch(e){}COLLS.forEach(c=>D[c]={});Store.ready=false;showLabLogin()},
-  setmode:el=>{const mode=el.dataset.mode;if(Store.mode===mode)return;Store.mode=mode;try{localStorage.setItem('ofc-mode',mode)}catch(e){}S.readOnly=false;S.f={q:'',dept:'',coll:'',stage:'',owner:'',month:'',pri:''};closeModal();go('overview');initStore();render();toast(mode==='demo'?'Switched to the demo workspace':'Switched to the live workspace')},
-  resetdemo:()=>confirmBox('Reset demo data?','The demo workspace returns to its starting products. Live data is not affected.','Reset demo',()=>{try{localStorage.removeItem('ofc-ws-demo')}catch(e){}COLLS.forEach(c=>D[c]={});loadLocal();render();toast('Demo reset')}),
+  exportjson:()=>{const out={app:'offcomfrt-product-lab',version:1,mode:'live',exportedAt:new Date().toISOString()};COLLS.forEach(c=>out[c]=D[c]);saveFile(`offcomfrt-lab-live-${TODAY}.json`,JSON.stringify(out,null,1),'application/json')},
   newperson:()=>{if(guardEdit())openModal({kind:'person'})},
   newuser:()=>{if(!labManage()){toast('Only the Founder can manage sign-ins.');return}labLoadUsers().then(()=>openModal({kind:'user'}))},
   edituser:el=>{if(!labManage()){toast('Only the Founder can manage sign-ins.');return}openModal({kind:'user',id:el.dataset.id})},
@@ -1983,7 +1899,6 @@ const ACT={
   delperson:el=>confirmBox('Remove this person?','Products and tasks they own will show as unassigned until reassigned.','Remove',()=>{const c=clone(cfg());c.people=c.people.filter(x=>x.id!==el.dataset.id);putConfig(c);const cred=credFor(el.dataset.id);
     if(cred&&labManage()&&Store.backend==='db')labApi('/users/'+encodeURIComponent(cred.id),{method:'DELETE'}).then(()=>{Lab.users=(Lab.users||[]).filter(u=>u.id!==cred.id);render()}).catch(()=>{});
     if(S.me===el.dataset.id&&!(Lab.id&&Lab.id.personId===el.dataset.id)){S.me=c.people[0].id;localStorage.setItem('ofc-me',S.me)}}),
-  exportjson:()=>{const out={app:'offcomfrt-product-lab',version:1,mode:Store.mode,exportedAt:new Date().toISOString()};COLLS.forEach(c=>out[c]=D[c]);saveFile(`offcomfrt-lab-${Store.mode}-${TODAY}.json`,JSON.stringify(out,null,1),'application/json')},
   wipe:()=>confirmBox('Clear the live workspace?','This deletes every product, milestone, task, approval and activity entry in the live workspace for everyone. Export a backup first.','Clear everything',()=>{COLLS.filter(c=>c!=='config').forEach(c=>Object.keys(D[c]).forEach(id=>del(c,id)));toast('Live workspace cleared')},'CLEAR'),
 };
 
@@ -2016,7 +1931,6 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target;
-  if(t.id==='actas'){S.me=t.value;try{localStorage.setItem('ofc-me',S.me)}catch(x){}render();toast(`Viewing as ${pname(S.me)} (${ROLES[myRole()]})`);return}
   const on=t.dataset.on;if(!on)return;
   if(CHANGE2[on]){CHANGE2[on](t);return}
   if(on==='filter'){S.f[t.dataset.k]=t.value;render()}
@@ -2038,7 +1952,7 @@ document.addEventListener('change',e=>{
   else if(on==='importcsv'){if(!guardEdit())return;readFile(t,txt=>importProductsCSV(txt))}
   else if(on==='importjson'){if(!guardEdit())return;readFile(t,txt=>{let data;try{data=JSON.parse(txt)}catch(x){toast('That file isn’t valid JSON.');return}
     if(!data||data.app!=='offcomfrt-product-lab'){toast('That file isn’t a Product Lab backup.');return}
-    confirmBox('Replace this workspace?',`The ${Store.mode} workspace will be replaced with the backup from ${esc((data.exportedAt||'').slice(0,10))} (${Object.keys(data.products||{}).length} products).`,'Replace workspace',()=>{
+    confirmBox('Replace this workspace?',`The live workspace will be replaced with the backup from ${esc((data.exportedAt||'').slice(0,10))} (${Object.keys(data.products||{}).length} products).`,'Replace workspace',()=>{
       if(Store.backend==='db'){labApi('/import',{method:'POST',body:JSON.stringify(data)}).then(()=>{toast('Backup imported.');initStore()}).catch(labWriteErr)}
       else replaceWorkspace(data)})})}
 });
