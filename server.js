@@ -18782,6 +18782,16 @@ Rules:
 const productLabDB = require('./config/product-lab-db');
 
 function productLabErr(res, tag, error) {
+    // PostgREST reports a table that isn't in its schema cache as PGRST205 / "Could not
+    // find the table 'public.x' in the schema cache". That means the migration has not
+    // been pasted into this Supabase project (or the API cache is stale) - not that the
+    // request was bad - so answer 503 with the fix instead of a bare 500.
+    const missing = /Could not find the table 'public\.([a-zA-Z_]+)'/.exec(error.message || '');
+    if (missing || error.code === 'PGRST205') {
+        const tbl = (missing && missing[1]) || 'pl_users';
+        console.error(`[ProductLab] ${tag} error: table ${tbl} is missing from the Supabase schema cache`);
+        return res.status(503).json({ error: `The ${tbl} table doesn’t exist in Supabase yet — paste supabase_migration_product_lab.sql into the SQL editor, then run NOTIFY pgrst, 'reload schema';` });
+    }
     console.error(`[ProductLab] ${tag} error:`, error.message);
     res.status(error.status || 500).json({ error: error.message || 'Request failed' });
 }

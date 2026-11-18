@@ -179,3 +179,9 @@ SELECT table_name, column_name, data_type
 FROM information_schema.columns
 WHERE table_schema = 'public' AND table_name LIKE 'pl_%'
 ORDER BY table_name, ordinal_position;
+
+-- PostgREST keeps a schema cache, so a table that exists but was added after the
+-- API last reloaded still errors as "Could not find the table ... in the schema
+-- cache". This tells the API to re-read the schema; Supabase also reloads it
+-- automatically within a few seconds of any DDL run from the SQL editor.
+NOTIFY pgrst, 'reload schema';

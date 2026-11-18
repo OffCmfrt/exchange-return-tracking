@@ -63,7 +63,7 @@ const S={
   readOnly:false
 };
 function labIdStored(){try{return JSON.parse(localStorage.getItem('ofc-lab-id')||'null')}catch(e){return null}}
-const Lab={token:localStorage.getItem('ofc-lab-token')||'',id:labIdStored(),since:null,timer:null,offline:false,loginMsg:'',users:null};
+const Lab={token:localStorage.getItem('ofc-lab-token')||'',id:labIdStored(),since:null,timer:null,offline:false,loginMsg:'',users:null,usersErr:''};
 const Store={backend:null,ready:false,chains:{},pending:{}};
 // The Founder (ADMIN_PASSWORD sign-in) manages who else can sign in; a member
 // is locked to the person their account is linked to.
@@ -133,7 +133,7 @@ function labApplyIdentity(){
   try{localStorage.setItem('ofc-me',S.me)}catch(e){}
 }
 function labLoadUsers(){
-  return labApi('/users').then(d=>{Lab.users=d.users||[];if(Store.backend==='db')render();return Lab.users}).catch(()=>{Lab.users=[];return []});
+  return labApi('/users').then(d=>{Lab.users=d.users||[];Lab.usersErr='';if(Store.backend==='db')render();return Lab.users}).catch(e=>{Lab.users=[];Lab.usersErr=e&&e.message||'The sign-in list could not be read.';if(Store.backend==='db')render();return []});
 }
 async function initStore(){
   Store.ready=false;
@@ -170,7 +170,7 @@ async function labPoll(){
 }
 function labWriteErr(e){
   if(e&&e.status===401)return;
-  if(e&&e.status===503)toast('The server has no admin password configured, so this change stayed in this browser.');
+  if(e&&e.status===503)toast(/exist in Supabase/.test(e.message||'')?e.message:'The server has no admin password configured, so this change stayed in this browser.');
   else if(e&&e.status===429)toast('Too many changes at once. Wait a moment and try again.');
   else toast('Couldn’t save that change ('+(e&&e.message||'error')+').');
 }
@@ -827,7 +827,7 @@ function vAccess(){
   const unlinked=us.filter(u=>!u.personId).length;
   const userRow=u=>`<li class="li"><span class="av">${esc(initials(u.name||u.email))}</span><div style="flex:1"><b>${esc(u.name||u.email)}</b><div class="tiny muted">${esc(u.email)} · ${esc(ROLES[u.role]||u.role)}</div></div>${u.personId?`<span class="pill">${esc(pname(u.personId))}</span>`:'<span class="pill dash" title="Not linked to a person, so their work has nobody to attach to">Not linked</span>'}<button class="btn ghost sm" data-act="edituser" data-id="${u.id}">Edit</button></li>`;
   let body='<p class="tiny muted">Only the Founder can see and manage the list of accounts.</p>';
-  if(labManage())body=loaded&&us.length?`<ul class="list">${us.map(userRow).join('')}</ul>${unlinked?`<p class="tiny err" style="margin-top:8px">${unlinked} account${unlinked>1?'s are':' is'} not linked to a person — edit ${unlinked>1?'them':'it'} and pick one so their work attaches correctly.</p>`:''}`:'<p class="tiny muted">No sign-ins yet. Give a person an email and password and they can work in this workspace from any browser.</p>';
+  if(labManage())body=loaded&&us.length?`<ul class="list">${us.map(userRow).join('')}</ul>${unlinked?`<p class="tiny err" style="margin-top:8px">${unlinked} account${unlinked>1?'s are':' is'} not linked to a person — edit ${unlinked>1?'them':'it'} and pick one so their work attaches correctly.</p>`:''}`:(Lab.usersErr?`<p class="tiny err">${esc(Lab.usersErr)}</p>`:'<p class="tiny muted">No sign-ins yet. Give a person an email and password and they can work in this workspace from any browser.</p>');
   const mine=Lab.id&&Lab.id.canManage?'You sign in with the server’s admin password, so there is no account to manage for you. Everyone else gets their own email and password, locked to one person.':(Lab.id&&Lab.id.personId?'Your sign-in is locked to '+esc(pname(S.me))+'. There is nothing to switch.':'Your account isn’t linked to a person yet — ask the Founder to link it in this panel.');
   return `<div class="panel span2"><div class="panel-h"><h2 class="h">Sign-in access</h2>${labManage()?`<button class="btn ghost sm" data-act="newuser">${ic('plus')}Add sign-in</button>`:''}</div><div class="panel-b">
     <p class="small">Signed in as <b>${who}</b>. ${mine}</p>
