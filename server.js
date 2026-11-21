@@ -149,6 +149,27 @@ function buildExchangeProductName(title, variant) {
     return base + ' - ' + variant;
 }
 
+// Size to append to a FORWARD (replacement) label/product name.
+// An exchange resolved without touching any item stores no replacement
+// fields at all, so replacementVariant is empty and the Shopify lookup has no
+// product id to work from — yet the unit being shipped IS the original line,
+// whose `variant` is the size the warehouse has to pick. Without this fallback
+// the label prints only "PRODUCT ( COLOR )" and the size never reaches the
+// courier. When a genuinely different variant was selected but its title could
+// not be resolved, the original size is NOT printed — shipping the wrong size
+// is worse than shipping no size. Billing keeps using the replacement size
+// alone (see notifyZohoExchange), so this widening applies to carrier payloads.
+function forwardLabelSize(item, resolvedVariant) {
+    if (!item) return '';
+    if (resolvedVariant && resolvedVariant !== 'Same') return resolvedVariant;
+    const replVariantId = item.replacementVariantId;
+    const origVariantId = item.variantId || item.id;
+    const swappedVariant = replVariantId && replVariantId !== 'Same'
+        && String(replVariantId) !== String(origVariantId || '');
+    if (swappedVariant) return '';
+    return item.variant || '';
+}
+
 // In-memory cache for Shopify customer name lookups (avoids repeated API calls)
 const _customerNameCache = new Map();
 const CUSTOMER_NAME_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
@@ -3264,7 +3285,7 @@ async function createShiprocketForwardOrder(requestData) {
                 }
             }
 
-            const finalName = buildExchangeProductName(title, resolvedVariant);
+            const finalName = buildExchangeProductName(title, forwardLabelSize(item, resolvedVariant));
 
             console.log(`[${requestData.requestId}] Item: ${title}`);
             console.log(`  - Original: ${item.name} (Variant: ${item.variant})`);
@@ -3947,12 +3968,12 @@ async function createDelhiveryForwardOrder(requestData, shopifyOrder) {
             }
             // ─────────────────────────────────────────────────────────────────────
 
-            const productName = buildExchangeProductName(title, resolvedVariant);
+            const productName = buildExchangeProductName(title, forwardLabelSize(item, resolvedVariant));
             const quantity = parseInt(item.quantity) || 1;
             const price = parseFloat(item.replacementPrice || item.price) || 0;
             
             console.log(`  - Product: ${productName}`);
-            console.log(`    replacementVariant (raw): "${item.replacementVariant || ''}" → resolved: "${resolvedVariant}"`);
+            console.log(`    replacementVariant (raw): "${item.replacementVariant || ''}" → resolved: "${resolvedVariant || ''}" → label size: "${forwardLabelSize(item, resolvedVariant) || '(NONE)'}"`);
             console.log(`    replacementProductTitle: "${item.replacementProductTitle || ''}" | fallback title: "${item.name || ''}"`);
             console.log(`    Quantity: ${quantity}`);
             console.log(`    Price: ₹${price}`);
@@ -4603,7 +4624,7 @@ async function createEkartForwardOrder(requestData, shopifyOrder) {
 
             totalQuantity += quantity;
             totalAmount += price * quantity;
-            productsDesc.push(buildExchangeProductName(title, resolvedVariant));
+            productsDesc.push(buildExchangeProductName(title, forwardLabelSize(item, resolvedVariant)));
         }
 
         // 'fws-' prefix keeps forward order ids distinct from return pickups of the same request;
