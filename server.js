@@ -886,6 +886,35 @@ function isForwardProgress(current, next) {
     return n > c;
 }
 
+// The carrier's *current* status is authoritative for the hop the parcel is on
+// right now. Delhivery says "Dispatched" both when a parcel leaves the pickup
+// node (it is still only in transit) and when it leaves the last-mile hub, so a
+// later "In transit" scan is a legitimate correction rather than a stale scan.
+// Without this, an early out_for_delivery mapping pins the request forever and
+// in_transit (plus its timestamp) is never recorded.
+function isCarrierStatusCorrection(current, next) {
+    return current === 'out_for_delivery' && next === 'in_transit';
+}
+
+// When the carrier jumps several stages in one poll (a return that is already
+// moving the first time we track it), fill in the intermediate step timestamps
+// so the customer timeline shows dates instead of bare labels. Stamped at
+// detection time, same convention as the individual steps below.
+function backfillStageTimestamps(req, newStatus, timestamp, updates) {
+    const stages = [
+        ['picked_up', 'pickedUpAt'],
+        ['in_transit', 'inTransitAt'],
+        ['out_for_delivery', 'outForDeliveryAt'],
+        ['delivered', 'deliveredAt']
+    ];
+    const target = STATUS_RANK[newStatus] ?? -1;
+    for (const [stage, field] of stages) {
+        if (STATUS_RANK[stage] <= target && !req[field] && !updates[field]) {
+            updates[field] = timestamp;
+        }
+    }
+}
+
 // Map a carrier-specific status string (and Delhivery's optional StatusType code)
 // to an internal status enum. Comprehensive across the full Shiprocket and
 // Delhivery vocabularies. Order matters — more specific / terminal states first.
@@ -1120,18 +1149,19 @@ async function syncSingleRequest(req) {
                 let newStatus = statusMapping.status;
 
                 // Only advance forward — never regress on a stale/duplicate
-                // scan. EXCEPTION: terminal carrier states (cancelled / lost /
+                // scan. EXCEPTIONS: terminal carrier states (cancelled / lost /
                 // RTO) always override, because the carrier is authoritative —
                 // a request must never stay out_for_delivery/in_transit when
-                // the carrier has cancelled the shipment.
+                // the carrier has cancelled the shipment. out_for_delivery may
+                // also fall back to in_transit when the carrier says the parcel
+                // is still moving (see isCarrierStatusCorrection).
                 if (newStatus !== req.status &&
-                    (statusMapping.terminal || isForwardProgress(req.status, newStatus))) {
+                    (statusMapping.terminal || isForwardProgress(req.status, newStatus) ||
+                     isCarrierStatusCorrection(req.status, newStatus))) {
                     // Build update object
-                    const updates = { status: newStatus, lastSyncedAt: new Date().toISOString() };
-                    if (newStatus === 'delivered') updates.deliveredAt = new Date().toISOString();
-                    if (newStatus === 'picked_up') updates.pickedUpAt = new Date().toISOString();
-                    if (newStatus === 'in_transit') updates.inTransitAt = new Date().toISOString();
-                    if (newStatus === 'out_for_delivery') updates.outForDeliveryAt = new Date().toISOString();
+                    const timestamp = new Date().toISOString();
+                    const updates = { status: newStatus, lastSyncedAt: timestamp };
+                    backfillStageTimestamps(req, newStatus, timestamp, updates);
                     if (newAwb && newAwb !== req.awbNumber) updates.awbNumber = newAwb;
                     // Persist EDD and carrier name from carrier API
                     if (edd) updates.expectedDeliveryDate = edd;
@@ -7095,12 +7125,10 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                         // Check if status should advance
                         if (carrierStatus) {
                             const mapping = mapCarrierStatus(carrierStatus, 'delhivery', statusType);
-                            if (mapping && mapping.shouldUpdate && mapping.status && mapping.status !== request.status && isForwardProgress(request.status, mapping.status)) {
+                            if (mapping && mapping.shouldUpdate && mapping.status && mapping.status !== request.status &&
+                                (isForwardProgress(request.status, mapping.status) || isCarrierStatusCorrection(request.status, mapping.status))) {
                                 persistUpdates.status = mapping.status;
-                                if (mapping.status === 'picked_up') persistUpdates.pickedUpAt = new Date().toISOString();
-                                if (mapping.status === 'in_transit') persistUpdates.inTransitAt = new Date().toISOString();
-                                if (mapping.status === 'out_for_delivery') persistUpdates.outForDeliveryAt = new Date().toISOString();
-                                if (mapping.status === 'delivered') persistUpdates.deliveredAt = new Date().toISOString();
+                                backfillStageTimestamps(request, mapping.status, new Date().toISOString(), persistUpdates);
                             }
                         }
                 } else if (usedCarrier === 'shiprocket' && trackingData && trackingData.tracking_data) {
@@ -7119,12 +7147,10 @@ app.get('/api/track-request/:identifier', async (req, res) => {
                         persistUpdates.carrierName = 'Shiprocket';
                         if (carrierStatus) {
                             const mapping = mapCarrierStatus(carrierStatus, 'shiprocket');
-                            if (mapping && mapping.shouldUpdate && mapping.status && mapping.status !== request.status && isForwardProgress(request.status, mapping.status)) {
+                            if (mapping && mapping.shouldUpdate && mapping.status && mapping.status !== request.status &&
+                                (isForwardProgress(request.status, mapping.status) || isCarrierStatusCorrection(request.status, mapping.status))) {
                                 persistUpdates.status = mapping.status;
-                                if (mapping.status === 'picked_up') persistUpdates.pickedUpAt = new Date().toISOString();
-                                if (mapping.status === 'in_transit') persistUpdates.inTransitAt = new Date().toISOString();
-                                if (mapping.status === 'out_for_delivery') persistUpdates.outForDeliveryAt = new Date().toISOString();
-                                if (mapping.status === 'delivered') persistUpdates.deliveredAt = new Date().toISOString();
+                                backfillStageTimestamps(request, mapping.status, new Date().toISOString(), persistUpdates);
                             }
                         }
                     }
@@ -7228,7 +7254,14 @@ app.get('/api/track-request/:identifier', async (req, res) => {
             }
         }
         
-        // Persist any updates to DB (fire-and-forget, don't block response)
+        // Persist any updates to DB (fire-and-forget, don't block response).
+        // Reflect them on the response object too, otherwise the first load after
+        // a carrier scan still renders the previous step.
+        if (persistUpdates.status) request.status = persistUpdates.status;
+        ['pickedUpAt', 'inTransitAt', 'outForDeliveryAt', 'deliveredAt', 'forwardStatus'].forEach(field => {
+            if (persistUpdates[field]) request[field] = persistUpdates[field];
+        });
+
         if (Object.keys(persistUpdates).length > 0) {
             persistUpdates.lastSyncedAt = new Date().toISOString();
             updateRequestStatus(request.requestId, persistUpdates)

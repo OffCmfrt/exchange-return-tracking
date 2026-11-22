@@ -546,16 +546,21 @@
         const labels = {
             'waiting_payment':  'Waiting for Payment',
             'pending':          'Pending Review',
+            'pickup_pending':   'Pickup Scheduled',
             'scheduled':        'Pickup Booked',
             'pickup_booked':    'Pickup Booked',
             'picked_up':        'Picked Up',
             'in_transit':       'In Transit',
             'out_for_delivery': 'Out for Delivery',
             'delivered':        'At Warehouse',
+            'inspected':        'Inspected',
             'approved':         'Approved',
-            'rejected':         'Rejected'
+            'rejected':         'Rejected',
+            'failed':           'Shipment Failed',
+            'exception':        'Carrier Exception',
+            'cancelled':        'Cancelled'
         };
-        return labels[status] || status.replace(/_/g, ' ');
+        return labels[status] || String(status || '').replace(/_/g, ' ');
     }
 
     function displayTrackingDetails(data) {
@@ -565,8 +570,8 @@
         document.getElementById('displayDate').textContent = formatDateIST(data.createdAt);
 
         const statusBadge = document.getElementById('statusBadge');
-        statusBadge.textContent = data.status.replace('_', ' ');
-        statusBadge.className = `badge badge-${data.status.replace('_', '-')}`;
+        statusBadge.textContent = getStatusLabel(data.status);
+        statusBadge.className = `badge badge-${String(data.status).replace(/_/g, '-')}`;
 
         if (data.awbNumber) {
             document.getElementById('pickupDetails').classList.remove('hidden');
@@ -608,7 +613,7 @@
             { 
                 key: 'scheduled', 
                 label: isFeeWaived ? 'Admin Approved & Pickup Booked' : 'Pickup Booked \u2014 Awaiting Pickup', 
-                date: data.pickupDate || (['scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'approved'].includes(data.status) ? data.updatedAt : null) 
+                date: data.pickupDate || (['pickup_pending', 'scheduled', 'pickup_booked', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'approved'].includes(data.status) ? data.updatedAt : null) 
             },
             { key: 'picked_up', label: 'Item Picked Up by Courier', date: data.pickedUpAt },
             { key: 'in_transit', label: 'In Transit to Warehouse', date: data.inTransitAt },
@@ -617,8 +622,34 @@
             { key: 'approved', label: data.type === 'return' ? 'Refund Processed' : 'Replacement Dispatched', date: data.approvedAt }
         ];
 
-        let currentIndex = statuses.findIndex(s => s.key === data.status);
-        if (data.status === 'rejected') currentIndex = -1;
+        // Map the stored request status onto a timeline step. Statuses that share
+        // a step (pickup_booked / pickup_pending) and every carrier-side state
+        // must resolve here — an unmapped status used to leave currentIndex at -1,
+        // which rendered every dot grey with no dates (frozen-looking timeline).
+        const stepForStatus = {
+            waiting_payment: 0,
+            pending: 1,
+            pickup_pending: 2,
+            scheduled: 2,
+            pickup_booked: 2,
+            picked_up: 3,
+            in_transit: 4,
+            out_for_delivery: 5,
+            delivered: 6,
+            'delivered (pending insp.)': 6,
+            inspected: 6,
+            approved: 7
+        };
+
+        let currentIndex = stepForStatus[data.status];
+        if (data.status === 'rejected') {
+            currentIndex = -1;
+        } else if (currentIndex === undefined) {
+            // Unknown status (exception / failed / cancelled / rto_*): keep the
+            // progress the timestamps already prove instead of an all-grey list.
+            currentIndex = -1;
+            statuses.forEach((status, index) => { if (status.date) currentIndex = Math.max(currentIndex, index); });
+        }
 
         // If forward shipment exists and is active, the return item was received and replacement dispatched
         const forwardActive = data.forwardShipment && (data.forwardShipment.awb || data.forwardShipment.awbNumber) && 
@@ -777,7 +808,12 @@
             let fwdCurrentStatus = data.forwardStatus || 'scheduled';
             let fwdIndex = fwdStatuses.findIndex(s => s.key === fwdCurrentStatus);
             if (fwdCurrentStatus === 'delivered') fwdIndex = 4; // Fully complete
-            if (fwdIndex === -1) fwdIndex = 0; // fallback
+            if (fwdIndex === -1) {
+                // Unknown forward status — fall back to the progress its scan
+                // dates prove rather than collapsing to step 0.
+                fwdIndex = 0;
+                fwdStatuses.forEach((s, i) => { if (s.date) fwdIndex = Math.max(fwdIndex, i); });
+            }
 
             fwdTimeline.innerHTML = fwdStatuses.map((s, i) => `
                 <div class="timeline-item ${i <= fwdIndex ? 'completed' : ''} ${i === fwdIndex ? 'active' : ''}">
