@@ -1931,13 +1931,17 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2 style="font-size: 1.25rem; font-weight: 400; text-transform: uppercase; letter-spacing: 1px;">
-                Request Details</h2>
+                <span id="detailsModalTitleText">Request Details</span></h2>
+            <span class="badge badge-pending" id="detailsModalStatusPill" style="display: none;"></span>
             <button class="modal-close" onclick="closeModal()">×</button>
         </div>
 
+        <div class="rd-grid-wrap">
+        <div class="rd-grid">
         <div id="modalContent">
             <!-- Content will be populated here -->
         </div>
+        <div id="modalSideContent">
 
         <!-- Carrier Override (shown for all pickup/action statuses) -->
         <div id="carrierOverrideSection" class="hidden" style="margin-top: 1.5rem; padding: 1.25rem; background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%); border-radius: 10px; border: 2px solid #e5e7eb; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
@@ -2089,6 +2093,10 @@
                 </div>
             </div>
         </div>
+
+        </div><!-- /#modalSideContent -->
+        </div><!-- /.rd-grid -->
+        </div><!-- /.rd-grid-wrap -->
 
         <div id="modalActions" class="hidden" style="margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem;">
             <button id="approveBtn" onclick="approveRequest()" class="btn btn-primary" style="flex: 1; background: #111827; min-width: 150px; border: 1px solid #111827;">
@@ -3028,71 +3036,11 @@
         const newAddr = data.newAddress || '';
         const shipAddr = data.shippingAddress || '';
 
-        modalContent.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-                <div>
-                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Request ID</p>
-                    <p style="font-weight: 500;">${data.requestId}</p>
-                </div>
-                <div>
-                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Type</p>
-                    <p style="font-weight: 500; text-transform: capitalize;">${data.type}${data.originalType ? ` <span style="font-size: 0.75rem; color: #6b7280; text-transform: none;">(converted from ${data.originalType})</span>` : ''}</p>
-                </div>
-                <div>
-                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Order Number</p>
-                    <p style="font-weight: 500;">${data.orderNumber}</p>
-
-                </div>
-                <div>
-                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Status</p>
-                    <p><span class="badge badge-${data.status.replace(/_/g, '-')} tracking-status-toggle" 
-                             onclick="toggleTrackingPipeline()" 
-                             style="cursor: pointer;"
-                             title="Click to view full tracking pipeline">
-                        ${getStatusLabel(data.status)}
-                        <span style="font-size: 0.7em; margin-left: 4px; opacity: 0.7;">(click to expand)</span>
-                    </span></p>
-                </div>
-            </div>
-
-            <div id="trackingPipeline" class="tracking-pipeline hidden">
-                ${buildTrackingPipeline(data)}
-            </div>
-
-            ${data.resolution ? `
-            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.875rem 1rem; background: ${data.resolution === 'exchange' ? 'linear-gradient(135deg, #ecfdf5, #d1fae5)' : data.resolution === 'refund' ? 'linear-gradient(135deg, #eff6ff, #dbeafe)' : 'linear-gradient(135deg, #faf5ff, #ede9fe)'}; border-radius: 10px; border: 1px solid ${data.resolution === 'exchange' ? '#a7f3d0' : data.resolution === 'refund' ? '#bfdbfe' : '#ddd6fe'};">
-                <span style="font-size: 1.1rem;">${data.resolution === 'exchange' ? '📦' : data.resolution === 'refund' ? '💰' : '🎁'}</span>
-                <div>
-                    <p style="margin: 0; font-weight: 600; font-size: 0.85rem; color: ${data.resolution === 'exchange' ? '#065f46' : data.resolution === 'refund' ? '#1e40af' : '#5b21b6'};">
-                        Resolution: ${data.resolution === 'exchange' ? 'Replacement Dispatched' : data.resolution === 'refund' ? 'Refund Issued' : 'Store Credit Issued'}
-                    </p>
-                    ${data.discountCode && data.resolution === 'store_credit' ? `<p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: #6b21a8;">Code: <strong>${data.discountCode}</strong> — ${data.discountType === 'fixed' ? '₹' : ''}${data.discountValue}${data.discountType === 'percentage' ? '%' : ''}</p>` : ''}
-                </div>
-            </div>
-            ` : ''}
-
-            ${(data.requestHistory && data.requestHistory.length > 0) ? `
-            <details style="margin-bottom: 1rem; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
-                <summary style="padding: 0.75rem 1rem; cursor: pointer; font-weight: 500; font-size: 0.85rem; color: #374151; user-select: none;">
-                    📋 Request History (${data.requestHistory.length} event${data.requestHistory.length > 1 ? 's' : ''})
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    ${data.requestHistory.map(entry => `
-                        <div style="display: flex; gap: 0.75rem; padding: 0.625rem 0; border-bottom: 1px solid #f3f4f6; align-items: flex-start;">
-                            <div style="width: 8px; height: 8px; border-radius: 50%; background: ${entry.action === 'converted_to_exchange' ? '#f59e0b' : entry.action === 'resolution_selected' ? '#3b82f6' : '#9ca3af'}; margin-top: 6px; flex-shrink: 0;"></div>
-                            <div style="flex: 1;">
-                                <p style="margin: 0; font-size: 0.82rem; font-weight: 500; color: #111827;">
-                                    ${entry.action === 'converted_to_exchange' ? 'Converted from Return → Exchange' : entry.action === 'resolution_selected' ? `Resolution: ${entry.resolution === 'exchange' ? 'Replacement Dispatch' : entry.resolution === 'refund' ? 'Refund' : 'Store Credit'}` : entry.action}
-                                </p>
-                                ${entry.notes ? `<p style="margin: 0.2rem 0 0 0; font-size: 0.75rem; color: #6b7280;">${escapeHtml(entry.notes)}</p>` : ''}
-                                <p style="margin: 0.2rem 0 0 0; font-size: 0.7rem; color: #9ca3af;">${formatDateIST(entry.timestamp)}${entry.by ? ' · by ' + entry.by : ''}</p>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </details>
-            ` : ''}
-
+        // ── Presentation-only split: right-column panels (Payment Link / Payment Override) ──
+        // Same markup, same handlers, same conditions — just rendered into the side column.
+        const sideContent = document.getElementById('modalSideContent');
+        if (sideContent) {
+            sideContent.innerHTML = `
             <!-- ═══ Agent Payment Link Panel ═══ -->
             <div id="agentPaymentPanel" style="background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%); border: 1px solid #e5e7eb; border-radius: 12px; padding: 0; margin-bottom: 1rem; overflow: hidden;">
                 <div style="padding: 1rem 1.25rem; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem; background: white;">
@@ -3187,7 +3135,8 @@
                     `}
                 </div>
             </div>
-            
+
+
             ${(data.status === 'waiting_payment' && can('payment_links')) ? `
             <!-- ═══ Payment Override Panel (admin-confirmed out-of-band payment) ═══ -->
             <div id="paymentOverridePanel" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 1px solid #fde68a; border-radius: 12px; margin-bottom: 1rem; overflow: hidden;">
@@ -3266,7 +3215,101 @@
                 </div>
             </div>
             ` : ''}
-            
+
+            ${data.whatsappSent !== undefined ? `
+                <div id="whatsappStatusPanel" style="margin-bottom: 1rem;">
+                    <p style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem; color: #111827;">
+                        <i class="fab fa-whatsapp" style="color: #25d366;"></i>
+                        WhatsApp Template Status
+                    </p>
+                    ${data.whatsappSent ? `
+                        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 0.75rem; border-radius: 8px;">
+                            <p style="font-size: 0.85rem; font-weight: 600; margin: 0; color: #047857;">✅ Sent Successfully</p>
+                            ${data.whatsappMessageId ? `<p style="font-size: 0.78rem; margin: 0.5rem 0 0 0; color: #065f46; word-break: break-all;"><strong>Message ID:</strong> ${data.whatsappMessageId}</p>` : ''}
+                        </div>
+                    ` : `
+                        <div style="background: #fef2f2; border: 1px solid #fecaca; padding: 0.75rem; border-radius: 8px;">
+                            <p style="font-size: 0.85rem; font-weight: 600; margin: 0; color: #b91c1c;">❌ Failed to Send</p>
+                            ${data.whatsappError ? `<p style="font-size: 0.8rem; margin: 0.5rem 0 0 0; color: #991b1b;"><strong>Error:</strong> ${data.whatsappError}</p>` : ''}
+                        </div>
+                    `}
+                </div>
+            ` : ''}
+
+            ${data.status === 'delivered' || data.status === 'inspected' || data.status === 'pending' ? `
+                <div id="adminNotesPanel" style="margin-bottom: 1rem;">
+                    <label for="adminNotes" style="display: block; font-weight: 500; margin-bottom: 0.5rem; font-size: 0.85rem; color: #111827;">Admin Notes</label>
+                    <textarea id="adminNotes" style="width: 100%; padding: 0.75rem; border: 1px solid var(--gray-medium); border-radius: var(--radius-sm); min-height: 80px; box-sizing: border-box;" placeholder="Add notes..."></textarea>
+                </div>
+            ` : ''}
+            `;
+        }
+
+        modalContent.innerHTML = `
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Request ID</p>
+                    <p style="font-weight: 500;">${data.requestId}</p>
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Type</p>
+                    <p style="font-weight: 500; text-transform: capitalize;">${data.type}${data.originalType ? ` <span style="font-size: 0.75rem; color: #6b7280; text-transform: none;">(converted from ${data.originalType})</span>` : ''}</p>
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Order Number</p>
+                    <p style="font-weight: 500;">${data.orderNumber}</p>
+
+                </div>
+                <div>
+                    <p style="font-size: 0.8rem; color: var(--gray-dark);">Status</p>
+                    <p><span class="badge badge-${data.status.replace(/_/g, '-')} tracking-status-toggle" 
+                             onclick="toggleTrackingPipeline()" 
+                             style="cursor: pointer;"
+                             title="Click to view full tracking pipeline">
+                        ${getStatusLabel(data.status)}
+                        <span style="font-size: 0.7em; margin-left: 4px; opacity: 0.7;">(click to expand)</span>
+                    </span></p>
+                </div>
+            </div>
+
+            <div id="trackingPipeline" class="tracking-pipeline hidden">
+                ${buildTrackingPipeline(data)}
+            </div>
+
+            ${data.resolution ? `
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.875rem 1rem; background: ${data.resolution === 'exchange' ? 'linear-gradient(135deg, #ecfdf5, #d1fae5)' : data.resolution === 'refund' ? 'linear-gradient(135deg, #eff6ff, #dbeafe)' : 'linear-gradient(135deg, #faf5ff, #ede9fe)'}; border-radius: 10px; border: 1px solid ${data.resolution === 'exchange' ? '#a7f3d0' : data.resolution === 'refund' ? '#bfdbfe' : '#ddd6fe'};">
+                <span style="font-size: 1.1rem;">${data.resolution === 'exchange' ? '📦' : data.resolution === 'refund' ? '💰' : '🎁'}</span>
+                <div>
+                    <p style="margin: 0; font-weight: 600; font-size: 0.85rem; color: ${data.resolution === 'exchange' ? '#065f46' : data.resolution === 'refund' ? '#1e40af' : '#5b21b6'};">
+                        Resolution: ${data.resolution === 'exchange' ? 'Replacement Dispatched' : data.resolution === 'refund' ? 'Refund Issued' : 'Store Credit Issued'}
+                    </p>
+                    ${data.discountCode && data.resolution === 'store_credit' ? `<p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: #6b21a8;">Code: <strong>${data.discountCode}</strong> — ${data.discountType === 'fixed' ? '₹' : ''}${data.discountValue}${data.discountType === 'percentage' ? '%' : ''}</p>` : ''}
+                </div>
+            </div>
+            ` : ''}
+
+            ${(data.requestHistory && data.requestHistory.length > 0) ? `
+            <details style="margin-bottom: 1rem; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                <summary style="padding: 0.75rem 1rem; cursor: pointer; font-weight: 500; font-size: 0.85rem; color: #374151; user-select: none;">
+                    📋 Request History (${data.requestHistory.length} event${data.requestHistory.length > 1 ? 's' : ''})
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    ${data.requestHistory.map(entry => `
+                        <div style="display: flex; gap: 0.75rem; padding: 0.625rem 0; border-bottom: 1px solid #f3f4f6; align-items: flex-start;">
+                            <div style="width: 8px; height: 8px; border-radius: 50%; background: ${entry.action === 'converted_to_exchange' ? '#f59e0b' : entry.action === 'resolution_selected' ? '#3b82f6' : '#9ca3af'}; margin-top: 6px; flex-shrink: 0;"></div>
+                            <div style="flex: 1;">
+                                <p style="margin: 0; font-size: 0.82rem; font-weight: 500; color: #111827;">
+                                    ${entry.action === 'converted_to_exchange' ? 'Converted from Return → Exchange' : entry.action === 'resolution_selected' ? `Resolution: ${entry.resolution === 'exchange' ? 'Replacement Dispatch' : entry.resolution === 'refund' ? 'Refund' : 'Store Credit'}` : entry.action}
+                                </p>
+                                ${entry.notes ? `<p style="margin: 0.2rem 0 0 0; font-size: 0.75rem; color: #6b7280;">${escapeHtml(entry.notes)}</p>` : ''}
+                                <p style="margin: 0.2rem 0 0 0; font-size: 0.7rem; color: #9ca3af;">${formatDateIST(entry.timestamp)}${entry.by ? ' · by ' + entry.by : ''}</p>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </details>
+            ` : ''}
+
             ${data.status === 'rejected' ? `
             <div style="background: #fee2e2; border-left: 4px solid #dc2626; padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
                 <p style="font-weight: 600; color: #991b1b; margin-bottom: 0.5rem;">✗ Rejection Reason</p>
@@ -3558,33 +3601,17 @@
                 </div>
             ` : ''}
 
-            ${data.whatsappSent !== undefined ? `
-                <div style="background: ${data.whatsappSent ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'}; padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; color: white;">
-                    <p style="font-weight: 600; margin-bottom: 0.75rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
-                        <i class="fas fa-${data.whatsappSent ? 'check-circle' : 'exclamation-circle'}"></i>
-                        WhatsApp Template Status
-                    </p>
-                    ${data.whatsappSent ? `
-                        <div style="background: rgba(255,255,255,0.2); padding: 0.75rem; border-radius: 6px;">
-                            <p style="font-size: 0.95rem; font-weight: 600; margin: 0;">✅ Sent Successfully</p>
-                            ${data.whatsappMessageId ? `<p style="font-size: 0.8rem; margin: 0.5rem 0 0 0; opacity: 0.9; word-break: break-all;"><strong>Message ID:</strong> ${data.whatsappMessageId}</p>` : ''}
-                        </div>
-                    ` : `
-                        <div style="background: rgba(255,255,255,0.2); padding: 0.75rem; border-radius: 6px;">
-                            <p style="font-size: 0.95rem; font-weight: 600; margin: 0;">❌ Failed to Send</p>
-                            ${data.whatsappError ? `<p style="font-size: 0.85rem; margin: 0.5rem 0 0 0; opacity: 0.9;"><strong>Error:</strong> ${data.whatsappError}</p>` : ''}
-                        </div>
-                    `}
-                </div>
-            ` : ''}
-
-            ${data.status === 'delivered' || data.status === 'inspected' || data.status === 'pending' ? `
-                <div style="margin-top: 1.5rem;">
-                    <label for="adminNotes" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Admin Notes</label>
-                    <textarea id="adminNotes" style="width: 100%; padding: 0.75rem; border: 1px solid var(--gray-medium); border-radius: var(--radius-sm); min-height: 80px;" placeholder="Add notes..."></textarea>
-                </div>
-            ` : ''}
         `;
+
+        // ── Sticky header: request identity + status pill (presentation only) ──
+        const headerTitle = document.getElementById('detailsModalTitleText');
+        if (headerTitle) headerTitle.textContent = `Request Details / ${data.requestId}`;
+        const headerPill = document.getElementById('detailsModalStatusPill');
+        if (headerPill) {
+            headerPill.className = `badge badge-${data.status.replace(/_/g, '-')}`;
+            headerPill.textContent = getStatusLabel(data.status);
+            headerPill.style.display = 'inline-flex';
+        }
 
         // Show/hide action buttons
         const modalActions = document.getElementById('modalActions');
@@ -3951,14 +3978,14 @@
         // Safety: if element was removed from DOM, recreate it
         if (!discountSection) {
             console.warn('[Discount] discountCodeSection element missing from DOM, recreating...');
-            const modalContentParent = document.querySelector('#detailsModal .modal-content');
+            const modalContentParent = document.getElementById('modalSideContent') || document.querySelector('#detailsModal .modal-content');
             if (modalContentParent) {
                 const temp = document.createElement('div');
                 temp.innerHTML = DISCOUNT_SECTION_HTML;
                 discountSection = temp.firstElementChild;
-                // Insert before modalActions
+                // Insert before modalActions (only when it is actually a child of the target parent)
                 const actionsEl = document.getElementById('modalActions');
-                if (actionsEl) {
+                if (actionsEl && actionsEl.parentNode === modalContentParent) {
                     modalContentParent.insertBefore(discountSection, actionsEl);
                 } else {
                     modalContentParent.appendChild(discountSection);
@@ -8533,6 +8560,175 @@
 
 <!-- Toast Notification Container -->
 <div id="toastContainer" class="toast-container"></div>
+
+<!-- ══ Return & Exchange request details modal — visual layout refresh (presentation only) ══ -->
+<style>
+    #detailsModal .modal-content {
+        max-width: 1240px;
+        width: 96%;
+        max-height: 92vh;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border-radius: 16px;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+    }
+    #detailsModal .modal-header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        flex-shrink: 0;
+        margin: 0;
+        padding: 1.1rem 1.5rem;
+        background: rgba(255, 255, 255, 0.92);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid #eceef1;
+        gap: 0.75rem;
+    }
+    #detailsModal .modal-header h2 {
+        font-family: inherit;
+        font-size: 1.15rem !important;
+        font-weight: 600 !important;
+        text-transform: none !important;
+        letter-spacing: -0.2px !important;
+        margin: 0;
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    #detailsModal #detailsModalStatusPill {
+        flex-shrink: 0;
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    #detailsModal .modal-close {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #f3f4f6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        color: #6b7280;
+        flex-shrink: 0;
+        transition: background 0.15s ease;
+    }
+    #detailsModal .modal-close:hover { background: #e5e7eb; color: #111827; }
+    #detailsModal .rd-grid-wrap {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 1.25rem 1.5rem 1.75rem;
+        background: #fbfbfd;
+    }
+    #detailsModal .rd-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        align-items: start;
+        gap: 1.25rem;
+    }
+    #detailsModal #modalContent,
+    #detailsModal #modalSideContent {
+        display: flex;
+        flex-direction: column;
+        gap: 0.875rem;
+        min-width: 0;
+    }
+    /* Neutralize legacy inline margins inside the card columns */
+    #detailsModal #modalContent > *,
+    #detailsModal #modalSideContent > * { margin-top: 0 !important; margin-bottom: 0 !important; }
+    /* Unified card treatment */
+    #detailsModal #modalContent > div:not([class]):not(#trackingPipeline),
+    #detailsModal #modalContent > details,
+    #detailsModal #modalSideContent > div:not([class]),
+    #detailsModal #carrierOverrideSection,
+    #detailsModal #discountCodeSection {
+        background: #ffffff;
+        border: 1px solid #e7e9ee;
+        border-radius: 12px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    }
+    #detailsModal #modalContent > div:not([class]):not(#trackingPipeline),
+    #detailsModal #modalContent > details > div,
+    #detailsModal #modalSideContent > div:not([class]) { padding: 1rem 1.1rem; }
+    #detailsModal #modalContent > div[style*="auto-fit"] {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.75rem !important;
+        padding: 0.9rem 1.1rem;
+    }
+    #detailsModal #modalContent > div[style*="auto-fit"] p { margin: 0; }
+    #detailsModal #modalContent > div[style*="auto-fit"] > div > p:first-child {
+        font-size: 0.68rem !important;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #8a919c !important;
+        margin-bottom: 0.2rem !important;
+    }
+    #detailsModal #modalContent > div[style*="auto-fit"] > div > p:last-child { font-size: 0.85rem; }
+    #detailsModal #modalContent > p { margin: 0 !important; }
+    #detailsModal #modalContent h4 { font-size: 0.85rem; }
+    #detailsModal #carrierOverrideSection,
+    #detailsModal #discountCodeSection { padding: 1.1rem; }
+    #detailsModal #modalActions {
+        position: sticky;
+        bottom: 0;
+        z-index: 6;
+        flex-shrink: 0;
+        margin: 0 !important;
+        padding: 0.85rem 1.5rem;
+        background: rgba(255, 255, 255, 0.94);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+        border-top: 1px solid #eceef1;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.6rem;
+    }
+    #detailsModal #modalActions button,
+    #detailsModal #modalActions .btn {
+        flex: 0 1 auto !important;
+        padding: 0.55rem 1.1rem !important;
+        font-size: 0.82rem !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        min-width: auto !important;
+        width: auto !important;
+        box-shadow: none !important;
+        background: #ffffff !important;
+        border: 1px solid #d7dae0 !important;
+        color: #16181d !important;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    #detailsModal #modalActions button:hover,
+    #detailsModal #modalActions .btn:hover { background: #f5f6f8 !important; border-color: #c3c8d1 !important; }
+    #detailsModal #modalActions #approveBtn {
+        background: #111827 !important;
+        border-color: #111827 !important;
+        color: #ffffff !important;
+    }
+    #detailsModal #modalActions #approveBtn:hover { background: #24303f !important; }
+    #detailsModal #modalActions #rejectBtn { color: #dc2626 !important; border-color: #f0b4b4 !important; }
+    #detailsModal #modalActions #rejectBtn:hover { background: #fef2f2 !important; }
+    /* Responsive: single column on tablet/mobile */
+    @media (max-width: 980px) {
+        #detailsModal .rd-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+        #detailsModal .modal-content { width: 100%; max-height: 100vh; height: 100vh; border-radius: 0; }
+        #detailsModal .rd-grid-wrap { padding: 1rem; }
+        #detailsModal .modal-header { padding: 1rem; }
+        #detailsModal #modalActions { padding: 0.75rem 1rem; }
+        #detailsModal #modalContent > div[style*="auto-fit"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+</style>
 
 </body>
 </html>
