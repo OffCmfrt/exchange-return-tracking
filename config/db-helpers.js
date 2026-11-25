@@ -430,6 +430,7 @@ async function updateRequestStatus(requestId, updates) {
     if (updates.whatsappMessageId !== undefined) updateData.whatsapp_message_id = updates.whatsappMessageId;
     if (updates.whatsappSentAt !== undefined) updateData.whatsapp_sent_at = updates.whatsappSentAt;
     if (updates.whatsappError !== undefined) updateData.whatsapp_error = updates.whatsappError;
+    if (updates.whatsappTemplateName !== undefined) updateData.whatsapp_template_name = updates.whatsappTemplateName;
 
     // EDD (Expected Delivery Date) - persisted from carrier sync
     if (updates.expectedDeliveryDate !== undefined) updateData.expected_delivery_date = updates.expectedDeliveryDate;
@@ -556,6 +557,7 @@ function convertFromSnakeCase(data) {
         whatsappSent: data.whatsapp_sent || false,
         whatsappMessageId: data.whatsapp_message_id || null,
         whatsappSentAt: data.whatsapp_sent_at || null,
+        whatsappTemplateName: data.whatsapp_template_name || null,
         pickupVideoUrl: data.pickup_video_url || null,
         pickupVideoSubmittedAt: data.pickup_video_submitted_at || null,
         unboxingVideoUrl: data.unboxing_video_url || null,

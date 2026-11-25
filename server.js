@@ -6129,7 +6129,8 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                     updateRequestStatus(requestId, {
                         whatsappSent: true,
                         whatsappMessageId: waResult.messageId || null,
-                        whatsappSentAt: new Date().toISOString()
+                        whatsappSentAt: new Date().toISOString(),
+                        whatsappTemplateName: 'return_exchange_approved'
                     }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
                 }
             }).catch(() => {}); // fire-and-forget
@@ -6183,7 +6184,8 @@ async function finalizeRequestAfterPayment(requestId, paymentId, paymentAmount) 
                         updateRequestStatus(requestId, {
                             whatsappSent: true,
                             whatsappMessageId: waResult.messageId || null,
-                            whatsappSentAt: new Date().toISOString()
+                            whatsappSentAt: new Date().toISOString(),
+                            whatsappTemplateName: 'self_ship_required'
                         }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
                     }
                 }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
@@ -6545,7 +6547,8 @@ app.post('/api/submit-exchange', upload.any(), async (req, res) => {
                         updateRequestStatus(requestId, {
                             whatsappSent: true,
                             whatsappMessageId: waResult.messageId || null,
-                            whatsappSentAt: new Date().toISOString()
+                            whatsappSentAt: new Date().toISOString(),
+                            whatsappTemplateName: 'self_ship_required'
                         }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
                     }
                 }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
@@ -6884,7 +6887,8 @@ app.post('/api/submit-return', upload.any(), async (req, res) => {
                         updateRequestStatus(requestId, {
                             whatsappSent: true,
                             whatsappMessageId: waResult.messageId || null,
-                            whatsappSentAt: new Date().toISOString()
+                            whatsappSentAt: new Date().toISOString(),
+                            whatsappTemplateName: 'self_ship_required'
                         }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
                     }
                 }).catch(err => console.warn(`[${requestId}] Self-ship WhatsApp error:`, err.message));
@@ -8767,7 +8771,8 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
                             updateRequestStatus(requestId, {
                                 whatsappSent: true,
                                 whatsappMessageId: waResult.messageId || null,
-                                whatsappSentAt: new Date().toISOString()
+                                whatsappSentAt: new Date().toISOString(),
+                                whatsappTemplateName: 'return_exchange_approved'
                             }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
                         }
                     }).catch(() => {}); // fire-and-forget
@@ -9025,7 +9030,8 @@ app.post('/api/admin/approve-return-with-discount', authenticateAdmin, async (re
                     await updateRequestStatus(requestId, {
                         whatsappSent: true,
                         whatsappMessageId: whatsappMessageId,
-                        whatsappSentAt: new Date().toISOString()
+                        whatsappSentAt: new Date().toISOString(),
+                        whatsappTemplateName: 'return_approved_discount'
                     });
                 } catch (error) {
                     whatsappError = error.message;
@@ -9287,7 +9293,8 @@ app.post('/api/admin/resolve-exchange', authenticateAdmin, async (req, res) => {
                         await updateRequestStatus(requestId, {
                             whatsappSent: true,
                             whatsappMessageId,
-                            whatsappSentAt: new Date().toISOString()
+                            whatsappSentAt: new Date().toISOString(),
+                            whatsappTemplateName: 'store_credit_issued'
                         });
                     } catch (waErr) {
                         whatsappError = waErr.message;
@@ -9573,6 +9580,17 @@ app.post('/api/admin/send-coupon-code', authenticateAdmin, async (req, res) => {
                     whatsappSent = true;
                     whatsappMessageId = whatsappResult?.messageId || null;
                     console.log(`[send-coupon][${requestId}] ✅ WhatsApp template sent. Message ID: ${whatsappMessageId}`);
+
+                    // Persist the send so the modal's WhatsApp status panel reflects it.
+                    // This endpoint previously reported the send only in its HTTP response,
+                    // never in the requests row, so the panel could not show it (or the
+                    // template name) after a reload. Non-blocking, like every other site.
+                    updateRequestStatus(requestId, {
+                        whatsappSent: true,
+                        whatsappMessageId,
+                        whatsappSentAt: new Date().toISOString(),
+                        whatsappTemplateName: 'return_approved_discount'
+                    }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
                 } catch (error) {
                     whatsappError = error.message;
                     console.error(`[send-coupon][${requestId}] ❌ WhatsApp send failed:`, error.message);
@@ -9818,7 +9836,8 @@ app.post('/api/admin/create-duplicate-pickup', authenticateAdmin, async (req, re
                 updateRequestStatus(requestId, {
                     whatsappSent: true,
                     whatsappMessageId: waResult.messageId || null,
-                    whatsappSentAt: new Date().toISOString()
+                    whatsappSentAt: new Date().toISOString(),
+                    whatsappTemplateName: 'return_exchange_approved'
                 }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
             }
         }).catch(() => {}); // fire-and-forget
@@ -10704,7 +10723,8 @@ app.post('/api/admin/bulk-initiate-pickup', authenticateAdmin, async (req, res) 
                             updateRequestStatus(requestId, {
                                 whatsappSent: true,
                                 whatsappMessageId: waResult.messageId || null,
-                                whatsappSentAt: new Date().toISOString()
+                                whatsappSentAt: new Date().toISOString(),
+                                whatsappTemplateName: 'return_exchange_approved'
                             }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
                         }
                     }).catch(() => {}); // fire-and-forget
@@ -11322,7 +11342,8 @@ app.post('/api/razorpay-payment-link-webhook', async (req, res) => {
                         updateRequestStatus(requestId, {
                             whatsappSent: true,
                             whatsappMessageId: waResult.messageId || null,
-                            whatsappSentAt: new Date().toISOString()
+                            whatsappSentAt: new Date().toISOString(),
+                            whatsappTemplateName: 'return_exchange_approved'
                         }).catch(e => console.warn(`[${requestId}] WhatsApp status update failed:`, e.message));
                     }
                 }).catch(() => {});
