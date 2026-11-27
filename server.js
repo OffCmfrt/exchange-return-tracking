@@ -1170,6 +1170,9 @@ async function syncSingleRequest(req) {
                     await updateRequestStatus(req.requestId, updates);
                     changed = true;
                     console.log(`[${req.requestId}] Status updated: ${req.status} → ${newStatus} (${carrier})${edd ? ' EDD=' + edd : ''}`);
+                    if (newStatus === 'delivered') {
+                        await notifyStockRoomReturn(req, req.items);
+                    }
                 } else if (newAwb && newAwb !== req.awbNumber) {
                     // Status unchanged but AWB refreshed
                     const updates = { awbNumber: newAwb, lastSyncedAt: new Date().toISOString() };
@@ -5541,7 +5544,7 @@ app.post('/api/get-variants', async (req, res) => {
 // the REAL original + exchanged products to the WhatsApp bot middleware so
 // Zoho Books reflects what was actually returned/exchanged — not the
 // original order selection. Fire-and-forget: never blocks approval.
-async function notifyZohoExchange(requestDetails, items) {
+async function notifyZohoExchange(requestDetails, items, options = {}) {
     const botUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:3000';
     const internalToken = process.env.WHATSAPP_INTERNAL_TOKEN || '';
     const list = items || [];
@@ -5560,6 +5563,8 @@ async function notifyZohoExchange(requestDetails, items) {
                 variant
             ),
             sku: i.replacementSku || '',
+            variant_id: i.replacementVariantId || i.variantId || i.variant_id || '',
+            product_id: i.replacementProductId || i.productId || i.product_id || '',
             quantity: parseInt(i.quantity || 1),
             // What the replacement is billed at on its own Zoho invoice. The
             // middleware falls back to the amount paid for the replaced item
@@ -5571,9 +5576,15 @@ async function notifyZohoExchange(requestDetails, items) {
 
     const payload = {
         order_id: String(requestDetails.orderNumber || ''),
+        request_id: String(requestDetails.requestId || ''),
+        inventory_event: options.inventoryEvent || '',
+        inventory_only: options.inventoryOnly === true,
         original_items: list.map(i => ({
             title: i.name || i.title || '',
             sku: i.sku || '',
+            variant: i.variant || i.variantTitle || '',
+            variant_id: i.variantId || i.variant_id || '',
+            product_id: i.productId || i.product_id || '',
             quantity: parseInt(i.quantity || 1),
             price: parseFloat(i.paidPrice || i.price || 0)
         })),
@@ -5584,6 +5595,7 @@ async function notifyZohoExchange(requestDetails, items) {
         headers: { 'Content-Type': 'application/json', 'x-internal-token': internalToken },
         body: JSON.stringify(payload)
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     console.log('[' + requestDetails.requestId + '] 📒 Zoho exchange notify → ' + res.status);
     return res.status;
 }
@@ -5616,14 +5628,26 @@ async function resolveExchangeReplacementVariant(item, requestId) {
  * notify the WhatsApp bot middleware so Zoho Books creates a credit note
  * mirroring the original invoice. Fire-and-forget: never blocks approval.
  */
-async function notifyZohoReturn(requestDetails, items) {
+async function notifyZohoReturn(requestDetails, items, options = {}) {
     const botUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:3000';
     const internalToken = process.env.WHATSAPP_INTERNAL_TOKEN || '';
+    let list = items || [];
+    if (typeof list === 'string') {
+        try { list = JSON.parse(list); } catch { list = []; }
+    }
+    if (!Array.isArray(list)) list = [];
     const payload = {
         order_id: String(requestDetails.orderNumber || ''),
-        return_items: (items || []).map(i => ({
+        request_id: String(requestDetails.requestId || ''),
+        return_type: options.returnType || requestDetails.type || 'return',
+        inventory_event: options.inventoryEvent || '',
+        inventory_only: options.inventoryOnly === true,
+        return_items: list.map(i => ({
             title: i.name || i.title || '',
             sku: i.sku || '',
+            variant: i.variant || i.variantTitle || '',
+            variant_id: i.variantId || i.variant_id || '',
+            product_id: i.productId || i.product_id || '',
             quantity: parseInt(i.quantity || 1),
             price: parseFloat(i.paidPrice || i.price || 0)
         }))
@@ -5634,12 +5658,23 @@ async function notifyZohoReturn(requestDetails, items) {
             headers: { 'Content-Type': 'application/json', 'x-internal-token': internalToken },
             body: JSON.stringify(payload)
         });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         console.log('[' + requestDetails.requestId + '] 📒 Zoho return notify → ' + res.status);
         return res.status;
     } catch (e) {
         console.warn('[' + requestDetails.requestId + '] ⚠️ Zoho return notify failed: ' + e.message);
         return 0;
     }
+}
+
+// Inventory-only bridge: the Stock Room changes when the return parcel is
+// physically received, not when the request is approved.
+async function notifyStockRoomReturn(requestDetails, items) {
+    return notifyZohoReturn(requestDetails, items, {
+        inventoryOnly: true,
+        inventoryEvent: 'return_received',
+        returnType: requestDetails.type
+    });
 }
 
 // ── Meta Template Definition: Return/Exchange Approval ──
@@ -8897,7 +8932,10 @@ app.post(['/api/admin/approve', '/api/admin/approve-return', '/api/admin/approve
             if (typeof zohoNotifyItems === 'string') {
                 try { zohoNotifyItems = JSON.parse(zohoNotifyItems); } catch (e) { zohoNotifyItems = []; }
             }
-            notifyZohoExchange(requestDetails, Array.isArray(zohoNotifyItems) ? zohoNotifyItems : [])
+            const replacementDispatched = Boolean(request.forwardAwbNumber || request.forwardShipmentId);
+            notifyZohoExchange(requestDetails, Array.isArray(zohoNotifyItems) ? zohoNotifyItems : [], {
+                inventoryEvent: replacementDispatched ? 'replacement_dispatched' : ''
+            })
                 .catch(e => console.warn('[' + requestId + '] Zoho exchange notify failed: ' + e.message));
         } else if (requestDetails.type === 'return' && updates.status === 'approved') {
             let zohoReturnItems = requestDetails.items;
@@ -9164,7 +9202,9 @@ app.post('/api/admin/resolve-exchange', authenticateAdmin, async (req, res) => {
                 // Notify Zoho
                 let zohoItems = requestDetails.items;
                 if (typeof zohoItems === 'string') { try { zohoItems = JSON.parse(zohoItems); } catch (e) { zohoItems = []; } }
-                notifyZohoExchange(requestDetails, Array.isArray(zohoItems) ? zohoItems : []).catch(() => {});
+                notifyZohoExchange(requestDetails, Array.isArray(zohoItems) ? zohoItems : [], {
+                    inventoryEvent: 'replacement_dispatched'
+                }).catch(() => {});
 
                 return res.json({ success: true, message: 'Exchange resolved: replacement dispatched', resolution: 'exchange', request });
             } else {
@@ -9655,6 +9695,7 @@ app.post('/api/admin/mark-delivered', authenticateAdmin, async (req, res) => {
             return res.status(404).json({ error: 'Request not found' });
         }
 
+        await notifyStockRoomReturn(request, request.items);
         res.json({ success: true, message: 'Request marked as delivered/received', request });
 
     } catch (error) {
