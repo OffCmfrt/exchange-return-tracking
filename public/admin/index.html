@@ -3240,7 +3240,7 @@
                     </p>
                     ${data.whatsappSent ? `
                         <div style="background: #ecfdf5; border: 1px solid #a7f3d0; padding: 0.75rem; border-radius: 8px;">
-                            <p style="font-size: 0.85rem; font-weight: 600; margin: 0; color: #047857;">✅ Sent Successfully</p>
+                            <p style="font-size: 0.85rem; font-weight: 600; margin: 0; color: #047857;">✅ Sent Successfully${data.whatsappTemplateName ? ` <span style="font-weight: 500; color: #065f46;" title="Meta template: ${data.whatsappTemplateName}">· ${({'return_exchange_approved': 'Approval', 'self_ship_required': 'Self-Ship', 'return_approved_discount': 'Discount', 'store_credit_issued': 'Store Credit'})[data.whatsappTemplateName] || data.whatsappTemplateName} template</span>` : ''}</p>
                             ${data.whatsappMessageId ? `<p style="font-size: 0.78rem; margin: 0.5rem 0 0 0; color: #065f46; word-break: break-all;"><strong>Message ID:</strong> ${data.whatsappMessageId}</p>` : ''}
                         </div>
                     ` : `
